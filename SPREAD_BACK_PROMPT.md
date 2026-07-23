@@ -15,9 +15,12 @@ session.
 | `P:\WINDOWS\EPUB_2_HTML` | `contrib/epub_2_html.md` | [ ] |
 | `P:\WINDOWS\Streams_Player` | `contrib/streams_player.md` | [ ] |
 | `P:\WINDOWS\CyrFlip` | `contrib/cyrflip.md` | [ ] |
+| `P:\WEB\sites.google.comsiteszaodua` (canon home + web hub) | `contrib/hub.md` | [x] |
 | a new repo | create from `contrib/TEMPLATE.md` | - |
 
-Mark the Done column here after each repo's spread-back commit lands.
+Mark the Done column here after each repo's spread-back commit lands. The hub is the canon's own
+home - "canon is read-only" does not apply there, so its spread-back edits the canon in place (this
+table, `contrib/hub.md`, root `CLAUDE.md`).
 
 ## The prompt
 
