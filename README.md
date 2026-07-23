@@ -90,6 +90,8 @@ downstream mirrors from now on - treat them as stale until re-synced from here.
 
 - **Gate before committing:** run `tools/check-rules.ps1` (exit 0 required) - it validates internal
   links, section numbering, `§`-references, and the house text style across the core docs.
+- **Spreading into a repo:** run the prompt from [SPREAD_BACK_PROMPT.md](SPREAD_BACK_PROMPT.md) in a
+  session started in that repo (one repo per session); mark its Done column there after the commit.
 - **Surveying a new project:** copy `contrib/TEMPLATE.md`, fill it against the repo with evidence,
   dedupe against the existing contrib files, and fold only owner-approved universal deltas into the
   core.
