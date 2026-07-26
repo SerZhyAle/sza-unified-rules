@@ -258,3 +258,42 @@ All universal truths below were folded into the canonical docs (no commit/push).
 - **House-style slip.** `docs/index.html:6` `<title>` uses an em-dash ("CyrFlip — fix wrong-layout text") -
   the house style is a plain hyphen (and CyrFlip is not a book-typography case that would earn the scoped
   allowlist). Fix in the touched line at the next docs edit.
+
+## Spread-back applied 2026-07-23
+
+Ran SPREAD_BACK_PROMPT in `p:\WINDOWS\CyrFlip`. Consumption model = **REFERENCE** (repo links to the canon,
+keeps only deltas locally; no mirror).
+
+**Changed in the repo:**
+- **`CLAUDE.md`** - replaced the stale "Common project conventions (imported from FastMediaSorter_Lite)"
+  section (which still claimed "release pipeline... not set up yet" and described an Inno `.exe` installer -
+  both false: `build.ps1`/`release.ps1`/`ci.yml`/`release.yml` all exist and CyrFlip ships portable-zip,
+  no installer) with a new "Unified Rules & release conventions" section: canon pointer, the overlay facts
+  (version shape, 4 channels + site, frozen anchors, companion-extension shape), the build/release wall +
+  CI cost levers, and the resolved repo decisions. Restated universal rules removed.
+- **`docs/index.html:6`** - em-dash → plain hyphen in `<title>` (house-style fix).
+- **`release.ps1`** - added a tag-format gate (`^\d{2}\.\d{1,2}\.\d{1,2}\.\d{4}$` + `ParseExact` on
+  `yy.M.d.HHmm`) before tagging, so a mistyped `-Version` fails before any push. Verified against
+  `26.7.22.1712` (pass), `26.13.40.9999`/`26.7.22` (reject).
+- **`msix/store-listings.md`** - added a render-target banner naming `msix/store-listing-export.csv` as the
+  single source of truth for Store-listing copy.
+
+**Open questions closed (owner decisions, 2026-07-23):**
+1. **CI tag-format gate** - owner: **yes, adopt.** Added to `release.ps1` (see above). *Remaining:* the same
+   guard is not in `release.yml` (the workflow only strips the `v` prefix); could mirror it there.
+2. **Three overlapping Store-listing sources** - owner: **`msix/store-listing-export.csv` is the SoT**;
+   `store-listings.md` + `store/listing-*.txt` are render targets (banner added to the `.md`; `.txt` left
+   un-bannered to avoid leaking a note into pasted listing fields - documented in `CLAUDE.md` instead).
+   *Remaining:* the `/release` checklist (`release.ps1` step 4) + the `/release` skill still point operators
+   at `store-listings.md`; repoint them at the CSV SoT (needs the owner's export→merge text-flow, so left as
+   a follow-up, not silently rewired).
+3. **VS Code extension publish** - owner: **keep manual** (`vsce publish`, own semver, only when the subtree
+   changed). Recorded as a deliberate choice; no `ext-vscode-v*` tag/workflow.
+4. **House-style em-dash** - fixed (see above).
+
+**Verification (fresh runs, PowerShell - `dotnet` is not on the Bash tool's PATH here):**
+- `dotnet build CyrFlip.sln -c Release` → **Build succeeded, 0 Warning(s), 0 Error(s)**, exit 0.
+- `dotnet test CyrFlip.sln -c Release --no-build` → **Passed! Failed: 0, Passed: 53**, exit 0.
+
+**Canon fixes needed (none blocking):** none. All CyrFlip universal deltas were already folded into the core
+on 2026-07-23 (see "Candidate core edits - APPLIED" above); this spread-back only consumed them.

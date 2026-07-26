@@ -9,13 +9,14 @@ session.
 
 | Repo | Contrib record | Done |
 | --- | --- | --- |
-| `P:\WINDOWS\FastMediaSorter_Lite` | `contrib/fastmediasorter_lite.md` | [ ] |
+| `P:\WINDOWS\FastMediaSorter_Lite` | `contrib/fastmediasorter_lite.md` | [x] |
 | `P:\ANDROID\FastMediaSorter_mob_v2` | `contrib/fastmediasorter_mob_v2.md` | [ ] |
 | `P:\WINDOWS\FileDo` | `contrib/filedo.md` | [ ] |
 | `P:\WINDOWS\EPUB_2_HTML` | `contrib/epub_2_html.md` | [ ] |
 | `P:\WINDOWS\Streams_Player` | `contrib/streams_player.md` | [ ] |
 | `P:\WINDOWS\CyrFlip` | `contrib/cyrflip.md` | [ ] |
 | `P:\WEB\sites.google.comsiteszaodua` (canon home + web hub) | `contrib/hub.md` | [x] |
+| `P:\WINDOWS\internal_IP_manager` | `contrib/internal_ip_manager.md` | [x] |
 | a new repo | create from `contrib/TEMPLATE.md` | - |
 
 Mark the Done column here after each repo's spread-back commit lands. The hub is the canon's own

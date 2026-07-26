@@ -229,3 +229,26 @@ subagent MCP isolation into `AI_USAGE.md` §3; release-in-a-worktree and find-sa
 - **QUALITY_GATES.md**: NOT created. The gate subsystem was folded into `DEVELOPMENT.md` §15 instead - no
   doc sprawl, no README index / read-order change needed. Revisit splitting it out only if §15 grows past a
   screen.
+
+## Spread-back applied 2026-07-23
+- **Consumption model:** REFERENCE (owner-confirmed light-touch). No `docs/guides/` mirror created - this
+  repo is the reference the core was extracted from, so mirroring the canon back into it would be circular.
+- **What changed:** added a canon pointer to `CLAUDE.md` (top blockquote) and `AGENTS.md` §1 - both name the
+  canon path (`Unified_Rules`, REFERENCE), state this repo is the reference the core came from, point to this
+  contrib file for overlay facts + channel matrix, and declare the canon as source of truth for universal
+  principles (fix them in a canon session, not here). No operational rule removed.
+- **"Remove restated universal rules" - deliberate scope call (pushed back, owner chose light-touch):** applied
+  literally, step 3 would have gutted `CLAUDE.md`'s operational manual (exact `a.ps1` targets, gate names, the
+  6-flavor matrix, the Sxxxx spec/probe lifecycle). Those are repo-specific concretions, not redundant
+  restatements of the generalized canon prose, and the canon is not a drop-in replacement for concrete
+  commands. So nothing operational was trimmed; only the pointer + source-of-truth precedence were added.
+- **Overlay facts re-verified against the live tree (still accurate):** 4 Gradle modules
+  `:app_v2/:wear/:lint-rules/:benchmark` (`settings.gradle.kts:42-45`); `applicationId = com.sza.fastmediasorter`
+  with the sanctioned shared-id exception for `noLegal`/`vr` (`app_v2/build.gradle.kts:219,274`); `a.ps1`
+  launcher present. No drift found.
+- **Open questions:** none remaining - all were RESOLVED 2026-07-23 (folded into the core, above).
+- **Verification:** doc-only change; `scripts/document_registry/validate.ps1` PASS (23 records, exit 0); the
+  touched registered document is `repository-rules` (covers `CLAUDE.md`/`AGENTS.md`, `generated:false` so no
+  regeneration). Grep confirms 1 canon pointer in each file.
+- **Canon-repo state:** this contrib edit is left uncommitted per the spread-back rule (step 8: do not commit
+  the canon repo). No canon-doc fixes needed from this pass.

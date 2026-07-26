@@ -295,5 +295,45 @@ Original proposals (kept as the record):
   to one English source rendered per locale (evidence: `.claude/skills/release/SKILL.md:38-53`).
 
 ## Open questions for the owner (still open)
-- None blocking. The one live decision is FileDO-local: keep the localized "Version History" model or
-  migrate to an English-source-rendered-per-locale changelog (above).
+- None. The one live decision (localized "Version History" vs one English source) was **resolved by the
+  owner on 2026-07-23: migrate to an English-source-rendered-per-locale changelog** (see Spread-back
+  below). The migration itself is a scheduled follow-up, not yet executed.
+
+## Spread-back applied 2026-07-23
+Ran `SPREAD_BACK_PROMPT.md` in `P:\WINDOWS\FileDO` (existing repo; this contrib read first).
+
+**What changed (in the repo).** Rewrote the single agent-rules file `AGENTS.md` to the **reference**
+consumption model:
+- Added the canon pointer (`P:\WEB\sites.google.comsiteszaodua\Unified_Rules`, read order, and a link to
+  this contrib record as the per-project source of overlay facts + divergences).
+- Added a condensed **overlay-facts** block (source root / multi-module / version shape `yyMMddHHmm` /
+  release-mechanics siblings / frozen anchors) verified live: WiX `UpgradeCode
+  4d6b3b1f-...-8e3b2c5a7d91`, winget `PackageIdentifier SerZhyAle.FileDO`, 5 `PortableCommandAlias`, Go
+  1.24.4/1.21 across 4 `go.mod`.
+- Stripped restated universal Go conventions (tabs/mixedCaps/lowerCamelCase/file-naming prose) down to
+  "Go defaults via gofmt" + the repo-specific `*_windows.go`/`*_unsupported.go` split.
+- Recorded the two live divergences inline (AGENTS.md-only, no CLAUDE.md; `.claude/skills/` git-ignored)
+  and pointed universal git discipline at canon `GITHUB_INTERACTION.md`.
+
+**Verification (evidence, fresh run 2026-07-23).**
+- `go build -o filedo.exe .\cmd\filedo` -> exit **0**.
+- Scoped gate `go test ./...` in `cmd/filedo-test` -> **ok** (exit 0, no tests to run).
+- Known-red confirmed: root `go test ./...` -> exit **1**, `FAIL filedo/cmd/filedo [build failed]`
+  (non-constant format string in `damaged_disk_handler.go`, `fmt.Sprintf %T` arg mismatch in `main.go`).
+  The gate's smoke path is `filedo.exe -?` matching the stamped version (`build.ps1:141-149`).
+- Working tree after the doc edit: only `AGENTS.md` modified (root `filedo.exe` is git-ignored).
+
+**Questions closed.** The localized-changelog decision -> owner chose **migrate to one English source,
+rendered per locale**. Not executed this session; it is a scheduled repo follow-up (rework the `/release`
+skill's "Version History" generation + the per-language READMEs). Until then FileDO still emits localized
+`Version History` (a temporary, now-owned divergence, not a permanent one).
+
+**What remains.**
+- Execute the changelog migration above (separate FileDO session).
+- Pre-existing repo debt, out of spread-back scope: root `go test ./...` fmt/vet failures; 0-byte
+  `.github/ISSUE_TEMPLATE/*` + `pull_request_template.md`.
+
+**Canon edits still needed (NOT committed from the repo session - owner to apply in a canon session):**
+- Mark FileDO's **Done** column in `SPREAD_BACK_PROMPT.md` after this repo's spread-back commit lands.
+- No new rule fixes: every candidate core edit from this contrib was already APPLIED on 2026-07-23, and the
+  changelog decision conforms FileDO to the existing canon (LOCALIZATION §1) rather than changing it.

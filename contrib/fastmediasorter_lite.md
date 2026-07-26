@@ -240,3 +240,46 @@ All universal truths below were folded into the canonical docs (no commit/push).
   rules file must agree; a claim of gitignored-while-committed is drift to fix") landed in
   REPOSITORY_LAYOUT.md, but the concrete CLAUDE.md fix is a project edit outside this collection phase - fix
   the rules file to say "committed", or revert to gitignored? (Owner's call; not a core-doc change.)
+
+## Spread-back applied 2026-07-23
+
+Ran SPREAD_BACK_PROMPT in `p:\WINDOWS\FastMediaSorter_Lite`. Consumption model = **REFERENCE** (the rules
+file links to the canon and keeps only FMS deltas; the two pre-canon `docs/guides/` originals are marked as
+downstream mirrors rather than re-authored). FMS is the reference project the Overlay A core was extracted
+from, so this spread-back mostly *consumed* rules that already originated here - the work was adding the
+canon pointer, fixing one live drift, and stamping the ancestor docs.
+
+**Changed in the repo (docs-only; no source touched):**
+- **`CLAUDE.md`** - inserted a new "## Unified Rules & release conventions" section after the Naming-rule
+  block: canon pointer (`P:\WEB\...\Unified_Rules`, Overlay A, "reference project the core was extracted
+  from"), REFERENCE consumption note, pointer to `contrib/fastmediasorter_lite.md`, and a compact list of the
+  six FMS-owned deltas that were folded into the core on 2026-07-23 (dual-runtime build variant, anchor
+  re-point + visible-name decoupling, runtime-migration pins, winget failure list + `PackageName`=ARP,
+  server-feature gated opt-in, committed vendored sidecar) - each cross-linking the canon doc that now owns
+  it and the local section that shows it. No universal rules were re-authored into the file.
+- **`CLAUDE.md` drift fix (open question #1, owner: option A)** - the two stale claims that the Go worker is
+  "gitignored / a fresh clone has no Share feature" were corrected to "**committed** via a narrow `.gitignore`
+  negation, so a fresh clone **has** the Share feature", matching the live `.gitignore:8-14` and the
+  deliberate fresh-clone-works choice. This closes the sole owner open question in this record.
+- **`docs/guides/REPOSITORY_LAYOUT.md` + `docs/guides/DOCUMENTATION_CONCEPT.md`** - added a downstream-mirror
+  banner to each (HTML comment: `Downstream mirror of Unified_Rules @ ed69f27 on 2026-07-23`, naming the
+  canonical path as source of truth). Owner chose the banner over thin stubs or leave-as-is, so the many
+  cross-links from `docs/README.md` and specs stay intact while the files are honestly marked stale-vs-canon.
+
+**Open questions closed (owner decisions, 2026-07-23):**
+1. **Stale CLAUDE.md vs live `.gitignore`** - owner: **fix the rules file to say "committed"** (option A).
+   Applied above; `.gitignore` left as-is (it deliberately commits the worker).
+2. **Consumption model for the two `docs/guides/` originals** - owner: **downstream-mirror banner** (keep full
+   text, stamp source-of-truth), not thin stubs and not leave-untouched. Applied.
+
+**Verification (fresh runs, Bash tool):**
+- `git diff --stat` -> 3 files, all Markdown: `CLAUDE.md` (+18/-2), the two `docs/guides/` mirrors (+2 each).
+  **No source (`*.vb`/`*.vbproj`/`*.ps1`) touched**, so the dual-toolchain `build.ps1` is unaffected and was
+  not re-run (it would prove nothing about a docs-only change; the last commit `dc96965` already built).
+- House-style gate on added lines: `git diff -U0 | grep '^\+' | grep -E '—|\.\.\.'` -> **CLEAN** (no em-dash,
+  no triple-dot).
+
+**Canon fixes needed (none blocking):** none. Every FMS universal delta was already folded into the core on
+2026-07-23 (see "Candidate core edits - APPLIED" above); this spread-back only consumed them. Marked the
+Done column `[x]` for FMS in `SPREAD_BACK_PROMPT.md` (canon left uncommitted for the owner's canon session +
+`tools/check-rules.ps1` gate).

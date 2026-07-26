@@ -205,3 +205,34 @@ Applied:
 - None outstanding. If the extension edition ever ships as its **own** repo (not a subtree of the parent
   app), revisit whether "Overlay D" should carry a standalone `publishing/`-style layout instead of the
   in-app `extension/` subtree described now.
+
+## Spread-back applied 2026-07-23
+Ran the SPREAD_BACK_PROMPT flow in `p:\WINDOWS\EPUB_2_HTML` (EXISTING-repo mode).
+
+- **Consumption model: REFERENCE** (not a mirror). The repo links to the canon path and keeps only its
+  deltas/repo-specifics locally - nothing to keep in sync. No `docs/guides/` mirror created.
+- **Repo rules updated:**
+  - `AGENTS.md` - added a top "## SZA Unified Rules (canon)" section: canon path + read-`README` pointer,
+    the explicit "this file keeps only deltas, does not restate universal rules" statement, a pointer to
+    this contrib record, and the four overlay facts (A-on-C source body + JS extension edition; no
+    `publishing/` umbrella / `DEV/` docs umbrella / `DEV/CHANGELOG.md` ledger; version shape `YY.MMDD.HHmm`;
+    5 one-way release ops; frozen anchors).
+  - `CLAUDE.md` - added a one-line canon pointer in the intro that defers to the AGENTS.md section (single
+    source, no drift).
+  - Nothing removed: AGENTS.md was already almost entirely repo-specific deltas, so there were no restated
+    universal rules to strip.
+- **Claims re-verified against the live tree** (all still true): root has no `publishing/` (channels are
+  top-level siblings `winget/ msix/ installer/ tools/store/ extension/`); internal docs under `DEV/`;
+  `go.mod` module `doc-html-translate`; winget `PackageIdentifier: SerZhyAle.DocHtmlTranslate`;
+  `extension/store/{LISTING,PRIVACY}.md` + `extension/_locales/{en,ru,uk}/` present; both privacy pages
+  (`privacy.html`, `extension-privacy.html`) at root; web-loc trio `docs.ru.html` / `docs.uk.html`.
+- **Open questions:** none were outstanding; none opened.
+- **Drift:** none newly found; the pre-existing DIVERGE deltas above remain legitimate and are now pinned
+  in the repo's own AGENTS.md.
+- **Verification (canon TESTING_AND_QA):** `./scripts/check.ps1` -> **exit 0**. Go tests pass (incl.
+  `tests/` 125.5s: typography + ui/cli-parity + smoke + testdoc drift guards), `Lint passed`,
+  `Typo check passed` (scans the edited `.md`), `parity-check: no cross-edition drift`.
+- **Commit:** landed in the repo per its conventions (English message + co-author trailer); not pushed
+  (local "build" flow, no tag).
+- **Needed canon fix (owner to apply in a canon session, not committed from here):** mark the
+  `P:\WINDOWS\EPUB_2_HTML` row Done in `SPREAD_BACK_PROMPT.md`.

@@ -196,3 +196,38 @@ The universal truths behind these already landed in core; what remains is Stream
   spread-back.
 - **Product-UI locale set:** core now *permits* per-surface coverage (LOCALIZATION §1); whether StreamsPlayer's app
   should add UK to match the site is an owner call.
+
+## Spread-back applied 2026-07-23
+
+Ran `SPREAD_BACK_PROMPT.md` in a session started in `P:\WINDOWS\Streams_Player` (existing repo). Working tree
+was clean on `main`, no prior canon reference in-tree. Build gate green after all edits: `./build.ps1 -Test
+-Deploy:$false` → Build succeeded, 0 warnings/errors, 149/149 tests passed, exit 0; console output now English.
+
+**Consumption model — hybrid REFERENCE (owner decision).** Added a canon pointer to `AGENTS.md` (new section
+"SZA Unified Rules (canon)") and a one-bullet pointer to `CLAUDE.md` (Workflow tooling), but did **not** strip the
+restated universal rules. DIVERGE from the prompt's default ("prefer REFERENCE + remove restated universal rules"):
+the canon lives only at a local, non-committed, non-public path (`P:\WEB\...\Unified_Rules`) that CI and outside
+contributors of the public GitHub repo cannot resolve; stripping universal rules and pointing there would break the
+repo's self-containedness. Rules stay in-repo; canon is authoritative on disagreement. Owner confirmed the hybrid.
+
+**Open questions closed:**
+- **MSIX version doc bug — FIXED.** `AGENTS.md` version section now describes the int-cast remap
+  (`26.0719.0131` → `26.719.131.0`, `≤ 65535` ceiling) to match `msix/build-msix.ps1:51-55`, replacing the wrong
+  "appends only .0: 26.0719.0131.0" text.
+- **Russian build-script strings — FIXED.** Translated the seven Russian console/error strings in `build.ps1`
+  (lines ~49/54/61/66/69/173/187) to English. Verified no other `.ps1` console output is affected: the Cyrillic in
+  `tools/store/make-store-images.ps1:93-94` is RU **content** for Store screenshot captions, and
+  `tools/store/auto-capture.ps1:73` `'video|видео'` is a regex matching the localized player-window title — both are
+  localized data, not script output, so they legitimately stay (recorded, not "fixed").
+- **Product-UI locale set — RESOLVED to ADD UK (owner decision), deferred to a ticket.** Owner chose to bring the
+  in-app UI to EN+RU+UK (matching the site). This is a real feature (extend `AppLanguage` enum in Core, add
+  `Localization.uk.xaml` at full parity, turn the EN↔RU toggle into a 3-way selection, `uk-UA` culture), not a
+  spread-back edit, so it was captured as **`PLAN/SP-0029_ukrainian_ui_locale.md` (Draft)** rather than folded into
+  this commit. Once shipped, the earlier per-surface note (LOCALIZATION §1 delta above) no longer describes a UI gap.
+
+**Files touched in the repo:** `AGENTS.md` (canon pointer + MSIX version fix), `CLAUDE.md` (canon pointer bullet),
+`build.ps1` (English console strings), new `PLAN/SP-0029_ukrainian_ui_locale.md`.
+
+**Needed canon fixes (for a canon session, not applied here):** none. All universal deltas from this survey already
+landed 2026-07-23 (see "Candidate core edits — RESOLVED" above). The hybrid-consumption divergence is repo-specific
+(local-only canon path) and recorded here, not a canon rule change.
