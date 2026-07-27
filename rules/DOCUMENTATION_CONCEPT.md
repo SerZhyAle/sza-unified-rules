@@ -126,8 +126,9 @@ The product's tone is a documented choice, not left to each writer:
 
 ### House text style (the one home for this rule)
 
-Applies to documentation prose and user-visible UI text in any language - never to code, specs,
-commands, logs, or vendored files:
+Applies to documentation prose and user-visible UI text in any language. It does **not** apply to code,
+specs, commands, logs, vendored files, or chat - this list is authoritative, and any other statement of the
+scope elsewhere renders from it:
 
 - `..` never `...`; plain hyphen `-`, never em-/en-dash/horizontal bar.
 - Russian `ё`/`Ё` wherever grammatically correct.

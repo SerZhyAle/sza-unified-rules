@@ -1,0 +1,23 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "sza-unified-rules",
+  "description": "One convention across every SZA project, delivered as skills instead of documents nobody reads.",
+  "owner": {
+    "name": "Serhii Zhyhunenko",
+    "email": "serzhyale@gmail.com",
+    "url": "https://sza.od.ua"
+  },
+  "plugins": [
+    {
+      "name": "sza",
+      "source": "./",
+      "category": "workflow",
+      "tags": [
+        "release",
+        "publishing",
+        "documentation",
+        "conventions"
+      ]
+    }
+  ]
+}

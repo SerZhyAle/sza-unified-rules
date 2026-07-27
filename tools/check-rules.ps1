@@ -1,7 +1,9 @@
 <#
-check-rules.ps1 - self-check gate for the Unified_Rules folder.
+check-rules.ps1 - self-check gate for the canon's own text.
 
-Checks (core docs = Unified_Rules/*.md; contrib/ gets link-check only, it is a historical record):
+Validates the canon; check-compliance.ps1 validates a project against it.
+
+Checks (core docs = rules/*.md; contrib/ gets link-check only, it is a historical record):
   1. Relative markdown links resolve to existing files.
   2. Numbered "## N." headings in each core doc are unique and gapless.
   3. Section references ("DOC.md §N", "DOC §N-M", bare "§N") point at existing headings.
@@ -12,7 +14,7 @@ Usage: pwsh -File tools/check-rules.ps1
 #>
 $ErrorActionPreference = 'Stop'
 try {
-    $root = Split-Path $PSScriptRoot -Parent
+    $root = Join-Path (Split-Path $PSScriptRoot -Parent) 'rules'
     $coreDocs = @(Get-ChildItem -Path $root -Filter *.md -File)
     $contribDir = Join-Path $root 'contrib'
     $contribDocs = @()

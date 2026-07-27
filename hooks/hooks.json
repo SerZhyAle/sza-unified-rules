@@ -1,0 +1,17 @@
+{
+  "description": "Injects the canon's hard invariants at session start, but only in a repository that has adopted the canon (an .sza-canon.json stamp at the repo root). Self-limiting: an unrelated project never pays for it. It is a sensor - it emits context and never returns a permission decision.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pwsh -NoProfile -File \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start.ps1\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

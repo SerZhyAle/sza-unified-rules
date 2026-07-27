@@ -1,0 +1,54 @@
+{
+  "$comment": "The canon's own stamp. role canon-home means the surface and overlay checks do not apply - this repo ships rules, not a product - and its digest is current by definition.",
+
+  "canon": {
+    "version": "2026.07.27",
+    "coreDigest": "sha256:dae220bfd389416d775986ac24913efdf8b0a8b9e881608157c41e5371d23663",
+    "adoptedOn": "2026-07-27",
+    "model": "reference",
+    "contribRecord": null
+  },
+
+  "role": "canon-home",
+
+  "overlay": [],
+  "shapes": [],
+  "editions": [],
+
+  "versionShape": {
+    "tagRegex": null,
+    "editionTagPrefixes": []
+  },
+
+  "ledgerShape": "none",
+  "ledgerFile": null,
+
+  "channels": [],
+
+  "site": {
+    "kind": "none",
+    "root": null,
+    "pages": []
+  },
+
+  "privacy": {
+    "page": null,
+    "carveOut": "zero-data",
+    "sensitiveAccess": false
+  },
+
+  "byteIdenticalPairs": [],
+  "vendorAllow": [],
+  "exemptions": [
+    {
+      "id": "SZA-STYLE01",
+      "path": "rules/contrib/*",
+      "reason": "Contrib records are frozen historical accounts of a survey, not living prose. check-rules.ps1 excludes them from the style check for the same reason; fixing their typography would rewrite a record of what was found."
+    },
+    {
+      "id": "SZA-STYLE02",
+      "path": "rules/contrib/*",
+      "reason": "Same as SZA-STYLE01: contrib records are frozen."
+    }
+  ]
+}

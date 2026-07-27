@@ -19,7 +19,7 @@ publishes to a store/index (irreversible, one-way).
 
 | Channel | Trigger | Cost | Auth source | Who signs | Listing source | Frozen anchor | Verify live |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| GitHub Release | `v*` tag push | [PAID] | `gh auth` ambient | self (`.sha256`) | release body <- CHANGELOG | - | asset downloads + checksum matches |
+| GitHub Release | `v*` tag push | [PAID] [PUBLIC] | `gh auth` ambient | self (`.sha256`) | release body <- CHANGELOG | - | asset downloads + checksum matches |
 | winget | PR to `microsoft/winget-pkgs` | [PUBLIC] | `gh` + one-time CLA | Microsoft re-hosts | `winget/*.yaml` (committed) | `PackageIdentifier` | `winget install --manifest`, then `winget search` after merge |
 | Microsoft Store (MSIX) | **manual** upload in Partner Center | [PUBLIC] | Partner Center console | **Store re-signs** (no cert in repo) | `store/listingData.csv` | MSIX Identity `Name` + `Publisher` | dashboard shows new version; update over a prior MSIX |
 | Chrome Web Store | `ext-cws-v*` tag push | [PAID] [PUBLIC] | CWS API creds + `cws-key` (git-ignored) | CRX / CWS | `extension/store/LISTING.md` | Chrome **item id** | store page shows version; installed copies update |
@@ -99,7 +99,14 @@ paths; detect packaging at runtime via `GetCurrentPackageFullName`.
   listing CSV is rejected ("the ID column contains incorrect entries") because Partner Center's `ID` values
   are account-specific and undocumented. Working flow: **Export listing** from Partner Center, then fill the
   language columns of *that* file (keeping its `Field`/`ID`/`Type` untouched) from your content source of
-  truth via a merge script, then **Import**. Keep the file **UTF-8 with BOM** so Cyrillic survives Excel.
+  truth via a merge script, then **Import**. The import file must be **UTF-8 without BOM**, every field
+  quoted, CRLF between records, no trailing newline - a BOM is rejected, and a Partner Center *export*
+  arrives with one, so strip it. (An earlier version of this line said to keep the BOM. That was wrong and
+  produced rejected imports.) Four more measured rules: add every language to the submission **first** (an
+  import cannot create a column and drops the copy silently); re-take the export **every** attempt (it
+  carries the current asset URLs); the import is all-or-nothing **per language**, not per file; and never
+  copy `OverrideLogosForWin10 = True` into a language with no logo rows of its own - it holds the listing
+  Incomplete with nothing shown.
 - **A whole app category can draw extra review.** Apps that open third-party streams get infringing-content
   scrutiny; frame the listing by the legitimate job (a curated catalog player), drop the trigger-prone
   keyword (e.g. `IPTV player`), and paste the full-trust justification verbatim (see SECURITY_AND_PRIVACY §5).

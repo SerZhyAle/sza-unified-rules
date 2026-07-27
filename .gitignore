@@ -1,0 +1,15 @@
+# Secrets and signing material - pre-empt the leak, never catch it afterwards.
+*.pfx
+*.snk
+*.jks
+*.keystore
+*.p12
+*.pem
+*.cer
+.env
+*token*
+*secret*
+
+# Scratch
+temp/
+tmp/

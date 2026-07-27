@@ -18,7 +18,10 @@ the portfolio; per-project records in `contrib/`.
 - **Commit or push only when the user asks**, or when a release/commit flow calls for it. Routine edits
   are left uncommitted for the owner to batch.
 - **Never commit on the default branch** casually - branch first if a commit is needed and you're on
-  `main`/`master`.
+  `main`/`master`. **The one named exception is a site publish**: a Pages-served site deploys *from* the
+  default branch, so its publish flow stages, commits with a dated auto-message, and pushes `main` by design
+  ([SITE_CONFIGURATION.md](SITE_CONFIGURATION.md) §4). That carve-out covers the site publish only, not
+  ordinary edits in a site repo.
 - **Never** skip hooks (`--no-verify`), bypass signing, or force-push unless the user explicitly asks.
   If a hook fails, fix the underlying issue rather than bypassing it.
 

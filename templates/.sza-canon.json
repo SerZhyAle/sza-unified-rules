@@ -1,0 +1,43 @@
+{
+  "$comment": "Copy to the target repo root as .sza-canon.json and fill against the live tree. Every value is looked up, never assumed. The release, store-publish and feature-to-site skills and tools/check-compliance.ps1 all read this file.",
+
+  "canon": {
+    "version": "2026.07.27",
+    "coreDigest": "sha256:REPLACE - run check-compliance.ps1 -PrintDigest",
+    "adoptedOn": "YYYY-MM-DD",
+    "model": "reference",
+    "contribRecord": "contrib/<project>.md"
+  },
+
+  "role": "product",
+
+  "overlay": ["A"],
+  "shapes": [],
+  "editions": [],
+
+  "versionShape": {
+    "tagRegex": null,
+    "editionTagPrefixes": []
+  },
+
+  "ledgerShape": 1,
+  "ledgerFile": null,
+
+  "channels": [],
+
+  "site": {
+    "kind": "none",
+    "root": null,
+    "pages": []
+  },
+
+  "privacy": {
+    "page": null,
+    "carveOut": null,
+    "sensitiveAccess": false
+  },
+
+  "byteIdenticalPairs": [],
+  "vendorAllow": [],
+  "exemptions": []
+}
