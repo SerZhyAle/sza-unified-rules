@@ -252,3 +252,16 @@ subagent MCP isolation into `AI_USAGE.md` §3; release-in-a-worktree and find-sa
   regeneration). Grep confirms 1 canon pointer in each file.
 - **Canon-repo state:** this contrib edit is left uncommitted per the spread-back rule (step 8: do not commit
   the canon repo). No canon-doc fixes needed from this pass.
+
+## Canon adoption 2026-07-27
+
+Adopted as the `sza` plugin (consumption model **reference**). `.sza-canon.json`: overlay B, flavor shape,
+ledger shape 3 (`docs/ALL_FEATURES.jsonl`), channels github/play, root-served site. The `release/` tag prefix
+is recorded as a second clock - without it the version check misreads the newest tag and fails a good repo.
+
+**Scoped commit** on branch `DEBUG-v030`: only `.gitignore` and the stamp. Twelve files of in-flight work were
+left untouched.
+
+Still open: three canon-owned rules remain restated in `AGENTS.md` (chat language, house text style,
+find-safety). Removing them means editing a file that is mid-change, so it belongs to a session that owns that
+work. `GEMINI.md` is git-ignored and local-only, so the gate correctly ignores it.

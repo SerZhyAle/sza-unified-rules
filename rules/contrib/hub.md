@@ -61,3 +61,20 @@ Questions closed:
 What remains (owner decisions, see Open questions above): canon co-hosting vs split; `index.html`/`embed.html` de-duplication.
 
 Verification: `pwsh -File Unified_Rules/tools/check-rules.ps1` -> exit 0 (see the session report for output). No canon-core doc was edited except `SPREAD_BACK_PROMPT.md` (the target table).
+
+## Canon adoption 2026-07-27
+
+The canon left this repository on 2026-07-27 - it now lives in `sza-unified-rules` (history moved intact via
+`git subtree split`) and installs as the `sza` plugin. The hub keeps two roles: the portfolio website and the
+web-kit home.
+
+`.sza-canon.json` declares role **portfolio** (a personal index page, not a store-listed product) and
+registers `index.html`/`embed.html` as a `byteIdenticalPairs` entry, so the pair the CLAUDE.md always required
+by hand is now machine-enforced.
+
+Fixed: `<link rel="canonical">` on both pages - a custom-domained page served from a github.io origin is
+exactly the case canonical exists for; the em dashes in the page title and meta description; 105 prose dashes
+across the kit, its prompts, the README and the interface-vision doc.
+
+Compliance gate: 12 errors remaining, all style backlog in `kit/` and the vision doc, plus no
+og/twitter/JSON-LD and no sitemap/robots.

@@ -283,3 +283,17 @@ canon pointer, fixing one live drift, and stamping the ancestor docs.
 2026-07-23 (see "Candidate core edits - APPLIED" above); this spread-back only consumed them. Marked the
 Done column `[x]` for FMS in `SPREAD_BACK_PROMPT.md` (canon left uncommitted for the owner's canon session +
 `tools/check-rules.ps1` gate).
+
+## Canon adoption 2026-07-27
+
+Adopted as the `sza` plugin (consumption model **reference**), committed. `.sza-canon.json`: overlay A,
+dual-runtime + co-shipped-companion shapes, Keep-a-Changelog ledger, four channels, `packages/` declared as
+vendored tooling.
+
+The fact most worth recording: **Pages serves this repo from the root**, so `docs/index.html` is an
+unpublished staging copy, not a second live page. The stamp now says so, which is what stops the next agent
+from editing the decoy.
+
+Compliance gate: **0 errors**, 8 warnings. Still open: the two `docs/guides/` mirrors carry the old SHA-form
+banner and want re-stamping in the digest form; the live root page has no privacy link while the unpublished
+`docs/` copy does.

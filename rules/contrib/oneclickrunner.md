@@ -167,3 +167,15 @@ Owner chose, in the same session: **GitHub Release + LICENSE + CHANGELOG + push*
   only `OneClickRunner.exe`; sha256 written. Real release: tag `v26.0723.1719` cut and `gh release create`
   run (see repo commit + release URL in the session report).
 - Repo commits **pushed** to `origin/main`.
+
+## Canon adoption 2026-07-27
+
+Adopted as the `sza` plugin (consumption model **reference**), committed. `.sza-canon.json`: overlay A, single
+channel (GitHub Release only - no winget, MSIX, Store or installer, so no frozen anchors beyond the repo
+slug), Keep-a-Changelog ledger, docs/ site.
+
+`AGENTS.md` is a deliberate delegation to `CLAUDE.md` ("keep exactly one canonical rules file, do not fork the
+rules here"). The gate now recognises that pattern instead of reporting it as a missing pointer.
+
+Compliance gate: 1 error. It is real and needs a decision, not an edit: a product with a public site must host
+a privacy page, and this repo has none. The zero-data carve-out lapses once there is a site.

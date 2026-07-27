@@ -297,3 +297,18 @@ keeps only deltas locally; no mirror).
 
 **Canon fixes needed (none blocking):** none. All CyrFlip universal deltas were already folded into the core
 on 2026-07-23 (see "Candidate core edits - APPLIED" above); this spread-back only consumed them.
+
+## Canon adoption 2026-07-27
+
+Adopted as the `sza` plugin (consumption model **reference**). `.sza-canon.json` written: overlay A,
+companion-editor-extension shape with the VS Code edition on its own clock, ledger shape 4 (proven by
+`generate_release_notes` in `release.yml`), channels github/winget/msstore/vscode, docs/ site.
+
+**Not committed.** The working tree carried 18 files of in-flight work (docs and `src/`), so the stamp and a
+101-dash house-style pass sit uncommitted beside it rather than being entangled into someone else's diff.
+Commit them with that work.
+
+Open, needing an owner decision rather than an edit:
+- `universal_agent_pack.zip` is tracked at the repo root with no ignore rule, no negation and no why-comment.
+  Its commit message is `1`. Delete it, or justify it in `.gitignore`.
+- `docs/privacy.html` has no `<h1>`.

@@ -235,7 +235,10 @@ try {
 
     # ------------------------------------------------------- group RULES
 
-    $agentFiles = @('CLAUDE.md', 'AGENTS.md', 'GEMINI.md') | Where-Object { Test-RepoPath $_ }
+    # Only tracked files count. A git-ignored local rules file is one person's scratch copy, not a
+    # contract the repository makes - judging it reports a violation nobody can see in a clone.
+    $agentFiles = @('CLAUDE.md', 'AGENTS.md', 'GEMINI.md') |
+        Where-Object { (Test-RepoPath $_) -and (-not $isGit -or $tracked -contains $_) }
 
     if ($agentFiles.Count -eq 0) {
         Add-Finding -Id 'SZA-RULES01' -Severity 'error' -Path '.' `
@@ -305,7 +308,9 @@ try {
     )
 
     # Pointing AT a rule is correct; re-authoring it is the drift. This is what tells them apart.
-    $canonRefRe = '(?i)Unified[ _]Rules|\bcanon\b|GITHUB_INTERACTION|DOCUMENTATION_CONCEPT|REPOSITORY_LAYOUT|AI_USAGE|AUTHOR\.md|TESTING_AND_QA|SECURITY_AND_PRIVACY|PLATFORM_OVERLAYS|RELEASE_AND_DISTRIBUTION|CHANNEL_MATRIX|DEVELOPMENT\.md|INVARIANTS|§|canon-ok|docs/[A-Z_]+\.md'
+    # "house <rule>" names the portfolio-wide rule rather than re-authoring it, the same as citing the
+    # doc by name - so it belongs in the suppressor.
+    $canonRefRe = '(?i)Unified[ _]Rules|\bcanon\b|\bhouse\b|GITHUB_INTERACTION|DOCUMENTATION_CONCEPT|REPOSITORY_LAYOUT|AI_USAGE|AUTHOR\.md|TESTING_AND_QA|SECURITY_AND_PRIVACY|PLATFORM_OVERLAYS|RELEASE_AND_DISTRIBUTION|CHANNEL_MATRIX|DEVELOPMENT\.md|INVARIANTS|§|canon-ok|docs/[A-Z_]+\.md'
 
     $forkRes = @(
         '(?i)(deliberately|intentionally|on purpose|by design)[^.]{0,120}(restat|duplicat|mirror|repeat|cop(y|ies|ied))'
@@ -320,6 +325,12 @@ try {
         $full = Join-RepoPath $af
         $text = Get-Content -LiteralPath $full -Raw
         $lineCount = (Get-Content -LiteralPath $full).Count
+
+        # A rules file that delegates wholesale to a sibling ("read CLAUDE.md, it is the contract; do not
+        # fork the rules here") is the good pattern, not a missing pointer - the sibling carries it.
+        $delegates = $text -match '(?i)(CLAUDE|AGENTS)\.md[^\n]{0,120}(is the|as the)[^\n]{0,40}(authoritative|canonical|single source|agent contract|contract)' -or
+                     $text -match '(?i)(read|see)\s+\[?`?(CLAUDE|AGENTS)\.md[^\n]{0,80}(in full|it is the)'
+        if ($delegates) { continue }
 
         # SZA-RULES02 - the file must point at the canon and name its consumption model.
         if ($text -notmatch '(?i)Unified[ _]Rules|sza-unified-rules') {
@@ -347,7 +358,7 @@ try {
         }
         if ($hitIds.Count -gt 0) {
             $sev = if ($hitIds.Count -ge 3) { 'error' } else { 'warn' }
-            $detail = ($hitIds.Keys | Sort-Object | ForEach-Object { "$_ -> $($hitIds[$_].home).md:L$($hitIds[$_].line)" }) -join ', '
+            $detail = ($hitIds.Keys | Sort-Object | ForEach-Object { "$($af):$($hitIds[$_].line) restates $_ (home: $($hitIds[$_].home).md)" }) -join '; '
             Add-Finding -Id 'SZA-RULES03' -Severity $sev -Path $af `
                 -Message "$($hitIds.Count) canon-owned rule(s) restated locally: $detail" `
                 -Fix 'These have one home in the canon. Delete the local copy and keep the pointer, or mark a genuine repo delta with <!-- canon-ok: reason -->.'
@@ -567,11 +578,13 @@ try {
                     -Fix 'Take the regex from the release script or CI - never from prose.'
             }
             else {
-                $latest = $tags[0]
-                foreach ($pre in $prefixes) { if ($latest.StartsWith($pre)) { $latest = $latest.Substring($pre.Length); break } }
-                if ($latest -notmatch $tagRegex) {
+                # A tag carrying an edition prefix belongs to another clock with its own shape - skip it
+                # rather than stripping the prefix and judging the remainder by the main shape.
+                $mainTags = @($tags | Where-Object { $t = $_; -not (@($prefixes | Where-Object { $t.StartsWith($_) }).Count) })
+                $latest = if ($mainTags.Count -gt 0) { $mainTags[0] } else { $null }
+                if ($latest -and $latest -notmatch $tagRegex) {
                     Add-Finding -Id 'SZA-VER01' -Severity 'error' -Path '.' `
-                        -Message "latest tag '$($tags[0])' does not match the declared shape '$tagRegex'" `
+                        -Message "latest tag '$latest' does not match the declared shape '$tagRegex'" `
                         -Fix 'The shape orders every future update against the installed one. Fix the tag, or - if the shape truly changed - that is a frozen-anchor break needing an owner decision. An edition on its own clock belongs in editionTagPrefixes.'
                 }
             }
@@ -695,8 +708,11 @@ try {
         foreach ($f in ($tracked | Where-Object { $_ -match '\.md$' -and $_ -notmatch $skipRe })) {
             $p = Join-RepoPath $f
             if (-not (Test-Path -LiteralPath $p)) { continue }
-            $head = (Get-Content -LiteralPath $p -TotalCount 3 -ErrorAction SilentlyContinue) -join "`n"
-            if ($head -match '(?i)mirror.*unified[ _]rules') { continue }
+            # A mirror renders from the canon and a render target renders from its own source; in both
+            # cases the defect belongs to the source, and reporting the copy sends the fix to the file
+            # that gets overwritten.
+            $head = (Get-Content -LiteralPath $p -TotalCount 4 -ErrorAction SilentlyContinue) -join "`n"
+            if ($head -match '(?i)mirror.*unified[ _]rules' -or $head -match '(?i)render target') { continue }
             $inFence = $false
             $n = 0
             $dashLines = New-Object System.Collections.Generic.List[int]

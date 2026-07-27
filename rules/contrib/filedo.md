@@ -337,3 +337,17 @@ skill's "Version History" generation + the per-language READMEs). Until then Fil
 - Mark FileDO's **Done** column in `SPREAD_BACK_PROMPT.md` after this repo's spread-back commit lands.
 - No new rule fixes: every candidate core edit from this contrib was already APPLIED on 2026-07-23, and the
   changelog decision conforms FileDO to the existing canon (LOCALIZATION §1) rather than changing it.
+
+## Canon adoption 2026-07-27
+
+Adopted as the `sza` plugin (consumption model **reference**). `.sza-canon.json`: overlay C, co-shipped
+companion, separator-less `yyMMddHHmm` tag, ledger shape 4 verified against `generate_release_notes` in the
+release workflow, four channels.
+
+**Scoped commit**: `.gitignore`, `docs/index.html` and the stamp. `AGENTS.md` and the untracked `CLAUDE.md`
+carried in-flight work and were left alone.
+
+**The one error left is the sharpest real finding in the portfolio**: FileDO ships to the Microsoft Store and
+winget and has a live Pages site, so neither privacy carve-out applies - and it hosts no privacy page at all.
+`msix/store-listing.md` still carries it as an unfulfilled TODO. This is a store-rejection risk and needs
+content, not an edit.

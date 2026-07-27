@@ -136,3 +136,10 @@ and to defer the private dev-rules file (C).
 
 - Owner decision on the private dev-rules file (C) and on canon §6 generalization.
 - Owner to apply the two PROPOSED canon edits in a canon session (then run tools/check-rules.ps1).
+
+## Canon adoption 2026-07-27 - deliberately none
+
+Confirmed out of scope and left without a `.sza-canon.json` stamp. This repo is a public, scrubbed **render**
+of the canon, spread into by alignment rather than consumption, and putting a canon pointer here would leak
+canon-private paths into a public repo - the objection recorded above still holds. It is not a gap in the
+rollout; it is the third consumption model this record already describes.

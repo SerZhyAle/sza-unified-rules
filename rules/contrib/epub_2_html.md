@@ -236,3 +236,16 @@ Ran the SPREAD_BACK_PROMPT flow in `p:\WINDOWS\EPUB_2_HTML` (EXISTING-repo mode)
   (local "build" flow, no tag).
 - **Needed canon fix (owner to apply in a canon session, not committed from here):** mark the
   `P:\WINDOWS\EPUB_2_HTML` row Done in `SPREAD_BACK_PROMPT.md`.
+
+## Canon adoption 2026-07-27
+
+Adopted as the `sza` plugin (consumption model **reference**), committed. `.sza-canon.json`: overlay A,
+browser-extension edition with `ext-cws-`/`ext-edge-` tag prefixes on their own clock, ledger shape 2
+(`DEV/CHANGELOG.md`), six channels, root-served site.
+
+Fixed: the verbatim house-text-style restatement in `CLAUDE.md` (the book-page em-dash exception is genuinely
+repo-specific and stays); the missing why-comment beside the committed-binary negations, now covering both the
+`build/` exes and the vendored Poppler DLLs; `<link rel="canonical">` on the three docs pages; the em dash in
+the index title.
+
+Compliance gate: **0 errors**, 13 warnings (og/twitter/JSON-LD, sitemap/robots, no `docs/README.md`).

@@ -259,3 +259,24 @@ decision: either a spread-back checklist item that greps every repo's rules file
 **Files touched in the repo:** `AGENTS.md`, `CLAUDE.md`, `.claude/agents/streamsplayer-rd-lead.md`,
 `.claude/agents/streamsplayer-{solution-researcher,implementer}.md`,
 `.agents/skills/streamsplayer-{research,verify}/SKILL.md`, `docs/agent/{VALIDATION,RESEARCH_INDEX,COST}.md`.
+
+## Canon adoption 2026-07-27 - the fork is gone
+
+This repo was the portfolio's only **self-declared fork** of the canon. `AGENTS.md:126` said it "deliberately
+keeps those rules restated in-repo so the repository stays self-contained for CI and outside contributors",
+and `CLAUDE.md:69` repeated it. The argument was sound while the canon lived at a local absolute path CI could
+not resolve. It is void now: the canon installs as the `sza` plugin and travels with the session.
+
+The restatement had already drifted - the 2026-07-26 correction above found four unrecorded divergences,
+including a chat-language rule that contradicted `AUTHOR.md` and survived an entire survey unflagged.
+
+Removed seven restated rules across the two files: chat language, English artifacts, no trailing summary,
+working-tree-is-truth, the evidence rule, and build-is-not-a-release twice. Kept as genuinely repo-local: the
+dependency direction, the research order, the memory discipline, and the **autonomy verdict** (ask first
+before any publishing action) - a verdict stays local even when the rule it applies does not.
+
+`.sza-canon.json`: overlay A no-installer variant, consumed-release-artifact coupling, ledger shape 4, three
+channels, and the fact that `docs/` is **generated** by `tools/site/build-site.ps1` - hand-editing it is a
+silent revert on the next run.
+
+Compliance gate: **0 errors** (was 8), 4 warnings.

@@ -119,3 +119,14 @@ canon.
 
 **Canon fixes needed (none blocking):** one PROPOSED core edit (Overlay A "internal / private tool"
 note) - left for an owner-run canon session, not applied from this repo's session.
+
+## Canon adoption 2026-07-27
+
+Adopted as the `sza` plugin (consumption model **reference**), committed. `.sza-canon.json` declares role
+**internal**: no remote, no tags, no CI, no site, no store. Most checks are legitimately N/A - a shape, not a
+gap, and now written down so the gate degrades instead of inventing channels.
+
+Fixed: the `CHANGELOG.md` heading is now `## [Unreleased]`, so the ledger is the shape it claims to be; 127
+prose em-dashes across the docs, the worst style backlog in the portfolio.
+
+Compliance gate: **0 errors**, 1 warning (`docs/` has no index).
