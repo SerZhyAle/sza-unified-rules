@@ -314,7 +314,7 @@ try {
     )
     # A block telling you NOT to restate is the opposite of a confession. Without this guard the
     # exemplary line "Reference it, do not restate it here" scores as a fork.
-    $forkNegationRe = "(?i)((do not|don't|does not|never|rather than|instead of|without|no need to)\s+(re-?)?(state|stat\w*|duplicat\w*|cop(y|ying)|mirror\w*|author)|(nothing|none of it|no rule\w*)\s+(is|are|was|were)\s+(re-?)?(stated|duplicated|copied|mirrored))"
+    $forkNegationRe = "(?i)(\bnot\b\s*(re-?)?(state|stat\w*|duplicat\w*|cop(y|ying|ied)|mirror\w*|author\w*)|(do not|don't|does not|never|rather than|instead of|without|no need to)\s+(re-?)?(state|stat\w*|duplicat\w*|cop(y|ying)|mirror\w*|author)|(nothing|none of it|no rule\w*)\s+(is|are|was|were)\s+(re-?)?(stated|duplicated|copied|mirrored))"
 
     foreach ($af in $agentFiles) {
         $full = Join-RepoPath $af
@@ -356,9 +356,12 @@ try {
         # SZA-RULES04 - a repo that has decided to fork the canon says so out loud. No threshold.
         foreach ($b in $blocks) {
             if (-not $b.text) { continue }
-            if ($b.text -match $forkNegationRe) { continue }
+            # Strip markdown emphasis first: "are **not** restated here" must read as a negation, and
+            # bold inside a phrase must not hide a real confession either.
+            $plain = $b.text -replace '[*_`]', ''
+            if ($plain -match $forkNegationRe) { continue }
             foreach ($re in $forkRes) {
-                if ($b.text -match $re) {
+                if ($plain -match $re) {
                     Add-Finding -Id 'SZA-RULES04' -Severity 'error' -Path $af -Line $b.line `
                         -Message 'self-declared duplication of the canon' `
                         -Fix 'A self-contained restatement is a fork, not a mirror. Delete the restated rules and keep the pointer, or convert them to marked mirrors under docs/guides/ and re-sync. Record the choice as a DIVERGE delta.'
