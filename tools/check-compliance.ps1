@@ -344,6 +344,16 @@ try {
                 -Fix 'State "reference" or "mirror" explicitly.'
         }
 
+        # SZA-RULES06 - a pointer at a local absolute path is a dead pointer. It cannot be followed from
+        # CI, from another machine, or by an outside contributor - which is exactly the failure that made
+        # the canon unreadable before it shipped as a plugin. RULES02 only proves a pointer exists.
+        foreach ($m in [regex]::Matches($text, '(?im)^.*?(?:[A-Za-z]:\\[^\s`''")]*Unified_Rules|canon[^\n]{0,60}[A-Za-z]:\\[^\s`''")]+).*$')) {
+            $lineNo = ($text.Substring(0, $m.Index) -split "`n").Count
+            Add-Finding -Id 'SZA-RULES06' -Severity 'error' -Path $af -Line $lineNo `
+                -Message "canon pointer names a local absolute path: $($m.Value.Trim())" `
+                -Fix 'Point at the plugin or the repo (github.com/SerZhyAle/sza-unified-rules). A local path is unreachable from CI, another machine, or an outside contributor.'
+        }
+
         $blocks = Get-MarkdownBlocks -FullPath $full
         $hitIds = @{}
         foreach ($b in $blocks) {
