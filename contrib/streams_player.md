@@ -231,3 +231,31 @@ repo's self-containedness. Rules stay in-repo; canon is authoritative on disagre
 **Needed canon fixes (for a canon session, not applied here):** none. All universal deltas from this survey already
 landed 2026-07-23 (see "Candidate core edits — RESOLVED" above). The hybrid-consumption divergence is repo-specific
 (local-only canon path) and recorded here, not a canon rule change.
+
+## Drift correction 2026-07-26 (owner-triggered)
+
+The owner caught the agent chatting in English and asked for a canon diff. Four unrecorded drifts found - none of
+them was a DIVERGE, all were plain drift the 2026-07-23 survey missed. Note that survey listed **AUTHOR.md under
+"No delta"**, which was wrong: `AGENTS.md:98` contradicted `AUTHOR.md` §Language at that moment and was not flagged.
+
+| Topic | Canon | Repo before | Fix applied in repo |
+| --- | --- | --- | --- |
+| Chat language | `AUTHOR.md:33`, `AI_USAGE.md:75` - chat in the owner's language (Russian) | `AGENTS.md:98` + `.claude/agents/streamsplayer-rd-lead.md:12` - "Chat, code, documentation, logs, and commits are English" | Both rewritten to the canon split; `CLAUDE.md` gained an explicit **Communication** block citing `AUTHOR.md` §Language + `AI_USAGE.md` §7 (it had no language rule at all) |
+| Trailing summaries | `AUTHOR.md:42`, `AI_USAGE.md:76` - no trailing "what I did" summary | absent | Added to `AGENTS.md` + rd-lead agent + `CLAUDE.md` |
+| Reply timestamp | `AI_USAGE.md:77` | absent | Same three files |
+| Scratch tree | `DEVELOPMENT.md:101` - `temp/<ticket>/` | `tmp/` in `AGENTS.md:118`, `docs/agent/{VALIDATION,RESEARCH_INDEX,COST}.md`, two skills, two agent files | All rule sources switched to `temp/<ticket>/`; `.gitignore` already ignored both |
+
+**Partial adoption, deliberate:** the existing `tmp/` tree was **not** renamed. It holds local, uncommitted evidence
+referenced by ~30 closed `PLAN/DONE` tickets and by a `memory/MEMORY.md` pointer to a live driver script
+(`tmp/uia/driver.ps1`). Rewriting those paths would falsify closed verification records for no gain. `AGENTS.md` now
+says `temp/` is the target and `tmp/` is frozen history - do not add to it.
+
+**This is a recurrence, not a one-off.** The identical chat-language defect was found and fixed in OneClickRunner
+(`contrib/oneclickrunner.md:92-94`). Two repos drifting the same way suggests the canon's language rule is easy to
+lose when a repo restates universal rules in-house (the hybrid-consumption model recorded above). Worth a canon-session
+decision: either a spread-back checklist item that greps every repo's rules file for a chat-language line, or a
+`tools/check-rules.ps1` extension that flags a repo rules file asserting English chat.
+
+**Files touched in the repo:** `AGENTS.md`, `CLAUDE.md`, `.claude/agents/streamsplayer-rd-lead.md`,
+`.claude/agents/streamsplayer-{solution-researcher,implementer}.md`,
+`.agents/skills/streamsplayer-{research,verify}/SKILL.md`, `docs/agent/{VALIDATION,RESEARCH_INDEX,COST}.md`.
