@@ -280,3 +280,44 @@ channels, and the fact that `docs/` is **generated** by `tools/site/build-site.p
 silent revert on the next run.
 
 Compliance gate: **0 errors** (was 8), 4 warnings.
+
+## Canon reconcile 2026-08-02 - agent-process propagation
+
+Canon **2026.07.27 -> 2026.08.02**, core digest `sha256:dae220bf..` -> `sha256:6c247452..`. Stamp
+updated; the adoption model is unchanged. The upstream change is [AI_USAGE.md](../AI_USAGE.md) only -
+the agent-process findings propagated from FastMediaSorter mob_v2 under its ticket S1342 - so the
+staleness ladder's "re-read only the changed rule docs" path applies and no full re-adoption was run.
+Nothing in `rules/` touched packaging, release, channels or layout, and no divergence was found
+between the new bullets and this repo's own rules file.
+
+The one repo besides FastMediaSorter where §4 lands **live rather than inert**: memory here is
+file-based, committed and shared across tools, with `memory/MEMORY.md` as the always-loaded index and
+the same four entry types. So the byte budget, the liveness-keyed expiry and the ban on restating the
+rules file all apply to a real corpus today, and the index wants a mechanical ratchet the way
+FastMediaSorter's got one. `AGENTS.md` already carries the verify-against-the-tree half of the
+discipline, which the canon's §4 states too - agreement, not divergence.
+
+Verification: `check-compliance: Streams_Player - 0 error(s), 4 warning(s) (overlay A, canon 2026.08.02)` - warnings are pre-existing and none was introduced here.
+
+## Canon reconcile 2026-08-05 - measurement channels and ungated routing
+
+Canon **2026.08.02 -> 2026.08.05**, core digest `sha256:6c247452..` -> `sha256:8d33fdab..`. Stamp updated;
+the adoption model is unchanged. Upstream: [AI_USAGE.md](../AI_USAGE.md) §3 and §5, plus the `agent-cost`
+skill, which sits outside the digest. Two findings from the FastMediaSorter mob_v2 process retrospective of
+2026-08-05, recorded in full in [fastmediasorter_mob_v2.md](fastmediasorter_mob_v2.md) - **consumption
+cannot be counted by tool name** (a `Read`-only scan of an artifact that is also edited, searched or opened
+through the shell watches the smallest channel; the reference figure moved from 42% to 3.8% once every
+channel was counted) and **a size-tier command ladder written as prose does not route anything** (434
+invocations, the cheapest tier chosen 0 times; the remedy is an advisory `UserPromptSubmit` nudge, kept
+always-exit-0, with no saving claimed yet). The staleness ladder's "re-read only the changed rule docs" path
+applies, no full re-adoption was run, and nothing in `rules/` touched packaging, release, channels or layout.
+
+Finding 2 has a target here, with a local twist: all eighteen commands carry a `streamsplayer-` prefix, so
+the cheap tier is `/streamsplayer-quick` - the longest name on the ladder belongs to the tier meant to be
+reached for first, and any nudge written here has to emit the prefixed forms or it will name commands that
+do not exist. Whether the prefix itself suppresses the cheap tier is a hypothesis, not a measurement; the
+transcript corpus can answer it before anyone renames anything. No hooks are configured. Carried as an owner
+decision, not applied from this session.
+
+Verification: `check-compliance: Streams_Player - 0 error(s), 4 warning(s) (overlay A, canon 2026.08.05)` -
+warnings are pre-existing and none was introduced here.

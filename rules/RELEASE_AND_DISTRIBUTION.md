@@ -61,6 +61,8 @@ owner decision, made before the release, never discovered after.
 
 ## 4. Version & changelog cut
 
+- **The scope of this cut** - which tickets this version claims - comes from the release package plan's
+  ready block (§8) where the project keeps one, never from re-deriving it out of the ticket store.
 - **Stamp the version mechanically** - never hand-bump (see [DOCUMENTATION_CONCEPT.md](DOCUMENTATION_CONCEPT.md)
   §2). Date tag `YY.M.D.HHmm` for desktop/CLI; monotonic `versionCode` + `versionName` for Android
   *(overlay)*. Remap to each channel's required shape mechanically.
@@ -118,6 +120,8 @@ A release is not "done" until proven live:
   identity / signing key) orphans existing users and only shows up here. Verify an update, not just a
   fresh install.
 - Record the release: version, date, channels shipped, and the coverage-gate result.
+- Where the project keeps a release package plan, ship the package now (§8) - the ready block moves into
+  the history file and the package marker advances - **before** any archive or cleanup sweep runs.
 
 ## 7. Rollback & hotfix
 
@@ -128,10 +132,145 @@ A release is not "done" until proven live:
 - A post-release fix for a specific ticket goes through the project's fix-release path, not an ad-hoc
   patch to the published artifact.
 
-## 8. Applying to a new project
+## 8. The release package plan (what is left before we ship)
+
+A ticket store knows every ticket's **status**. It never knows the owner's **intent**: which release
+package a ticket belongs to, and in what order the remaining work should happen. Without that, "what is
+left before we ship" has to be re-derived by hand every time, and the answer differs from session to
+session. The release package plan is the one place that intent lives, and the owner is the one who
+authors it.
+
+This is **process hygiene, not an invariant** - breaking it costs planning clarity, not money, users, or a
+one-way publish, so it is deliberately absent from the hard-invariants page. Worth carrying in any project
+that keeps a ticket store and ships in packages: CLI tool, site, mobile app, Go service alike (reference
+implementation: `FastMediaSorter_mob_v2`, see `contrib/fastmediasorter_mob_v2.md`).
+
+### Two plain-text files, split by exactly one question
+
+The split is "is there work left on this ticket?" and nothing else:
+
+- **The work-remaining file** - the sorting surface. Every ticket whose status is below "done": in
+  progress, drafted, approved, and everything **blocked** - by another ticket, by an open question, by an
+  external party. Blocked work still has to be planned around, so it stays visible.
+- **The ready file** - the package's finished content. Done, verified, **and awaiting-verification**.
+
+That last inclusion is deliberate and is the point of the design. A verification step that keeps not
+happening - a device check that is hard to reproduce, a sweep waiting on hardware the owner does not have
+to hand - would otherwise sit among the remaining work forever and drown out the lines that actually need
+a decision. Treat it as shipped. If it later proves broken it is reopened, and it rides a later package.
+
+Recommended default names: `PLAN/RELEASE_QUEUE.md` (work remaining) and `PLAN/RELEASE_READY.md` (ready),
+with `PLAN/RELEASE_QUEUE_DONE.md` as the shipped history. Any names work - pick them once and write them
+into the repo's rules file.
+
+### Line shape - fixed width, because a human reorders it by hand
+
+One ticket per line, four columns, padded so the file stays readable and re-orderable in any plain editor:
+
+```
+<package>  <ticket>  <changed>  <status>
+```
+
+- **package** - a release package **number**, not a version. Tie it to the working branch so it needs no
+  separate bookkeeping (branch `DEBUG-v030` -> package `30`). A **"not scheduled" bucket is required**;
+  `--` is the recommended marker for it.
+- **ticket** - whatever identifies a ticket in this project: a spec file name, a catalog id, an issue
+  number.
+- **changed** - the date the **status** last moved, not the date the ticket text was last edited. This is
+  the column that exposes a line that has been sitting still.
+- **status** - mirrored from the project's ticket store, never authored in this file.
+
+Both files carry the same four columns, so a line moves between them unchanged. Filled in, with this
+project's own ticket ids and status names:
+
+```
+# work remaining - the sorting surface, in the owner's execution order
+30  S0930_wear_tile.md    2026-07-24  InProgress
+30  S0928_rotate_fix.md   2026-07-22  BlockDependency
+--  S0944_cloud_sync.md   2026-07-19  Draft
+
+# ready - what package 30 already contains
+30  S0912_export.md       2026-07-21  Implemented
+30  S0925_thumbs.md       2026-07-23  BlockNeedUserTest
+30  S0918_grid.md         2026-07-20  Verified
+```
+
+The history file keeps those same lines, grouped under a heading per shipped version, newest block on top -
+so it reads as "what package 30 contained" long after package 30 is gone.
+
+Plain text and fixed width are the requirement, not an aesthetic: the owner has to be able to drag lines
+around in any editor, and a diff of the file has to read as a change of plan.
+
+### Ownership, and this part is absolute
+
+- The **ticket store** owns **status**.
+- These two files own **package assignment** and **order**, and both of those belong to the human.
+
+A machine **may**: add a line for a new ticket, refresh a line's status and date, move a line between the
+two files when its ticket crosses the done boundary, drop a line whose ticket was archived or deleted.
+
+A machine **may not**: reorder lines, or rewrite the package column. Ever. Line order is the owner's
+recommended execution sequence - nothing enforces it, and nothing may rewrite it. An agent that helpfully
+sorts the file has destroyed the only thing these files carry that the ticket store does not.
+
+### A projection, not a second source of truth
+
+Hook the reconcile into the **single write path** of the ticket store, so every command and skill that
+changes a status updates the plan for free and no skill needs to know these files exist. If the project
+has no single write path - if statuses get edited in several places - **create one first**. That is the
+prerequisite, not an optional refactor: a plan maintained by a second, parallel mechanism is a second
+source of truth and will disagree with the store within a week.
+
+Two consequences of being a projection:
+
+- **Movement across the boundary is bidirectional.** A ticket that falls back below done - failed
+  verification, reopened bug - returns to the work-remaining file automatically and **keeps its package
+  number**. It was scheduled for that package and still is, until the human says otherwise.
+- **A done-status ticket present in neither file is never auto-added.** It shipped in an earlier package.
+  This one rule is what keeps release history out of the plan; without it every reconcile drags the whole
+  finished backlog back in.
+
+### Shipping a package
+
+One operator command, and the order inside it matters:
+
+1. Move the ready file's block for the current package into the history file - **newest first**, stamped
+   with the version that actually shipped.
+2. Advance the current-package marker.
+3. **Report** the unfinished lines still in the work-remaining file. They are never shipped and never
+   auto-moved; re-sorting them into a later package is the human's decision, taken with the shipped
+   release in hand.
+
+**Ship the package before any archive or cleanup sweep** that flips tickets to an archived state. Run the
+sweep first and it drops those lines as archived, taking the record of what shipped away with them. In
+the runbook order that means: cut the version and the changelog, publish, verify, ship the package, and
+only then let housekeeping run.
+
+### Two checks
+
+- A **drift check** (plan against ticket store) that the release runbook can call: every below-done
+  ticket appears exactly once in the work-remaining file, every ready line's status is still in the
+  done-set, no line names a ticket that no longer exists, no ticket sits in both files.
+- An **on-demand reconcile**, for after a bulk edit or a hand fix, so the projection can be rebuilt
+  without waiting for the next status write.
+
+Neither is a release blocker. A red drift check means the plan is lying, so fix the plan before trusting
+it as the scope list - it never stops the ship.
+
+### Adopting it
+
+Nothing here mandates an implementation language, a storage format, a ticket-id scheme, a branch-naming
+scheme, or a file name; the recommended defaults above are defaults. The per-project decisions - the file
+names, the single write path, the done-set (including the project's awaiting-verification status), how the
+package number is derived, the operator commands, and whether the files are tracked or working artifacts -
+are the checklist in the `adopt-canon` skill.
+
+## 9. Applying to a new project
 
 1. Write down the project's exact build/release boundary (§1) - what the release operation *is* here.
 2. Wire the pre-flight gate (§2) to the project's test/sweep flow.
 3. Codify the coverage-gate inputs (§3) for this platform.
 4. Adopt the version + changelog cut (§4) and the per-channel distribute list (§5).
 5. Script the post-release checks (§6), including an update-from-prior-install test.
+6. Decide whether the project keeps a release package plan (§8); if it does, hook its reconcile into the
+   ticket store's single write path before anything else.

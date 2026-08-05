@@ -177,9 +177,13 @@ try {
         # SZA-CANON03 - staleness ladder. The digest, not a git SHA: a SHA fires on every repo
         # whenever any contrib record changes, which is a 100% false-positive rate.
         if ($stamp.canon.coreDigest -and $stamp.canon.coreDigest -ne $canonDigest) {
-            $adopted = $null
-            if ($stamp.canon.adoptedOn) { [void][datetime]::TryParse($stamp.canon.adoptedOn, [ref]$adopted) }
-            $ageDays = if ($adopted) { ((Get-Date) - $adopted).Days } else { 0 }
+            # $adopted must already hold a [datetime] for the [ref] overload to bind - a $null seed makes
+            # TryParse throw "cannot find an overload", and on this path only, so it survives every run
+            # where the digest still matches.
+            $adopted = [datetime]::MinValue
+            $parsed = $false
+            if ($stamp.canon.adoptedOn) { $parsed = [datetime]::TryParse($stamp.canon.adoptedOn, [ref]$adopted) }
+            $ageDays = if ($parsed) { ((Get-Date) - $adopted).Days } else { 0 }
             $sev = if ($ageDays -gt 180) { 'error' } else { 'warn' }
             Add-Finding -Id 'SZA-CANON03' -Severity $sev -Path '.sza-canon.json' `
                 -Message "adoption is stale: stamp digest $($stamp.canon.coreDigest) vs canon $canonDigest (canon $canonVersion, adopted $($stamp.canon.adoptedOn))" `

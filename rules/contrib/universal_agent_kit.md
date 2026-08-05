@@ -143,3 +143,97 @@ Confirmed out of scope and left without a `.sza-canon.json` stamp. This repo is 
 of the canon, spread into by alignment rather than consumption, and putting a canon pointer here would leak
 canon-private paths into a public repo - the objection recorded above still holds. It is not a gap in the
 rollout; it is the third consumption model this record already describes.
+
+## Canon adoption 2026-08-05 - the 2026-07-27 refusal reversed, on the owner's decision
+
+**The refusal above is superseded, and the reason it was written is gone.** The 2026-07-27 entry left this
+repo without a stamp because "putting a canon pointer here would leak canon-private paths into a public
+repo". The canon is now itself a **public** repo shipping a public plugin
+(`github.com/SerZhyAle/sza-unified-rules`, verified `visibility: PUBLIC`), so a pointer names a public
+marketplace and leaks nothing. The owner was shown that and chose to adopt with a **tracked** dev-rules file.
+
+The second objection from 2026-07-23 was real and survived on its own merits: `kit/CLAUDE.md` is the
+*shipped product*, a `<PLACEHOLDER>` template, so `adopt-canon` step 4 had no legitimate target. That is
+what deferred option C for two weeks. It is closed now by creating the missing file rather than by
+repurposing the payload.
+
+**The framing that dissolves the old contradiction.** This repo is two things at once, and the record kept
+trying to make it one:
+
+- it **consumes** the canon for its own development - root `CLAUDE.md`, `.sza-canon.json`, model
+  `reference`;
+- it **publishes** `kit/` as a scrubbed, stack-neutral sibling distillation of the shared method for an
+  outside audience.
+
+Those do not conflict. The scrub rule survives adoption intact and is now written down where it binds:
+the canon pointer lives in the root file, and `kit/` still must never name a product, a portfolio path, or
+a canon-internal doc.
+
+### What was created or changed in the repo
+
+| File | Change |
+| --- | --- |
+| `.sza-canon.json` | NEW. Canon 2026.08.05, digest `sha256:8d33fdab..`, model `reference`, `adoptedOn` 2026-08-05. `role: portfolio` because there is no product build and no platform overlay to declare - the only thing the gate reads `role` for - with the sibling-distillation relationship written into the stamp's `$comment`. `tagRegex: null` (0 tags), `ledgerShape: "none"` (rolling release), `channels: []`. `site` confirmed against the Pages API, not assumed: `source.branch main`, `path /`, `html_url https://serzhyale.github.io/universal-agent-kit/`. |
+| `CLAUDE.md` | NEW, tracked, at the repo root. The canon pointer plus the four things that are genuinely this repo's: `kit/` is payload and never governs work here; the scrub rule; the three render targets with the frozen anchors (zip extraction root `universal-agent-kit/`, the Pages domain, the repo name); the rolling-release DIVERGE. It restates no canon rule. |
+| `.gitignore` | Leak globs added (SZA-SEC02), and `!universal-agent-kit.zip` with a why-comment (SZA-SEC03) - the zip was already tracked deliberately, but the reason lived in a comment on the *staging* directory, where the gate could not attach it to the artifact. |
+
+### Alignment fixes applied to `kit/` - the reason this pass was worth running
+
+The audit against canon 2026.08.05 found the kit to be **upstream of finding 2 in every repo that imported
+it**, which is a stronger result than a normal reconcile produces:
+
+- `kit/CLAUDE.md` §4 shipped the ladder `/quick` -> `/fix` -> pipeline as **prose with nothing behind it**,
+  and `kit/.claude/settings.json` shipped **no `hooks` section at all**. EPUB_2_HTML's identical, ungated
+  ladder is a confirmed import of exactly this. Fixed at the source: §4 now carries the measurement (434
+  invocations, `/quick` 0, `/fix` 2, pipeline 150) and the prompt-submit remedy, and `settings.json` carries
+  a `//hooks-example` key in the file's own established pseudo-comment style. **Left as an example, not
+  wired** - a `hooks` entry pointing at a script the downstream user has not written yet would fail on every
+  prompt, which is a worse defect than the one being fixed.
+- `kit/docs/COST.md` argued context hygiene **on answer quality** ("answer quality degrades as it fills")
+  with no measurement behind it - precisely what the `agent-cost` skill's own guardrail forbids, since
+  attaching a real practice to an unprovable rationale is how the practice gets reverted. Rewritten to argue
+  it on cost, which is measurable, with the quality claim gated on having actually measured it.
+- COST.md gained a **"Measure before you rule"** section. Scope note, because it exceeds what was asked: the
+  owner approved propagating the *channel* rule, and all four corrections went in. Shipping the channel rule
+  alone would have published a method that still inflates token totals roughly threefold through the
+  request-id defect - a known-broken method in a public kit. Named here rather than done quietly.
+
+No SZA product name, portfolio path or canon-internal doc name entered `kit/` in any of these edits; the
+measurements travel as "a project" and "the reference corpus".
+
+**No saving is claimed anywhere in the kit text.** The hook shipped on 2026-08-05 with no post-change
+window behind it, and `skills/agent-cost` step 4 forbids presenting a carry-forward as an effect.
+
+### Verification
+
+`check-compliance.ps1 -RepoRoot P:\WEB\universal-agent-kit`: before **3 error(s), 1 warning(s)**
+(SZA-CANON01 no stamp, SZA-RULES01 no root agent-instructions file, SZA-SEC03 the tracked zip; SZA-SEC02
+missing leak globs) -> after **0 error(s), 0 warning(s)**, exit **0**. Both edited JSON files re-parsed
+clean. `check-rules.ps1` in the canon: exit **0** (19 core docs, 11 contrib docs).
+
+One mechanical detail worth recording, because it will bite the next adoption: SZA-RULES01 counts **tracked**
+files only, by design - a git-ignored rules file is one person's scratch copy. A brand-new root `CLAUDE.md`
+therefore does not clear the error until it is at least staged. That is also the concrete argument against
+the git-ignored variant of option C: it would have left this repo permanently failing SZA-RULES01.
+
+### Questions closed
+
+- "Private dev rules file (option C, deferred 2026-07-23)" -> **closed**: created, tracked, not git-ignored.
+- "Is this repo a consumer or a sibling distillation?" -> **both**, and the two roles are recorded
+  separately above.
+- "Does adopting leak canon-private detail into a public repo?" -> **no**: the canon repo is public.
+
+### Remains
+
+- **Not committed.** The working tree is staged and the gate is green against the staged index; the commit
+  and any push are the owner's to make.
+- The two PROPOSED canon edits from 2026-07-23 are still unapplied, and one now needs rewording:
+  `README.md`'s third consumption model can no longer be described as "never carries a canon pointer",
+  because this repo now does. The accurate shape is *a repo that consumes the canon for its own development
+  while publishing a scrubbed render of it as product*. `SPREAD_BACK_PROMPT.md` still exists in the canon
+  and its note is unwritten.
+- Canon §6 doc-context loop stays omitted from the public kit, unchanged from 2026-07-23 - still a
+  portfolio-specific mechanism, still correctly generalized into `kit/docs/VALIDATION.md`.
+- `role: sibling-distillation` does not exist in `check-compliance.ps1`; `portfolio` was used because it is
+  mechanically correct for the one thing `role` decides. A dedicated value would be more honest and is a
+  candidate canon edit, not a blocker.

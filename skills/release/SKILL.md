@@ -40,6 +40,14 @@ Never invent a version shape, a tag format, a channel, or an anchor. Read them, 
 5. **The scripts and workflows** - always true, never narrative. `.github/workflows/*.yml` (`on.push.tags`),
    the `param()` block of `release.ps1`, the version-validating regex. **These override any prose.**
 
+Those five settle the *mechanics*. The **scope** - which tickets this release carries - has its own source
+where the repo keeps a **release package plan**: two plain-text files, work-remaining and ready, projected
+from the ticket store ([RELEASE_AND_DISTRIBUTION.md](../../rules/RELEASE_AND_DISTRIBUTION.md) §8; default
+names `PLAN/RELEASE_QUEUE.md` + `PLAN/RELEASE_READY.md` + a history file). That plan is **the** answer to
+"what is left before we ship" - read it rather than re-deriving scope out of the ticket store, and never
+reorder a line or touch a package number. Where the repo has no plan, scope comes from the ledger and the
+commit log as before; do not stand one up mid-release.
+
 ### Signature detection, when the facts above are thin
 
 - **Source body**: `go.mod` -> Go CLI. `*.sln` + `*.csproj`/`*.vbproj` -> .NET desktop (read *all*
@@ -63,7 +71,8 @@ Never invent a version shape, a tag format, a channel, or an anchor. Read them, 
 Before acting, print one screen: project shape - version stamp shape and the computed candidate - the tag -
 the release script and its exact dry-run invocation - the ordered channel list with `[PAID]`/`[PUBLIC]` on each
 - the listing files that will be edited - the frozen anchors that will **not** change - and the single
-irreversible command. Where the repo has a dry-run mode, run it first and use its output as the plan.
+irreversible command. Where there is a release package plan, add its two counts: what the package ships,
+and the unfinished lines that will **not** ship and stay for the owner to re-sort. Where the repo has a dry-run mode, run it first and use its output as the plan.
 
 ---
 
@@ -99,6 +108,10 @@ CI-parity build, run it: a failure discovered here is free, a failure discovered
 
 Handle environment blockers the gate itself trips on (a running tray app can lock the output exe and kill the
 build) - and restore what you stopped.
+
+Where the repo keeps a release package plan, run its **drift check** here (plan against ticket store) and
+its reconcile if the check is red. A lying plan makes Phase 5's scope list wrong, which is exactly the loss
+this skill exists to prevent. Drift is never itself a release blocker - fix the plan and carry on.
 
 Then run the canon's pre-release sweep and end it with a **written PASS/FAIL**: clean install *and* update over
 a prior version, resources present, sane defaults, the core scenario end to end, performance. **A FAIL blocks
@@ -138,6 +151,12 @@ This is the anti-loss phase and the reason this skill exists.
 1. **Gather**: `git describe --tags --abbrev=0`, then `git log <last-tag>..HEAD`, plus any accreted
    `## [Unreleased]` bullets. Distil into user-facing bullets. *Every meaningful commit becomes a line or is
    deliberately dropped* - that is the standard, not just the command.
+   **Where the repo keeps a release package plan, its ready block for the current package *is* the scope of
+   this release** - read that block rather than re-deriving the scope by re-reading every ticket's status,
+   and cross-check it against the commit log instead of the other way round. The plan's ready block includes
+   the repo's awaiting-verification status on purpose: those tickets ship. The lines still in the
+   work-remaining file are **reported** in the run plan and shipped by nothing - re-sorting them into a
+   later package is the owner's call, not this skill's.
 2. **Cut the ledger** in whichever shape this repo uses: a root `CHANGELOG.md` moved from `[Unreleased]` to
    `## [<version>] - <YYYY-MM-DD>` with a fresh empty `[Unreleased]`; a dev log distilled into curated notes;
    a structured feature inventory; or no ledger at all, where auto-generated release notes plus **this skill's
@@ -201,6 +220,11 @@ A release is not done until it is proven live.
 - Channel liveness with the right latency: `winget show <Id>` only after the PR merges (hours to a day); the
   Store sits in certification for days; Edge review is slower than Chrome.
 - Reset state: `## [Unreleased]` empty again.
+- **Ship the release package, and ship it before any archive or cleanup sweep.** One operator command moves
+  the ready block into the history file (newest first, stamped with the version that shipped) and advances
+  the package marker. A sweep that flips finished tickets to an archived state runs **after** this, never
+  before - run it first and it drops those lines, and the record of what shipped goes with them. Then report
+  the unfinished lines; never auto-move them and never re-order the file.
 - Record the release - version, date, channels shipped, coverage-gate result - and report to the owner with
   links and an honest list of what is still in review or still manual.
 
@@ -222,6 +246,8 @@ A release is not done until it is proven live.
 - [ ] Every detected channel shipped or explicitly declared out of scope.
 - [ ] Frozen anchors verified unchanged on every channel touched.
 - [ ] Post-release proof including **update from a real prior install**.
+- [ ] Release package shipped into the history file **before** any archive sweep, marker advanced, the
+      unfinished lines reported and left exactly as the owner ordered them (where the repo keeps a plan).
 - [ ] State reset, release recorded, owner told with links.
 
 ## Guardrails
@@ -230,4 +256,6 @@ A release is not done until it is proven live.
 - Never change a frozen anchor during a release. They are read-only here.
 - Never claim a step passed without its command, exit code, and output.
 - Never tick a checkbox on a submission PR for something you did not actually do.
+- Never reorder the release package plan or rewrite its package column. That column and that order are the
+  owner's intent, and they are the only thing in those files a ticket store cannot reconstruct.
 - Report a contrib-vs-script conflict; never silently pick one.

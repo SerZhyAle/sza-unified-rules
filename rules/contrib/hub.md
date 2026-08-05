@@ -78,3 +78,40 @@ across the kit, its prompts, the README and the interface-vision doc.
 
 Compliance gate: 12 errors remaining, all style backlog in `kit/` and the vision doc, plus no
 og/twitter/JSON-LD and no sitemap/robots.
+
+## Canon reconcile 2026-08-02 - agent-process propagation
+
+Canon **2026.07.27 -> 2026.08.02**, core digest `sha256:dae220bf..` -> `sha256:6c247452..`. Stamp
+updated; the adoption model is unchanged. The upstream change is [AI_USAGE.md](../AI_USAGE.md) only -
+the agent-process findings propagated from FastMediaSorter mob_v2 under its ticket S1342 - so the
+staleness ladder's "re-read only the changed rule docs" path applies and no full re-adoption was run.
+Nothing in `rules/` touched packaging, release, channels or layout, and no divergence was found
+between the new bullets and this repo's own rules file.
+
+Portfolio role, no product build and no agent memory, so most of the change is inert. The one bullet
+worth having is §5's preference for a skill loaded on demand over a rule read on every turn: a hub
+repo accumulates cross-project instructions faster than anything else in the portfolio, and that is
+the rule that keeps it from becoming a second canon.
+
+Verification: `check-compliance: sites.google.comsiteszaodua - 0 error(s), 0 warning(s) (overlay ?, canon 2026.08.02)` - warnings are pre-existing and none was introduced here.
+
+## Canon reconcile 2026-08-05 - measurement channels and ungated routing
+
+Canon **2026.08.02 -> 2026.08.05**, core digest `sha256:6c247452..` -> `sha256:8d33fdab..`. Stamp updated;
+the adoption model is unchanged. Upstream: [AI_USAGE.md](../AI_USAGE.md) §3 and §5, plus the `agent-cost`
+skill, which sits outside the digest. Two findings from the FastMediaSorter mob_v2 process retrospective of
+2026-08-05, recorded in full in [fastmediasorter_mob_v2.md](fastmediasorter_mob_v2.md) - **consumption
+cannot be counted by tool name** (a `Read`-only scan of an artifact that is also edited, searched or opened
+through the shell watches the smallest channel; the reference figure moved from 42% to 3.8% once every
+channel was counted) and **a size-tier command ladder written as prose does not route anything** (434
+invocations, the cheapest tier chosen 0 times; the remedy is an advisory `UserPromptSubmit` nudge, kept
+always-exit-0, with no saving claimed yet). The staleness ladder's "re-read only the changed rule docs" path
+applies, no full re-adoption was run, and nothing in `rules/` touched packaging, release, channels or layout.
+
+Portfolio role, no command surface and no hooks, so finding 2 is inert here. Finding 1 is the one worth
+keeping: the hub is where a portfolio-wide number gets published, and a published figure outlives the
+measurement that produced it. Any number that lands on a page here should name the channels it counted, or
+it should not be a number.
+
+Verification: `check-compliance: sites.google.comsiteszaodua - 0 error(s), 0 warning(s) (overlay ?, canon 2026.08.05)` -
+clean, as on 2026-08-02.

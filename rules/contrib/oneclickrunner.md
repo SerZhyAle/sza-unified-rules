@@ -179,3 +179,40 @@ rules here"). The gate now recognises that pattern instead of reporting it as a 
 
 Compliance gate: 1 error. It is real and needs a decision, not an edit: a product with a public site must host
 a privacy page, and this repo has none. The zero-data carve-out lapses once there is a site.
+
+## Canon reconcile 2026-08-02 - agent-process propagation
+
+Canon **2026.07.27 -> 2026.08.02**, core digest `sha256:dae220bf..` -> `sha256:6c247452..`. Stamp
+updated; the adoption model is unchanged. The upstream change is [AI_USAGE.md](../AI_USAGE.md) only -
+the agent-process findings propagated from FastMediaSorter mob_v2 under its ticket S1342 - so the
+staleness ladder's "re-read only the changed rule docs" path applies and no full re-adoption was run.
+Nothing in `rules/` touched packaging, release, channels or layout, and no divergence was found
+between the new bullets and this repo's own rules file.
+
+Per-user memory store, no committed one, so §4 transfers the same partial way it does for EPUB_2_HTML.
+Nothing in the rules file competes with the new bullets. §1's threshold rule is the one with immediate
+bite - this repo's build and its fast checks sit on opposite sides of any sensible boundary.
+
+Verification: `check-compliance: OneClickRunner - 0 error(s), 2 warning(s) (overlay A, canon 2026.08.02)` - warnings are pre-existing and none was introduced here.
+
+## Canon reconcile 2026-08-05 - measurement channels and ungated routing
+
+Canon **2026.08.02 -> 2026.08.05**, core digest `sha256:6c247452..` -> `sha256:8d33fdab..`. Stamp updated;
+the adoption model is unchanged. Upstream: [AI_USAGE.md](../AI_USAGE.md) §3 and §5, plus the `agent-cost`
+skill, which sits outside the digest. Two findings from the FastMediaSorter mob_v2 process retrospective of
+2026-08-05, recorded in full in [fastmediasorter_mob_v2.md](fastmediasorter_mob_v2.md) - **consumption
+cannot be counted by tool name** (a `Read`-only scan of an artifact that is also edited, searched or opened
+through the shell watches the smallest channel; the reference figure moved from 42% to 3.8% once every
+channel was counted) and **a size-tier command ladder written as prose does not route anything** (434
+invocations, the cheapest tier chosen 0 times; the remedy is an advisory `UserPromptSubmit` nudge, kept
+always-exit-0, with no saving claimed yet). The staleness ladder's "re-read only the changed rule docs" path
+applies, no full re-adoption was run, and nothing in `rules/` touched packaging, release, channels or layout.
+
+Finding 2 has a target here - `/quick` and `/fix` sit among ten commands - and the repo has no
+`.claude/settings.json` at all, so a routing nudge would be the first hook it ever carries. That is the
+cheapest possible place to try the shape and also the place where a false fire would be most visible, which
+is why the canon's always-exit-0 clause is the part to copy first. Carried as an owner decision, not applied
+from this session.
+
+Verification: `check-compliance: OneClickRunner - 0 error(s), 2 warning(s) (overlay A, canon 2026.08.05)` -
+warnings are pre-existing and none was introduced here.

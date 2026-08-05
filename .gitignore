@@ -13,3 +13,7 @@
 # Scratch
 temp/
 tmp/
+
+# Build junk - deploy.ps1 stages everything, so this has to be excluded here or not at all.
+__pycache__/
+*.pyc

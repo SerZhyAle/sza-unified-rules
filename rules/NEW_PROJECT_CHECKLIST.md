@@ -57,6 +57,10 @@ apply (a CLI tool has no site, a single-locale app skips localization).
 - Write the release runbook ([RELEASE_AND_DISTRIBUTION.md](RELEASE_AND_DISTRIBUTION.md)): the
   build/release boundary, the coverage-regression gate, the per-channel distribute list, post-release
   checks.
+- **Ships in packages and keeps a ticket store?** Stand up the release package plan
+  ([RELEASE_AND_DISTRIBUTION.md](RELEASE_AND_DISTRIBUTION.md) §8) - two plain-text files projected from
+  the ticket store's single write path, carrying the owner's package assignment and execution order.
+  The `adopt-canon` skill has the per-project checklist.
 - Fill the project's rows of the per-channel reference ([CHANNEL_MATRIX.md](CHANNEL_MATRIX.md)): keep only
   the channels this project ships to, and wire each row's trigger/auth/listing-source into the release skill.
 

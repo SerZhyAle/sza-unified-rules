@@ -249,3 +249,47 @@ repo-specific and stays); the missing why-comment beside the committed-binary ne
 the index title.
 
 Compliance gate: **0 errors**, 13 warnings (og/twitter/JSON-LD, sitemap/robots, no `docs/README.md`).
+
+## Canon reconcile 2026-08-02 - agent-process propagation
+
+Canon **2026.07.27 -> 2026.08.02**, core digest `sha256:dae220bf..` -> `sha256:6c247452..`. Stamp
+updated; the adoption model is unchanged. The upstream change is [AI_USAGE.md](../AI_USAGE.md) only -
+the agent-process findings propagated from FastMediaSorter mob_v2 under its ticket S1342 - so the
+staleness ladder's "re-read only the changed rule docs" path applies and no full re-adoption was run.
+Nothing in `rules/` touched packaging, release, channels or layout, and no divergence was found
+between the new bullets and this repo's own rules file.
+
+Memory here is the per-user store (`~/.claude/projects/../memory/` with a `MEMORY.md` index), not a
+committed one, so §4's new rules apply to a store this repo does not own. The budget and the
+no-restatement rule still transfer - the index is billed per turn wherever it lives - but the expiry
+rule keyed to work-item liveness has no ticket system here to key against, and is inert until one
+exists. Named rather than carved out, so a later reader does not mistake silence for exemption.
+
+Verification: `check-compliance: EPUB_2_HTML - 0 error(s), 11 warning(s) (overlay A, canon 2026.08.02)` - warnings are pre-existing and none was introduced here.
+
+## Canon reconcile 2026-08-05 - measurement channels and ungated routing
+
+Canon **2026.08.02 -> 2026.08.05**, core digest `sha256:6c247452..` -> `sha256:8d33fdab..`. Stamp updated;
+the adoption model is unchanged. Upstream: [AI_USAGE.md](../AI_USAGE.md) §3 and §5, plus the `agent-cost`
+skill, which sits outside the digest. Two findings from the FastMediaSorter mob_v2 process retrospective of
+2026-08-05, recorded in full in [fastmediasorter_mob_v2.md](fastmediasorter_mob_v2.md) - **consumption
+cannot be counted by tool name** (a `Read`-only scan of an artifact that is also edited, searched or opened
+through the shell watches the smallest channel; the reference figure moved from 42% to 3.8% once every
+channel was counted) and **a size-tier command ladder written as prose does not route anything** (434
+invocations, the cheapest tier chosen 0 times; the remedy is an advisory `UserPromptSubmit` nudge, kept
+always-exit-0, with no saving claimed yet). The staleness ladder's "re-read only the changed rule docs" path
+applies, no full re-adoption was run, and nothing in `rules/` touched packaging, release, channels or layout.
+
+**Finding 2 reproduces here, verbatim, and this is the repo where it is worth acting on.** `CLAUDE.md`
+"Skill routing (slash commands)" opens with "Pick the cheapest path that fits:" and then lists `/quick`
+(trivial edit) and `/fix` (narrow fix) ahead of the `/spec-*` pipeline - the same smallest-first ordering,
+stated as prose, with nothing behind it: `.claude/settings.json` declares no hooks at all. The paragraph
+also says the ladder was **imported from the Universal Agent Kit**, which is where the shape came from and
+where every other importing repo got it too.
+
+Not fixed from this session. Installing a routing hook is a behaviour change in this repo, its pattern lists
+have to be written against this repo's real prompts, and the canon states outright that the remedy's effect
+is unmeasured. Carried as an owner decision, named here so silence is not read as an exemption.
+
+Verification: `check-compliance: EPUB_2_HTML - 0 error(s), 11 warning(s) (overlay A, canon 2026.08.05)` -
+warnings are pre-existing and none was introduced here.

@@ -34,7 +34,7 @@ that sequences every doc below into one runbook.
 | [REPOSITORY_LAYOUT.md](REPOSITORY_LAYOUT.md) | where every kind of file lives; secrets; binaries; versioning principle |
 | [DOCUMENTATION_CONCEPT.md](DOCUMENTATION_CONCEPT.md) | single-source-of-truth model; changelog; discoverability; site pages; tone |
 | [PLATFORM_OVERLAYS.md](PLATFORM_OVERLAYS.md) | the concrete shape for Android / Windows desktop / Go CLI, plus cross-project contracts |
-| [RELEASE_AND_DISTRIBUTION.md](RELEASE_AND_DISTRIBUTION.md) | the shipping runbook: build/release boundary, coverage-regression gate, per-channel distribute, post-release checks |
+| [RELEASE_AND_DISTRIBUTION.md](RELEASE_AND_DISTRIBUTION.md) | the shipping runbook: build/release boundary, coverage-regression gate, per-channel distribute, post-release checks, the release package plan |
 | [CHANNEL_MATRIX.md](CHANNEL_MATRIX.md) | the per-channel publishing reference: trigger/cost/auth/signer/listing/anchor/verify for GitHub, winget, MS Store, Chrome, Edge, Play |
 | [WINDOWS_PACKAGING.md](WINDOWS_PACKAGING.md) | the Windows delivery-shape decision guide: portable zip vs Inno vs WiX (+ MSIX), anchor set per shape, map of the packaging traps |
 
@@ -148,6 +148,10 @@ One name per concept, so every project and every agent means the same thing:
   operation that stamps a version and publishes, and may cost money or become public.
 - **Coverage / reach** - the market surface of a build: countries, age rating, minimum platform
   version, ABI/feature/device set. A release must never shrink it.
+- **Release package** - the numbered bundle of tickets one release ships, tied to the working branch, not
+  to a version number. **Release package plan** - the two plain-text files that carry the owner's
+  *intent* (which package each ticket belongs to, in what order the remaining work happens), projected
+  from the ticket store, which owns *status*. See RELEASE_AND_DISTRIBUTION §8.
 - **Overlay fact** - one of the four per-type specifics: source root & release-mechanics folder, version
   shape, channels + listing files, frozen anchors.
 - **Contribution (`contrib/`)** - a per-project delta file recording that project's overlay facts and

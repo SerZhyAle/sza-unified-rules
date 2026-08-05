@@ -265,3 +265,225 @@ left untouched.
 Still open: three canon-owned rules remain restated in `AGENTS.md` (chat language, house text style,
 find-safety). Removing them means editing a file that is mid-change, so it belongs to a session that owns that
 work. `GEMINI.md` is git-ignored and local-only, so the gate correctly ignores it.
+
+## Release package plan - the reference implementation (2026-07-30)
+
+The **release package plan** in [RELEASE_AND_DISTRIBUTION.md](../RELEASE_AND_DISTRIBUTION.md) §8 was designed
+and proven here first, on overlay B, and generalized into the canon from this implementation. The canon carries
+the concept only; this section is the concrete instance, so a reader can see one filled-in answer per decision
+without treating PowerShell as part of the convention.
+
+| Decision (canon / `adopt-canon` step 6) | This repo |
+| --- | --- |
+| (a) the three files | `PLAN/RELEASE_QUEUE.md` (work remaining), `PLAN/RELEASE_READY.md` (ready), `PLAN/RELEASE_QUEUE_DONE.md` (shipped history, newest first) |
+| (b) single write path + reconcile hook | `Write-Catalog` in `scripts/spec_catalog/_lib.ps1` - the one function every status change already went through, so the reconcile came for free and no skill or `/spec-*` command knows the plan exists |
+| (c) done-set | `Implemented`, `Verified`, `BlockNeedUserTest` - the third is the awaiting-verification status (a ticket parked on an owner device check), and including it is what keeps a hard-to-reproduce check from blocking the plan forever |
+| (d) package number | from the working branch: `DEBUG-v030` -> package `30`; `--` is the not-scheduled bucket |
+| (e) operator CLI | `scripts/spec_catalog/release-queue.ps1` - `list`, `list-ready`, `validate`, `reconcile`, `set-current`, `ship` (with a dry run) |
+| (f) tracked or working artifact | tracked, so the plan is reviewable and travels with the branch |
+
+Facts worth carrying that only showed up in practice here:
+
+- **The awaiting-verification inclusion is the whole design.** `BlockNeedUserTest` tickets waiting on a device
+  the owner does not always have to hand used to dominate the remaining-work list and make it unreadable. They
+  are treated as shipped; the rare reopened one falls back below done and rides a later package.
+- **Ship before the archive sweep.** This repo's cleanup sweep flips finished tickets to an archived state, and
+  the reconcile drops archived lines - so running the sweep before `ship` deleted exactly the lines that
+  recorded what the release contained. The ordering is in the canon (§8, and the `release` skill's Phase 8)
+  because it was found the expensive way here.
+- **The status-gated debug probe pairs with it.** `BlockNeedUserTest` already carries a live `Timber.d` probe
+  (DEVELOPMENT delta above); the same status also means "counted as ready in the plan". One status, two
+  mechanisms, and they agree.
+- **Nothing in the convention is PowerShell.** `Write-Catalog` is where *this* repo's single write path
+  happened to be; the transferable part is that there **was** one, and that the projection hangs off it.
+
+## Spread-back applied 2026-08-02 - agent-process findings
+
+Source: FastMediaSorter ticket S1342, propagating the umbrella S1338 and its three children S1339
+(session boundaries), S1340 (gate or compress), S1341 (model routing). The underlying survey is
+`dev/AGENT_PROCESS_AUDIT_2026-07-31.md` - 347 main plus 869 nested session transcripts over
+2026-06-30..2026-07-31, 143 findings, adversarially verified.
+
+**What changed in `rules/`:** [AI_USAGE.md](../AI_USAGE.md) only, in five places.
+
+| Section | Change |
+| --- | --- |
+| §1 Operating principles | REPLACED the one-sided "background long jobs" bullet with a two-sided threshold rule. The old wording was the measured defect, not a neutral simplification: it drove backgrounding of checks that finish in seconds, and then hand-polling them - about 1,300 polling turns and 81 minutes of literal sleep in one month of one repo. |
+| §2 Evidence over confidence | ADDED the three closure-facade invariants - the verdict covers every file in the change, PASS prints only when every gate passed, and the exit code separates "found a defect" from "could not verify". |
+| §3 Cost & parallelism | ADDED six bullets: measure-first with a pointer to the new skill, the cost model, session boundaries as the primary lever plus the harness constraint that an agent cannot reset its own context, magnitude-not-fraction context reporting, two-tier model routing, and explicit-range reading. |
+| §4 Persistent memory | ADDED a budget on the always-loaded index with a mechanical ratchet, expiry keyed to work-item liveness rather than age, and the written-more-than-read observation. |
+| §5 Rules file & skill routing | ADDED gate-or-compress with its measurement, the 22% datum, and the driver-plus-reference shape for large command bodies. |
+
+**House voice - a deliberate, narrow break.** This file cited no measurements before today; S1342 §2.1
+asked for every propagated rule to carry its number. Both cannot hold, so the rule applied was: carry a
+number only where the number *is* the argument, and strip it to a principle everywhere else. Two
+numbers survived - **99% against 1-8%** for gated versus ungated rule compliance, and the **22%**
+compliance on advice that already ships in the built-in tool description on every turn. Everything else
+went in qualitatively ("dominates the bill", "roughly threefold", "far more often than it is read").
+Anyone tightening this file later should cut the prose before cutting those two numbers.
+
+**Invariant-grade: no, and the page said so first.** S1342 §3 item 3 asked whether anything here belongs
+on [INVARIANTS.md](../INVARIANTS.md). The one candidate worth arguing was the transcript measurement
+method, on the grounds that a wrong number propagates into every later decision. Rejected on the page's
+own admission criterion - expensive, irreversible, or outward-facing. A wrong cost number is none of the
+three: nothing ships, no user sees it, and the remedy is to measure again. The page's "What is
+deliberately not here" paragraph already names *memory discipline* and *CI cost levers* as standing
+exclusions, so the whole class was refused before this survey existed. The page is also exactly twenty
+lines and says so in its own title and first paragraph; a twenty-first line means displacing one, not
+appending, and nothing here displaces a release or security invariant.
+
+**Portable tooling shipped, not copied.** Two new artifacts, neither of which is covered by the core
+digest, so neither marks an adopting repo stale:
+
+- `tools/mine-agent-transcripts.py` - the transcript extractor, stack-agnostic by construction (it reads
+  Claude Code transcripts, which every project has, and names no language or toolchain). It was written
+  that way from the start under S1338 §9 rather than ported afterwards, which is why this step was a
+  copy rather than a rewrite.
+- `skills/agent-cost/SKILL.md` - the method that makes the extractor trustworthy: deduplicate by
+  `requestId`, walk nested subagent sessions, classify a hard failure by the error flag and never by a
+  regex over a result body, segment on the compaction boundary. Without all four, token figures inflate
+  roughly threefold and read-failure counts about twenty-five-fold. The skill also carries the two
+  reading traps - a window that predates the change measures nothing, and an unchanged metric can be the
+  correct answer.
+
+**Overlay B deltas - stay here, not in `rules/`.** kapt-to-KSP migration, detekt configuration cache,
+the flavor matrix, the `a.ps1` target list, the `assert-*` gate inventory, the Sxxxx lifecycle
+mechanics, `post-change.ps1` parameters and the emulator harness are all Android or this toolchain. Per
+S1342 §2.2 they are recorded as this project's shape and are not admissible to the core.
+
+**Not propagated, deliberately.** Everything in S1338 §8, each item killed under adversarial
+verification: prose and output trimming, within-segment re-read suppression, subagent-count tuning on
+cost grounds, a prompt-submit context-pricing hook, command-surface deletion for token savings, and
+decomposing a large build file on read-cost grounds. Carrying a refuted recommendation into ten projects
+is worse than never having surveyed - it gives a measured non-problem permanent shelf space.
+
+**Sequencing constraint broken, on the owner's explicit instruction.** S1342 §3 item 1 and §4 require
+the corpus to be re-measured after the local changes have been live two weeks, so the canon receives
+proven practice rather than a hypothesis. S1341 reached Verified on 2026-08-01; the window closes around
+2026-08-15. The agent argued the case and the owner chose to propagate in full on 2026-08-02 anyway.
+Recorded here rather than glossed, because it changes what the reader may rely on: **the methods,
+invariants and observations above are measured; any tuned constant is not.** The one that matters is
+S1339's context-reset threshold - the canon therefore states the *shape* of that rule ("stop at a
+threshold and hand back a resume handle") and deliberately does **not** name a number, so the
+unverified constant did not travel. Re-measure after 2026-08-15 and correct this entry if the local
+result disagrees.
+
+**Verification:** `pwsh -File tools/check-rules.ps1` - expected exit 0, actual **0** (19 core docs, 11
+contrib docs). `pwsh -File tools/check-compliance.ps1 -RepoRoot <FMS>` after re-stamping - expected 0
+errors, actual **0 errors, 1 warning**, and the warning is a pre-existing `...` in
+`delivery/stream-catalog/README.md:148`, untouched by this work. `CANON_VERSION` 2026.07.30 ->
+**2026.08.02**; core digest `sha256:74832f28..` -> **`sha256:6c247452..`**; both the canon's own
+`.sza-canon.json` and FastMediaSorter's re-stamped to the new pair in the same pass.
+
+**Downstream tail.** A `rules/*.md` edit changes the core digest, so all ten repos carrying a contrib
+record are now one version behind and need an `adopt-canon` reconcile pass. That is intended, but it is
+work: the propagation is not finished when this entry is written, it is finished when each repo has
+re-stamped. FastMediaSorter itself is done. The `universal-agent-kit` repo is a second, different
+target - `AI_USAGE.md`'s own preamble names it the fuller public distillation, and S1342 §3 item 8
+leaves per-item admission there to the owner rather than making it an automatic consequence of this
+change.
+
+**Process note.** This propagation was authored from a FastMediaSorter session, not a canon session.
+[README.md](../../README.md) and the canon's `CLAUDE.md` reserve edits under `rules/` to a canon session
+and allow a project session to touch only its own contrib record. The deviation was the owner's
+instruction to implement S1342 now; it is named here so the next reader does not infer that the
+guardrail lapsed.
+
+## Spread-back applied 2026-08-05 - measurement channels and ungated routing
+
+Source: the FastMediaSorter mob_v2 process retrospective of 2026-08-05. Two findings, both universal - one
+about how an agent measures its own process, one about how a routing rule behaves - and neither
+Android-specific. This repo is where both were measured; the other nine stamped repos took the reconcile
+pass off the back of it.
+
+**What changed upstream:**
+
+| Target | Change |
+| --- | --- |
+| `skills/agent-cost/SKILL.md` step 1 | ADDED a **fifth** measurement defect - consumption cannot be counted by tool name - at the same weight as the other four, plus a `Done means` line requiring any "never read" claim to name its channels and its population rule. The 2026-08-02 entry above says "four corrections"; that record is frozen, the count is now five. |
+| [AI_USAGE.md](../AI_USAGE.md) §3 | The measure-first bullet now names five corrections and carries the tool-name trap in one sentence, so the rule is readable without opening the skill. |
+| [AI_USAGE.md](../AI_USAGE.md) §5 | ADDED two bullets: the ungated size-tier measurement with the `UserPromptSubmit` remedy, and the same-event-opposite-verdict boundary that keeps the context-pricing refutation from being reused against it. |
+
+### Finding 1 - consumption cannot be counted by tool name
+
+The question was "is this artifact ever read again", and the instrument was a scan for `Read` calls whose
+`file_path` matched. That is invalid for any artifact that is also written, searched, or read through the
+shell, and this one is all three. Counted over the same corpus, paths inside a plan directory appeared as
+`Edit.file_path` **2378** times, `Write.file_path` **762**, `Read.file_path` **740**, `Grep.path` **39** -
+the instrument was watching the smallest channel. Worse than a bias: *executing* a step in this project is
+an `Edit` that flips a `[ ]` checkbox to `[x]`, so the single event the metric existed to detect was the one
+event it structurally could not see. Shell content reads - `head`, `sed`, `cat`, `Get-Content`,
+`Select-String` - carry no `file_path` field at all and are invisible to any tool-name scan.
+
+The headline moved from **"42% of tactical plans are never opened"** to **3.8%**. Sensitivity across channel
+subsets on the same mature population: Read only **41.0%**, plus shell reads **25.6%**, plus `Grep` and
+subagent reads but no `Edit` **11.5%**, all channels **3.8%**. Every variant that admits non-Read evidence
+destroys the original figure, which is the part that makes this a defect in the method rather than a tuning
+argument.
+
+A second, independent error rode along with it: **population contamination**. The denominator was "any
+directory named `<ticket>_*`", which swept in crash logs, screenshots, research notes and an owner voice
+memo - **17 of 126** directories held no plan at all. Define the population by what the artifact *is*, never
+by where it sits.
+
+Why this earned canon space rather than a note here: the wrong number was an order of magnitude out **and it
+was acted on**. That is the failure mode the whole `agent-cost` skill exists to prevent, and four defects
+did not cover it.
+
+### Finding 2 - a size-tier ordering written as prose does not route anything
+
+This repo documents a smallest-first command tier in its always-on rules file: a micro-task command, then a
+fast-fix command, then the full pipeline. Measured across the whole transcript corpus on 2026-08-05: **434
+slash-command invocations, of which the micro-task command 0 and the fast-fix command 2, against the
+pipeline commands 91 + 44 + 15.** The cheapest tier had never once been chosen in a month. It is the same
+1-8% ungated-compliance figure the 2026-07-31 audit established, reproduced on a rule that was new - so the
+figure is not an artifact of old habits outliving a rule change.
+
+The remedy that went to the canon is a shape, not this repo's command names: put the nudge on
+`UserPromptSubmit`, because **routing is decided the moment the owner types**. Match the prompt against a
+short, high-precision micro-task pattern list, veto on a real-work list, drop anything past a length
+ceiling, emit `additionalContext` naming the cheap tiers, keep it advisory, always exit 0 - a false fire
+that refuses a prompt costs more than the miss it prevents.
+
+**The boundary, recorded on purpose.** The 2026-07-31 audit killed a *context-pricing* `UserPromptSubmit`
+hook as timing-blind: it reads accumulated context, and that tax accrues inside autonomous blocks where no
+prompt is ever submitted, so the event misses exactly the case that costs. Routing is the inverse - the
+decision genuinely happens at prompt submit. Same event, different question, opposite verdict. Without that
+sentence in writing, the earlier refutation gets quoted to kill this hook too, and the canon carries it for
+that reason alone.
+
+**Honesty constraint, kept.** The hook went live on 2026-08-05 with **zero data behind its effect**. The
+canon therefore carries the measured failure and the shape of the remedy and states explicitly that no
+saving is claimed. `skills/agent-cost` step 4 forbids presenting a carry-forward as an effect, and the
+earliest honest re-measurement is roughly three uncontaminated weeks out - call it **on or after
+2026-08-26**, and correct the canon entry if the local result disagrees.
+
+**Not propagated, deliberately.**
+
+- [INVARIANTS.md](../INVARIANTS.md) was not touched. Its own "what is deliberately not here" paragraph
+  already excludes this class, S1342 left it alone on the same reasoning, and neither finding is expensive,
+  irreversible or outward-facing in the sense that page admits.
+- No command names travelled. `/quick`, `/fix` and the `spec-*` pipeline are this repo's surface; the canon
+  states the tier ordering and the event, and names nothing.
+- No number for the pattern lists, the length ceiling, or the expected saving. The first two are unmeasured
+  tuning constants; the third does not exist yet.
+
+**This repo's pair.** `FastMediaSorter_release` shares this contrib record and was re-stamped in the same
+pass. It carries the same 32-command surface and, unlike mob_v2, has **no `UserPromptSubmit` hook** - so the
+ladder there is still entirely ungated. Named here because the shared record is the only place a reader
+would find it.
+
+**Verification:** `pwsh -File tools/check-rules.ps1` - expected exit 0, actual **0** (19 core docs, 11
+contrib docs). `CANON_VERSION` 2026.08.02 -> **2026.08.05**; core digest `sha256:6c247452..` ->
+**`sha256:8d33fdab..`**; all ten stamped repos re-stamped to that pair in one pass, each verified with
+`check-compliance.ps1 -RepoRoot`. This repo: `check-compliance: FastMediaSorter_mob_v2 - 0 error(s), 1
+warning(s) (overlay B, canon 2026.08.05)`, exit 0. Nine of the ten came back with zero errors; CyrFlip's
+single error is the pre-existing store-listing typography recorded in its own file on 2026-08-02.
+
+**Eleventh repo, not a reconcile target.** `universal-agent-kit` (`p:\WEB\universal-agent-kit`) carries a
+contrib record but no stamp, so it took no reconcile pass here. Calling that a gap would be wrong: its own
+record carries a dated 2026-07-27 decision to stay unstamped. It matters more after finding 2 than before
+it, because the ungated `/quick` + `/fix` ladder in EPUB_2_HTML is imported from that kit - which puts the
+kit upstream of the defect in every repo that imported it. See
+[universal_agent_kit.md](universal_agent_kit.md), "Canon adoption 2026-08-05": that decision was reversed
+the same day, on the owner's call, once the leak objection behind it turned out to be void.

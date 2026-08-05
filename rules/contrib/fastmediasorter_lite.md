@@ -297,3 +297,68 @@ from editing the decoy.
 Compliance gate: **0 errors**, 8 warnings. Still open: the two `docs/guides/` mirrors carry the old SHA-form
 banner and want re-stamping in the digest form; the live root page has no privacy link while the unpublished
 `docs/` copy does.
+
+## Canon reconcile 2026-08-02 - agent-process propagation
+
+Canon **2026.07.27 -> 2026.08.02**, core digest `sha256:dae220bf..` -> `sha256:6c247452..`. Stamp
+updated; the adoption itself is unchanged (consumption model **reference**, overlay A).
+
+**What actually changed upstream:** [AI_USAGE.md](../AI_USAGE.md) only, in five sections - the
+agent-process findings propagated from FastMediaSorter mob_v2 under its ticket S1342. Nothing in
+`rules/` touched Windows packaging, the release flow, the channel matrix or anything else this project
+depends on, so the staleness ladder's "re-read only the changed rule docs" path applies and a full
+re-adoption was not run.
+
+**Divergence check against this repo's shape - none found, and two of the new bullets are inert here.**
+
+- The rules file references the canon rather than restating it, and carries no agent-behaviour section
+  of its own, so there was nothing to reconcile. Grep for the new subjects - backgrounding thresholds,
+  context reporting, subagent policy, memory discipline - returns only product code in this repo's
+  `CLAUDE.md`, no competing rule text.
+- **§4 persistent memory is inert:** this project has no `.claude/agent-memory/` at all. The budget,
+  expiry and no-restatement rules cost it nothing and constrain nothing today. They apply the moment an
+  agent memory appears here, which is the right time for them to arrive, so they were not carved out.
+- **§3's session-boundary bullet is close to inert too**, for the reason S1342 §3 item 7 predicted: this
+  repo's agent sessions are short. It is kept because the harness constraint it states - an agent cannot
+  reset its own context - is a fact worth knowing before someone designs around the opposite.
+- **The two bullets that do bite here** are §1's two-sided backgrounding threshold and §2's closure
+  invariants. Both are directly applicable: this project runs a dual-toolchain build where a fast check
+  and a full publish sit on opposite sides of any sensible threshold, and its compliance gate is exactly
+  the kind of script the three invariants govern.
+
+**Verification:** `pwsh -File tools/check-compliance.ps1 -RepoRoot <FMS_Lite>` - expected 0 errors,
+actual **0 errors, 10 warnings**, all pre-existing and none introduced by this reconcile (`CLAUDE.md`
+size, `...` in three files, the missing `robots.txt` / `sitemap.xml` / JSON-LD on the site surface, and
+the two `docs/guides/` mirrors still carrying the old SHA-form banner recorded in the 2026-07-27 entry
+above). The warning count moved 8 -> 10 through checks added upstream since that entry, not through
+anything changed here.
+
+This is the "at least one other project has adopted and reported the result" gate in S1342 §5. The
+remaining eight stamped repos - CyrFlip, EPUB_2_HTML, FileDo, OneClickRunner, Streams_Player,
+internal_IP_manager, the hub site and universal-agent-kit - are still on the previous digest and each
+needs its own pass.
+
+## Canon reconcile 2026-08-05 - measurement channels and ungated routing
+
+Canon **2026.08.02 -> 2026.08.05**, core digest `sha256:6c247452..` -> `sha256:8d33fdab..`. Stamp updated;
+the adoption model is unchanged. Upstream: [AI_USAGE.md](../AI_USAGE.md) §3 and §5, plus the `agent-cost`
+skill, which sits outside the digest. Two findings from the FastMediaSorter mob_v2 process retrospective of
+2026-08-05, recorded in full in [fastmediasorter_mob_v2.md](fastmediasorter_mob_v2.md) - **consumption
+cannot be counted by tool name** (a `Read`-only scan of an artifact that is also edited, searched or opened
+through the shell watches the smallest channel; the reference figure moved from 42% to 3.8% once every
+channel was counted) and **a size-tier command ladder written as prose does not route anything** (434
+invocations, the cheapest tier chosen 0 times; the remedy is an advisory `UserPromptSubmit` nudge, kept
+always-exit-0, with no saving claimed yet). The staleness ladder's "re-read only the changed rule docs" path
+applies, no full re-adoption was run, and nothing in `rules/` touched packaging, release, channels or layout.
+
+No command surface here - two skills, no `.claude/commands/`, no hooks - so finding 2 has no local target.
+Finding 1 is the one that bears on this repo: it shares a product line with mob_v2, so a cost or usage
+number measured on one and quoted about the other is exactly the claim the channel-union rule exists to
+stop.
+
+The tail of the 2026-08-02 entry above named eight repos still on the previous digest. All ten stamped
+repos were re-stamped together in this pass, so that particular tail is closed - `universal-agent-kit` was
+not among them, because it carries a contrib record but has never carried a stamp.
+
+Verification: `check-compliance: FastMediaSorter_Lite - 0 error(s), 9 warning(s) (overlay A, canon 2026.08.05)` -
+warnings are pre-existing and none was introduced here.

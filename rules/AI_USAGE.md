@@ -8,8 +8,13 @@ shares. Reconciled against the portfolio; per-project records in `contrib/`.
 ## 1. Operating principles
 
 - **Autonomy by default.** Run searches, builds, catalog/spec queries, and device/CLI chores without
-  asking. Flag blockers up front. Background long jobs (full builds, test suites, device sweeps) rather
-  than foreground-waiting, and keep working meanwhile.
+  asking. Flag blockers up front.
+- **Background a long job, foreground a short one - and state the threshold.** Set it at the agent
+  harness's own foreground timeout, so the boundary is a fact rather than a preference. Above it,
+  backgrounding is required: a job that would time out loses its output capture on the forced handoff.
+  Below it, backgrounding is **forbidden** - it costs an extra turn plus the hand-polling that follows,
+  and a fast check's verdict is worth having in the same turn that asked for it. A one-sided
+  "background long jobs" rule reliably decays into backgrounding everything and then polling it by hand.
 - **Don't ask what the architecture already answers.** If a convention, flavor hierarchy, or contract
   decides the question, research it and recommend - don't kick it back to the owner. Reserve questions
   for genuine forks the owner must own (scope, product intent, UI ambiguity).
@@ -25,9 +30,48 @@ shares. Reconciled against the portfolio; per-project records in `contrib/`.
   self-report is not evidence - re-verify.
 - Verify a memory/assumption against the live tree before acting on it - files get renamed and removed;
   a remembered path or symbol is a claim to re-check, not a fact.
+- **Three invariants bind whatever script closes a change** - the checker, the gate battery, the closure
+  facade, whatever the project calls it. One: **the verdict covers every file in the change**, not the
+  one file that happened to be named. Two: **PASS is printed only when every gate passed** - a green
+  tail line over a failed gate inside is worse than no gate, because callers read the tail. Three:
+  **the exit code distinguishes "found a defect" from "could not verify"** - a missing tool, an
+  unexpanded argument or a timeout is not a pass. The scripts differ per project; these do not.
 
 ## 3. Cost & parallelism discipline
 
+- **Measure before you argue cost, and use the shared method** - the `agent-cost` skill carries it,
+  along with the five corrections without which every token figure is inflated roughly threefold,
+  every failure rate about as badly, and a "nobody ever reads this" claim wrong by an order of
+  magnitude. That last one is the trap worth naming here: **consumption cannot be counted by tool
+  name.** An artifact that is also written, searched or opened through the shell is consumed through
+  channels a `Read`-only scan cannot see - and the shell reads carry no file path at all. Enumerate
+  the channels first and report the sensitivity across them; a single-channel count is not evidence.
+  A cost claim with no measurement behind it is how the reference audit started, and it was wrong.
+- **The cost model, because every other bullet here follows from it.** Cost is accumulated context
+  multiplied by turns, and inside one unbroken block it is quadratic - each turn re-reads everything
+  before it. Cached input dominates the bill; the words the agent writes are a minor term. Two
+  consequences worth stating outright: **trimming prose is not a cost lever** and neither is chat
+  language, so do not pay for either in clarity; and a session that never resets is the expensive
+  thing, however tidy each individual turn looks.
+- **Session boundaries are the primary lever, and the agent cannot pull it alone.** An agent cannot
+  execute its own context reset - that is a harness command the human types - so any design that
+  assumes self-reset is unbuildable. What an agent *can* do is stop at a threshold and hand back a
+  resume handle. Build the halt, not the reset.
+- **Report context as a magnitude, not as a fraction of the window.** On a large window a percentage
+  hides the cost at exactly the moment it peaks; band the warning by whichever of absolute size and
+  fill fraction is worse, so a small window is not silently exempt.
+- **Route models in two tiers: judgement and procedure.** Draw the boundary at "would a merely
+  plausible answer be wrong here" - design, diagnosis and review are judgement; mechanical
+  transformation, formatting and repetition are procedure. Keep the exotic tiers manual. And verify
+  how routing is actually applied in your harness before relying on it: declaring a model in a
+  command's frontmatter did not route anything in the measured corpus - every invocation kept the
+  session model.
+- **Read a large file with an explicit range, first time.** The blind whole-file read of a file you
+  have not located anything in yet is the single largest avoidable context cost. Locate with one
+  search, then take one window wide enough to cover it - iterative probing costs more turns than it
+  saves context. This one is worth **enforcing as a hook rather than stating as a rule** (§5), and any
+  such hook needs an unconditional escape hatch: an explicit re-issue carrying a range must always
+  pass, because auditing an implementation end to end is legitimate work.
 - Prefer an inline lookup over spawning a subagent for a single fact (a few targeted tool calls).
   Reach for a subagent when the work is a real fan-out or would flood context with raw output.
 - Offload raw artifacts (logs, captures, dumps) to `temp/<ticket>/` instead of holding them in the
@@ -53,6 +97,17 @@ shares. Reconciled against the portfolio; per-project records in `contrib/`.
   one-off fix recipes, or anything already written in the project's rules file.
 - Memory is point-in-time. On any conflict between memory and the live tree, **trust the observation**
   and update/remove the stale memory.
+- **Budget the always-loaded index, and enforce the budget mechanically.** Only the index is billed on
+  every turn; the topic files cost nothing until opened, so the index is the only part that needs a
+  ceiling - and a hand-run cleanup does not hold, it regrows within the week. Give the index a target
+  and a ratchet that refuses growth. The restatement ban above is part of this: a memory that repeats
+  the rules file bills the same instruction twice per turn, forever.
+- **Expire memory by work-item liveness, not by age.** A memory anchored to a ticket that no longer
+  exists is dead weight; a three-month-old trap that cost real turns to discover is not. Prune by
+  "never opened" and by dead anchor, and flag a memory whose named paths have disappeared - that one
+  guards trust rather than bytes, since a memory naming a vanished file will eventually be believed.
+- Memory is **written far more often than it is read**. Before writing, ask whether a future session
+  would open this file - most of the corpus never is.
 
 ## 5. Rules file & skill routing
 
@@ -62,6 +117,38 @@ shares. Reconciled against the portfolio; per-project records in `contrib/`.
 - Repetitive workflows are **named skills / slash-commands** (build, release, spec lifecycle, doc sync,
   log analysis..) so a routine has one canonical procedure instead of ad-hoc reinvention. Author a new
   rule/gate/skill only after observing the failure it prevents; keep it minimal and trigger-focused.
+- **Gate it or compress it - prose in a rules file is not enforcement.** Measured across a month of
+  this portfolio's sessions: rules with a mechanical gate held at **~99%**; the same rules stated only
+  as prose held at **1-8%**. So a rule that matters earns a gate, and a rule that does not is compressed
+  to one line plus a pointer. The corollary is the part that bites: **an unenforced rule is not
+  neutral** - it teaches that the rules file is optional, and that lesson transfers to the rules that
+  do matter.
+- **The number that settles "rule or hook" arguments: 22%.** The advice to read a file with an explicit
+  range ships in the built-in tool description on literally every turn, and compliance measured **22%**.
+  Advice the model is already reading, and still mostly not following, is the ceiling for what more
+  prose can buy you. If a behaviour is worth having, block it at the tool call.
+- **A size-tier ordering written as prose does not route anything - put the nudge on the prompt-submit
+  event.** A project documented a smallest-first command ladder in its always-on rules file: a
+  micro-task command, then a fast-fix command, then the full pipeline. Measured across its whole
+  transcript corpus: **434 slash-command invocations, of which the micro-task tier 0 and the fast-fix
+  tier 2, against 91 + 44 + 15 for the pipeline commands.** The cheapest tier had not been chosen once
+  in a month - the same 1-8% ungated figure as above, observed on a rule that was brand new. The
+  remedy is an event, not a paragraph, and the event is `UserPromptSubmit`, **because routing is
+  decided the moment the owner types**: match the prompt against a short, high-precision micro-task
+  pattern list, veto on a real-work list, drop anything past a length ceiling, and emit
+  `additionalContext` naming the cheap tiers. Keep it advisory and **always exit 0** - a false fire
+  that refuses a prompt costs more than the miss it prevents. Measured is the failure and the shape;
+  no saving is claimed, because the first such hook went live with no post-change window behind it.
+- **Same event, opposite verdict - write down which question you are asking.** A *context-pricing*
+  hook on that same `UserPromptSubmit` was killed as timing-blind: it reads accumulated context, and
+  that tax accrues inside autonomous blocks where no prompt is ever submitted, so the event misses
+  exactly the case that costs. Routing is the inverse - the decision genuinely happens at prompt
+  submit, so the event is the right one. Record the boundary wherever a hook is refused; otherwise the
+  refutation gets reused to kill the hook it does not apply to.
+- Prefer **a skill loaded on demand over a rule read on every turn**, and one method that travels over
+  ten copies of a script. A command or skill body is injected in full and stays for the rest of the
+  session, so a large one is paid for long after the paragraph that mattered - split it into a driver
+  plus a reference the driver opens by name when a stated condition holds.
 
 ## 6. Documentation-context loop
 

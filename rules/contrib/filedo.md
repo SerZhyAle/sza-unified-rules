@@ -351,3 +351,38 @@ carried in-flight work and were left alone.
 winget and has a live Pages site, so neither privacy carve-out applies - and it hosts no privacy page at all.
 `msix/store-listing.md` still carries it as an unfulfilled TODO. This is a store-rejection risk and needs
 content, not an edit.
+
+## Canon reconcile 2026-08-02 - agent-process propagation
+
+Canon **2026.07.27 -> 2026.08.02**, core digest `sha256:dae220bf..` -> `sha256:6c247452..`. Stamp
+updated; the adoption model is unchanged. The upstream change is [AI_USAGE.md](../AI_USAGE.md) only -
+the agent-process findings propagated from FastMediaSorter mob_v2 under its ticket S1342 - so the
+staleness ladder's "re-read only the changed rule docs" path applies and no full re-adoption was run.
+Nothing in `rules/` touched packaging, release, channels or layout, and no divergence was found
+between the new bullets and this repo's own rules file.
+
+No agent memory and no competing agent-behaviour text in either rules file, so this is a pure stamp
+move. §2's closure invariants are the live ones: this repo's release path is a single one-way
+operation, and "PASS only when every gate passed" is exactly the property that path needs.
+
+Verification: `check-compliance: FileDo - 0 error(s), 4 warning(s) (overlay C, canon 2026.08.02)` - warnings are pre-existing and none was introduced here.
+
+## Canon reconcile 2026-08-05 - measurement channels and ungated routing
+
+Canon **2026.08.02 -> 2026.08.05**, core digest `sha256:6c247452..` -> `sha256:8d33fdab..`. Stamp updated;
+the adoption model is unchanged. Upstream: [AI_USAGE.md](../AI_USAGE.md) §3 and §5, plus the `agent-cost`
+skill, which sits outside the digest. Two findings from the FastMediaSorter mob_v2 process retrospective of
+2026-08-05, recorded in full in [fastmediasorter_mob_v2.md](fastmediasorter_mob_v2.md) - **consumption
+cannot be counted by tool name** (a `Read`-only scan of an artifact that is also edited, searched or opened
+through the shell watches the smallest channel; the reference figure moved from 42% to 3.8% once every
+channel was counted) and **a size-tier command ladder written as prose does not route anything** (434
+invocations, the cheapest tier chosen 0 times; the remedy is an advisory `UserPromptSubmit` nudge, kept
+always-exit-0, with no saving claimed yet). The staleness ladder's "re-read only the changed rule docs" path
+applies, no full re-adoption was run, and nothing in `rules/` touched packaging, release, channels or layout.
+
+No command surface here - two skills, no `.claude/commands/`, no hooks - so finding 2 has no local target
+and nothing is owed. Finding 1 is method, not packaging or release, so it changes nothing in this repo's
+shape either; it applies the next time anything here is called unused.
+
+Verification: `check-compliance: FileDo - 0 error(s), 4 warning(s) (overlay C, canon 2026.08.05)` -
+warnings are pre-existing and none was introduced here.

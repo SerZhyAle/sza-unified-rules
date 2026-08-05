@@ -25,7 +25,7 @@ Canon: [README.md](../../rules/README.md) (consumption model),
 - **No record** -> this is a **new** repo. Follow
   [NEW_PROJECT_CHECKLIST.md](../../rules/NEW_PROJECT_CHECKLIST.md) top to bottom in place of steps 2-4, then
   continue from step 5, creating the record from `rules/contrib/TEMPLATE.md`.
-- **A stamp already exists and the canon has moved on** -> this is a **re-sync**. Jump to step 6, then fix
+- **A stamp already exists and the canon has moved on** -> this is a **re-sync**. Jump to step 7, then fix
   whatever the digest comparison surfaced.
 
 ## Step 1 - Read the repo before changing it
@@ -105,7 +105,49 @@ record it as a DIVERGE delta.** Never silently ignore a divergence; that is how 
 If a canon rule looks wrong for this repo, push back once with evidence, then execute the decision. Collect
 needed **canon fixes** in your report - do not edit the canon from this session.
 
-## Step 6 - Re-sync (existing adoption, canon moved)
+## Step 6 - Release package plan (only if the repo ships in packages)
+
+The canon's release-planning convention
+([RELEASE_AND_DISTRIBUTION.md](../../rules/RELEASE_AND_DISTRIBUTION.md) §8) is **process hygiene, not an
+invariant** - it is worth standing up wherever the repo has a ticket store and ships in packages, and it is
+fine to skip with a one-line reason where it does not. It ports as a **concept**: no language, storage
+format, ticket-id scheme, branch-naming scheme, or file name is mandated. Work the six decisions below and
+write each answer into the repo's rules file, so the next session inherits it instead of re-inventing it.
+
+**(a) Name the three files.** The work-remaining file, the ready file, the shipped-history file. Defaults:
+`PLAN/RELEASE_QUEUE.md`, `PLAN/RELEASE_READY.md`, `PLAN/RELEASE_QUEUE_DONE.md`. Put them wherever the repo
+already keeps planning text.
+
+**(b) Find the single write path into the ticket store, and hook the reconcile there.** One function, one
+command, one API call - whatever every status change already goes through. Hook it once and every skill in
+the repo maintains the plan for free, without knowing the files exist. **If there is no single write path,
+building one is the prerequisite** - do that first, then hook it. Do not settle for calling the reconcile
+from N callers; that is the second source of truth the convention exists to prevent.
+
+**(c) Define the done-set.** Which of *this project's* statuses count as ready, and it must include the
+project's awaiting-verification status (the one that parks a ticket on a device check or a manual sweep that
+keeps not happening). Everything else - in progress, drafted, approved, and every blocked state - is work
+remaining. Write the two lists out literally; "below done" is not a specification until the statuses are
+named.
+
+**(d) Define how the package number is derived.** Recommended: mechanically from the working branch
+(`DEBUG-v030` -> `30`). It is a package number, not a version. Say what the "not scheduled" bucket is
+(default `--`) and where the current-package marker lives.
+
+**(e) Provide the operator commands** in whatever the repo's CLI already is: `list`, `list-ready`,
+`validate` (the drift check a release calls), `reconcile` (on demand), `set-current`, and `ship` **with a
+dry run**. `ship` moves the ready block into the history file newest-first, advances the marker, and reports
+the unfinished lines. None of them may reorder lines or rewrite the package column - that is the human's
+column, and an implementation that "normalizes" the file has broken the convention.
+
+**(f) Decide tracked or working artifact.** Tracked makes the plan reviewable and shared and puts it in
+every diff; ignored keeps it a private scratch surface. Either is fine; record which, and if tracked, expect
+plan-only commits.
+
+Verify by driving it, not by reading it: change one ticket's status through the write path and show the line
+moving, then run `validate` and cite its exit code.
+
+## Step 7 - Re-sync (existing adoption, canon moved)
 
 The staleness ladder, from the compliance gate:
 
@@ -118,12 +160,12 @@ The staleness ladder, from the compliance gate:
 Note the digest deliberately covers the **rule docs only** - not `README.md`, not the spread prompt, not
 `contrib/`. A change to one project's own record must never mark all eight repos stale.
 
-## Step 7 - Verify with evidence
+## Step 8 - Verify with evidence
 
 Run the repo's build and gates. Cite exit codes and output. **No completion claim without a fresh run.**
 Re-run the compliance gate and show the before/after counts.
 
-## Step 8 - Record and commit
+## Step 9 - Record and commit
 
 - Append a dated `## Canon adoption <YYYY-MM-DD>` section to `rules/contrib/<repo>.md`: what changed, which
   questions closed, which divergences are now recorded, what remains.
@@ -139,6 +181,8 @@ Re-run the compliance gate and show the before/after counts.
 - [ ] The agent-rules file points at the canon and restates nothing that has a canon home.
 - [ ] Every divergence is either fixed or recorded as a DIVERGE delta with its reason.
 - [ ] Every open question from the contrib record is closed or explicitly carried forward with an owner.
+- [ ] The release package plan is either standing up with all six decisions recorded and its reconcile on the
+      ticket store's single write path, or skipped with a one-line reason.
 - [ ] The repo's own gates pass, with exit codes cited.
 - [ ] The compliance gate's error count is zero, or every remaining error has a recorded exemption.
 - [ ] The contrib record carries a dated adoption section.

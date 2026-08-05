@@ -130,3 +130,41 @@ Fixed: the `CHANGELOG.md` heading is now `## [Unreleased]`, so the ledger is the
 prose em-dashes across the docs, the worst style backlog in the portfolio.
 
 Compliance gate: **0 errors**, 1 warning (`docs/` has no index).
+
+## Canon reconcile 2026-08-02 - agent-process propagation
+
+Canon **2026.07.27 -> 2026.08.02**, core digest `sha256:dae220bf..` -> `sha256:6c247452..`. Stamp
+updated; the adoption model is unchanged. The upstream change is [AI_USAGE.md](../AI_USAGE.md) only -
+the agent-process findings propagated from FastMediaSorter mob_v2 under its ticket S1342 - so the
+staleness ladder's "re-read only the changed rule docs" path applies and no full re-adoption was run.
+Nothing in `rules/` touched packaging, release, channels or layout, and no divergence was found
+between the new bullets and this repo's own rules file.
+
+Deliberately has no in-repo memory store - its rules file says creating one would fork the shared
+store - so §4 is inert by an existing decision rather than by absence, and the new bullets must not be
+read as an invitation to create one. Role is `internal`, so the surface and channel checks stay out of
+scope; the applicable additions are §1's threshold and §2's closure invariants.
+
+Verification: `check-compliance: internal_IP_manager - 0 error(s), 1 warning(s) (overlay A, canon 2026.08.02)` - warnings are pre-existing and none was introduced here.
+
+## Canon reconcile 2026-08-05 - measurement channels and ungated routing
+
+Canon **2026.08.02 -> 2026.08.05**, core digest `sha256:6c247452..` -> `sha256:8d33fdab..`. Stamp updated;
+the adoption model is unchanged. Upstream: [AI_USAGE.md](../AI_USAGE.md) §3 and §5, plus the `agent-cost`
+skill, which sits outside the digest. Two findings from the FastMediaSorter mob_v2 process retrospective of
+2026-08-05, recorded in full in [fastmediasorter_mob_v2.md](fastmediasorter_mob_v2.md) - **consumption
+cannot be counted by tool name** (a `Read`-only scan of an artifact that is also edited, searched or opened
+through the shell watches the smallest channel; the reference figure moved from 42% to 3.8% once every
+channel was counted) and **a size-tier command ladder written as prose does not route anything** (434
+invocations, the cheapest tier chosen 0 times; the remedy is an advisory `UserPromptSubmit` nudge, kept
+always-exit-0, with no saving claimed yet). The staleness ladder's "re-read only the changed rule docs" path
+applies, no full re-adoption was run, and nothing in `rules/` touched packaging, release, channels or layout.
+
+Finding 2 has a target here and is one step worse than the finding describes: `/quick` and `/fix` exist
+among thirteen commands, `.claude/settings.json` declares no hooks, and `CLAUDE.md` does not order the
+commands by size at all - so there is not even the prose that the measurement showed to be insufficient.
+Whoever writes the routing nudge here writes the ordering at the same time. Carried as an owner decision,
+not applied from this session.
+
+Verification: `check-compliance: internal_IP_manager - 0 error(s), 1 warning(s) (overlay A, canon 2026.08.05)` -
+the warning is pre-existing and none was introduced here.

@@ -312,3 +312,44 @@ Open, needing an owner decision rather than an edit:
 - `universal_agent_pack.zip` is tracked at the repo root with no ignore rule, no negation and no why-comment.
   Its commit message is `1`. Delete it, or justify it in `.gitignore`.
 - `docs/privacy.html` has no `<h1>`.
+
+## Canon reconcile 2026-08-02 - agent-process propagation
+
+Canon **2026.07.27 -> 2026.08.02**, core digest `sha256:dae220bf..` -> `sha256:6c247452..`. Stamp
+updated; the adoption model is unchanged. The upstream change is [AI_USAGE.md](../AI_USAGE.md) only -
+the agent-process findings propagated from FastMediaSorter mob_v2 under its ticket S1342 - so the
+staleness ladder's "re-read only the changed rule docs" path applies and no full re-adoption was run.
+Nothing in `rules/` touched packaging, release, channels or layout, and no divergence was found
+between the new bullets and this repo's own rules file.
+
+No agent memory and no agent-behaviour rules of its own, so §4 lands inert and §5's gate-or-compress
+has nothing local to compress. The bullets that apply on day one are §1's two-sided backgrounding
+threshold and §2's closure invariants, both of which bear on any repo that runs a checker at all.
+
+Verification: `check-compliance: CyrFlip - 1 error(s), 5 warning(s) (overlay A, canon 2026.08.02)` - all
+pre-existing, none introduced here. **The error is real and is left open deliberately:** SZA-STYLE01,
+two em/en-dashes in `msix/store-listings.md:248,250`. It predates this reconcile and has nothing to do
+with the canon change, but it is outward-facing copy - that file feeds a store listing - so it is not
+something to silently rewrite from a session working on another project. Fix it from a CyrFlip session,
+where the listing text can be reviewed for what it should say rather than only for its typography.
+
+## Canon reconcile 2026-08-05 - measurement channels and ungated routing
+
+Canon **2026.08.02 -> 2026.08.05**, core digest `sha256:6c247452..` -> `sha256:8d33fdab..`. Stamp updated;
+the adoption model is unchanged. Upstream: [AI_USAGE.md](../AI_USAGE.md) §3 and §5, plus the `agent-cost`
+skill, which sits outside the digest. Two findings from the FastMediaSorter mob_v2 process retrospective of
+2026-08-05, recorded in full in [fastmediasorter_mob_v2.md](fastmediasorter_mob_v2.md) - **consumption
+cannot be counted by tool name** (a `Read`-only scan of an artifact that is also edited, searched or opened
+through the shell watches the smallest channel; the reference figure moved from 42% to 3.8% once every
+channel was counted) and **a size-tier command ladder written as prose does not route anything** (434
+invocations, the cheapest tier chosen 0 times; the remedy is an advisory `UserPromptSubmit` nudge, kept
+always-exit-0, with no saving claimed yet). The staleness ladder's "re-read only the changed rule docs" path
+applies, no full re-adoption was run, and nothing in `rules/` touched packaging, release, channels or layout.
+
+No command surface here - two skills, no `.claude/commands/`, no hooks - so finding 2 has no local target
+and nothing is owed. Finding 1 lands as discipline for the next claim made about this repo rather than as an
+edit.
+
+Verification: `check-compliance: CyrFlip - 1 error(s), 5 warning(s) (overlay A, canon 2026.08.05)`, exit 1.
+Unchanged from the 2026-08-02 pass: the one error is still SZA-STYLE01 in `msix/store-listings.md:248,250`,
+still outward-facing store copy, still owned by a CyrFlip session. Nothing was introduced here.
