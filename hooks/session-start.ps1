@@ -50,7 +50,10 @@ try {
     $header = @"
 This repository has adopted the SZA Unified Rules canon.$overlay$model
 The full rule set and the working skills ship with the ``sza`` plugin - load a skill rather than the whole
-canon: ``release``, ``store-publish``, ``feature-to-site``, ``spec-to-audit``, ``adopt-canon``.
+canon: ``release``, ``store-publish``, ``feature-to-site``, ``spec-to-audit``, ``adopt-canon``,
+``agent-cost``, ``caveman``. The plugin also enforces five behaviours as hooks rather than as prose, so a
+disk-wide ``find``, a ``.ps1`` run as a Bash command, and an uncapped read of a large file are blocked at
+the tool call (``hooks/README.md``).
 The lines below are the hard invariants; everything else lives in the reference docs and the skills.
 
 "@

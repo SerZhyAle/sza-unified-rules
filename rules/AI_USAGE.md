@@ -166,6 +166,15 @@ shares. Reconciled against the portfolio; per-project records in `contrib/`.
   exactly the case that costs. Routing is the inverse - the decision genuinely happens at prompt
   submit, so the event is the right one. Record the boundary wherever a hook is refused; otherwise the
   refutation gets reused to kill the hook it does not apply to.
+- **The canon now ships the hooks it asks for - do not rebuild them per project.** Every "enforce this at
+  the tool call" clause in these docs has a working implementation in the plugin's
+  [`hooks/`](../hooks/README.md): the disk-wide `find` guard and the PowerShell-script-in-Bash guard
+  ([GITHUB_INTERACTION.md](GITHUB_INTERACTION.md) section 6), the uncapped-large-read guard and the
+  context-size warning (section 3 above), and the micro-task rung nudge (the bullet above). They arrive
+  with the plugin, so a new machine or a fresh checkout is covered without setup. A project that already
+  wired one by hand should drop its own registration rather than run it twice, and a project that needs a
+  behaviour the canon does not ship should propose it here rather than keep a private copy - a hook living
+  in one repo protects one repo.
 - Prefer **a skill loaded on demand over a rule read on every turn**, and one method that travels over
   ten copies of a script. A command or skill body is injected in full and stays for the rest of the
   session, so a large one is paid for long after the paragraph that mattered - split it into a driver
@@ -182,4 +191,14 @@ shares. Reconciled against the portfolio; per-project records in `contrib/`.
 
 - Match the owner's language and tone (see [AUTHOR.md](AUTHOR.md)): the owner's language in chat,
   English in code/docs/commits; dry and concise; no trailing "what I did" summary - the diff speaks.
-- Timestamp replies with the local time provided in the prompt.
+- **Never prefix a reply with a clock time.** The model has no clock, and the one signal it ever had - a
+  prompt-submit time injection - is stamped once per owner message, so it goes stale within minutes of any
+  autonomous run. Measured on the reference repo, the printed time was wrong far more often than right,
+  and paid tokens for being wrong. Print a real time only when it carries information *and* comes from a
+  command that just ran: a build verdict, a log line, a hand-off. This supersedes the earlier rule to
+  timestamp from the prompt.
+- **Brevity is a mode the owner asks for, not a saving.** When the owner asks for terse output - "кратко",
+  "be brief", `/caveman` - load the `caveman` skill: it compresses prose only and carries the
+  never-compress list (security warnings, destructive confirmations, ordered steps, every exact string).
+  Trimming prose is not a cost lever (see the cost model in section 3), so brevity is never a reason to
+  skip a check or drop a gate's reason.

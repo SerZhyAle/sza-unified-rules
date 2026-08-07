@@ -1,5 +1,5 @@
 {
-  "description": "Injects the canon's hard invariants at session start, but only in a repository that has adopted the canon (an .sza-canon.json stamp at the repo root). Self-limiting: an unrelated project never pays for it. It is a sensor - it emits context and never returns a permission decision.",
+  "description": "The canon's enforcement layer. session-start.ps1 injects the hard invariants, but only in a repository that has adopted the canon (an .sza-canon.json stamp at the repo root) - self-limiting, so an unrelated project never pays for it. The guards and the prompt-submit advisories are deliberately NOT self-limiting: each enforces a property of the operating system or the harness, not of a project's conventions, so they apply wherever the plugin is enabled. Every one of them is the hook the canon already asks for in prose (AI_USAGE.md sections 3 and 5, GITHUB_INTERACTION.md section 6) - a rules file states them at 1-8% compliance, a hook holds at ~99%. Escape hatch for all of them: SZA_HOOKS_OFF=1. The Bash and Read guards are wired behind a bash pre-filter so PowerShell is spawned only on a payload that could possibly trip them; the pre-filter may only skip calls the real check would have allowed.",
   "hooks": {
     "SessionStart": [
       {
@@ -8,6 +8,47 @@
           {
             "type": "command",
             "command": "pwsh -NoProfile -File \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start.ps1\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pwsh -NoProfile -File \"${CLAUDE_PLUGIN_ROOT}/hooks/on-user-prompt.ps1\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "input=$(cat); case \"$input\" in *find*) printf \"%s\" \"$input\" | pwsh -NoProfile -File \"${CLAUDE_PLUGIN_ROOT}/hooks/guard-find-command.ps1\" ;; esac",
+            "shell": "bash",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "input=$(cat); case \"$input\" in *.ps1*) printf \"%s\" \"$input\" | pwsh -NoProfile -File \"${CLAUDE_PLUGIN_ROOT}/hooks/guard-ps1-in-bash.ps1\" ;; esac",
+            "shell": "bash",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "input=$(cat); case \"$input\" in *'\"limit\"'*|*'\"offset\"'*) exit 0 ;; esac; printf \"%s\" \"$input\" | pwsh -NoProfile -File \"${CLAUDE_PLUGIN_ROOT}/hooks/guard-uncapped-read.ps1\"",
+            "shell": "bash",
             "timeout": 10
           }
         ]

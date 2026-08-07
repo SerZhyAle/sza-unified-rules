@@ -266,6 +266,65 @@ Still open: three canon-owned rules remain restated in `AGENTS.md` (chat languag
 find-safety). Removing them means editing a file that is mid-change, so it belongs to a session that owns that
 work. `GEMINI.md` is git-ignored and local-only, so the gate correctly ignores it.
 
+## Enforcement layer imported into the canon 2026-08-08 (canon `2026.08.08.1`)
+
+The owner asked for the transferable skills and rules of this repo to be lifted into the canon and made
+universal. The survey found that **the highest-value transferable asset was not a rule at all - it was the
+enforcement**. The canon told projects four separate times to enforce a behaviour at the tool call rather
+than state it as a rule (`AI_USAGE.md` section 3 twice, section 5 twice, `GITHUB_INTERACTION.md` section 6
+once) and shipped **zero** such hooks. This repo had built all of them. Leaving them here meant they
+protected one repository out of the portfolio, on one machine, wired through a machine-local
+`~/.claude/settings.json` that no new checkout and no CI runner ever sees.
+
+**Imported into the plugin's `hooks/`, generalized** (project rule numbers replaced by canon section
+pointers, `dev/CATALOG` / `AGENT_COST_PLAYBOOK` / `temp/Sxxxx` references replaced by capability-neutral
+wording, `SZA_HOOKS_OFF` escape added):
+
+- `guard-find-command.ps1` - was CLAUDE.md Rule 24, now `GITHUB_INTERACTION.md` section 6. The contrib
+  entry above ("find-safety is a hard hook, not convention") was folded into the canon as *prose* on
+  2026-07-23; this closes it as *code*.
+- `guard-ps1-in-bash.ps1` - was CLAUDE.md Rule 25. New canon bullet in `GITHUB_INTERACTION.md` section 6,
+  because the exit-0 masquerade is the canon's "a green can lie" trap in its purest form and no review
+  catches a false PASS.
+- `guard-uncapped-read.ps1` - was wired against this repo's cost playbook; canon home is `AI_USAGE.md`
+  section 3, which already demanded exactly this hook and its unconditional escape hatch.
+- `nudge-small-task-tier.ps1` + the machine-global `warn-context-size.ps1` - merged into one
+  `on-user-prompt.ps1`, because both fire on `UserPromptSubmit` and two interpreters would pay the
+  PowerShell startup twice per prompt. Tier names generalized from this repo's `/quick` and `/skill-fix` to
+  the canon's rung ladder (`spec-to-audit` stage 0), since no other repo has those commands.
+
+**Also imported:** `/caveman`, `/caveman-commit` and `/caveman-review` merged into the canon skill
+`caveman` - project-agnostic, and the never-compress list (security warnings, destructive confirmations,
+ordered steps, every exact string, a gate's reason) is what makes terse mode safe rather than lossy.
+
+**Rule fix found by the same pass:** `AI_USAGE.md` section 7 said "timestamp replies with the local time
+provided in the prompt". This repo's CLAUDE.md section 1 had already refuted that in the field - the model
+has no clock and the injection goes stale within minutes of any autonomous run, so the printed time was
+wrong more often than right. The canon bullet now carries the refutation. This is the one place the source
+repo was *ahead* of the canon on a universal rule rather than beside it.
+
+**Deliberately NOT imported, with the reason** - so a later pass does not re-propose them:
+
+- The `/spec-*` command family (14 commands, ~180 KB) and `/build`, `/git`, `/verify`, `/doc-update`,
+  `/log-reader`, `/research`. Their *discipline* is already the canon's `spec-to-audit`, `release` and
+  `feature-to-site` skills; what remains in the command bodies is gradle targets, `a.ps1` verbs, Sxxxx
+  catalog CLI calls and flavor names. Porting the bodies would import the concretions, not the rules.
+- `.claude/templates/*.md` (strategic spec, tactical index, phase file, compact bugfix). Kotlin paths,
+  flavor placement rules, gradle gates - and the bugfix skeleton's body is written in Russian, which the
+  canon forbids for an artifact. The transferable part (a step ends in a static predicate; every step
+  carries a `Why`) is already `spec-to-audit` stage 2.
+- `guard-catalog-before-kt-search.ps1` and `reset-catalog-touch-marker.ps1` - both assume a generated
+  Kotlin class catalog exists. Not mechanically decidable in an arbitrary repo.
+- The `android-*` subagents and `run-fastmediasorter` skill - platform-bound by construction.
+- `document-registry` skill - the loop is already `AI_USAGE.md` section 6 and `spec-to-audit` stage 6; the
+  skill body is three calls into `scripts/document_registry/`, which is this repo's tooling.
+
+**Follow-up owed by this repo (not done here - it is a different session's work):** drop the now-duplicated
+hook registrations, or the guards fire twice. In `~/.claude/settings.json` that is the `PreToolUse` Bash and
+Read blocks; in this repo's `.claude/settings.json` it is the `nudge-small-task-tier.ps1` registration.
+CLAUDE.md Rules 24 and 25 can then shrink to a canon pointer, since the hook they describe is no longer
+this repo's.
+
 ## Release package plan - the reference implementation (2026-07-30)
 
 The **release package plan** in [RELEASE_AND_DISTRIBUTION.md](../RELEASE_AND_DISTRIBUTION.md) §8 was designed

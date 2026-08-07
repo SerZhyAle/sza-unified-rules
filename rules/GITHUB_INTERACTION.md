@@ -64,5 +64,22 @@ versioned op that may cost money or become public) has one home:
   can leave an orphaned scan flooding handles. Use the editor's file/content search or the project's
   catalog query instead. Enforce it with a pre-tool hook that blocks the call before the shell spawns,
   rather than trusting the convention.
+- **Never put a PowerShell script in Bash command-head position** - `./build.ps1 -Release`,
+  `.\a.ps1 fk`, `scripts/foo.ps1`. Bash cannot execute a `.ps1`: it chokes on the BOM plus the `<#`
+  comment block and dies with a syntax error, **and a backgrounded task still reports exit 0** - so a
+  failed build or a failed gate masquerades as passing. That is the worst shape a defect can take, because
+  the false PASS is what gets read and reported. Route it through the interpreter:
+  `pwsh -NoProfile -File ./build.ps1 -Release`. Reading a `.ps1` is fine - only the command-head position
+  is the trap.
+- **Always pass `-NoProfile`** when invoking PowerShell from a tool call: an operator's profile is not part
+  of the contract, and loading it costs startup on every spawn.
+- **Batch a multi-step shell chore into one process**, and mind which shell you are in. `& { cmd1; if
+  ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; cmd2 }` is PowerShell syntax and a syntax error in Bash
+  (`$LASTEXITCODE` is unset there and `& { .. }` backgrounds an empty group). From Bash, hand it to the
+  interpreter: `pwsh -NoProfile -Command "& { cmd1; cmd2 }"`, or call one script per step.
 - Prefer the project's own wrapper scripts over hand-rolled git/gh invocations with fragile nested
   quoting.
+- **The first two bullets ship as hooks with the `sza` plugin**, in [`hooks/`](../hooks/README.md) - the
+  `find` guard and the command-head guard both block the call before the shell spawns, in every repository,
+  not only in canon adopters. A project does not need its own copy; see
+  [AI_USAGE.md](AI_USAGE.md) section 5 for why an unenforced version of either is worth roughly nothing.

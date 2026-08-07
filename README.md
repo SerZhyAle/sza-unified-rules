@@ -29,7 +29,8 @@ The fix is not more documentation. It is to stop treating the canon as documenta
 
 | Layer | What it is | When it loads |
 | --- | --- | --- |
-| [`rules/INVARIANTS.md`](rules/INVARIANTS.md) | 20 lines whose violation is expensive or irreversible | every session, in an adopting repo, via the [session-start hook](hooks/hooks.json) |
+| [`rules/INVARIANTS.md`](rules/INVARIANTS.md) | 20 lines whose violation is expensive or irreversible | every session, in an adopting repo, via the [session-start hook](hooks/README.md) |
+| [`hooks/`](hooks/README.md) | the behaviours the canon refuses to leave as prose | at the tool call, before the shell spawns |
 | [`skills/`](#the-skills) | the process, as procedures with gates | when the task matches - the model picks |
 | [`rules/`](rules/README.md) | the full reference | when a skill sends you there |
 | [`tools/check-compliance.ps1`](tools/check-compliance.ps1) | the mechanical gate | manually, in CI, or from a hook |
@@ -66,9 +67,32 @@ compliance gate read instead of guessing.
 | [`feature-to-site`](skills/feature-to-site/SKILL.md) | the ship-together fan-out: in-app strings, ledger, READMEs, the product site, support pages, listing sources, the hub - every locale in one edit |
 | [`spec-to-audit`](skills/spec-to-audit/SKILL.md) | the task lifecycle from triage through spec, plan, implementation, evidence, self-audit, documentation and commit, with a refusing gate at each boundary |
 | [`adopt-canon`](skills/adopt-canon/SKILL.md) | adopting or re-syncing the canon in a repository, and writing its stamp |
+| [`agent-cost`](skills/agent-cost/SKILL.md) | measuring what a session actually costs, with the five corrections without which every token figure is inflated roughly threefold |
+| [`caveman`](skills/caveman/SKILL.md) | terse mode - prose compressed, every exact string and every gate reason left intact; plus the commit and review shapes |
 
 Skills carry their heavy payload in `references/` beside them, loaded on demand - the winget error table and
 the Partner Center listing flow do not belong in every session.
+
+## The hooks
+
+The rule docs say four separate times that a behaviour is worth **enforcing at the tool call rather than
+stating as a rule**. The canon used to ship none of those hooks, so each project either built its own or
+went unprotected. Now [`hooks/`](hooks/README.md) carries them:
+
+| Hook | Event | Blocks or warns about |
+| --- | --- | --- |
+| `session-start` | `SessionStart` | injects the hard invariants (adopting repos only) |
+| `guard-find-command` | `PreToolUse` Bash | a `find` with a disk-wide root or no `-maxdepth` |
+| `guard-ps1-in-bash` | `PreToolUse` Bash | a `.ps1` in command-head position - it fails yet reports exit 0 |
+| `guard-uncapped-read` | `PreToolUse` Read | the first uncapped read of a file over 200 lines |
+| `on-user-prompt` | `UserPromptSubmit` | context past 250k/400k; a micro-task reaching for the full pipeline |
+
+The argument for all of it is one measurement, from [AI_USAGE.md](rules/AI_USAGE.md) section 5: gated rules
+held at **~99%** across a month of sessions, the same rules as prose at **1-8%** - and the advice to read a
+large file with a range, which ships in the tool description on *every* turn, measured **22%**.
+
+Guards fail open, return `exit 2` to block, and keep an unconditional escape hatch; advisories always
+`exit 0`. `SZA_HOOKS_OFF=1` stands them all down.
 
 ## The compliance gate
 
@@ -99,9 +123,9 @@ before committing anything under `rules/`.
 ```
 .claude-plugin/     plugin.json + marketplace.json - this repo is both
 rules/              the canon: INVARIANTS.md + 18 reference docs + contrib/ per-project records
-skills/             the five skills, each with its own references/
+skills/             the seven skills, each with its own references/
 tools/              check-rules.ps1 (the canon) + check-compliance.ps1 (a project)
-hooks/              session-start invariant injection
+hooks/              the enforcement layer: invariant injection + three guards + the prompt advisories
 templates/          .sza-canon.json - what a project copies when it adopts
 CANON_VERSION       the monotonic version the stamp records
 ```
