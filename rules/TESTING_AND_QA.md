@@ -88,9 +88,40 @@ listeners / observers; DB schema or migration; player / media / caching / networ
 scope; build/minification. In a multi-phase task, audit the just-finished phase before starting the
 next ([DEVELOPMENT.md](DEVELOPMENT.md) §11).
 
-## 8. Applying to a new project
+## 8. Gate cost - keep the machinery cheap without weakening it
+
+A mature project accumulates mechanical gates, and they start costing real waiting time. The instinct
+is to prune the ones that never catch anything. Measured on the reference repo over three weeks - 8,562
+gate runs, 555 failures, 2,803 minutes of wall time - that instinct was wrong, and the correction is
+worth carrying everywhere.
+
+- **Measure the per-gate distribution before proposing that any gate be removed, weakened or
+  reordered.** The distribution is extremely skewed: one gate (detekt) was 86% of all gate wall time,
+  while the thirteen gates that never fired once cost 133 minutes between them - 4.7%. Deleting the
+  quiet gates removes insurance and buys a rounding error. Optimise the head.
+- **A gate that never fires is not evidence that it is useless.** It may be the reason the failure
+  stopped happening. Retire one only on a stated argument about the risk, never on its own silence.
+- **Cache a clean verdict against a fingerprint of every input the verdict can depend on** - the
+  analysed sources, the tool's config, its baselines, the build files and the gate script itself. In
+  the reference repo 56% of the expensive gate's runs analysed a tree in which nothing it reads had
+  changed since the previous run, which is simply what closing one task file by file produces. Four
+  conditions make this safe, and all four are load-bearing: cache only the fully-clean verdict, because
+  it holds for every later caller's scope; never cache a scoped or partial pass, and never cache a
+  failure; re-compute the fingerprint after the run and store it only if it still matches, so a
+  concurrent edit is never certified; and check the cache **before** queueing for the build lock, since
+  the queue is part of what you are avoiding. Give it an explicit bypass flag and use that flag on the
+  release and CI paths, where the point is the run itself, not the answer.
+- **A recorded step duration usually includes waiting for the lock, not just the work.** The same gate
+  measured 152 s averaged across recorded runs and 25 s when invoked directly on a warm daemon. Both
+  are true; they answer scheduling cost and compute cost. State which one you mean.
+- **Never disable a check to make the loop faster.** Speed comes from not repeating work whose inputs
+  did not change, not from checking less. If a gate is genuinely too slow, cache it, narrow its trigger
+  or move it off the hot path - do not silence it.
+
+## 9. Applying to a new project
 
 1. Adopt the flagship rule (§1) and the evidence ladder (§2) as the definition of "done".
 2. Stand up unit tests for domain logic; add integration tests where a mock would hide a real break.
 3. Script the pre-release sweep (§5) with a written verdict; wire it to the release gate.
 4. Write the persona happy-path (§6) as a repeatable check, not a vibe.
+5. Once the gates are more than a handful, measure their cost distribution (§8) before tuning any of them.

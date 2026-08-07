@@ -72,6 +72,27 @@ shares. Reconciled against the portfolio; per-project records in `contrib/`.
   saves context. This one is worth **enforcing as a hook rather than stating as a rule** (§5), and any
   such hook needs an unconditional escape hatch: an explicit re-issue carrying a range must always
   pass, because auditing an implementation end to end is legitimate work.
+- **Put the context warning where the human can act on it - at prompt submit, not only in the
+  statusline.** A statusline band is an advisory, and an ungated advisory performs the way every other
+  ungated rule does: measured on the reference machine, the median request carried 215k tokens against
+  a 28.7k floor, so roughly 186k of a typical turn was replayed conversation, and 29% of requests were
+  past 300k - all of it while the statusline was already printing the number and marking the band. A
+  prompt-submit hook that reads the tail of the session transcript, recovers the last request's token
+  total and injects a threshold warning costs ~40 tokens on the turns where it fires and nothing on the
+  rest. Set the thresholds **above** the median: a warning on every second prompt trains the reader to
+  ignore it.
+- **A hook that spawns a shell on every tool call must pre-filter in the harness's own shell first.**
+  Starting PowerShell costs 170-250 ms on Windows, and a guard wired to a frequent tool pays it on every
+  call including the large majority it will wave through. Test the payload cheaply for the condition
+  that could possibly trip the guard, and spawn the interpreter only on a match - in the reference case
+  that skipped ~89% of the spawns and changed no verdict. The rule generalises: the pre-filter may only
+  skip calls the real check would have allowed.
+- **Audit installed plugins, MCP servers and connectors by measured usage, not by intent.** They are
+  paid for on every session - process memory, startup, and their descriptions in the system prompt of
+  every request. Count actual invocations over a few weeks before keeping one: in the reference audit
+  four plugins and two connectors had zero calls in three weeks while each session still started their
+  processes. Removing them is small next to session hygiene, so do it for the tidiness, and do not
+  mistake it for the fix.
 - Prefer an inline lookup over spawning a subagent for a single fact (a few targeted tool calls).
   Reach for a subagent when the work is a real fan-out or would flood context with raw output.
 - Offload raw artifacts (logs, captures, dumps) to `temp/<ticket>/` instead of holding them in the
