@@ -15,6 +15,14 @@ shares. Reconciled against the portfolio; per-project records in `contrib/`.
   Below it, backgrounding is **forbidden** - it costs an extra turn plus the hand-polling that follows,
   and a fast check's verdict is worth having in the same turn that asked for it. A one-sided
   "background long jobs" rule reliably decays into backgrounding everything and then polling it by hand.
+- **Never fire-and-forget a verdict.** This is the shape the rule above actually fails in: dispatching a
+  gate, a closure facade or a catalog mutator asynchronously and moving straight on, on the intuition
+  that not waiting is free. It is not. It saves no turn - the completion notification re-invokes the
+  agent, so the call costs one *more* - and it quietly demotes a gate into an ungated rule, because a
+  check whose exit code nobody reads is not a check. A backgrounded task also tends to report its
+  wrapper's exit code rather than the command's, so the failure mode is a false PASS, the worst shape a
+  defect can take. Shipped as the `guard-fire-and-forget` hook rather than left as this paragraph, for
+  the reason section 5 gives.
 - **Don't ask what the architecture already answers.** If a convention, flavor hierarchy, or contract
   decides the question, research it and recommend - don't kick it back to the owner. Reserve questions
   for genuine forks the owner must own (scope, product intent, UI ambiguity).

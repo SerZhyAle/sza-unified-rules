@@ -16,6 +16,7 @@ measured **22%**.
 | [`session-start.ps1`](session-start.ps1) | `SessionStart` | [INVARIANTS.md](../rules/INVARIANTS.md) | injects the twenty hard invariants |
 | [`guard-find-command.ps1`](guard-find-command.ps1) | `PreToolUse` (Bash) | [GITHUB_INTERACTION.md](../rules/GITHUB_INTERACTION.md) section 6 | blocks a `find` with a disk-wide root or no `-maxdepth` |
 | [`guard-ps1-in-bash.ps1`](guard-ps1-in-bash.ps1) | `PreToolUse` (Bash) | [GITHUB_INTERACTION.md](../rules/GITHUB_INTERACTION.md) section 6 | blocks a `.ps1` in Bash command-head position |
+| [`guard-fire-and-forget.ps1`](guard-fire-and-forget.ps1) | `PreToolUse` (Bash) | [AI_USAGE.md](../rules/AI_USAGE.md) section 1 | blocks backgrounding a gate, closure facade or catalog mutator |
 | [`guard-uncapped-read.ps1`](guard-uncapped-read.ps1) | `PreToolUse` (Read) | [AI_USAGE.md](../rules/AI_USAGE.md) section 3 | blocks the first uncapped read of a file over 200 lines |
 | [`on-user-prompt.ps1`](on-user-prompt.ps1) | `UserPromptSubmit` | [AI_USAGE.md](../rules/AI_USAGE.md) sections 3 and 5 | warns on context size; nudges a micro-task to the cheapest rung |
 
@@ -42,7 +43,7 @@ adopted yet.
 ## Testing them
 
 ```powershell
-pwsh -NoProfile -File hooks/tests/smoke-hooks.ps1     # 14 cases, exit 0 required
+pwsh -NoProfile -File hooks/tests/smoke-hooks.ps1     # 20 cases, exit 0 required
 ```
 
 Every guard is smoked **from both sides** - one payload it must refuse and one it must allow - because a
@@ -62,10 +63,12 @@ $env:SZA_NO_RUNG_NUDGE = '1'      # keep the context warning, drop the rung nudg
 
 A hook wired to a frequent tool must **pre-filter in the harness's own shell first**
 ([AI_USAGE.md](../rules/AI_USAGE.md) section 3). Starting PowerShell costs 170-250 ms on Windows, so the
-two Bash guards and the Read guard are registered behind a `case` test in bash and spawn `pwsh` only on a
+three Bash guards and the Read guard are registered behind a `case` test in bash and spawn `pwsh` only on a
 payload that could possibly trip them - on the reference corpus that skipped ~89% of the spawns and
 changed no verdict. **The pre-filter may only skip calls the real check would have allowed**; the scripts
-stay authoritative.
+stay authoritative. `guard-fire-and-forget` is the cheapest of them by construction: its pre-filter tests
+for the literal `"run_in_background":true` field, so it never spawns on an ordinary foreground call, which
+is nearly all of them.
 
 `on-user-prompt.ps1` carries **both** prompt-submit advisories in one process for the same reason: they
 fire on the same event and each is a sub-second string check, so two interpreters would pay the startup

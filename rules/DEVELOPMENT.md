@@ -179,6 +179,20 @@ The machinery that makes the hygiene rules (§9) and the parity gates (§12) run
 - **Batch the fast gates into one process.** Running each `assert-*` check as its own script spawn is slow;
   a single batch runner (reference: a `fast-gates` command) executes the cheap gates
   (smells + deprecated-API + listener-symmetry + flavor-isolation + log-hygiene) in one pass.
+- **Cache the expensive gate's CLEAN verdict, keyed on a fingerprint of exactly what it analysed.** In
+  the reference project a single static-analysis gate was **86% of all gate wall time**, and most of its
+  runs re-proved an unchanged tree. Hash every input the gate really reads - sources, its config, its
+  baseline - and on a matching fingerprint print PASS without starting the build tool and without
+  queueing for the build lock. Three constraints keep it honest rather than merely clever: cache only
+  the *clean-everywhere* verdict, because that answer holds for whatever scope a later caller asks for
+  while a scoped pass says nothing about the next caller's files; **never cache a failure**; and expire
+  the entry on age as well as on fingerprint, so a cached verdict cannot outlive the reasoning behind
+  it. Ship a `-NoCache` switch and take it on the release and CI paths.
+- **A gate's measured duration is scheduling cost, not compute cost, unless you say which.** A timer
+  started before the child process includes the wait for the serialisation lock. The same reference gate
+  averaged 152 s over ~950 recorded runs and **25 s** when measured directly on a warm daemon with its
+  configuration cache reused. Both figures are true and they answer different questions - quoting the
+  wrong one is how a gate takes the blame for a queue, and how a useful gate gets deleted.
 - **Diff-scope the gate on a dirty tree.** To close one change amid other tickets' WIP, a scoped mode fails
   only on findings *in the changed file(s)* and downgrades the project-wide count-ratchets to advisory - so
   a clean change closes without tripping on unrelated in-flight work. The full-project strict gate still
