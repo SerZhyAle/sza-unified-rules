@@ -749,3 +749,133 @@ unchanged: weakening a secret check is the owner's call, not a propagation's, an
 carries the right instrument for it (a scoped `exemptions` entry naming the two paths and the reason).
 Recorded here so the next reader does not spend the same half hour proving it is not a leak.
 
+
+## Canon re-sync 2026-08-18 - the first reconciliation after a three-week stale plugin cache
+
+Executed **from a project session**, touching nothing in the canon but this file. Unlike the entry above -
+which was a spread-back *up* into the canon - this one is the reconciliation *down* into the repo, and it had
+never been done: the `sza` plugin served a cache pinned at `2026.07.27` for three weeks, so the canon updates
+of 08-02, 08-05, 08-08 and 08-18 reached zero sessions in this repository. The plugin now resolves
+`2026.818.1`. The stamp had already been advanced mechanically to `2026.08.18.1` / `sha256:961c9c8a..`; it was
+correct and was left untouched.
+
+**Compliance gate, before and after: `0 error(s), 0 warning(s)` both times** (`check-compliance.ps1`, exit 0).
+That is the finding, not a formality - the gate reads the stamp, the version ladder, the style rules, the
+secret patterns and the hook inventory. It cannot see whether a rules file *restates* a canon rule, so a repo
+can sit at zero errors while its agent-rules file has drifted into a fork. Every item below was invisible to
+it. A future re-sync should not read a clean gate as "nothing to do".
+
+**The brief asked for the gate's warnings to be worked through. There were none**, and the prompt's own
+placeholder for them reached the session unsubstituted. Recorded because the honest answer to "resolve these
+warnings" was "the gate reports zero, and the list was never pasted" - not an invented triage.
+
+### What was reconciled in the repo
+
+| Target | Change |
+| --- | --- |
+| `CLAUDE.md` section 1 | The clock-time rule and the caveman trigger collapsed into one pointer at [AI_USAGE.md](../AI_USAGE.md) 7, which now carries both verbatim in substance. |
+| `CLAUDE.md` section 6 | `Initiative` deleted outright - a pure restatement of [AI_USAGE.md](../AI_USAGE.md) 1. The 120 s threshold kept its concrete boundary and target lists and lost the rationale the canon now owns. Cost discipline and subagent MCP isolation reduced to pointer plus the repo-only mechanic. |
+| `CLAUDE.md` section 7 | `-NoProfile`, one-process batching and the fresh-interpreter model folded into one pointer at [GITHUB_INTERACTION.md](../GITHUB_INTERACTION.md) 6. Reachable exit codes reduced to pointer plus the gate name. |
+| `CLAUDE.md` rules 24, 25, 27, 28 | Each compressed to a canon pointer plus the repo's escape hatch, and each now names the plugin's `guard-bash.ps1` as the enforcer. Numbering was **not** changed: rule numbers are cross-referenced from about twenty files, so renumbering would have broken more than it tidied. |
+| `CLAUDE.md` rules 15, 23, 26, 31 and section 12 | Evidence rule, lock-queue design, fire-and-forget and subagent tier routing all reduced to pointers plus the concrete scripts, codes and agent names this repo owns. |
+| `AGENTS.md` | Same treatment on its four restatement lines, plus two factual corrections below and the background/foreground threshold, which it had never carried at all. |
+| `docs/AGENT_HOOKS.md` | The `guard-bash-slash-arg` row and its contract paragraph removed; a new paragraph records the plugin-duplication state of the whole global half. |
+| `.claude/settings.json` | The `guard-bash-slash-arg` registration removed. |
+
+### The stale claim that mattered most
+
+`CLAUDE.md` Rule 24 and its `AGENTS.md` mirror both said the file-search safety rule "has one home in the
+canon; **this repo owns only the enforcement**". That stopped being true in `2026.08.08.1` and is now flatly
+wrong: the canon ships `guard-bash.ps1`, which absorbs that guard along with four other checks. A rules file
+that claims ownership of an enforcement layer it no longer owns is worse than silence - it is the sentence
+that stops the next reader from looking for the duplicate.
+
+### A duplicated project hook, removed - with the verification the canon asks for
+
+[AI_USAGE.md](../AI_USAGE.md) 5 says a project that hand-wired a guard the canon now ships should drop its
+own registration rather than run it twice, **and verify the installed cache rather than the marketplace
+clone**. Both halves were done:
+
+- The installed cache at `sza/2026.818.1` carries `guard-bash.ps1` with the MSYS slash-argument check as
+  check 6. Verified by reading the installed file, not the clone.
+- Proven live rather than by inspection: a Bash call carrying a slash-command argument value was **refused**
+  by `guard-bash` before the shell spawned, quoting canon `GITHUB_INTERACTION.md` section 6.
+- **Coverage was compared before deleting, not after.** The two guards are not equivalent. The project hook
+  was *name-aware* - it built its deny-list from `.claude/commands/*.md`. The canon guard is *shape-aware* -
+  it refuses any first path segment that is not in a POSIX-root allowlist. Canon's is broader on command
+  heads and narrower on names: a command named after a POSIX root (`run`, `dev`, `var`, `bin`, `etc`, `opt`,
+  `lib`, `tmp`, `usr`..) would pass unrefused. All 32 of this repo's command names were enumerated and
+  checked against that allowlist - **no collision, and no single-letter name** - so the deletion loses
+  nothing today. The residue is written into Rule 27 and into `docs/AGENT_HOOKS.md` rather than left to be
+  rediscovered.
+
+### Open, and deliberately not fixed from this session
+
+**Every hook in the `global` half of this repo's inventory is now also shipped by the plugin, and both
+fire.** `~/.claude/settings.json` still hand-registers the disk-scan guard, the `.ps1`-head guard, the
+unavailable-command guard, `guard-fire-and-forget`, `guard-uncapped-read` and `warn-context-size`, while the
+installed cache ships `guard-bash.ps1` (absorbing the first three), `guard-fire-and-forget.ps1`,
+`guard-uncapped-read.ps1` and `on-user-prompt.ps1`. Each duplicate costs a second PowerShell start
+(170-250 ms) on every matching call, and the read guard rewrites the same input twice under two different
+windows - the plugin's is 500 lines. One thing checked and found **not** to be wrong: both read guards
+*rewrite*; the hand-wired one had already been upgraded from blocking, so the canon's 08-18 change is not
+being neutralised.
+
+**This duplication produced a live false refusal during this very session, which is the sharpest evidence
+available.** Appending this section from the Bash tool was refused by the hand-wired disk-scan guard, because
+the word it matches on appears in the *body of the heredoc* being written. The canon's `guard-bash.ps1`
+strips heredoc bodies before that check - a relaxation deliberately recorded in the 2026-08-18 spread-back
+above - so the newer guard would have allowed the identical call. The stale copy is not merely redundant; it
+is now *stricter than the canon intends*, and it refuses correct work. The section was written through the
+PowerShell tool instead.
+
+The fix is to drop the six hand-wired registrations, but that file is per-machine and outside this
+repository, so it is the owner's call and was not made here. The inventory rows stay while the registrations
+stay - `assert-hook-inventory.ps1` judges the global half against that file whenever it is readable, so
+deleting a row first would fail the gate.
+
+### Two facts the working tree corrected
+
+- **`AGENTS.md` claimed "Kotlin 1.9+".** The live pin is **2.2.10** in both `build.gradle.kts` and the
+  Compose plugin, and `CLAUDE.md` carries it correctly in a machine-generated block. A hand-maintained
+  version number next to a generated one drifts; the line now names the generator as authoritative instead
+  of restating a second copy.
+- **The defect this file recorded on 2026-08-18 against this repo is already closed.** The entry above says
+  the lock-queue documentation lists three outcome-marker values while the code writes a fourth,
+  `enqueue-failed`. `docs/DEV_OPS.md` now documents all four, and `wait-for-lock-turn.ps1` writes exactly
+  those. Working tree beats the record; the note above is stale and this line supersedes it.
+
+### One canon rule verified rather than assumed
+
+[DEVELOPMENT.md](../DEVELOPMENT.md) 15's clean-verdict cache is **already implemented here** - it is the
+reference the rule was extracted from - with all three constraints the canon states: only the
+clean-everywhere verdict is cached, a failure never is, and the entry expires on age as well as on
+fingerprint. The one clause worth checking was "take `-NoCache` on the release and CI paths": no caller
+passes it, but no release or CI path invokes the static-analysis gate at all, and `temp/` is gitignored so a
+fresh CI checkout has no cache to inherit. Vacuously satisfied rather than violated - recorded so the next
+reader who wires that gate into CI knows the switch is the thing to reach for.
+
+### A rule this session broke, recorded rather than glossed
+
+`CODE.LOCK` was not taken before deleting the project hook script and editing `.claude/settings.json`.
+Rule 23 counts repository scripts and config among the things needing the lock. No collision resulted, but
+the omission is the reader's to know about, and it is the same shape as the failures this file keeps
+recording: the rule was prose at the moment it applied.
+
+**Verification.** `check-compliance.ps1` - expected 0, actual **0**, `0 error(s), 0 warning(s)` before and
+after. `assert-hook-inventory.ps1` - expected 0, actual **0**, `PASS (11 registered hook(s), project +
+global)`. `assert-rule-digest-sync.ps1` - expected 0, actual **0**, 31 rules cited across both digests.
+`post-change.ps1` over the four changed files with `-ScopeToFile -RegistryAck 'repository-rules' -ChangeType
+Mixed` - expected 0, actual **0**, `post-change: PASS`, one dev-log row. The fast-gate battery returns **1**
+on four gates - listener symmetry (+2), unreferenced strings (6), the memory-index budget (253 B over) and
+gate-hint sync (1) - **none of them attributable to this change**: the tree carries 194 dirty Kotlin files
+plus a modified `strings.xml` and memory index from other tickets, and this change touched six paths, none of
+them Kotlin, strings or memory. That is exactly the case `-ScopeToFile` exists for, and the scoped closure
+passed clean.
+
+### Canon fix proposed from this session - not applied here
+
+`guard-bash.ps1`'s POSIX-root allowlist silently exempts a real command name that happens to match a root
+word. A project whose command set includes `run`, `dev` or `lib` as a slash command would lose the check with
+no signal. Worth either narrowing the allowlist to single letters plus the segments that cannot be command
+names, or emitting a warning rather than a silent skip when the segment is followed by more arguments.
