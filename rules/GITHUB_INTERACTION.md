@@ -77,9 +77,25 @@ versioned op that may cost money or become public) has one home:
   ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; cmd2 }` is PowerShell syntax and a syntax error in Bash
   (`$LASTEXITCODE` is unset there and `& { .. }` backgrounds an empty group). From Bash, hand it to the
   interpreter: `pwsh -NoProfile -Command "& { cmd1; cmd2 }"`, or call one script per step.
+- **Never put a PowerShell cmdlet in Bash command-head position** - `ls | Select-Object -First 3`,
+  `Get-ChildItem -Recurse`, the same after a `;`. A `Verb-Noun` cmdlet is not a program on `PATH`, so Bash
+  answers `exit 127` and returns nothing; measured on the reference machine, roughly **89 cmdlets were
+  piped into the Bash tool in one week**, each one a turn that produced no output. Pipe to `head`/`sed`, or
+  issue the whole line from the PowerShell tool.
+- **An interpreter that is not installed on the machine is a dead command, not a convention** - and the
+  cheaper fix is usually to *make the name work* (a shim onto `PATH`) rather than to guard it, because no
+  hook can fix and retry a failed command.
+- **An argument value beginning with a slash that names a command, not a path, is silently corrupted.**
+  MSYS rewrites `-Reason "/spec-dev .."` into `C:/Program Files/Git/spec-dev ..` with **nothing failing**:
+  the exit code stays 0 and the mangled text lands in exactly the files where that value was the only
+  record of who was doing what. Three accepted forms: double the leading slash (`//spec-dev ..`), prefix
+  the call with `MSYS2_ARG_CONV_EXCL='*'`, or issue it from the PowerShell tool.
 - Prefer the project's own wrapper scripts over hand-rolled git/gh invocations with fragile nested
   quoting.
-- **The first two bullets ship as hooks with the `sza` plugin**, in [`hooks/`](../hooks/README.md) - the
-  `find` guard and the command-head guard both block the call before the shell spawns, in every repository,
-  not only in canon adopters. A project does not need its own copy; see
-  [AI_USAGE.md](AI_USAGE.md) section 5 for why an unenforced version of either is worth roughly nothing.
+- **This whole family ships as one hook with the `sza` plugin**, in [`hooks/`](../hooks/README.md) - the
+  `find` guard, the command-head guards for both a `.ps1` and a cmdlet, the missing-interpreter check and
+  the slash-argument check are batched into a single script behind a single pre-filter, so five gates on
+  the same event cost one interpreter start. They block the call before the shell spawns, in every
+  repository, not only in canon adopters. A project does not need its own copy; see
+  [AI_USAGE.md](AI_USAGE.md) section 5 for why an unenforced version of any of them is worth roughly
+  nothing.

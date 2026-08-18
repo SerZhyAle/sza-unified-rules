@@ -66,6 +66,21 @@ shares. Reconciled against the portfolio; per-project records in `contrib/`.
   how routing is actually applied in your harness before relying on it: declaring a model in a
   command's frontmatter did not route anything in the measured corpus - every invocation kept the
   session model.
+- **Route a subagent to a tier deliberately - an unpinned spawn is not free.** A harness's built-in
+  general-purpose agent has no definition file, so it **cannot carry a model pin at all**: it takes the
+  session's default, which is the most expensive tier. The remedy is therefore not "pin the agent" but
+  "name the tier at the call site, or route through a purpose-defined agent that already pins one".
+  Mechanical work - search, lookup, doc reading, running a gate and reporting its verdict - names a light
+  tier; the expensive tier is for deep design and for writing code. And give every project-defined agent
+  an explicit pin, for the same reason a script lists its exit codes: the default is invisible, and
+  nobody audits an invisible default. **No saving is claimed.** What is measured, on one machine's mined
+  telemetry over 2026-08-03..2026-08-17 (1 150 sessions, ~54 700 requests): the unpinnable built-in was
+  the most-spawned subagent type at **182 spawns in 14 days**, and output tokens split **34.29 M on the
+  expensive tier against 7.13 M on the mid tier**, 82.8% on the expensive one. That those spawns are what
+  carried the 82.8% is a **deduction, not a measurement** - the miner records a spawn's type and a
+  message's authoring model separately and never correlates the two. The earliest honest re-measurement
+  is a fresh mining pass after this rule has been live; the telemetry itself is a local, repeatable mining
+  run against a transcript store outside any repository, not committed history.
 - **Read a large file with an explicit range, first time.** The blind whole-file read of a file you
   have not located anything in yet is the single largest avoidable context cost. Locate with one
   search, then take one window wide enough to cover it - iterative probing costs more turns than it
@@ -148,6 +163,19 @@ shares. Reconciled against the portfolio; per-project records in `contrib/`.
   range ships in the built-in tool description on literally every turn, and compliance measured **22%**.
   Advice the model is already reading, and still mostly not following, is the ceiling for what more
   prose can buy you. If a behaviour is worth having, block it at the tool call.
+- **A hook has more verdicts than block and allow - and refusing is rarely the best of them.** The
+  preference order: **correct the input where the correct input is knowable; refuse only where no correct
+  input exists.** A block cannot fix and retry - it can only cost the caller a round trip and hope they
+  choose better the second time. Measured on the reference machine: a blocking uncapped-read guard fired
+  **381 times in one week**, and **31.8% of those blocks were answered by re-issuing the same read with an
+  explicit limit of 1500+** - the whole file anyway. No context saved, a turn spent. That generalises to
+  every guard whose objection is "your parameters are wrong" rather than "this call must not happen". Two
+  mechanics, both established by probe rather than guess: a rewrite must carry the **full** input object
+  and not just the changed field, and `additionalContext` reaches the model while a permission-decision
+  reason does not. And a rewriting hook must **fail open harder** than a blocking one - when it errs it
+  corrupts what the model reads, rather than merely gating a call. The full verdict vocabulary, the
+  post-call observe shape whose correctness is structural rather than heuristic, and the turn-refusing
+  `Stop` shape live in [`hooks/`](../hooks/README.md).
 - **A size-tier ordering written as prose does not route anything - put the nudge on the prompt-submit
   event.** A project documented a smallest-first command ladder in its always-on rules file: a
   micro-task command, then a fast-fix command, then the full pipeline. Measured across its whole
@@ -168,13 +196,26 @@ shares. Reconciled against the portfolio; per-project records in `contrib/`.
   refutation gets reused to kill the hook it does not apply to.
 - **The canon now ships the hooks it asks for - do not rebuild them per project.** Every "enforce this at
   the tool call" clause in these docs has a working implementation in the plugin's
-  [`hooks/`](../hooks/README.md): the disk-wide `find` guard and the PowerShell-script-in-Bash guard
-  ([GITHUB_INTERACTION.md](GITHUB_INTERACTION.md) section 6), the uncapped-large-read guard and the
+  [`hooks/`](../hooks/README.md): the impossible-in-Bash family, batched into one guard
+  ([GITHUB_INTERACTION.md](GITHUB_INTERACTION.md) section 6), the uncapped-large-read rewriter and the
   context-size warning (section 3 above), and the micro-task rung nudge (the bullet above). They arrive
   with the plugin, so a new machine or a fresh checkout is covered without setup. A project that already
-  wired one by hand should drop its own registration rather than run it twice, and a project that needs a
-  behaviour the canon does not ship should propose it here rather than keep a private copy - a hook living
-  in one repo protects one repo.
+  wired one by hand should drop its own registration rather than run it twice - **and verify the installed
+  plugin cache, not the marketplace clone**, because until the cache carries the script the hand-wired
+  registration is the only thing making it live, and removing it "because the plugin has it now" silently
+  disarms the guard. A project that needs a behaviour the canon does not ship should propose it here rather
+  than keep a private copy - a hook living in one repo protects one repo.
+- **Registering, removing or re-registering a hook requires editing the hook inventory in the same
+  change**, and a gate fails when something registered is missing from it. A hook is invisible by
+  construction - it fires inside a tool call nobody is reading - so an undocumented one is
+  indistinguishable from a bug in the tool. The inventory is a table with a fixed verdict vocabulary,
+  parsed from the table alone and never from the surrounding prose, since script names appear in prose
+  too and a loose parse turns every mention into a phantom entry. Two limits keep such a gate honest:
+  find the table by its **heading**, not by a filename, and compare in **one direction only** - a row the
+  gate cannot match is not a failure, because a hook registered per-machine is real and live and the gate
+  cannot read that registration. Judge each home by what is readable, and degrade rather than guess.
+  **Test the registered pre-filter, not only the hook**: a pre-filter that matches nothing leaves a
+  correct hook that simply never runs, and it looks exactly like a hook that was never needed.
 - Prefer **a skill loaded on demand over a rule read on every turn**, and one method that travels over
   ten copies of a script. A command or skill body is injected in full and stays for the rest of the
   session, so a large one is paid for long after the paragraph that mattered - split it into a driver

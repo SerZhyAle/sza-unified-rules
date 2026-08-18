@@ -86,6 +86,20 @@ Status vocabulary, identical across the portfolio:
 `BlockExternal`). **Every transition into a `Block*` status carries a one-line reason note**, cleared by
 removing the condition and advancing exactly one level.
 
+**Two literal tokens, because direction is not recoverable from prose.** A ticket's "related tickets"
+section names blockers, successors, consumers and neighbours in one breath and is equally happy to *deny*
+a relationship - measured on the reference corpus, **98 spec files yield a ticket id there against 15 that
+carry a real directional line**, and most of the lines containing "blocks" use it to say "does not block".
+A scraper reading ids out of that prose makes a producer look blocked by its own consumers. So the record
+carries a literal token on its own line for each direction - one naming what blocks this ticket, one
+naming the ticket that inherited an unanswered question. An id in prose is a mention; an id in the token
+is a claim. Canon: [DEVELOPMENT.md](../../rules/DEVELOPMENT.md) §8.
+
+Say which of the two is actually enforced, because they usually are not enforced alike: a carried-question
+token is naturally a **hard gate at closure** (the write is refused), while a blocker token is often only
+a **soft exclusion at selection** (nothing refuses the write; the ticket is skipped when work is picked
+automatically). Both are legitimate - claiming both are gated is not.
+
 ## Stage 2 - Plan: the tactical how
 
 Three passes, then a mandatory self-review:
@@ -223,6 +237,18 @@ tree** so a clean change closes amid other tickets' WIP, with the strict full-pr
 release and CI; **one closure facade**, not N rituals. For PowerShell, respect the reachable-exit-code
 contract: under `$ErrorActionPreference='Stop'` a bare `Write-Error` throws, so a following `exit N` never
 runs - use `Write-Error $msg -ErrorAction Continue` before `exit N`, and list a script's codes in its header.
+
+**The closing gate itself, if the project has one.** Closing a ticket requires every open question to be
+answered or handed to a named successor through the token above - measured on the reference corpus,
+**134 of 1 506 closed specs carried a still-open research item, 372 items in all, 8.9% of every
+closure**, and each one left the queue with the question inside it. Four mechanics decide whether such a
+gate does anything at all: gate the **transition**, not the state, and only on an actual change; do
+**not** gate the archive transition, which closes a ticket that already passed; treat an unfilled
+template placeholder as **unanswered**; and locate the section by its **heading text, never its number**,
+because numbers shift when a template gains a section and the gate then reads the wrong part of every
+older file while staying green. Above all, **wire it into every mutator that can close and verify which
+path is actually used** - a gate wired into one of several equivalent paths guards the path used least,
+and the reference instance sat on the wrong one for weeks and almost never fired.
 
 **Attribute a failure before fixing it.** On a multi-writer tree a red check may belong to a sibling's
 in-flight edit; confirm the failure is inside your diff first. The working tree, not git history, is the

@@ -1,5 +1,5 @@
 {
-  "description": "The canon's enforcement layer. session-start.ps1 injects the hard invariants, but only in a repository that has adopted the canon (an .sza-canon.json stamp at the repo root) - self-limiting, so an unrelated project never pays for it. The guards and the prompt-submit advisories are deliberately NOT self-limiting: each enforces a property of the operating system or the harness, not of a project's conventions, so they apply wherever the plugin is enabled. Every one of them is the hook the canon already asks for in prose (AI_USAGE.md sections 3 and 5, GITHUB_INTERACTION.md section 6) - a rules file states them at 1-8% compliance, a hook holds at ~99%. Escape hatch for all of them: SZA_HOOKS_OFF=1. The Bash and Read guards are wired behind a bash pre-filter so PowerShell is spawned only on a payload that could possibly trip them; the pre-filter may only skip calls the real check would have allowed.",
+  "description": "The canon's enforcement layer. session-start.ps1 injects the hard invariants, but only in a repository that has adopted the canon (an .sza-canon.json stamp at the repo root) - self-limiting, so an unrelated project never pays for it. The Bash guard and the prompt-submit advisories are deliberately NOT self-limiting: each enforces a property of the operating system or the harness, not of a project's conventions, so they apply wherever the plugin is enabled. Every one of them is the hook the canon already asks for in prose (AI_USAGE.md sections 3 and 5, GITHUB_INTERACTION.md section 6) - a rules file states them at 1-8% compliance, a hook holds at ~99%. Escape hatch for all of them: SZA_HOOKS_OFF=1. Every registration here is wired behind a bash pre-filter so PowerShell is spawned only on a payload that could possibly trip it; the pre-filter may only skip calls the real check would have allowed, and hooks/tests/smoke-prefilters.ps1 asserts the patterns BELOW - not the scripts - under Git Bash, because a pre-filter that matches nothing leaves a correct hook that simply never runs. The five Bash checks live in ONE script on purpose: five registrations on one event would pay the 170-250 ms PowerShell start up to five times for a single command (DEVELOPMENT.md section 15, batch the fast gates into one process). Anything registered here must also appear in the inventory table in hooks/README.md - check-compliance.ps1 SZA-HOOK01 fails on a divergence.",
   "hooks": {
     "SessionStart": [
       {
@@ -30,13 +30,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "input=$(cat); case \"$input\" in *find*) printf \"%s\" \"$input\" | pwsh -NoProfile -File \"${CLAUDE_PLUGIN_ROOT}/hooks/guard-find-command.ps1\" ;; esac",
-            "shell": "bash",
-            "timeout": 10
-          },
-          {
-            "type": "command",
-            "command": "input=$(cat); case \"$input\" in *.ps1*) printf \"%s\" \"$input\" | pwsh -NoProfile -File \"${CLAUDE_PLUGIN_ROOT}/hooks/guard-ps1-in-bash.ps1\" ;; esac",
+            "command": "input=$(cat); case \"$input\" in *find*|*.ps1*|*[a-z]-[A-Z]*|*'& {'*|*'&{'*|*python*|*node*|*'\"/'*|*\"'/\"*) printf \"%s\" \"$input\" | pwsh -NoProfile -File \"${CLAUDE_PLUGIN_ROOT}/hooks/guard-bash.ps1\" ;; esac",
             "shell": "bash",
             "timeout": 10
           }

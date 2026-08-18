@@ -79,6 +79,38 @@ compile-only -> targeted tests -> minified release variant -> device) lives in
   changed-flow entry before the test build, deleted the moment the ticket leaves it, and never present in a
   permanent or shipped log (a fail-closed gate keeps ticket ids out of permanent logs). The probe cannot
   ship, because its lifetime is the status, not the developer's memory.
+- **Where a machine must know direction, require a literal token - never infer it from prose.** A ticket's
+  "related tickets" prose names blockers, successors, consumers and neighbours in the same breath, and it
+  is equally happy to *deny* a relationship: measured on the reference corpus, **98 spec files yield a
+  ticket id in that section against 15 that carry a real directional line**, and of the 20 lines there
+  containing the word "blocks", most use it to deny one - "does not block", "no blocking dependency",
+  "dependency lifted". A scraper reading ids out of that prose makes a producer look blocked by its own
+  consumers, and reading direction out of the surrounding words gets it backwards more often than not. So:
+  an id in prose is a mention, an id in a literal token is a claim. Two tokens, one shape - one naming what
+  blocks this ticket, one naming the ticket that inherited an unanswered question.
+- **Closing a ticket requires every open question to be answered or explicitly handed to a named
+  successor.** Measured 2026-08-13 on the reference corpus: **134 of 1 506 closed specs carried at least
+  one still-open research item, 372 items in all - 8.9% of every closure.** A closed ticket leaves the
+  queue and takes its unanswered question with it: nothing breaks, nothing fails, the question is simply
+  gone. The successor is an ordinary ticket, so it reappears in the queue on its own - which is why no
+  separate registry of unanswered questions is needed, and why any such registry would be a second source
+  of truth. **The two tokens need not be enforced alike, and where they are not, say so:** a
+  carried-question token can be a hard gate at write time (the closure is refused) while a blocker token is
+  only a soft exclusion at selection time (nothing refuses the write; the ticket is merely skipped when the
+  queue picks work automatically). That asymmetry is a legitimate design - the costs differ - but a rules
+  file claiming both are gated states something false about its own repository.
+- **Gate the transition, not the state**, and only on an actual change - re-writing a record that is
+  already closed must not re-run the gate. Do **not** gate the archive transition: it closes a ticket that
+  already passed the gate, and blocking cleanup makes tidying harder than leaving the mess. An unfilled
+  template placeholder counts as unanswered - a spec still carrying the template's literal open/resolved
+  line has resolved nothing, and treating the placeholder as absent lets a whole class through.
+- **Wire a closing gate into every mutator that can close, and verify which path is actually used.** A gate
+  wired into one of several equivalent paths guards the path used least: in the reference case it sat on
+  the general update command while the canonical closure path went through a different script that enforced
+  nothing, and it sat in that state for weeks and almost never fired. Related, and the same class of silent
+  miss: **locate a document section by its heading text, never by its number** - numbers shift when a
+  template gains a section, and the gate then reads the wrong part of every older file while its verdict
+  stays green.
 
 ## 9. Dead-weight & AI-tell hygiene
 
@@ -106,7 +138,48 @@ compile-only -> targeted tests -> minified release variant -> device) lives in
   the repo's short `temp/` over a deep system temp path for anything a child process reads.
 - **Serialize expensive shared operations** when several agents may run at once: an advisory build lock
   so two builds never overlap, a code lock before a multi-file edit *(Android reference:
-  `temp/BUILD.LOCK` / `temp/CODE.LOCK`)*. Judge staleness by process liveness, not a guessed timeout.
+  `temp/BUILD.LOCK` / `temp/CODE.LOCK`)*. The rest of this section is what that lock grows into once
+  several agents actually contend for it - the refuse-shape below is the one it must *not* keep.
+- **A busy lock queues the caller; it does not refuse them.** Refusal makes the loser retry on its own
+  schedule, which is a busy-wait dressed as a rule. A queue gives an order, and the order is what makes
+  several agents fair to each other.
+- **The waiter needs a distinct exit code meaning "queued, not yours yet"**, separate from both success
+  and failure. Success and "you are third in line" are different instructions to the caller, and one code
+  cannot carry both.
+- **Queued is not idle - and this is the half no script can enforce.** State explicitly what a queued
+  agent should do: the work that needs no lock - reading, research, specs, catalog, documentation, log
+  analysis. Without that sentence the queue merely relocates the stall.
+- **Take the lock immediately before the edit and release it right after - never for a whole task.**
+  Everyone behind you waits for as long as you hold it. The observed failure that produced this rule: one
+  lock held for **479 seconds** across an entire implementation phase.
+- **The turn is decided by ticket identity, never by session identity.** A caller holding no ticket must
+  never be granted the turn just because the ticket at the head happens to belong to its own session.
+- **Reserve the turn for the queue head for a bounded window.** When the lock frees, the head gets a grace
+  period before anyone else may take it; once that window lapses, the next live waiter proceeds. Different
+  lock kinds get different windows - the shape is the rule, the constants are per project.
+- **Judge staleness by liveness, not by a clock - and pick the liveness signal per lock kind.** A build
+  lock is held by a process, so process liveness answers it, and it must defend against PID reuse by
+  comparing the holder's process start time as well. An edit lock is held by a *session*, which is not a
+  process, so it needs a session heartbeat: a live owner keeps its lock however long the edit legitimately
+  takes.
+- **A queue ticket is evicted by liveness OR by an absolute ceiling, whichever fires first** - and
+  **"cannot determine liveness" is never grounds for eviction**, only the ceiling may still remove such a
+  ticket. Liveness alone leaks a ticket whose owner died in a way nothing observed; a ceiling alone evicts
+  a slow but live worker; and treating unknown as dead evicts live waiters, which is what destroys trust
+  in a queue fastest.
+- **Check the environment before taking the lock, never after.** A broken toolchain must fail before the
+  caller takes a place in the queue - otherwise a run that could never have succeeded blocks everyone
+  behind it for its full timeout.
+- **A background waiter reports its verdict in a marker file, never in its exit code.** A backgrounded
+  task's exit code is the exit of the last command in its launch line, and it has already turned a refused
+  build into an apparently green one. Write the marker with write-then-rename so a reader never catches a
+  half-written verdict, and give the marker a closed set of outcome values that the reader can branch on
+  exhaustively.
+- **A re-entrant call is recognised and returns success without queueing.** A session or process that
+  already holds the lock must not queue behind itself - that is a self-deadlock with a timeout attached.
+- **In a multi-worktree checkout, resolve the lock path from the shared git directory**, so every linked
+  worktree contends for one lock rather than holding one each. A per-worktree lock serializes nothing,
+  silently.
 - **Fix the project's own scripts** when they are buggy or insufficient - don't work around them.
 
 ## 11. Phase-boundary audits

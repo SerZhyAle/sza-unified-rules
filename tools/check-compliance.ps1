@@ -7,8 +7,9 @@ validates a project against it. A rule that this script cannot assert will drift
 shortcoming, so keep the checks mechanical and the false-positive rate at zero.
 
 Groups:
-  CANON  adoption stamp, staleness, mirror banners
+  CANON  adoption stamp, staleness, a stamp ahead of the canon, mirror banners
   RULES  the agent-rules file: canon pointer, no restatement, no self-declared fork
+  HOOK   the enforcement layer: every registered hook is in the inventory table
   LAY    layout and ledger
   SEC    secrets and committed artifacts
   VER    version shape and channel manifests
@@ -188,6 +189,32 @@ try {
             Add-Finding -Id 'SZA-CANON03' -Severity $sev -Path '.sza-canon.json' `
                 -Message "adoption is stale: stamp digest $($stamp.canon.coreDigest) vs canon $canonDigest (canon $canonVersion, adopted $($stamp.canon.adoptedOn))" `
                 -Fix 'Re-read the changed rule docs, reconcile, then update canon.version and canon.coreDigest.'
+        }
+
+        # SZA-CANON07 - the stamp names a canon version NEWER than the canon's own. That is not
+        # staleness, it is corruption: staleness is normal and expected after every canon bump, being
+        # ahead never is. It was a WARN under CANON03 for ten days in one repo and nobody saw it, because
+        # a warn is what a stale stamp looks like too. Hence its own id, at error.
+        if ($stamp.canon.version -and $canonVersion -ne 'unknown') {
+            function Compare-DottedVersion {
+                param([string]$A, [string]$B)   # -1 A<B, 0 equal, 1 A>B; $null if either is not dotted-numeric
+                $pa = @($A.Trim() -split '\.')
+                $pb = @($B.Trim() -split '\.')
+                foreach ($p in ($pa + $pb)) { if ($p -notmatch '^\d+$') { return $null } }
+                $n = [Math]::Max($pa.Count, $pb.Count)
+                for ($k = 0; $k -lt $n; $k++) {
+                    $va = if ($k -lt $pa.Count) { [int]$pa[$k] } else { 0 }
+                    $vb = if ($k -lt $pb.Count) { [int]$pb[$k] } else { 0 }
+                    if ($va -ne $vb) { return $(if ($va -gt $vb) { 1 } else { -1 }) }
+                }
+                return 0
+            }
+            $cmp = Compare-DottedVersion -A ([string]$stamp.canon.version) -B $canonVersion
+            if ($cmp -eq 1) {
+                Add-Finding -Id 'SZA-CANON07' -Severity 'error' -Path '.sza-canon.json' `
+                    -Message "stamp claims canon $($stamp.canon.version), which is AHEAD of the canon's own CANON_VERSION $canonVersion - that version was never published, so the stamp matches no digest that exists" `
+                    -Fix 'Do not hand-edit the number. Re-adopt against the current canon (adopt-canon), which rewrites both canon.version and canon.coreDigest from the live canon.'
+            }
         }
 
         # SZA-CANON04 - the core plus exactly one overlay. A canon home or a portfolio page ships no
@@ -403,6 +430,145 @@ try {
         }
     }
 
+    # --------------------------------------------------------- group HOOK
+
+    # SZA-HOOK01 - a registered hook must appear in the repo's hook inventory.
+    #
+    # A hook is invisible by construction: it fires inside a tool call nobody is reading, so an
+    # undocumented one is indistinguishable from a bug in the tool, and a removed one from a rule that was
+    # never enforced. The check is mechanical and offline: parse the registrations out of the repo's own
+    # JSON, parse the inventory out of the FIRST markdown table under an "Inventory" heading, compare the
+    # script basenames.
+    #
+    # Four design constraints, each of which is what keeps the false-positive rate at zero:
+    #  - parse the TABLE only, never the prose. Script names appear in prose too - the gate itself, the
+    #    launcher - and a loose parse turns every mention into a phantom entry. It did, on the first run.
+    #  - find the inventory by its HEADING, not by a filename. The repo this rule came from keeps its
+    #    inventory in docs/AGENT_HOOKS.md, and hard-coding hooks/README.md reported a missing inventory
+    #    against a repo that has a complete one. A check that cries wolf gets disabled, and then nothing
+    #    is enforced.
+    #  - ONE direction only. A registered hook must appear in the inventory. The reverse is NOT a
+    #    failure and is not even reported: hooks registered in a machine-local settings file are real,
+    #    live and correctly listed, and this gate deliberately never reads that file - so every such row
+    #    would be a false phantom. Judge what is readable; degrade rather than guess.
+    #  - a hook file on disk that is registered nowhere AND listed nowhere is an ADVISORY, not a failure:
+    #    dead weight is not a documentation gap.
+    if (Test-Enabled 'SZA-HOOK01') {
+        $hookHomes = @('hooks', '.claude/hooks') | Where-Object { Test-RepoPath $_ }
+        $regFiles = @('hooks/hooks.json', '.claude/settings.json', '.claude/settings.local.json') |
+            Where-Object { Test-RepoPath $_ }
+
+        if ($hookHomes.Count -gt 0 -or $regFiles.Count -gt 0) {
+            # Registered script basenames, from every readable version-controlled registration.
+            #
+            # Read the COMMAND STRINGS out of the parsed JSON, never the raw file text. The same
+            # parse-the-structure-not-the-prose rule the inventory side obeys: hooks.json carries a
+            # `description` field that legitimately names other scripts, and a text scan turned every one
+            # of them into a phantom registration on the first run of this check.
+            $registered = @{}
+            foreach ($rf in $regFiles) {
+                # settings.local.json is per-user scratch by convention; judging it would report a
+                # violation nobody can see in a clone.
+                if ($rf -like '*settings.local.json') { continue }
+                if ($isGit -and $tracked.Count -gt 0 -and $tracked -notcontains $rf) { continue }
+                $doc = $null
+                try { $doc = Get-Content -LiteralPath (Join-RepoPath $rf) -Raw | ConvertFrom-Json } catch { continue }
+                if ($null -eq $doc.hooks) { continue }
+                foreach ($eventName in @($doc.hooks.PSObject.Properties.Name)) {
+                    foreach ($group in @($doc.hooks.$eventName)) {
+                        foreach ($h in @($group.hooks)) {
+                            $cmdText = [string]$h.command
+                            if ([string]::IsNullOrWhiteSpace($cmdText)) { continue }
+                            foreach ($m in [regex]::Matches($cmdText, '(?i)[\w.\-]+\.(ps1|sh|py|js|cmd|bat)(?![\w])')) {
+                                $registered[[System.IO.Path]::GetFileName($m.Value)] = $rf
+                            }
+                        }
+                    }
+                }
+            }
+
+            # Parse one candidate document: the FIRST markdown table under a heading reading "Inventory".
+            # Returns $null when the document carries no such table at all.
+            function Read-HookInventory {
+                param([string]$FullPath)
+                $names = @{}
+                $inHeading = $false; $inTable = $false
+                foreach ($line in (Get-Content -LiteralPath $FullPath)) {
+                    if ($line -match '^#{1,6}\s') {
+                        if ($inTable) { break }
+                        $inHeading = ($line -match '(?i)^#{1,6}\s+(the\s+)?(hook\s+|agent\s+hook\s+)?inventory\b')
+                        continue
+                    }
+                    if (-not $inHeading) { continue }
+                    if ($line -match '^\s*\|') {
+                        $inTable = $true
+                        $first = ($line -split '\|')[1]
+                        foreach ($m in [regex]::Matches([string]$first, '(?i)[\w.\-]+\.(ps1|sh|py|js|cmd|bat)(?![\w])')) {
+                            $names[[System.IO.Path]::GetFileName($m.Value)] = $true
+                        }
+                    }
+                    elseif ($inTable -and $line.Trim() -ne '') { break }
+                }
+                if (-not $inTable) { return $null }
+                return $names
+            }
+
+            if ($registered.Count -gt 0) {
+                # Bounded search: markdown directly under the hook homes, docs/ and the repo root. The
+                # heading is the anchor, not the filename - see the note above.
+                $candidates = New-Object System.Collections.Generic.List[string]
+                foreach ($dir in @('hooks', '.claude/hooks', 'docs', '.')) {
+                    $full = Join-RepoPath $dir
+                    if (-not (Test-Path -LiteralPath $full -PathType Container)) { continue }
+                    foreach ($f in (Get-ChildItem -Path $full -Filter *.md -File -ErrorAction SilentlyContinue)) {
+                        $rel = if ($dir -eq '.') { $f.Name } else { "$dir/$($f.Name)" }
+                        $candidates.Add($rel)
+                    }
+                }
+
+                $invDoc = $null; $inventory = $null; $best = -1
+                foreach ($rel in $candidates) {
+                    $names = Read-HookInventory (Join-RepoPath $rel)
+                    if ($null -eq $names) { continue }
+                    # Several documents may carry an "Inventory" table; the hook one is whichever names
+                    # the most registered scripts. A tie on zero keeps the first, which still reports.
+                    $hits = @($registered.Keys | Where-Object { $names.ContainsKey($_) }).Count
+                    if ($hits -gt $best) { $best = $hits; $invDoc = $rel; $inventory = $names }
+                }
+
+                if ($null -eq $inventory) {
+                    Add-Finding -Id 'SZA-HOOK01' -Severity 'error' -Path 'hooks/README.md' `
+                        -Message "$($registered.Count) hook(s) are registered but the repo carries no hook inventory table" `
+                        -Fix 'Add an "## Inventory" heading followed by a table whose first column names each registered script - in hooks/README.md, docs/AGENT_HOOKS.md, or wherever the repo documents its hooks. A hook nobody can enumerate is indistinguishable from a bug in the tool.'
+                }
+                else {
+                    $missing = @($registered.Keys | Where-Object { -not $inventory.ContainsKey($_) } | Sort-Object)
+                    if ($missing.Count -gt 0) {
+                        Add-Finding -Id 'SZA-HOOK01' -Severity 'error' -Path $invDoc `
+                            -Message "registered but absent from the inventory table: $($missing -join ', ')" `
+                            -Fix 'Add a row per hook in the same change that registers it - that is the rule the gate exists for.'
+                    }
+                }
+            }
+
+            # Orphan scripts: on disk, registered in no readable file AND named in no inventory row.
+            # Both conditions, because a script registered machine-locally is correctly listed in the
+            # inventory and this gate never reads that registration - one condition alone would report
+            # every global hook as dead weight. Advisory by design either way.
+            foreach ($hookHome in $hookHomes) {
+                $dir = Join-RepoPath $hookHome
+                foreach ($f in (Get-ChildItem -Path $dir -File -ErrorAction SilentlyContinue |
+                                Where-Object { $_.Extension -in @('.ps1', '.sh', '.py') })) {
+                    if ($registered.ContainsKey($f.Name)) { continue }
+                    if ($inventory -and $inventory.ContainsKey($f.Name)) { continue }
+                    Add-Finding -Id 'SZA-HOOK03' -Severity 'warn' -Path "$hookHome/$($f.Name)" `
+                        -Message 'hook script on disk, registered nowhere and in no inventory row' `
+                        -Fix 'Register it or delete it. Dead weight, not a documentation gap - hence a warning.'
+                }
+            }
+        }
+    }
+
     # --------------------------------------------------------- group LAY
 
     if (-not (Test-RepoPath 'README.md')) {
@@ -604,7 +770,7 @@ try {
             }
         }
 
-        foreach ($ch in @($stamp.channels)) {
+        foreach ($ch in @($stamp.channels | Where-Object { $_ })) {
             $ok = switch ($ch) {
                 'winget'  { @($tracked | Where-Object { $_ -match '(^|/)(publishing/)?winget/.*\.yaml$' }).Count -gt 0 }
                 'msstore' { @($tracked | Where-Object { $_ -match '(^|/)(publishing/)?msix/.*AppxManifest\.xml$' }).Count -gt 0 }
@@ -643,7 +809,7 @@ try {
             }
         }
 
-        foreach ($page in @($stamp.site.pages)) {
+        foreach ($page in @($stamp.site.pages | Where-Object { $_ })) {
             $rel = if ($stamp.site.root -and $stamp.site.root -ne '.') { "$($stamp.site.root)/$page" } else { $page }
             if (-not (Test-RepoPath $rel)) {
                 Add-Finding -Id 'SZA-SURF02' -Severity 'error' -Path $rel -Message 'declared site page does not exist' -Fix 'Fix the stamp or add the page.'
@@ -693,7 +859,7 @@ try {
         }
 
         # Pairs a repo maintains byte-identical by hand, declared in the stamp so the gate can enforce it.
-        foreach ($pair in @($stamp.byteIdenticalPairs)) {
+        foreach ($pair in @($stamp.byteIdenticalPairs | Where-Object { $_ })) {
             if (@($pair).Count -ne 2) { continue }
             $a = Join-RepoPath $pair[0]; $b = Join-RepoPath $pair[1]
             if (-not (Test-Path -LiteralPath $a) -or -not (Test-Path -LiteralPath $b)) {
@@ -757,7 +923,7 @@ try {
 
     # Same rule on the user-visible metadata of a site page - the surface that actually reaches readers.
     if ($stamp -and $stamp.site) {
-        foreach ($page in @($stamp.site.pages)) {
+        foreach ($page in @($stamp.site.pages | Where-Object { $_ })) {
             $rel = if ($stamp.site.root -and $stamp.site.root -ne '.') { "$($stamp.site.root)/$page" } else { $page }
             if (-not (Test-RepoPath $rel)) { continue }
             $html = Get-Content -LiteralPath (Join-RepoPath $rel) -Raw

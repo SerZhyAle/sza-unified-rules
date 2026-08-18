@@ -546,3 +546,148 @@ it, because the ungated `/quick` + `/fix` ladder in EPUB_2_HTML is imported from
 kit upstream of the defect in every repo that imported it. See
 [universal_agent_kit.md](universal_agent_kit.md), "Canon adoption 2026-08-05": that decision was reversed
 the same day, on the owner's call, once the leak objection behind it turned out to be void.
+
+## Spread-back applied 2026-08-18 - locks, tiers, hook verdicts, an inventory gate, and two token shapes
+
+Source: a propagation brief prepared from a FastMediaSorter mob_v2 session on 2026-08-18 and **executed
+from a session started in the canon repo** - so, unlike the 2026-08-02 entry, the guardrail did not have
+to bend: nothing outside `rules/contrib/` was edited from a project session. Owner decision the same day:
+propagate all six items, and do the edit from a canon session.
+
+Six findings, all universal, none Android-specific. Four of them the canon was already arguing against
+itself: it carried the `& { .. }`-in-Bash trap as **prose** while measuring in the next document that
+prose holds at 1-8%; it shipped an enforcement layer in `2026.08.08.1` and wrote no rule that the layer
+stays described; its read guard **blocked** where the reference machine had already measured blocking to
+be the wrong verdict; and the words "Opus" and "Carrier" appeared nowhere in it at all.
+
+**What changed upstream:**
+
+| Target | Change |
+| --- | --- |
+| [DEVELOPMENT.md](../DEVELOPMENT.md) 10 | The single "serialize expensive shared operations" bullet - which described the **refuse**-shape - now leads into thirteen rules for a lock **queue**: queue rather than refuse, a distinct exit code for "queued", the explicit lock-free work list, hold the lock around the edit and not the task, ticket identity over session identity, a bounded head-of-queue reservation, liveness per lock kind with a PID-reuse defence, eviction by liveness OR ceiling with "undetermined" never grounds for it, an environment check before the queue, a marker-file verdict for a background waiter, re-entrancy, and the shared git directory in a multi-worktree checkout. |
+| [DEVELOPMENT.md](../DEVELOPMENT.md) 8 | ADDED four bullets: the literal direction token (an id in prose is a mention, an id in the token is a claim), the closure rule for unanswered questions with its 8.9% measurement, gate-the-transition-not-the-state with the archive carve-out and the placeholder rule, and wire-the-gate-into-every-mutator with heading-text-not-number. |
+| [AI_USAGE.md](../AI_USAGE.md) 3 | ADDED the subagent tier rule. The built-in general-purpose agent has no definition file, so it **cannot be pinned at all** - the remedy is naming the tier at the call site or routing to a pre-pinned agent, not "pin the agent". |
+| [AI_USAGE.md](../AI_USAGE.md) 5 | ADDED the verdict preference order - correct the input where the correct input is knowable, refuse only where no correct input exists - with the 381-fires / 31.8%-wasted measurement, the three rewrite mechanics, and the fail-open-harder rule. ADDED the hook-inventory rule and the test-the-pre-filter rule. The "canon now ships the hooks it asks for" bullet gained the installed-cache warning. |
+| [GITHUB_INTERACTION.md](../GITHUB_INTERACTION.md) 6 | ADDED three bullets - the cmdlet in command-head position with its ~89-in-a-week measurement, the interpreter that resolves nowhere (with the canon's preference for shimming over guarding), and the MSYS slash-argument corruption with its three accepted forms. The closing bullet now describes one batched guard rather than two. |
+| `hooks/guard-bash.ps1` | NEW, and it **absorbs** `guard-find-command.ps1` and `guard-ps1-in-bash.ps1`, which are deleted. Five refusal checks plus the slash-argument check in one script behind one pre-filter. |
+| `hooks/guard-uncapped-read.ps1` | REWRITTEN from blocking to **rewriting**: `permissionDecision: allow` plus a complete `updatedInput` carrying an injected `limit`, plus the notice in `additionalContext`. |
+| `hooks/README.md` | REWRITTEN around an `## Inventory` table with a verdict column, plus the verb vocabulary, the contracts for every shape including the two the canon documents but does not ship, and the installed-cache trap. |
+| `tools/check-compliance.ps1` | ADDED group `HOOK` (`SZA-HOOK01` registered-but-not-inventoried, error; `SZA-HOOK03` orphan script, warn) and `SZA-CANON07` (a stamp claiming a version ahead of the canon's own, error). |
+| `hooks/tests/smoke-prefilters.ps1` | NEW - asserts the **registered pre-filter patterns**, recovered from `hooks.json` and run under Git Bash. The canon had no equivalent. |
+| `skills/agent-cost/SKILL.md` step 5, `skills/spec-to-audit/SKILL.md` stages 1 and 7 | Cross-references, each stating what the measurement does *not* prove. |
+
+### The design objection in the brief, and how it was resolved
+
+The brief asked the executing session to justify itself if it did **not** batch the new Bash checks into
+one process, because the canon's own precedent points that way. It batched them, and went one step
+further: the two pre-existing Bash guards were absorbed too, so the event carries **one** registration
+rather than three. The second reason turned out to be stronger than the latency one - three of the five
+checks need the same quote-aware segmentation and heredoc stripping, so separate scripts would have
+carried three copies of that parse. One behaviour changed as a side effect, recorded rather than hidden:
+heredoc bodies are now stripped before the `find` check as well, so a heredoc body containing a `find`
+line writes a document instead of being refused. That is a relaxation, and the right one.
+
+### Deviations from the brief, each deliberate
+
+- **A seventh verb.** The brief's vocabulary has six - refuses, rewrites, observes, warns, nudges, arms.
+  The canon ships a `SessionStart` hook whose entire verdict is "here is context you did not ask for",
+  which none of the six describes, so **injects** was added and marked as the canon's own addition.
+- **The read guard's threshold moved from 200 lines to 500.** The old number was chosen when acting cost
+  the caller a whole turn; rewriting costs nothing, so the threshold moved to where the cost actually is,
+  and 500 is the canon's own "large file" line ([DEVELOPMENT.md](../DEVELOPMENT.md) 3). Stated plainly
+  because it **reduces what the guard touches**: an uncapped read of a 300-line file is now allowed
+  through untouched where it used to be blocked.
+- **The observe, arm and turn-refusing hooks are documented but not shipped.** Their contracts are in
+  `hooks/README.md` because a contracts section claiming to describe the shapes a hook can take must
+  actually describe them; the implementations stay downstream, where the brief itself places them.
+- **`SZA-HOOK02` was written, tested, and then deleted.** It reported an inventory row the gate could not
+  match to a registration. That is wrong in every real repo: a hook registered in a machine-local
+  settings file is live and correctly listed, and the gate deliberately never reads that file, so every
+  such row was a false phantom. The brief's own rule - degrade to one direction where the other half is
+  not readable - is why it went.
+
+### The gate was wrong first, which is the part worth recording
+
+`SZA-HOOK01` was written to look for the inventory in `hooks/README.md`. Its first run against **this
+repo** reported "6 hooks registered, no inventory table" - against a repo whose inventory has lived in
+`docs/AGENT_HOOKS.md` since `2026.08.08.1`, complete, with the verdict column this pass then copied
+upstream. A check that cries wolf gets disabled, and then nothing is enforced. The fix: find the table by
+its **heading**, not by a filename, across a bounded candidate set, and where several documents carry an
+"Inventory" heading, pick the one naming the most registered scripts.
+
+A second false positive died the same way one step earlier: the first version read script names out of
+the raw text of `hooks.json`, whose `description` field legitimately names other scripts - so the gate
+invented three registrations that did not exist. It now reads the parsed command strings only. Both
+failures are the failure the rule itself is about, one level up: **parse the structure, never the prose.**
+
+### Two pre-existing defects found in the gate while running it
+
+- A stamp with no `site` key crashed `check-compliance.ps1` with exit 2. `@($stamp.site.pages)` over a
+  missing key yields a one-element array holding `$null`, so the path resolved to the repo root and
+  `Get-Content` was handed a directory. Fixed in four places. No stamped repo hit it, because every one
+  of them declares a `site` block - which is why it survived this long.
+- `-Only` and `-Skip` do not accept a comma-separated list through `pwsh -File`: `-File` passes arguments
+  as literal strings, so `-Only A,B` binds one element `"A,B"` and silently filters out everything. Not
+  fixed - it is a property of `-File`, not of the script - but recorded, because the failure mode is a
+  run that reports zero findings and looks clean.
+
+### Honesty constraints, stated rather than glossed
+
+- **No effect data exists** for the lock queue, the hook-inventory gate, the tier-routing rule or the
+  cmdlet/interpreter/slash guards **as canon rules**. What is measured is the failure each was built for,
+  never the improvement each produced. `skills/agent-cost` step 4 forbids presenting a carry-forward as
+  an effect, and the earliest honest re-measurement is a fresh mining pass after these have been live.
+- **The tier finding is a measurement wrapped around a deduction, and the canon says so in the rule
+  itself.** Measured over 2026-08-03..2026-08-17 (1 150 sessions, ~54 700 requests): the unpinnable
+  built-in was the most-spawned subagent type at **182 spawns in 14 days**, and output tokens split
+  **34.29 M expensive against 7.13 M mid**, 82.8% expensive. That those spawns carried that 82.8% is a
+  deduction - the miner never correlates a model to a spawn. The brief's own prose said "five of six"
+  local agents carry a pin; the working tree says six of six, and the undercount did not travel.
+- **Every constant from the lock queue stayed downstream.** The reservation windows, the ticket ceilings,
+  the staleness minutes and the unreadable-ticket grace period are tuning constants nobody measured. The
+  canon states the shape and omits the number, exactly as the two prior spread-backs did.
+- **The measured numbers that did travel**, because they are observations rather than settings: the 479
+  seconds one lock was held across a phase, the ~89 cmdlets piped into Bash in a week, 381 blocks in a
+  week with 31.8% answered by reading the whole file anyway, 134 of 1 506 closures carrying an open
+  question (8.9%), and 98 files yielding an id against 15 carrying a direction. Each travels with its
+  corpus.
+- **[INVARIANTS.md](../INVARIANTS.md) was not touched**, on the precedent of both prior spread-backs:
+  none of this class is expensive, irreversible or outward-facing in the sense that page admits.
+- **No command names travelled.** No spec ids, no slash commands, no script names from this repo.
+
+### A defect found here that belongs to this repo, not to the canon
+
+The local documentation for the lock queue lists three outcome-marker values (`granted` / `timeout` /
+`evicted`); the code writes a **fourth**, `enqueue-failed`. A reader branching on the documented three
+treats a failed enqueue as an unknown state. Recorded here so it is not lost - the canon's version of the
+rule now says a marker must carry "a closed set of outcome values that the reader can branch on
+exhaustively", which is the general form of this bug.
+
+**Verification.** `pwsh -File tools/check-rules.ps1` - expected exit 0, actual **0** (19 core docs, 11
+contrib docs). `pwsh -File hooks/tests/smoke-hooks.ps1` - expected 0, actual **0**, 40 cases, up from 14.
+`pwsh -File hooks/tests/smoke-prefilters.ps1` - expected 0, actual **0**, 20 cases, new. Both new gate
+checks were proven from both sides against a synthetic repo before being trusted: `SZA-HOOK01` fires on a
+missing inventory and on a missing row, and stays silent when the inventory is complete or lives in
+`docs/AGENT_HOOKS.md`; `SZA-CANON07` fires on a stamp claiming `2026.08.08.2` against a canon at
+`2026.08.08.1` - which is the exact blocker this brief opened with. `CANON_VERSION` `2026.08.08.1` ->
+**`2026.08.18`**; core digest `sha256:3a194628..` -> **`sha256:03bc1c8c..`**.
+
+**Re-stamped in the same pass: all twelve stamped repos**, each verified with
+`check-compliance.ps1 -RepoRoot`. Every staleness warning cleared, and the `SZA-CANON07` blocker this
+brief opened with - both FastMediaSorter stamps claiming `2026.08.08.2`, a version that was never
+published - is gone, superseded rather than hand-patched, which is what the brief asked for. Nine of the
+twelve came back at exit 0 with zero errors. The three that did not carry **pre-existing** violations,
+none introduced by this pass and none of them canon work:
+
+| Repo | Error | Status |
+| --- | --- | --- |
+| CyrFlip | `SZA-STYLE01` store-listing typography | the same one recorded in its own file on 2026-08-02, still open |
+| Streams_Player | `SZA-SEC03` committed `catalog-snapshot.zip` with no why-comment; `SZA-STYLE01` 38 dashes in one doc | new since 2026-08-05, that repo's own work |
+| EPUB_2_HTML | `SZA-SEC04` in `internal/report/archive_test.go` and `redact_test.go` | **a false positive, and it is the gate's fault** |
+
+That last one is worth naming, because it is the failure mode this gate's own header warns about. The
+matched literal is `AIzaSy` + a keyboard walk, and the two files are the tests for the **redaction** code
+- a fake credential is precisely what must appear there, and there is no real key. `SZA-SEC04` was left
+unchanged: weakening a secret check is the owner's call, not a propagation's, and the stamp already
+carries the right instrument for it (a scoped `exemptions` entry naming the two paths and the reason).
+Recorded here so the next reader does not spend the same half hour proving it is not a leak.

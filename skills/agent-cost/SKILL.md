@@ -94,6 +94,16 @@ when a defect actually reached the owner; otherwise it is compressed to one line
 dropped. Record what you dropped and the measurement that killed it, in the project's own record -
 a refuted recommendation that stays undocumented gets re-proposed every audit.
 
+**Check the subagent tier before anything else, because it is the largest single lever this measurement
+can reach.** A harness's built-in general-purpose agent has no definition file, so it cannot carry a model
+pin and takes the session's default - the most expensive tier - and the mining pass shows the tier split
+and the per-type spawn counts side by side. The rule is [AI_USAGE.md](../../rules/AI_USAGE.md) §3, "route
+a subagent to a tier deliberately". Two cautions specific to reading it *here*: the miner records a
+spawn's `subagent_type` and a message's authoring model **separately and never correlates them**, so
+"these spawns ran on that tier" is a deduction and must be labelled one; and the tier split is an output
+figure, while cached input dominates the bill - do not present a tier saving as a bill saving without
+both.
+
 Watch the counter-metric too. Anything that narrows what the agent reads raises the risk of editing
 against partial context, so track the failed-edit rate alongside the saving.
 

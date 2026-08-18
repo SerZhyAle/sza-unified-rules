@@ -25,6 +25,12 @@ file. It did not work. The rules were fine; the delivery was not:
 - **Nothing could check compliance.** The old gate validated the canon's own text - never whether a project
   followed it. A rule that cannot be checked mechanically will drift. That is a law, not a shortcoming.
 
+The same lesson turned up in a second domain, and it earns one sentence here because it generalizes past
+delivery: **a rule that says "wait" without saying "and meanwhile do this" gets ignored exactly the way a
+document nobody loads gets ignored.** That is why the canon's lock discipline is a queue carrying an
+explicit answer to "what do I do while queued", and not a refusal - see
+[DEVELOPMENT.md](rules/DEVELOPMENT.md) section 10.
+
 The fix is not more documentation. It is to stop treating the canon as documentation:
 
 | Layer | What it is | When it loads |
@@ -67,7 +73,7 @@ compliance gate read instead of guessing.
 | [`feature-to-site`](skills/feature-to-site/SKILL.md) | the ship-together fan-out: in-app strings, ledger, READMEs, the product site, support pages, listing sources, the hub - every locale in one edit |
 | [`spec-to-audit`](skills/spec-to-audit/SKILL.md) | the task lifecycle from triage through spec, plan, implementation, evidence, self-audit, documentation and commit, with a refusing gate at each boundary |
 | [`adopt-canon`](skills/adopt-canon/SKILL.md) | adopting or re-syncing the canon in a repository, and writing its stamp |
-| [`agent-cost`](skills/agent-cost/SKILL.md) | measuring what a session actually costs, with the five corrections without which every token figure is inflated roughly threefold |
+| [`agent-cost`](skills/agent-cost/SKILL.md) | measuring what a session actually costs, with the five corrections without which every token figure is inflated roughly threefold - and the subagent model tier, the largest single lever that measurement reaches |
 | [`caveman`](skills/caveman/SKILL.md) | terse mode - prose compressed, every exact string and every gate reason left intact; plus the commit and review shapes |
 
 Skills carry their heavy payload in `references/` beside them, loaded on demand - the winget error table and
@@ -79,20 +85,31 @@ The rule docs say four separate times that a behaviour is worth **enforcing at t
 stating as a rule**. The canon used to ship none of those hooks, so each project either built its own or
 went unprotected. Now [`hooks/`](hooks/README.md) carries them:
 
-| Hook | Event | Blocks or warns about |
-| --- | --- | --- |
-| `session-start` | `SessionStart` | injects the hard invariants (adopting repos only) |
-| `guard-find-command` | `PreToolUse` Bash | a `find` with a disk-wide root or no `-maxdepth` |
-| `guard-ps1-in-bash` | `PreToolUse` Bash | a `.ps1` in command-head position - it fails yet reports exit 0 |
-| `guard-uncapped-read` | `PreToolUse` Read | the first uncapped read of a file over 200 lines |
-| `on-user-prompt` | `UserPromptSubmit` | context past 250k/400k; a micro-task reaching for the full pipeline |
+| Hook | Event | Verdict | On what |
+| --- | --- | --- | --- |
+| `session-start` | `SessionStart` | injects | the hard invariants (adopting repos only) |
+| `guard-bash` | `PreToolUse` Bash | refuses | five things Bash on Windows cannot run - a `find` with no depth bound, a `.ps1` or a `Verb-Noun` cmdlet in command-head position, an interpreter that resolves nowhere, the `& { .. }` idiom - plus the slash argument MSYS corrupts silently |
+| `guard-uncapped-read` | `PreToolUse` Read | rewrites | an uncapped read of a file over 500 lines: windowed, with a notice saying so |
+| `on-user-prompt` | `UserPromptSubmit` | warns, nudges | context past 250k/400k; a micro-task reaching for the full pipeline |
 
 The argument for all of it is one measurement, from [AI_USAGE.md](rules/AI_USAGE.md) section 5: gated rules
 held at **~99%** across a month of sessions, the same rules as prose at **1-8%** - and the advice to read a
 large file with a range, which ships in the tool description on *every* turn, measured **22%**.
 
-Guards fail open, return `exit 2` to block, and keep an unconditional escape hatch; advisories always
-`exit 0`. `SZA_HOOKS_OFF=1` stands them all down.
+Every hook fails open and `SZA_HOOKS_OFF=1` stands them all down. Beyond that they do not share one
+contract, and the differences are the interesting part: a **refusing** hook returns `exit 2` and keeps an
+unconditional escape hatch; a **rewriting** one returns `exit 0` with corrected input and must fail open
+*harder*, because when it errs it corrupts what the model reads rather than merely gating a call; an
+**advisory** always exits 0 and a false fire costs more than the miss it prevents. The preference order
+between them is the rule worth carrying: **correct the input where the correct input is knowable, refuse
+only where no correct input exists** - measured, a blocking predecessor of the read guard fired 381 times
+in a week and 31.8% of those blocks were answered by re-reading the whole file anyway. Nothing saved, a
+turn spent. The full vocabulary - and the `PostToolUse` observe and `Stop` turn-refusing shapes the canon
+documents but does not ship - is in [hooks/README.md](hooks/README.md).
+
+Registering or removing a hook means editing that file's inventory table in the same change; the gate
+below fails on a divergence. A hook is invisible by construction, so an undocumented one is
+indistinguishable from a bug in the tool.
 
 ## The compliance gate
 
@@ -102,10 +119,12 @@ pwsh -File tools/check-compliance.ps1 -Strict      # warnings become errors
 pwsh -File tools/check-compliance.ps1 -Json        # machine-readable
 ```
 
-Exit codes: `0` clean, `1` violations, `2` internal error. Checks are grouped `CANON` (adoption and
-staleness), `RULES` (canon pointer, no restatement, no self-declared fork), `LAY` (layout and ledger), `SEC`
-(secrets and committed artifacts), `VER` (version shape and channel manifests), `SURF` (privacy page, SEO
-block, sitemap), `STYLE` (house text style).
+Exit codes: `0` clean, `1` violations, `2` internal error. Checks are grouped `CANON` (adoption,
+staleness, and a stamp claiming a canon version *ahead* of the canon's own - which is corruption rather
+than staleness, and so carries its own id at error), `RULES` (canon pointer, no restatement, no
+self-declared fork), `HOOK` (every registered hook appears in the inventory table), `LAY` (layout and
+ledger), `SEC` (secrets and committed artifacts), `VER` (version shape and channel manifests), `SURF`
+(privacy page, SEO block, sitemap), `STYLE` (house text style).
 
 Two design choices matter:
 
@@ -125,7 +144,7 @@ before committing anything under `rules/`.
 rules/              the canon: INVARIANTS.md + 18 reference docs + contrib/ per-project records
 skills/             the seven skills, each with its own references/
 tools/              check-rules.ps1 (the canon) + check-compliance.ps1 (a project)
-hooks/              the enforcement layer: invariant injection + three guards + the prompt advisories
+hooks/              the enforcement layer, enumerated in its own inventory table - not counted here
 templates/          .sza-canon.json - what a project copies when it adopts
 CANON_VERSION       the monotonic version the stamp records
 ```
