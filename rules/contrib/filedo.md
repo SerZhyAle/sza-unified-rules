@@ -386,3 +386,137 @@ shape either; it applies the next time anything here is called unused.
 
 Verification: `check-compliance: FileDo - 0 error(s), 4 warning(s) (overlay C, canon 2026.08.05)` -
 warnings are pre-existing and none was introduced here.
+
+## Canon reconcile 2026-08-18 - the stale-cache catch-up
+
+Canon **2026.07.27 -> 2026.08.18.1**, core digest `sha256:dae220bf..` -> `sha256:961c9c8a..`, recomputed
+here rather than copied (`check-compliance.ps1 -PrintDigest`). Consumption model unchanged (**reference**).
+
+**Why this is a four-update jump and not a one-step move.** The `sza` plugin served a cached
+**2026.07.27** build for three weeks, so the 08-02, 08-05, 08-08 and 08-18 canon updates never reached a
+session in this repo. The plugin is now **2026.818.1**.
+
+**The record contradicted the repo, and the repo won.** The two sections above - *Canon reconcile
+2026-08-02* and *Canon reconcile 2026-08-05* - both state "Stamp updated". **The stamp was never updated.**
+`git log --follow -- .sza-canon.json` in `P:\WINDOWS\FileDo` returns exactly two commits, `697508d` and
+`0460b6a`, both dated 2026-07-27, both carrying `"version": "2026.07.27"`. Those two reconciles were
+recorded in the canon repo and never landed in the consumer repo, and this record asserted a repo-side fact
+that the repo contradicted for a fortnight. Working-tree-is-truth applies to this file too: **a reconcile
+section should cite the consumer-repo commit that carried the stamp**, and one that cannot is a claim, not
+a record.
+
+**Re-read and reconciled** - only the docs whose content moved since 2026.07.27:
+
+- **[AI_USAGE.md](../AI_USAGE.md) section 1 - fire-and-forget is now forbidden**, with the threshold set at
+  the harness's foreground timeout. Live target here: the `/build` skill drives `build.ps1 -Test`, which is
+  a gate, and a backgrounded gate reports its wrapper's exit code. The skill now says so and requires the
+  foreground. Every gate run for this reconcile was foreground.
+- **[AI_USAGE.md](../AI_USAGE.md) section 2 - the three closure invariants.** This is where the repo
+  genuinely diverged. `build.ps1 -Test` satisfied invariants 1 and 2 - the verdict covers all four binaries,
+  and `Test gate passed.` prints only after both checks - but **failed invariant 3**: a missing Go toolchain
+  or a missing artifact was reported as exit 1, indistinguishable from a real defect, and `go test` output
+  went to `Out-Null` so a failure was undiagnosable. Fixed: **exit 2 = "could not verify", exit 1 = "found a
+  defect"**, the toolchain check moved **ahead of the builds** (DEVELOPMENT section 10 - environment before
+  work, not after; inside the gate it would have been dead code, since a missing Go surfaces as build errors
+  first), and failing test output is now printed. `release.ps1:95` tests `-ne 0`, so exit 2 still stops a
+  release.
+- **[AI_USAGE.md](../AI_USAGE.md) section 5 - the canon ships its hooks; do not rebuild them per project.**
+  `.claude/settings.json` in this repo carries a single `permissions.allow` entry and **no hook
+  registrations**, so there is nothing repo-side to disarm. Recorded in `AGENTS.md` so a later session does
+  not hand-wire a local copy. The hook family is demonstrably live: the plugin's `guard-bash` blocked an
+  unbounded directory scan during this session. **But see the machine-level duplication below** - the rule
+  has a live violation, just not in this repository.
+- **[DEVELOPMENT.md](../DEVELOPMENT.md) section 15 - caching the expensive gate's CLEAN verdict.**
+  **Not applicable, and recorded rather than skipped silently.** The rule targets a static-analysis gate that
+  was 86% of gate wall time; FileDO's gate is a compile plus a smoke-run, about a minute wall clock including
+  the GUI MSBuild step, with no serialisation lock to queue behind. A fingerprint cache here would save
+  nothing. The section's other half did apply - "verify which path is actually used" - see the console-text
+  defect below.
+- **[GITHUB_INTERACTION.md](../GITHUB_INTERACTION.md) section 6 - the Bash/tooling family.** The
+  highest-value section for this repo, whose two entry points are both `.ps1`. `AGENTS.md` now states the
+  `pwsh -NoProfile -File` routing for a Bash caller instead of only the bare `.\build.ps1` form, without
+  restating the rule the hook already enforces. "Every tool call gets a fresh interpreter" needed no repo
+  change - nothing here depends on shell state surviving a call.
+- **[INVARIANTS.md](../INVARIANTS.md) - unchanged since adoption.** `git log 7dd3dde..HEAD` returns nothing
+  for it. The plugin-cache copy and the canon-repo copy differ by byte only because the cache ships **CRLF**
+  and the repo **LF**; content-identical after `tr -d '\r'`. Worth knowing before anyone builds a byte
+  comparison between the two trees.
+
+**A defect the reconcile surfaced on its own.** `build.ps1` printed `go test ./cmd/filedo-test ...` while
+actually running `Push-Location cmd\filedo-test; go test ./...`. The printed form **cannot work** - that
+directory is its own module, so from the root it fails with *main module (filedo) does not contain package*
+- and `AGENTS.md` had documented the trap for months while the script kept advertising the broken form on
+every green run. The `/build` skill had copied the broken form from that console line. Both fixed; the
+script now prints the command it runs.
+
+**Agent-rules trim.** `AGENTS.md` lost the restatements that have exactly one home in the canon: commit
+language, message shape, the co-author trailer, and the evidence rule - the whole `## Commit & PR` section
+collapsed to the two genuine deltas (verification output in the body, screenshots for GUI/installer/docs).
+The build/release wall was rewritten from a restated universal ("HARD RULE: never creates a tag") into the
+checkable repo fact - `build.ps1` contains no `git tag` call at all, `release.ps1` holds it at lines 130-131
+- and carries a `canon-ok` marker for the part that still reads like a restatement. `CLAUDE.md` was itself
+violating this repo's own recorded divergence: it is meant to be a bare pointer and had grown a duplicate of
+the tag rule and the testing-gate delta. Now a true pointer. Every kept claim was re-verified against the
+tree; the tag regex `^v\d{10}$` is confirmed at `release.ps1:77`.
+
+**Closed from the 2026-07-27 section.** "It hosts no privacy page at all", called the sharpest real finding
+in the portfolio, is **resolved**: `docs/privacy.html` landed in `0460b6a` on 2026-07-27 and
+`msix/store-listing.md` now carries the live URL instead of a TODO. The gate has reported 0 errors since.
+
+**Warnings: 4 -> 0.** All four were real and all four are fixed, not exempted. `docs/README.md` now indexes
+the tree and separates the site from the unlinked repo documents; `docs/robots.txt` and `docs/sitemap.xml`
+were added, the sitemap listing the **6 canonical pages only** - the `ru/ua/de/fr` index files are redirect
+stubs that canonicalise to the root, and listing a non-canonical redirect is what makes a sitemap lie;
+`docs/index.html` gained a JSON-LD `SoftwareApplication` block modelled on the one `docs/privacy.html`
+already carried. `docs/` has **no generator**, so these are edits in place and not render-target violations
+(invariant 16) - confirmed by grep, not assumed.
+
+**Verification** - fresh runs, this session:
+
+- `pwsh -File tools/check-compliance.ps1` - baseline `0 error(s), 4 warning(s)`, final
+  `0 error(s), 0 warning(s) (overlay C, canon 2026.08.18.1)`, exit **0**.
+- `.\build.ps1 -Test` - exit **0**, `Test gate passed.` Run twice: once before the environment-check move,
+  once after.
+- `pwsh -NoProfile -Command "$env:PATH='C:\Windows\System32'; & build.ps1 -Test"` - exit **2**,
+  `Cannot verify: 'go' is not on PATH - nothing was built or checked.` The new exit code is proven by
+  driving it, not by reading it.
+- The gate runs restamped the tracked binaries in `exe_to_download/`; restored with
+  `git checkout -- exe_to_download/` so the commit carries only the intended change.
+
+**Carried forward, not closed:**
+
+- `.sza-canon.json` `site.pages` lists `index.html` and `privacy.html` while Pages serves **6** canonical
+  pages - the four `guides/` pages are absent. Left alone this pass because the owner declared the stamp
+  correct and off-limits; it wants a decision on whether `pages` is meant to be exhaustive or indicative.
+- The in-repo skills under `.claude/skills/` are git-ignored, so this session's `/build` skill fix is
+  **local-only and cannot be committed**. Every machine has its own copy and none of the others got this
+  fix. The divergence is now explicit in `AGENTS.md`, but the underlying problem - a corrected skill that
+  cannot travel - is unresolved.
+- **Machine-level hook duplication, owner decision, not applied.** `~/.claude/hooks/` holds a complete
+  hand-wired copy of the canon family - `guard-find-command.ps1`, `guard-ps1-in-bash.ps1`,
+  `guard-bash-unavailable-command.ps1`, `guard-fire-and-forget.ps1`, `guard-uncapped-read.ps1`,
+  `warn-context-size.ps1` - registered in the user-level `settings.json` and running **alongside** the
+  plugin's own. AI_USAGE section 5's precondition for removing them is satisfied and was checked, not
+  assumed: the installed cache at `sza/2026.818.1/hooks/` really does carry `guard-bash.ps1` (the five
+  Bash gates batched behind one pre-filter), `guard-fire-and-forget.ps1` and `guard-uncapped-read.ps1`.
+  Both families fired in this session. This is outside the repository, so it is reported rather than
+  changed.
+
+**Canon fixes needed - NOT applied from this session:**
+
+1. **The staleness ladder cannot detect its own staleness.** A consumer reading a stale plugin cache
+   computes a digest that matches its own stamp and reports a clean bill of health - exactly what happened
+   here for three weeks across four canon updates. The ladder compares the stamp against the *installed*
+   canon, never against the *published* one. Consider having `check-compliance` surface the plugin build it
+   read, so "healthy" and "healthy but three weeks behind" stop looking identical.
+2. **A reconcile section in `contrib/` should cite the consumer-repo commit that carried the stamp.** The
+   08-02 and 08-05 sections here asserted a stamp move that never happened, and nothing caught it because
+   the record is prose. Same "a claim is not a record" shape the canon already applies to gates.
+3. **The hook pre-filters match prose, not command position.** Both the plugin's batched pre-filter and the
+   hand-wired one test the raw payload for a bare substring, so a heredoc that merely *discusses* a
+   directory scan is blocked as though it were one - it happened twice while writing this very section, and
+   the canon's own guidance is that a pre-filter "may only skip calls the real check would have allowed",
+   which says nothing about the false-positive direction. Anchoring on command-head position would cost
+   nothing and remove a class of dead turns.
+4. Minor: the plugin cache ships **CRLF** and the canon repo **LF**, so a naive byte comparison between the
+   two trees reports every rule doc as differing. Worth one line wherever the two are compared.
