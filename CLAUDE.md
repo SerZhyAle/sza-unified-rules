@@ -20,6 +20,13 @@ does not apply here; this is where fixes land. It applies everywhere else.
 - **Changing a rule doc changes the digest**, which marks every adopting repo stale. That is intended - but
   bump [CANON_VERSION](CANON_VERSION) in the same commit so the staleness ladder can tell a minor
   reconciliation from a hard re-adoption.
+- **Bump `.claude-plugin/plugin.json` `version` in that same commit**, derived from `CANON_VERSION`:
+  `2026.08.18.1` -> `2026.818.1` (semver forbids the leading zero, so the month and day join into one
+  numeric identifier). This is what actually delivers the canon: `claude plugin update` compares that
+  number and nothing else - not the digest, not the commit - so a canon change shipped without it leaves
+  every consumer on the cached copy of the previous version while `update` reports "already at the latest
+  version". That is not hypothetical: the portfolio ran five canon updates against a plugin cache frozen
+  at `2026.07.27`, and no session anywhere loaded them.
 - **Editing a skill**: the SKILL.md body is what loads on trigger; heavy payload goes in `references/`
   beside it. Keep the frontmatter `description` written in the words the owner actually uses to ask for the
   task, in both languages where that is how the request arrives - it is the trigger, not a summary.
