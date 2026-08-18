@@ -353,3 +353,106 @@ edit.
 Verification: `check-compliance: CyrFlip - 1 error(s), 5 warning(s) (overlay A, canon 2026.08.05)`, exit 1.
 Unchanged from the 2026-08-02 pass: the one error is still SZA-STYLE01 in `msix/store-listings.md:248,250`,
 still outward-facing store copy, still owned by a CyrFlip session. Nothing was introduced here.
+
+## Canon reconcile 2026-08-18 - the three-week cache gap closed
+
+Canon **2026.08.05 -> 2026.08.18.1**, core digest `sha256:8d33fdab..` -> `sha256:961c9c8a..`. The stamp had
+already been moved mechanically before this session; it was **not** re-written here, only verified -
+`check-compliance.ps1 -PrintDigest` recomputes `961c9c8a835892b1..` against the installed plugin and it
+matches the stamp byte for byte. Worth recording because it looks like a discrepancy and is not: the plugin
+cache carries **both `2026.818.1` and `2026.818.2`**, and the two have the **same core digest**. The `.2`
+bump is packaging, not rules, so under the staleness ladder ("digest equal -> nothing to do") a stamp
+naming `2026.08.18.1` is current either way.
+
+**Why this reconcile is larger than the two above it.** The `sza` plugin served a **2026.07.27 cache for
+three weeks**, so no CyrFlip session ever loaded the 08-08 or 08-18 canon. The 08-02 and 08-05 sections
+above were written from other repos' sessions, which had the fresh docs; the two updates *after* them had
+never been read against this tree at all. Re-read in full and reconciled here: [AI_USAGE](../AI_USAGE.md)
+sections 1, 2, 3, 5 and 7; [DEVELOPMENT](../DEVELOPMENT.md) sections 8, 10 and 15;
+[GITHUB_INTERACTION](../GITHUB_INTERACTION.md) section 6; [TESTING_AND_QA](../TESTING_AND_QA.md) section 8;
+[RELEASE_AND_DISTRIBUTION](../RELEASE_AND_DISTRIBUTION.md) section 8. [INVARIANTS](../INVARIANTS.md) is
+**unchanged since 2026-07-27** (`git log --since` over `rules/` returns nothing for it), so it was re-read
+as a compliance pass rather than as a diff, and nothing in this repo contradicts the twenty lines.
+
+**Changed in the repo - `CLAUDE.md` only, six edits, each verified against the tree first:**
+1. **Skill list completed** - `sza:agent-cost` and `sza:caveman` were missing; the plugin ships seven
+   skills, the rules file named five.
+2. **Two canon mechanisms named as having no local implementation.** *Hooks*: the canon now ships and
+   registers its own guard family, and this repo registers none - `.claude/settings.json` carries
+   permissions only and there is no `hooks/` folder - so the line exists to stop a future session
+   hand-wiring a second copy of a guard that is already live. *Release package plan*
+   (RELEASE_AND_DISTRIBUTION section 8): **skipped, with the reason the skill asks for** - CyrFlip has no
+   ticket store to project from. `PLAN/` is 20 flat spec files moved into `PLAN/done/` by hand, with no
+   status field, no id scheme and no single write path a reconcile could hook into. Standing up a ticket
+   store to earn a two-file plan would be the tail wagging the dog.
+3. **Stale fact fixed** - the companion extension's own clock read `0.1.1`; `vscode-extension/package.json`
+   says **`0.1.4`**.
+4. **Stale fact fixed** - the `paths-ignore` lever list was missing `.github/ISSUE_TEMPLATE/**`, which
+   `ci.yml` carries on both the push and the pull_request trigger.
+5. **The preflight's verdict contract written down**, against AI_USAGE section 2's three closure
+   invariants. Checked in `release.ps1`: every gate `throw`s, so **no path prints a green tail over a gate
+   that failed inside** - the invariant that actually costs money is satisfied. The third invariant is
+   **not**: "found a defect" and "could not verify" both leave as exit 1, and the one could-not-verify path
+   that continues rather than throwing is the unreachable-origin branch (`release.ps1:91-93`), which warns
+   in yellow and skips only the remote tag/behind checks. Recorded rather than fixed - re-writing the exit
+   contract of the paid path is an owner decision, not a side effect of a doc re-sync.
+6. **The UI-ellipsis divergence recorded** (see below), and the two doc lines that quoted
+   `Diagnose caret position...` with a typographic ellipsis corrected to quote the real string verbatim.
+
+**DIVERGE (accepted, now recorded in `CLAUDE.md`): menu strings keep the Win32 trailing `...`.** The house
+style is `..`, and roughly **200 UI strings across the 13 languages** end in `...` - `Настройки...`,
+`Импорт из OneClickRunner...`, `Diagnose caret position...`, every `Add..`/`Browse..`/`Export..` button.
+On Windows that ellipsis is the platform's "this opens a dialog" signal, so it is a UI convention rather
+than prose typography, and the localization **key is the Russian source string**, so changing them is a
+13-language user-visible edit that also rewrites every call site. The four SZA-STYLE02 warnings in
+`CLAUDE.md`/`README*.md` are all documentation **quoting those strings**, which is the gate's own stated
+legitimate case. Marked `canon-ok` in the rules file so the next session does not re-litigate it.
+
+**Open items from 2026-07-27 / 08-02 / 08-05 - all three closed, verified against the tree, none by me:**
+- SZA-STYLE01, the em/en-dashes in `msix/store-listings.md:248,250` - **fixed**; both lines now carry plain
+  hyphens and the gate reports 0 errors.
+- `universal_agent_pack.zip` tracked at the root with no ignore rule - **fixed**; `git ls-files` returns
+  nothing for it and `.gitignore:59` names it.
+- `docs/privacy.html` with no `<h1>` - **fixed**; `docs/privacy.html:64` is `<h1>Privacy Policy</h1>`.
+- Also closed since 2026-07-23: the `/release` path no longer points operators at the mirror. `release.ps1`
+  runs `msix\render-listing-mirrors.ps1 -Check` in the preflight (lines 119-126) and its printed checklist
+  names `msix/store-listing-export.csv` as the source of truth (lines 169-172, 191-192).
+
+**Canon fix needed (one, non-blocking) - SZA-RULES04 false-positives a denial of duplication.** Writing the
+heading *"Two canon mechanisms that deliberately have no local copy"* raised
+`SZA-RULES04 ... self-declared duplication of the canon`. The first fork regex is
+`(deliberately|..)[^.]{0,120}(restat|duplicat|mirror|repeat|cop(y|ies|ied))` and `$forkNegationRe` only
+covers verb negations ("do not restate", "nothing is copied"); a **noun-phrase** denial - "have no local
+copy", "with no local copy", "no in-repo copy" - slips past it and scores as a confession. Suggested fix:
+add `\bno\s+(local|in-repo|private|separate)\s+(copy|copies|version|implementation)\b` to the negation
+alternation. Worked around here by rewording to "nothing here re-implements", which is better prose anyway,
+so nothing is blocked.
+
+**Verification (fresh runs, PowerShell; `dotnet` is not on the Bash tool's PATH on this machine):**
+- `pwsh -File check-compliance.ps1` before the edits -> `CyrFlip - 0 error(s), 5 warning(s)
+  (overlay A, canon 2026.08.18.1)`, **exit 0**.
+- `pwsh -File check-compliance.ps1` after -> **identical**, `0 error(s), 5 warning(s)`, **exit 0**. The
+  five warnings are unchanged and are now all accounted for: one informational size warning (SZA-RULES05,
+  680 lines, and the process section is 79 of them - the rest is module architecture, the config table and
+  the testing strategy) and four SZA-STYLE02 hits that are the DIVERGE above. An intermediate run caught
+  the RULES04 false positive at 1 error; the reworded text clears it.
+- `dotnet build CyrFlip.sln -c Release --nologo` -> **Build succeeded, 0 Warning(s), 0 Error(s)**, exit 0.
+- `dotnet test CyrFlip.sln -c Release --no-build --nologo` -> **Passed! Failed: 0, Passed: 466**, exit 0.
+  (53 tests at the 2026-07-23 spread-back; 466 now.) The tray app was stopped for the build because it
+  locks `bin\Release\net48\CyrFlip.exe`, exactly as `build.ps1` does, and restarted afterwards.
+
+**Carried forward, not fixed here - two root docs the canon now has a home for.**
+`STORE_PUBLISHING.md` (195 lines) is written as a **portfolio-generic playbook** - its own headings say
+"reusable playbook" and "Reuse checklist for the next product" - which is exactly what the `store-publish`
+skill now owns; the CyrFlip-specific half of it (Store ID, identity, the local `Add-AppxPackage` verify, the
+listing pipeline) is what should survive as a pointer plus deltas. `RELEASE.md` (92 lines) is written **in
+Russian**, against the English-artifacts invariant, and duplicates the build/release wall that `CLAUDE.md`
+and the two scripts already carry. Both were left alone deliberately: this session's remit was the
+agent-rules file, and collapsing two owner-authored root docs is a decision to take with the owner rather
+than a side effect of a re-sync. Neither is load-bearing for a gate - `check-compliance` reads agent-rules
+files only - so they are recorded here to stop the next session rediscovering them.
+
+**Commit discipline.** The working tree carried 30-odd paths of unrelated in-flight work (the
+`LayoutIdentity`/palette feature across `src/`, the docs and the READMEs), including **pre-existing
+uncommitted edits inside `CLAUDE.md` itself**. Only the canon hunks of `CLAUDE.md` plus `.sza-canon.json`
+were staged; `git add -A` was never run and the foreign work was left uncommitted for its own session.
