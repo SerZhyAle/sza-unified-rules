@@ -293,3 +293,117 @@ is unmeasured. Carried as an owner decision, named here so silence is not read a
 
 Verification: `check-compliance: EPUB_2_HTML - 0 error(s), 11 warning(s) (overlay A, canon 2026.08.05)` -
 warnings are pre-existing and none was introduced here.
+
+## Canon reconcile 2026-08-18 - the two updates the plugin cache never served
+
+Canon **2026.08.05 -> 2026.08.18.1**, core digest `sha256:8d33fdab..` -> `sha256:961c9c8a..`. Consumption
+model unchanged (**reference**).
+
+Why this is not a routine tick: the `sza` plugin served a cached **2026.07.27** in this repo for roughly
+three weeks, so no session here ever loaded the 08-08 or the 08-18 rule docs. The 08-02 and 08-05 sections
+above were written against the canon repository directly rather than through the plugin, so they stand -
+**the real gap is 08-08 and 08-18 only**, and this section covers exactly those two. Recorded because the
+next reader will otherwise assume a four-update backlog and re-do work that is already on this page.
+
+The stamp had already been moved to 2026.08.18.1 by hand before this session, and was re-derived rather
+than trusted: `check-compliance.ps1 -PrintDigest` recomputes `sha256:961c9c8a..`, matching the stamp, and
+both `exemptions` paths resolve in the tree. No stamp field was edited from this session.
+
+Upstream inside the gap: AI_USAGE §1/§3/§5, DEVELOPMENT §15/§16, GITHUB_INTERACTION §6, TESTING_AND_QA §8.
+
+### The 2026-08-05 carried-forward decision is closed - by the canon, not by this repo
+
+The 08-05 section left one owner decision open: whether to install a `UserPromptSubmit` routing nudge,
+since this repo reproduces the ungated size-tier ladder verbatim. **AI_USAGE §5 as of 08-18 answers it: the
+canon ships the hook itself, and a project must not rebuild one.** Verified against the installed plugin
+cache rather than the marketplace clone, as that same bullet demands: `hooks/on-user-prompt.ps1` exists in
+`sza/2026.818.1` and `hooks/hooks.json` registers it on `UserPromptSubmit`. This repo's
+`.claude/settings.json` declares no hooks at all, so there is nothing to drop and nothing running twice.
+The decision is closed with no repo change - which is the outcome the cache blackout hid for three weeks.
+
+### Divergences found against the live tree, all fixed here
+
+The working tree was the authority throughout; four of these were documents asserting things the tree
+contradicts.
+
+1. **Three dead pointers.** `DEV/plan/ROADMAP.md`, `DEV/plan/_TEMPLATE_cross-edition.md` and
+   `DEV/plan/2026-07-01_cross-edition-parity.md` were all deleted in commit `814e4c5`, and both `CLAUDE.md`
+   and `AGENTS.md` still linked them. The queue is now `DEV/plan/RELEASE_QUEUE.md`, and its precedence rule
+   is **asymmetric** - the queue wins on order, the ticket file wins on status. The old prose said the
+   opposite ("the prose usually wins"), so an agent following it would have re-ordered work against the
+   queue's stated intent.
+2. **A resolved gotcha still documented as live.** `CLAUDE.md` warned that the tree is CRLF and `gofmt -l .`
+   therefore flags every file, prescribing an LF-normalise dance. Measured: `.gitattributes` pins
+   `*.go text eol=lf`, and `gofmt -l .` returns 2 paths, both throwaway files under the gitignored `temp/`.
+   Replaced with the settled fact plus a do-not-re-litigate note.
+3. **The slash-command list was short by three.** `.claude/commands/` holds 14; the rules file listed 11,
+   omitting `/changelog`, `/docs-sync` and `/verify-view` - the automation rungs most likely to be skipped.
+4. **Canon-owned rules still restated.** `CLAUDE.md` carried its own copies of build-is-not-a-release, the
+   cross-edition process and the memory discipline, all duplicated from `AGENTS.md` or the canon; they are
+   now pointers. `AGENTS.md` re-authored the house text style in order to state its scoping - rewritten to
+   name the canon rule and keep only the delta, which is the part that matters: **the style binds `en`,
+   `ru` and `uk` only**, the other ten interface languages are exempt, and `tests/typography_test.go`
+   enforces that scoping.
+5. **A genuine delta reading as a restatement.** The ledger-shape line ("the engineering ledger
+   `DEV/CHANGELOG.md`, not a root Keep-a-Changelog") tripped SZA-RULES03/DC2a. It is a real delta - stamp
+   `ledgerShape` 2 - so it is now marked `<!-- canon-ok: .. -->` rather than deleted.
+
+Gate warnings cleared in the same pass: `docs/README.md` written as the index of that tree (SZA-LAY03), and
+the optional SEO block completed on all seven declared site pages (SZA-SURF02) - `og:image`, `twitter:card`
+and JSON-LD, with the three `docs.*` locales done together and given mutual `hreflang` links, since they had
+none. All seven JSON-LD blocks were parsed to confirm they are valid, and both `og:image` targets are
+tracked files that Pages actually serves.
+
+### Checked against the new rules, clean, no action taken
+
+- **DEVELOPMENT §15's reachable-exit-code trap does not exist here.** No script uses `Write-Error` at all,
+  and the closure script's shape was proven rather than reasoned about: a probe mirroring `scripts/check.ps1`
+  (`$ErrorActionPreference = 'Stop'`, child piped through `Tee-Object`, green tail line after) shows the
+  child's `throw` propagating, the tail line never printing, and exit code 1. AI_USAGE §2's three invariants
+  hold: `check.ps1` covers every gate, prints its PASS only after all of them, and cannot report a false PASS.
+- **TESTING_AND_QA §8 does not trigger.** Its own precondition is "once the gates are more than a handful";
+  this repo runs three (test, lint, typos) plus an advisory parity check. No verdict cache was built, because
+  §8 is explicit that the distribution must be measured before any gate is tuned, and there is nothing here
+  worth measuring yet. Revisit when the gate count grows.
+- **AI_USAGE §1's fire-and-forget prohibition** matches existing practice; the one long job in this session
+  (the full gate) was backgrounded because it exceeds the foreground timeout, and its exit code and per-stage
+  pass lines were both read before anything was called done.
+
+### Release package plan (adopt-canon step 6) - what this repo actually has
+
+Recorded as found, not as prescribed. (a) Files: `DEV/plan/RELEASE_QUEUE.md` is the work-remaining file and
+`DEV/plan/done/` is the shipped history; **there is no separate ready file** - a ticket goes straight from
+the queue to `done/`. (c) Done-set: `Implemented` and `Verified` leave the queue; `Draft`, `Approved`,
+`Tactical`, `In Progress`, `Partial`, `Broken` and every `Block*` state are work remaining. (d) The `rel`
+column is a package ordinal, never a version - the version is derived mechanically as `26.MMDD.HHmm` - with
+`--` for unscheduled and a `current-next-release:` marker line. (f) Tracked, and it shows up in diffs.
+
+**(b) and (e) are not stood up and are carried forward.** There is no single write path into the ticket
+store and no `validate` / `reconcile` / `ship` commands; the queue is maintained by hand, so a status change
+means editing the ticket and the queue line separately and the queue drifts between edits - the file itself
+records having gone stale once already. `scripts/release-state.ps1` is not that write path; it tracks
+per-channel publish state, a different thing. Building the write path was out of scope for a canon sync and
+is an owner decision; the gap is now written into `CLAUDE.md` so a session inherits it instead of trusting a
+stale queue.
+
+### Verification
+
+- `check-compliance: EPUB_2_HTML - 0 error(s), 0 warning(s) (overlay A, canon 2026.08.18.1)`, exit 0.
+  Baseline before this session: **0 errors, 11 warnings**.
+- `pwsh -NoProfile -File .\scripts\check.ps1` - exit 0. 29 packages `ok`, no `FAIL`, and each stage printed
+  its own verdict (`Tests passed`, `Lint passed`, `Typo check passed`,
+  `parity-check: no cross-edition drift in the change set.`, `All checks passed`). The integration package
+  `doc-html-translate/tests` ran 158.074s.
+
+### Needed canon fixes (for a canon session - not edited from here)
+
+1. **The skill's own step-1 command fails as written.** `pwsh -File "$env:CLAUDE_PLUGIN_ROOT/tools/check-compliance.ps1"`
+   died with exit 64 (`The argument '/tools/check-compliance.ps1' is not recognized..`) because
+   `CLAUDE_PLUGIN_ROOT` is not exported into the tool's shell - only the skill's own base directory is known.
+   Worth one line in `adopt-canon/SKILL.md`: if the variable is empty, the plugin root is the skill directory's
+   grandparent. Every repo running this skill hits it.
+2. **SZA-RULES03/DC2a fires on a repo declining the rule.** The DC2a regex matches `keep-a-changelog`
+   anywhere, so the sentence "the engineering ledger `DEV/CHANGELOG.md`, **not** a root Keep-a-Changelog" -
+   a delta declaration - scores as a restatement. `SZA-RULES04` already has `$forkNegationRe` for exactly
+   this shape; the `canonPhrases` loop has no equivalent. A negation guard there would stop pushing repos
+   toward `canon-ok` comments on lines that were never restatements.
