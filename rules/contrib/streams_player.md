@@ -321,3 +321,173 @@ decision, not applied from this session.
 
 Verification: `check-compliance: Streams_Player - 0 error(s), 4 warning(s) (overlay A, canon 2026.08.05)` -
 warnings are pre-existing and none was introduced here.
+
+## Canon re-sync 2026-08-18 - four updates at once, and a reversed rule
+
+Canon **2026.08.05 -> 2026.08.18.1**, core digest `sha256:8d33fdab..` -> `sha256:961c9c8a..`. The stamp
+had already been moved mechanically before this session; it was **verified, not trusted** -
+`check-compliance.ps1 -PrintDigest` recomputes `961c9c8a..`, so it is correct as written.
+
+**Why this one is not an ordinary one-step reconcile.** The `sza` plugin served a cached
+**2026.07.27** for roughly three weeks, so the 08-02, 08-05, 08-08 and 08-18 updates never loaded in a
+session started in this repo - including the 08-02 and 08-05 reconciles recorded above, which were
+written against docs the session could not actually see. This pass re-read the diff from `7dd3dde`
+(2026-07-27) to `HEAD` directly out of the canon repo rather than trusting the plugin cache.
+
+Rule docs changed in that span: **AI_USAGE, DEVELOPMENT, GITHUB_INTERACTION, RELEASE_AND_DISTRIBUTION,
+TESTING_AND_QA** (plus README and NEW_PROJECT_CHECKLIST). **INVARIANTS.md did not change** - worth
+recording, because it was on the review list and a null result there is a real finding, not a skipped
+step.
+
+Also noted: the plugin cache holds a newer **2026.08.18.2**, and its core digest is **identical**
+(`961c9c8a..`) - that bump touched `skills/` and `tools/`, which the digest deliberately excludes. The
+stamp sitting at `.1` therefore is not stale in the sense the staleness ladder measures. Left alone.
+
+### A canon rule this repo had adopted was reversed
+
+The 2026-07-26 drift table above records "Reply timestamp | `AI_USAGE.md:77` | absent | Added to three
+files" as a *fix*. **AI_USAGE section 7 now says the opposite** - "Never prefix a reply with a clock
+time.. This supersedes the earlier rule to timestamp from the prompt" - because the model has no clock
+and the prompt-submit injection goes stale inside any autonomous run. The repo was still carrying the
+July version in two places, one of them load-bearing:
+
+- `CLAUDE.md` declared it as the repo's **only** repo-local communication addition - now removed, and
+  replaced with an explicit note that section 7 supersedes it, so the next session does not re-add it.
+- `.claude/agents/streamsplayer-rd-lead.md:12` - the **default orchestrator's** own rules line, i.e. it
+  was reaching the system prompt of most sessions in this repo. Fixed.
+
+Generalisable: when the canon reverses a rule, the adopters that were most diligent about adopting it
+are the ones now most wrong, and a grep for the *old* rule's wording is the only thing that finds it -
+the compliance gate cannot, because a superseded rule is not a restatement of a live one.
+
+### GITHUB_INTERACTION section 6 - the .ps1 command-head family, and a permission list it made dead
+
+The new Bash-safety family ships as `guard-bash.ps1`. Verified live rather than assumed: piping a
+`{"command":"./build.ps1 -Test -Deploy:$false"}` payload into the hook returns **exit 2** with the
+"Bash cannot execute a .ps1" refusal.
+
+Two consequences here, and the second is the interesting one:
+
+- Both rules files documented every script as `./build.ps1 ..`, `./scripts/check.ps1 ..` - the exact
+  refused shape. Rewritten to `pwsh -NoProfile -File ./..`, with a one-line note that a human in
+  PowerShell types the bare form and an agent must not. The README, the site and the Store docs keep
+  the bare form deliberately: those are instructions for a human, not tool calls.
+- `.claude/settings.json` allow-listed `Bash(./build.ps1*)`, `Bash(./run.ps1*)` and `Bash(./scripts/*)`.
+  Those three rules had become **unusable by construction** - the hook refuses the call before the
+  permission layer is ever consulted. Removed, with the reason recorded in the file's own comment.
+  `Bash(pwsh *)` already covers the compliant form. **A permission entry that a hook makes unreachable
+  is worth a check of its own**: it reads as a granted capability and is in fact a dead rule, and
+  nothing in the current gate set notices.
+
+This repo registers **no hooks of its own**, so AI_USAGE section 5's "drop your hand-wired copy rather
+than run it twice" had nothing to act on. `CLAUDE.md` now says so explicitly, so a future session does
+not add a local copy of a hook the canon already ships.
+
+### The rules files were carrying four false statements about their own tree
+
+The re-sync's "verify every kept claim against the live tree" step found more than the canon delta did.
+All four verified twice - once by a subagent, once directly:
+
+- **`SP-0052` was described as "not implemented; do not describe it as shipped".** It is `Implemented`,
+  sits in `PLAN/DONE/`, and ships: `BundledCatalogSnapshot`, `CatalogSnapshotService`,
+  `FirstRunCatalogWindow`, an embedded `Resources\catalog-snapshot.zip` whose absence **fails the
+  build**, and a `scripts/release.ps1` step that makes regenerating it a release blocker. The
+  instruction was not merely stale, it was actively dangerous: an agent obeying it would have refused
+  to describe a release-gating feature that exists, or re-implemented it. Now recorded as shipped and
+  awaiting manual verification (`Implemented`, not `Verified`).
+- **`CatalogMerger.Merge` "only updates/removes rows whose SourceOrigin == Catalog"** - the
+  MANUAL/IMPORTED protection holds, but removal is now gated on `CatalogMergeOptions.RemoveMissing`,
+  which the snapshot path passes as `false`. The claim was true of one of two merge modes.
+- **"sixteen partials"** - there are 26. The number was stale by ten while the same sentence said
+  "glob, do not memorize". Deleted rather than corrected.
+- **The dialog list** named a `LanguageWindow` that does not exist and missed `ChannelInfoWindow`,
+  `FirstRunCatalogWindow` and `LogArchiveReadyWindow`. Replaced with a glob instruction and no list.
+
+Also corrected: `CLAUDE.md` cited a 3.9 MB live favicon atlas where the source comment says 2.9 MB, in
+a sentence whose own advice is "read the constant, never a number from prose" - the number is gone;
+`AGENTS.md` claimed the four version fields in `Directory.Build.props` "are updated together before a
+release", where `release.yml` in fact derives the version from the `v*` tag and passes it as
+`-p:Version=..` (the props file is the local-build stamp only); and the stale "after the GitHub
+repository is created, add the remote" block was dropped, `origin` having existed for some time.
+
+**The pattern worth carrying:** every one of these sat in a file whose *canon* conformance was already
+clean. Reference-model adoption removes the restated universal rules, which is exactly what makes the
+remaining repo-specific claims the only thing left to rot - and nothing gates them. The count-shaped
+claims ("sixteen", "3.9 MB", a hand-kept list) went stale fastest, which argues for writing the glob
+instruction instead of the count wherever a rules file is tempted to enumerate.
+
+### Compliance gate: 6 warnings -> 1
+
+`check-compliance.ps1`, before: **0 errors, 6 warnings**. After: **0 errors, 1 warning**.
+
+- `SZA-LAY03` - `docs/` held three markdown files and no index. Added `docs/README.md`, which mostly
+  exists to state the split a newcomer gets wrong: most of `docs/` is a **generated** Pages site and
+  hand-editing it is a silent revert, while the maintainer documents beside it are hand-written.
+- `SZA-SURF02` x2, `SZA-SURF03` x2 - no SEO block, no `robots.txt`, no `sitemap.xml`. Fixed **in the
+  generator, never in `docs/`** (invariant 16). The SEO block went into the shared `_head.html`
+  partial, so one edit covered 26 pages in 13 languages; every value it needed already existed as a
+  structural token, so no copy deck changed and no translation was invented.
+  - `robots.txt` and `sitemap.xml` are generated from the same language x page product the pages come
+    from, so a fourteenth language lands in them with no edit - the failure mode a hand-kept sitemap
+    always reaches. 26 URLs, each carrying the full `hreflang` alternate set plus `x-default`.
+  - **JSON-LD is built in the script, not in the template.** An HTML parser does not decode entities
+    inside a `ld+json` script element, so reusing the HTML-escaped `{{page.title}}` there would have
+    emitted a literal `&quot;` into the JSON and broken it on every page. Values are taken raw from the
+    copy deck and escaped by `ConvertTo-Json`. Verified by parsing the emitted block on all 26 pages -
+    0 failures, Cyrillic intact.
+  - `og:image` is a real 1200x630 card generated by a new `tools/site/make-og-image.ps1` from the
+    existing icon and the site's own palette (`--bg #0a0f0a`, `--accent #3fb950`), not the 256 px icon
+    reused as a square. It has a `-Check` mode, like the site generator.
+- `SZA-STYLE02` (`memory/MEMORY.md:552,749`) - **kept, deliberately.** Both hits are the case the
+  gate's own fix text calls legitimate: an exact quoted UI automation string and a CLI placeholder.
+  House style governs prose, not exact strings (invariant 20), and rewriting a UIA name to satisfy a
+  warn-only style check would break the thing it names. Recorded rather than "fixed".
+
+### Two contrib deltas above are now stale
+
+Recorded rather than silently amended, since they were true when written:
+
+- **LOCALIZATION delta** says in-app UI is EN+RU only against EN/RU/UK on the site. The repo now ships
+  **thirteen** interface languages from a single `InterfaceLanguages` registry in Core, read by the
+  PowerShell tooling out of the built assembly. `SP-0029` (the "add UK" ticket that delta produced) was
+  overtaken by a much larger change. The per-surface-coverage rule the delta established still holds;
+  its example does not.
+- **PLATFORM_OVERLAYS delta** says the favicon atlas is "optional and `<=4 MB`". The cap is now
+  `StreamBankReader.MaximumAtlasBytes` = 30 MB. The invariant that matters (an over-cap atlas is
+  silently dropped, not an error) is unchanged. Same lesson as the rules files: the constant belongs in
+  the record by name, not by value.
+
+### Verification
+
+Every command run fresh in this session, exit codes cited:
+
+| Command | Exit | Result |
+| --- | --- | --- |
+| `check-compliance.ps1` (before) | 0 | 0 errors, 6 warnings |
+| `check-compliance.ps1` (after) | 0 | 0 errors, 1 warning |
+| `pwsh -NoProfile -File tools/site/build-site.ps1` | 0 | 13 languages x 2 = 26 pages, + robots.txt, sitemap.xml |
+| `pwsh -NoProfile -File tools/site/build-site.ps1 -Check` | 0 | `docs/ is up to date.` |
+| `pwsh -NoProfile -File tools/site/make-og-image.ps1 -Check` | 0 | present at 1200x630 |
+| `./build.ps1 -Test -Deploy:$false` | 0 | Build succeeded, 0 warnings, **789/789 tests passed** |
+
+One honest note on that last row: the first attempt returned **exit 1**, ".NET SDK not found", from the
+agent's Bash sandbox, where `dotnet` is not on `PATH`. That is a **could-not-verify, not a failure** -
+AI_USAGE section 2's third invariant - and re-running the identical command through the PowerShell tool
+gave 10.0.302 and a green run. Recorded because a sandbox that lacks the toolchain will otherwise be
+read as a red gate by the next session.
+
+The working tree also carried **unrelated uncommitted work** (a random-station feature) throughout. It
+was not touched, not staged, and not reverted; the commit for this pass names its paths explicitly, and
+`git add -A` was never run. The 789-test green above covers that WIP too, which is why it is quoted as
+context rather than as this change's own evidence - nothing in this pass touched C#.
+
+### Needed canon fixes (for a canon session, not applied here)
+
+- **A dead permission entry has no check.** `.claude/settings.json` carried three allow rules that
+  `guard-bash` had made unreachable. Nothing in `check-compliance.ps1` notices a permission that grants
+  a capability a shipped hook refuses, and the failure is silent in the safe direction, which is why it
+  survived. Worth a gate, or at least a line in the hooks README's contract section.
+- **Superseded rules need a migration note, not just a rewrite.** The reply-timestamp reversal was
+  findable only by grepping adopters for the *old* wording. When a canon rule flips, the update is
+  cheap to write and expensive to propagate; a short "adopters carrying X should remove it" line in the
+  changed doc would make the next re-sync mechanical instead of archaeological.
