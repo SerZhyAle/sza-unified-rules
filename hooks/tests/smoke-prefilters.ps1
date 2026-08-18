@@ -24,6 +24,7 @@ $ErrorActionPreference = 'Stop'
 $hooksDir = Split-Path $PSScriptRoot -Parent
 $hooksJson = Join-Path $hooksDir 'hooks.json'
 $failures = 0
+$cases = 0
 
 function Cannot-Verify([string]$msg) {
     Write-Error "smoke-prefilters: $msg - cannot verify" -ErrorAction Continue
@@ -84,6 +85,7 @@ function Json([string]$command) {
 }
 
 function Assert-Case([string]$label, [string]$pattern, [string]$payload, [string]$expected) {
+    $script:cases++
     $actual = Test-Pattern $pattern $payload
     if ($actual -eq $expected) {
         Write-Host ("PASS  {0,-52} {1}" -f $label, $actual)
@@ -124,6 +126,31 @@ Assert-Case 'plain echo'                    $bashPat (Json 'echo hello world') '
 Assert-Case 'grep with a plain pattern'     $bashPat (Json 'grep -n exit tools/check-rules.ps') 'nomatch'
 Assert-Case 'git log'                       $bashPat (Json 'git log --oneline -5') 'nomatch'
 
+# ------------------------------------------------------- the fire-and-forget guard: match => the hook runs
+
+$ffCmd = Get-RegisteredCommand 'guard-fire-and-forget.ps1'
+if (-not $ffCmd) { Cannot-Verify 'no PreToolUse registration invokes guard-fire-and-forget.ps1' }
+$ffPat = Get-CasePattern $ffCmd
+if (-not $ffPat) { Cannot-Verify 'could not recover the case pattern from the guard-fire-and-forget registration' }
+
+# This filter tests for the literal field, in both the compact and the spaced JSON form, because the
+# harness has emitted both. Matching the bare field NAME would spawn on every foreground call as well -
+# which is nearly all of them - so the two must-skip cases below are the load-bearing ones.
+Write-Host '--- guard-fire-and-forget pre-filter (must REACH: a backgrounded call) ---'
+Write-Host "    pattern: $ffPat"
+function BgJson([string]$command, [bool]$spaced) {
+    $json = (@{ tool_name = 'Bash'; tool_input = @{ command = $command; run_in_background = $true } } | ConvertTo-Json -Compress)
+    if ($spaced) { return ($json -replace '"run_in_background":true', '"run_in_background": true') }
+    return $json
+}
+Assert-Case 'backgrounded, compact form'      $ffPat (BgJson './a.ps1 fk' $false) 'match'
+Assert-Case 'backgrounded, spaced form'       $ffPat (BgJson './a.ps1 fk' $true)  'match'
+Assert-Case 'backgrounded closure facade'     $ffPat (BgJson 'pwsh -File scripts/post-change.ps1 -File a.kt' $false) 'match'
+
+Write-Host '--- guard-fire-and-forget pre-filter (must SKIP: an ordinary foreground call) ---'
+Assert-Case 'foreground call'                 $ffPat (Json './a.ps1 fk') 'nomatch'
+Assert-Case 'foreground build'                $ffPat (Json 'pwsh -File ./a.ps1 d') 'nomatch'
+
 # ------------------------------------------------------------------ the Read guard: match => the hook is SKIPPED
 
 $readCmd = Get-RegisteredCommand 'guard-uncapped-read.ps1'
@@ -147,5 +174,5 @@ if ($failures -gt 0) {
     Write-Error "smoke-prefilters: $failures case(s) failed" -ErrorAction Continue
     exit 1
 }
-Write-Host 'smoke-prefilters: OK (20 cases)'
+Write-Host "smoke-prefilters: OK ($cases cases)"
 exit 0

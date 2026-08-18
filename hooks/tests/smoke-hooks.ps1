@@ -23,7 +23,8 @@ $repoRoot = Split-Path $hooksDir -Parent
 $failures = 0
 $cases = 0
 
-foreach ($f in @('guard-bash.ps1', 'guard-uncapped-read.ps1', 'on-user-prompt.ps1')) {
+foreach ($f in @('guard-bash.ps1', 'guard-fire-and-forget.ps1', 'guard-uncapped-read.ps1',
+                 'on-user-prompt.ps1')) {
     if (-not (Test-Path -LiteralPath (Join-Path $hooksDir $f))) {
         Write-Error "smoke-hooks: $f is missing - cannot verify" -ErrorAction Continue
         exit 2
@@ -116,6 +117,16 @@ foreach ($interp in @('python3', 'node')) {
     $label = if ($resolved) { "$interp resolves - allowed" } else { "$interp resolves nowhere - refused" }
     Invoke-Case $label 'guard-bash.ps1' (Bash-Payload "$interp -e 1") $expect
 }
+
+Write-Host '--- guard-fire-and-forget (canon AI_USAGE.md section 1) ---'
+# The allow cases carry the weight: a long job MUST still be able to background itself, or the guard
+# collides head-on with the other half of the same canon bullet and gets switched off.
+Invoke-Case 'backgrounded closure facade'      'guard-fire-and-forget.ps1' '{"tool_input":{"command":"pwsh -NoProfile -File scripts/post-change.ps1 -File a.kt -ChangeType Kotlin","run_in_background":true}}' 2
+Invoke-Case 'backgrounded fast check'          'guard-fire-and-forget.ps1' '{"tool_input":{"command":"pwsh -NoProfile -File ./a.ps1 fk","run_in_background":true}}' 2
+Invoke-Case 'backgrounded catalog mutator'     'guard-fire-and-forget.ps1' '{"tool_input":{"command":"pwsh -NoProfile -File scripts/spec_catalog/update.ps1 -Id S0001 -Status Verified","run_in_background":true}}' 2
+Invoke-Case 'same facade in foreground - allowed' 'guard-fire-and-forget.ps1' '{"tool_input":{"command":"pwsh -NoProfile -File scripts/post-change.ps1 -File a.kt -ChangeType Kotlin"}}' 0
+Invoke-Case 'backgrounded full build - allowed' 'guard-fire-and-forget.ps1' '{"tool_input":{"command":"pwsh -NoProfile -File ./a.ps1 d","run_in_background":true}}' 0
+Invoke-Case 'long job chained with a gate - allowed' 'guard-fire-and-forget.ps1' '{"tool_input":{"command":"pwsh -NoProfile -File ./a.ps1 d && pwsh -NoProfile -File scripts/post-change.ps1 -File a.kt","run_in_background":true}}' 0
 
 Write-Host '--- guard-uncapped-read: REWRITE, not block (canon AI_USAGE.md sections 3 and 5) ---'
 $long  = Join-Path $repoRoot 'tools/check-compliance.ps1'   # over the 500-line window

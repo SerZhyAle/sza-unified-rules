@@ -73,6 +73,16 @@ versioned op that may cost money or become public) has one home:
   is the trap.
 - **Always pass `-NoProfile`** when invoking PowerShell from a tool call: an operator's profile is not part
   of the contract, and loading it costs startup on every spawn.
+- **Every tool call gets a fresh interpreter; only the working directory survives.** Shell state -
+  variables, functions, dot-sourced modules, an activated environment - does not carry from one call to
+  the next, so a command that depends on something an earlier call defined silently sees nothing rather
+  than failing loudly. Two consequences. One: a chore that needs shared state must be batched into a
+  single invocation (next bullet) or persisted to a file. Two: **do not try to build a warm shell to
+  avoid the spawn.** Interpreter startup is 170-250 ms on Windows, while the turn it would have to save
+  costs a full replay of the accumulated context - three orders of magnitude apart - and the harness has
+  no persistent-session channel to read a result through in any case. What genuinely repays staying warm
+  is the *build tool's* own daemon and its caches, which already persist because they are long-lived
+  external processes: keep those alive, and stop looking for a faster shell.
 - **Batch a multi-step shell chore into one process**, and mind which shell you are in. `& { cmd1; if
   ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; cmd2 }` is PowerShell syntax and a syntax error in Bash
   (`$LASTEXITCODE` is unset there and `& { .. }` backgrounds an empty group). From Bash, hand it to the
@@ -92,10 +102,12 @@ versioned op that may cost money or become public) has one home:
   the call with `MSYS2_ARG_CONV_EXCL='*'`, or issue it from the PowerShell tool.
 - Prefer the project's own wrapper scripts over hand-rolled git/gh invocations with fragile nested
   quoting.
-- **This whole family ships as one hook with the `sza` plugin**, in [`hooks/`](../hooks/README.md) - the
+- **This whole family ships as hooks with the `sza` plugin**, in [`hooks/`](../hooks/README.md) - the
   `find` guard, the command-head guards for both a `.ps1` and a cmdlet, the missing-interpreter check and
   the slash-argument check are batched into a single script behind a single pre-filter, so five gates on
-  the same event cost one interpreter start. They block the call before the shell spawns, in every
+  the same event cost one interpreter start; the fire-and-forget guard that enforces
+  [AI_USAGE.md](AI_USAGE.md) section 1's forbidden half stays a separate registration, because its
+  pre-filter fires on a disjoint payload. They block the call before the shell spawns, in every
   repository, not only in canon adopters. A project does not need its own copy; see
   [AI_USAGE.md](AI_USAGE.md) section 5 for why an unenforced version of any of them is worth roughly
   nothing.

@@ -27,6 +27,7 @@ name, so a repo may keep its inventory wherever it documents hooks.
 | --- | --- | --- | --- | --- |
 | [`session-start.ps1`](session-start.ps1) | `SessionStart` | injects | the twenty hard invariants, in an adopting repo only | [INVARIANTS.md](../rules/INVARIANTS.md) |
 | [`guard-bash.ps1`](guard-bash.ps1) | `PreToolUse` (Bash) | refuses | five things that cannot work in Bash on Windows, plus one that corrupts silently | [GITHUB_INTERACTION.md](../rules/GITHUB_INTERACTION.md) section 6 |
+| [`guard-fire-and-forget.ps1`](guard-fire-and-forget.ps1) | `PreToolUse` (Bash) | refuses | backgrounding a gate, a closure facade or a catalog mutator | [AI_USAGE.md](../rules/AI_USAGE.md) section 1 |
 | [`guard-uncapped-read.ps1`](guard-uncapped-read.ps1) | `PreToolUse` (Read) | rewrites | windows an uncapped read of a file over 500 lines, and says so | [AI_USAGE.md](../rules/AI_USAGE.md) sections 3 and 5 |
 | [`on-user-prompt.ps1`](on-user-prompt.ps1) | `UserPromptSubmit` | warns, nudges | context size past the band; a micro-task reaching for the full pipeline | [AI_USAGE.md](../rules/AI_USAGE.md) sections 3 and 5 |
 
@@ -108,7 +109,7 @@ is "here is context you did not ask for", which none of the other six describes.
 **`session-start.ps1` is self-limiting.** It fires only in a repo carrying an `.sza-canon.json` stamp, so
 an unrelated project never pays for the injection.
 
-**The guard and the advisories are not.** Each enforces a property of the operating system or of the
+**The guards and the advisories are not.** Each enforces a property of the operating system or of the
 harness, not of a project's conventions: an orphaned `find.exe` floods handles on any Windows checkout, a
 `.ps1` and a `Verb-Noun` cmdlet are unrunnable by any Bash, an uncapped read is billed by the harness,
 context grows the same way in every repo. Gating them on adoption would leave the failure live in exactly
@@ -117,10 +118,13 @@ the repos that have not adopted yet.
 ## Cost
 
 A hook wired to a frequent tool must **pre-filter in the harness's own shell first**
-([AI_USAGE.md](../rules/AI_USAGE.md) section 3). Starting PowerShell costs 170-250 ms on Windows, so both
-`PreToolUse` registrations sit behind a `case` test in bash and spawn `pwsh` only on a payload that could
-possibly trip them - on the reference corpus that skipped ~89% of the spawns and changed no verdict.
+([AI_USAGE.md](../rules/AI_USAGE.md) section 3). Starting PowerShell costs 170-250 ms on Windows, so all
+three `PreToolUse` registrations sit behind a `case` test in bash and spawn `pwsh` only on a payload that
+could possibly trip them - on the reference corpus that skipped ~89% of the spawns and changed no verdict.
 **The pre-filter may only skip calls the real check would have allowed**; the scripts stay authoritative.
+`guard-fire-and-forget` is the cheapest of them by construction: its pre-filter tests for the literal
+`"run_in_background":true` field, so it never spawns on an ordinary foreground call, which is nearly all
+of them.
 
 The same rule is why the five Bash checks live in **one** script. Five registrations on one event would
 pay the interpreter start up to five times for a single command, and three of the five need the same
@@ -132,8 +136,8 @@ canon's own "batch the fast gates into one process"
 ## Testing them
 
 ```powershell
-pwsh -NoProfile -File hooks/tests/smoke-hooks.ps1        # 40 cases, exit 0 required
-pwsh -NoProfile -File hooks/tests/smoke-prefilters.ps1   # 20 cases, exit 0 required
+pwsh -NoProfile -File hooks/tests/smoke-hooks.ps1        # 46 cases, exit 0 required
+pwsh -NoProfile -File hooks/tests/smoke-prefilters.ps1   # 25 cases, exit 0 required
 ```
 
 Every refusal is smoked **from both sides** - payloads it must refuse and payloads it must allow -

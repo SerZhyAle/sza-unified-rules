@@ -547,6 +547,63 @@ kit upstream of the defect in every repo that imported it. See
 [universal_agent_kit.md](universal_agent_kit.md), "Canon adoption 2026-08-05": that decision was reversed
 the same day, on the owner's call, once the leak objection behind it turned out to be void.
 
+## Spread-back applied 2026-08-08 - how an agent talks to the operating system
+
+**Origin.** The owner asked three optimisation questions in one prompt: fire-and-forget the logging and
+status-change commands instead of waiting for them, keep one warm terminal session ready so each command
+does not pay for a new one, and make lookups serve pre-computed results instead of running a classic
+command in a fresh shell each time. Two are wrong, one was already built. The **refutations** are the
+contribution here - a measured "no" belongs in a canon at least as much as a new practice does, because
+all three are ideas any agent will re-derive from first principles and none of them survives contact with
+how the harness actually reaches the operating system.
+
+**What travelled.**
+
+- **[AI_USAGE.md](../AI_USAGE.md) section 1, "Never fire-and-forget a verdict."** The corollary the
+  foreground/background threshold was missing. Backgrounding a gate does not save a turn, it adds one -
+  the completion notification re-invokes the agent - and it silently demotes a gate into an ungated rule,
+  which this record already measured at 1-8% against ~99%. The failure mode is a false PASS, so review
+  does not catch it.
+- **[GITHUB_INTERACTION.md](../GITHUB_INTERACTION.md) section 6, the shell process model.** Every tool
+  call gets a fresh interpreter and only the working directory survives; shell state does not. Stated
+  because its two consequences are what the owner's second question was really about: state must be
+  batched into one invocation or written to a file, and **a warm shell is not worth building** - 170-250 ms
+  of interpreter startup against a turn that replays the whole accumulated context, with no
+  persistent-session channel to read a result through anyway. What repays staying warm is the build
+  tool's own daemon, which already does.
+- **[DEVELOPMENT.md](../DEVELOPMENT.md) section 15, two gate-economics bullets.** Cache the expensive
+  gate's *clean* verdict under a fingerprint of exactly what it analysed - never a failure, never a scoped
+  pass, and expire on age as well as fingerprint. And: a gate's measured duration is scheduling cost, not
+  compute cost, unless you say which (152 s average against 25 s measured directly, same gate).
+- **[`hooks/guard-fire-and-forget.ps1`](../../hooks/guard-fire-and-forget.ps1).** The first bullet as a
+  `PreToolUse` guard rather than a paragraph, wired behind a bash pre-filter on the literal
+  `"run_in_background":true` field so it never spawns on a foreground call. Deny-list by literal command
+  shape, not heuristic, because a guard that over-blocks gets switched off; a long job on the same command
+  line overrides it outright, since backgrounding *that* is required by the same canon bullet.
+
+**What did not travel, and why.**
+
+- This repo's literal fast targets (`a.ps1 fk|fc|fg|dq`) live in the guard's deny list, not in prose. A
+  repository without those commands cannot match the string, so shipping them costs nothing and states
+  nothing false - but they are not a portable rule and are not written as one.
+- No [INVARIANTS.md](../INVARIANTS.md) change. None of this is irreversible, billable or outward-facing
+  in the sense that page admits; it is operating discipline, which is exactly what the page excludes.
+- No number for the guard's deny list or for an expected saving. The list is a judgement call and the
+  saving is unmeasured.
+
+**The process lesson, recorded because it cost real turns.** Three of the four optimisations recommended
+in that chat answer - session-boundary resets, caching the expensive gate's verdict, batching the closure
+facade over the whole changed set - were **already implemented**, two of them the same day. That was
+discovered only by checking the tree before acting. Recommending from memory without verifying is the trap
+[AI_USAGE.md](../AI_USAGE.md) section 2 already names, and the reference repo walked straight into it while
+answering a question about efficiency. The rule earns its place again: a memory naming a mechanism is a
+claim about when the memory was written, not about now.
+
+**Verification.** `pwsh -NoProfile -File hooks/tests/smoke-hooks.ps1` - expected exit 0, actual **0** (20
+cases, 6 of them new: 3 must-block and 3 must-allow). The pre-filter was exercised end to end through the
+same `case` snippet the wiring uses, in both the compact and spaced JSON forms - blocked with exit 2, and
+skipped the spawn entirely on a foreground payload. `CANON_VERSION` 2026.08.08.1 -> **2026.08.08.2**.
+
 ## Spread-back applied 2026-08-18 - locks, tiers, hook verdicts, an inventory gate, and two token shapes
 
 Source: a propagation brief prepared from a FastMediaSorter mob_v2 session on 2026-08-18 and **executed
@@ -691,3 +748,4 @@ matched literal is `AIzaSy` + a keyboard walk, and the two files are the tests f
 unchanged: weakening a secret check is the owner's call, not a propagation's, and the stamp already
 carries the right instrument for it (a scoped `exemptions` entry naming the two paths and the reason).
 Recorded here so the next reader does not spend the same half hour proving it is not a leak.
+
