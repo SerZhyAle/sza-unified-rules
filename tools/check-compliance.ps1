@@ -329,7 +329,7 @@ try {
         @{ id = 'GI6';   home = 'GITHUB_INTERACTION';   re = '(?i)never run .{0,10}find|disk-wide root' }
         @{ id = 'RL1';   home = 'REPOSITORY_LAYOUT';    re = '(?i)(no secret is ever committed|never commit(ed)? (a )?secret)' }
         @{ id = 'RL2';   home = 'REPOSITORY_LAYOUT';    re = '(?i)binaries are build output|never stores a compiled release' }
-        @{ id = 'DC2a';  home = 'DOCUMENTATION_CONCEPT'; re = '(?i)keep[- ]a[- ]changelog|\[Unreleased\]' }
+        @{ id = 'DC2a';  home = 'DOCUMENTATION_CONCEPT'; re = '(?i)keep[- ]a[- ]changelog|\[Unreleased\]'; negatable = $true }
         @{ id = 'DC2b';  home = 'DOCUMENTATION_CONCEPT'; re = '(?i)never hand-bump|derived mechanically' }
         @{ id = 'DC2c';  home = 'DOCUMENTATION_CONCEPT'; re = '(?i)(a )?local build is (never|not) a release|build is not a release' }
         @{ id = 'DC5';   home = 'DOCUMENTATION_CONCEPT'; re = '(?i)(no long dashes|em[- ]dash|ellipsis */ *dash)' }
@@ -342,6 +342,29 @@ try {
     # "house <rule>" names the portfolio-wide rule rather than re-authoring it, the same as citing the
     # doc by name - so it belongs in the suppressor.
     $canonRefRe = '(?i)Unified[ _]Rules|\bcanon\b|\bhouse\b|GITHUB_INTERACTION|DOCUMENTATION_CONCEPT|REPOSITORY_LAYOUT|AI_USAGE|AUTHOR\.md|TESTING_AND_QA|SECURITY_AND_PRIVACY|PLATFORM_OVERLAYS|RELEASE_AND_DISTRIBUTION|CHANNEL_MATRIX|DEVELOPMENT\.md|INVARIANTS|§|canon-ok|docs/[A-Z_]+\.md'
+
+    # Naming a shape the canon OFFERS, to say this repo picked a different one, is a DELTA - not a
+    # restatement. "the changelog is the engineering ledger DEV/CHANGELOG.md, not a root Keep-a-Changelog"
+    # declares ledger shape 2 of the four; scoring it pushed a correct repo into writing a canon-ok comment
+    # on a line that never restated a rule.
+    #
+    # The guard is opt-in per phrase (`negatable`) and deliberately NOT blanket, because most canon-owned
+    # rules are prohibitions and there the negation IS the restatement: "never `--no-verify`" restates GI2c
+    # and must keep scoring. Mark a phrase negatable only when the canon offers the named thing as one of
+    # several accepted shapes, so that "not X" can only mean "this repo picked another one".
+    $phraseNegationRe = "(?i)\b(not|no|never|neither|nor|without|rather than|instead of|isn't|aren't|doesn't|don't)\b"
+    function Test-PhraseNegated {
+        param([Parameter(Mandatory)][string]$Text, [Parameter(Mandatory)][int]$Index)
+        $before = $Text.Substring(0, $Index)
+        # Same clause, and within 60 characters. A negation past a sentence break belongs to a different
+        # statement ("Never commit a secret. Bullets accrete under [Unreleased]" restates two rules), and
+        # one four clauses back is not modifying this phrase. A '.' inside `DEV/CHANGELOG.md` is not a
+        # break - only one followed by whitespace is.
+        $breaks = [regex]::Matches($before, '[.!?;:](?=\s)')
+        if ($breaks.Count) { $before = $before.Substring($breaks[$breaks.Count - 1].Index + 1) }
+        if ($before.Length -gt 60) { $before = $before.Substring($before.Length - 60) }
+        return [bool]($before -match $phraseNegationRe)
+    }
 
     $forkRes = @(
         '(?i)(deliberately|intentionally|on purpose|by design)[^.]{0,120}(restat|duplicat|mirror|repeat|cop(y|ies|ied))'
@@ -392,8 +415,17 @@ try {
             if ($b.text -match 'canon-ok') { continue }
             if ($b.text -match $canonRefRe) { continue }
             foreach ($p in $canonPhrases) {
-                if ($b.text -match $p.re) {
-                    if (-not $hitIds.ContainsKey($p.id)) { $hitIds[$p.id] = @{ line = $b.line; home = $p.home } }
+                # Walk every mention, not just the first: one negated mention must not excuse a genuine
+                # restatement later in the same block, and a negated one must not consume the id so that
+                # the real restatement in the next block goes unreported.
+                $hit = $false
+                foreach ($m in [regex]::Matches($b.text, $p.re)) {
+                    if ($p.negatable -and (Test-PhraseNegated -Text $b.text -Index $m.Index)) { continue }
+                    $hit = $true
+                    break
+                }
+                if ($hit -and -not $hitIds.ContainsKey($p.id)) {
+                    $hitIds[$p.id] = @{ line = $b.line; home = $p.home }
                 }
             }
         }

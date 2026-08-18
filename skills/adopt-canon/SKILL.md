@@ -37,8 +37,21 @@ authority**; a contrib record is a hypothesis the filesystem confirms.
 Run the compliance gate first, to get the real baseline rather than an assumed one:
 
 ```powershell
-pwsh -File "$env:CLAUDE_PLUGIN_ROOT/tools/check-compliance.ps1"
+$sza = if ($env:CLAUDE_PLUGIN_ROOT) { $env:CLAUDE_PLUGIN_ROOT } else {
+    ((Get-Content "$HOME/.claude/plugins/installed_plugins.json" -Raw | ConvertFrom-Json).plugins.'sza@sza-unified-rules' |
+        Sort-Object lastUpdated -Descending | Select-Object -First 1).installPath
+}
+pwsh -NoProfile -File "$sza/tools/check-compliance.ps1"
 ```
+
+**Resolve the plugin root, never assume the variable.** `CLAUDE_PLUGIN_ROOT` is expanded for the plugin's
+own hook registrations; it is **not** exported into a tool shell, so the bare
+`pwsh -File "$env:CLAUDE_PLUGIN_ROOT/tools/check-compliance.ps1"` expands to `/tools/check-compliance.ps1`
+and dies with exit 64 (`is not recognized as the name of a script file`) - in every repo, on every machine.
+Then **print the resolved path and paste it literally** into the commands further down: every tool call gets
+a fresh interpreter, so `$sza` does not survive into the next one. If the install record carries no
+`sza@sza-unified-rules` entry, the plugin is being read from a local checkout - use that checkout's root, and
+say which root you used in the report.
 
 ## Step 2 - Choose the consumption model
 
@@ -64,7 +77,8 @@ live tree. This one file is what every other skill and the compliance gate read.
 
 - `canon.version` - from `CANON_VERSION` at the plugin root.
 - `canon.coreDigest` - recompute it; do not copy one from another repo.
-  `pwsh -File "$env:CLAUDE_PLUGIN_ROOT/tools/check-compliance.ps1" -PrintDigest`
+  `pwsh -NoProfile -File "<plugin root>/tools/check-compliance.ps1" -PrintDigest`, with the plugin root
+  resolved in step 1.
 - `canon.model` - `reference` or `mirror`.
 - `overlay` - exactly one, unless the repo has editions, in which case declare them too.
 - `versionShape.tagRegex` - **take it from the release script's own validation regex or from CI**, never from

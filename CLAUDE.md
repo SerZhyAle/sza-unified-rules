@@ -27,6 +27,11 @@ does not apply here; this is where fixes land. It applies everywhere else.
   every consumer on the cached copy of the previous version while `update` reports "already at the latest
   version". That is not hypothetical: the portfolio ran five canon updates against a plugin cache frozen
   at `2026.07.27`, and no session anywhere loaded them.
+- **A fix under `skills/`, `tools/` or `hooks/` ships the same way, and only that way.** The digest covers
+  `rules/*.md` alone, so such a fix marks nothing stale and needs no reconciliation - but a consumer still
+  runs the cached copy until the plugin version moves. Bump `CANON_VERSION`'s last segment and derive the
+  plugin version from it as above, so the two never drift apart: a broken skill command left in the cache is
+  as invisible as a rule that never arrived.
 - **Editing a skill**: the SKILL.md body is what loads on trigger; heavy payload goes in `references/`
   beside it. Keep the frontmatter `description` written in the words the owner actually uses to ask for the
   task, in both languages where that is how the request arrives - it is the trigger, not a summary.

@@ -59,9 +59,17 @@ five produces confident, wrong numbers, and every decision downstream inherits t
 
 ## Step 2 - Run the extractor
 
+```powershell
+$sza = if ($env:CLAUDE_PLUGIN_ROOT) { $env:CLAUDE_PLUGIN_ROOT } else {
+    ((Get-Content "$HOME/.claude/plugins/installed_plugins.json" -Raw | ConvertFrom-Json).plugins.'sza@sza-unified-rules' |
+        Sort-Object lastUpdated -Descending | Select-Object -First 1).installPath
+}
+python "$sza/tools/mine-agent-transcripts.py" --root <transcript-dir> --out <output-dir> [--since YYYY-MM-DD] [--until YYYY-MM-DD]
 ```
-python "$env:CLAUDE_PLUGIN_ROOT/tools/mine-agent-transcripts.py" --root <transcript-dir> --out <output-dir> [--since YYYY-MM-DD] [--until YYYY-MM-DD]
-```
+
+`CLAUDE_PLUGIN_ROOT` reaches the plugin's hook registrations, **not** a tool shell - unresolved it leaves
+`python "/tools/mine-agent-transcripts.py"`, which fails on a path that was never there. Resolve it from the
+install record as above, in the same call, since the next tool call gets a fresh interpreter.
 
 Stack-agnostic on purpose - it reads Claude Code transcripts, which every project has, and references
 no language or toolchain. Exit codes: 0 report written, 1 error, 2 cannot verify (root missing or

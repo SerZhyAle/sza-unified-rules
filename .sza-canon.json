@@ -2,7 +2,7 @@
   "$comment": "The canon's own stamp. role canon-home means the surface and overlay checks do not apply - this repo ships rules, not a product - and its digest is current by definition.",
 
   "canon": {
-    "version": "2026.08.18.1",
+    "version": "2026.08.18.2",
     "coreDigest": "sha256:961c9c8a835892b19e6297261fc5ba3e597d3a9ea76401257964d38a9d086958",
     "adoptedOn": "2026-08-18",
     "model": "reference",

@@ -407,3 +407,11 @@ stale queue.
    a delta declaration - scores as a restatement. `SZA-RULES04` already has `$forkNegationRe` for exactly
    this shape; the `canonPhrases` loop has no equivalent. A negation guard there would stop pushing repos
    toward `canon-ok` comments on lines that were never restatements.
+
+**Both landed in canon 2026.08.18.2** (plugin `2026.818.2`), fixed in the canon repo rather than worked
+around here. `adopt-canon` step 1 now resolves the plugin root from
+`~/.claude/plugins/installed_plugins.json` and states why the bare variable cannot work; `agent-cost` step 2
+carried the same defect and got the same fix. `DC2a` is now marked `negatable`, with a guard that skips a
+mention preceded by a negation **in the same clause** - so the `canon-ok` comment on the ledger-shape bullet
+in this repo's `AGENTS.md` is no longer needed: replaying that file with the comment stripped goes from
+`WARN SZA-RULES03 .. restates DC2a` to no finding at all.
