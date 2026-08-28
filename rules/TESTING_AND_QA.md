@@ -12,6 +12,13 @@ that proves it, read its exit code and output, and cite them. A prior run, an as
 subagent's "it passed" is not evidence. Red-flag words - "should", "probably", "seems", "looks fixed" -
 mean: stop and run the check first. Record `expected: X | actual: Y` and the exit code.
 
+**A check only a human can run has not happened yet.** A closing audit that finds no failures but leaves
+an unobserved manual line does not score "verified" - it scores "needs a human test", because nothing is
+broken and something is merely unlooked-at. Count the unticked boxes in the ticket's audit section and let
+a single one of them hold the closing status back; only the human pass converts it. In the reference
+project this was not a formality: a ticket was declared done carrying one unticked device line, and an
+hour on real hardware showed one of its five acceptance criteria failing outright.
+
 ## 2. Evidence ladder - cheapest rung that matches the risk
 
 Don't over-test a typo or under-test a migration. Pick the rung the change actually needs:

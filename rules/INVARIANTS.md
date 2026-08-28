@@ -42,8 +42,9 @@ Ordered by cost of violation. The pointer after each line is the doc that expand
 16. Never hand-edit a **render target** - a store listing, a mirrored doc, a published site export, a generated
     catalog or spec journal; regenerate it from its one source of truth.
     ([DOCUMENTATION_CONCEPT](DOCUMENTATION_CONCEPT.md) §1)
-17. Land a user-facing change in **every surface and every locale in one edit**, driven by the ship-together
-    surfaces manifest. ([DOCUMENTATION_CONCEPT](DOCUMENTATION_CONCEPT.md) §5, [LOCALIZATION](LOCALIZATION.md))
+17. Land a user-facing change in **every surface and every authored locale in one edit**, driven by the
+    ship-together surfaces manifest; the remaining declared locales fan out at the release boundary where one
+    exists. ([DOCUMENTATION_CONCEPT](DOCUMENTATION_CONCEPT.md) §5, [LOCALIZATION](LOCALIZATION.md))
 18. **Commit or push only when asked**, never casually on the default branch (the site-publish flow is the one
     named exception), never `--no-verify` / `--force` / bypassed signing; agent commits carry the co-author
     trailer. ([GITHUB_INTERACTION](GITHUB_INTERACTION.md) §2-3)

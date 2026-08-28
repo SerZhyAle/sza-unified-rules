@@ -115,10 +115,18 @@ The product's tone is a documented choice, not left to each writer:
 - **List the ship-together surfaces in one manifest.** Every user-facing surface a feature must touch
   (README, site, each localized docs page, each listing, the in-app strings) goes in one authoritative
   list - a `DOCS_SURFACES.md` driven by a `/docs-sync` skill, or the release skill's own checklist
-  (reference: `CyrFlip`) - so a feature lands in *all* of them atomically, **every locale in one edit,
-  not three follow-up requests**. The surface missing from the manifest is the one that silently goes
-  stale. Where a surface is *generated* (a settings reference built from the settings UI), enforce the
-  sync with a gate that fails the build on drift.
+  (reference: `CyrFlip`) - so a feature lands in *all* of them atomically, **every surface and every
+  authored locale in one edit, not three follow-up requests**. The surface missing from the manifest is
+  the one that silently goes stale. Where a surface is *generated* (a settings reference built from the
+  settings UI), enforce the sync with a gate that fails the build on drift.
+- **The rest of the declared locale set fans out at the RELEASE boundary, not at authoring - wherever a
+  release boundary exists.** Surfaces must move together; locales beyond the ones the author writes
+  himself need not. Nothing reaches a user between releases, so one bulk pass clears every new key of a
+  release at once, while translating per change buys a full fan-out per key with no shipping benefit - in
+  the reference product, ten further translations per key on top of the three authored ones. Put the
+  refusal in the pre-release gate, and let the authoring call and the change's own closure only *name*
+  what is still missing rather than block on it. A continuously published product has no boundary to batch
+  to, and there the whole fan-out stays part of the one edit.
 - **Support path is one click from everywhere**: issue tracker for bugs, an email for private contact,
   both linked from the site footer, the store listing, and the app's About.
 - **Localize the user-facing surfaces** (README, site, store listing) to the audiences you actually

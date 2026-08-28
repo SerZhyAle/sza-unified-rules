@@ -65,6 +65,16 @@ shares. Reconciled against the portfolio; per-project records in `contrib/`.
   execute its own context reset - that is a harness command the human types - so any design that
   assumes self-reset is unbuildable. What an agent *can* do is stop at a threshold and hand back a
   resume handle. Build the halt, not the reset.
+- **For an unattended batch, make the PROCESS boundary the reset.** The halt above still depends on an
+  agent noticing a threshold and on a human restarting it afterwards. A driver script outside the session
+  removes both: it takes the next work item off the queue, runs it in a **fresh headless process**, and
+  repeats however that run ended - so every item starts on an empty context and the reset cannot be
+  forgotten, which is exactly what a self-imposed halt cannot promise. Measured on the reference machine
+  before such a driver existed, **83% of a week's usage was spent above 150k of carried context** - the
+  shape an endless interactive loop produces by construction. Choose the model per item rather than fixing
+  it for the whole run, and let several instances run at once; the lock queue in
+  [DEVELOPMENT.md](DEVELOPMENT.md) §10 already keeps them off each other. Prefer the driver for anything
+  left running unattended, and keep the interactive loop for work a human is watching.
 - **Report context as a magnitude, not as a fraction of the window.** On a large window a percentage
   hides the cost at exactly the moment it peaks; band the warning by whichever of absolute size and
   fill fraction is worse, so a small window is not silently exempt.

@@ -362,3 +362,189 @@ not among them, because it carries a contrib record but has never carried a stam
 
 Verification: `check-compliance: FastMediaSorter_Lite - 0 error(s), 9 warning(s) (overlay A, canon 2026.08.05)` -
 warnings are pre-existing and none was introduced here.
+
+## Canon reconcile 2026-08-18 - the doc pass the stale plugin cache skipped
+
+Canon **2026.08.05 -> 2026.08.18.1**, core digest `sha256:8d33fdab..` -> `sha256:961c9c8a..`. The stamp was
+already re-pointed mechanically before this session and is correct; what had never happened was the
+reconciliation against the docs. The `sza` plugin served a cache from 2026.07.27 for about three weeks, so
+in this repo's sessions the 08-08 and 08-18 rule text was never in context at all.
+
+**Correction to the 2026-08-05 entry above, and it matters for the other records.** That entry says the
+upstream change was "AI_USAGE.md §3 and §5, plus the `agent-cost` skill". Commit `22e638d` also rewrote
+**RELEASE_AND_DISTRIBUTION.md** (the whole new §8 release package plan, plus the hooks into it at §4 and
+§6), **NEW_PROJECT_CHECKLIST.md** and **README.md**'s glossary. Any repo whose reconcile trusted that
+summary instead of the diff has never seen §8. Verified with
+`git show --stat 22e638d -- rules/ ":!rules/contrib/"`.
+
+**Genuinely unreconciled scope, taken from the diff rather than from a summary**
+(`git diff --stat 22e638d..HEAD -- rules/ ":!rules/contrib/"`): AI_USAGE.md, DEVELOPMENT.md,
+GITHUB_INTERACTION.md, TESTING_AND_QA.md. **INVARIANTS.md has not changed since 2026.07.27** - it was named
+in the task brief, and the diff is empty, so there was nothing to reconcile there.
+
+### Reconciled against the live tree
+
+- **AI_USAGE §1 fire-and-forget, §5 the hook family, GITHUB_INTERACTION §6** - `.claude/settings.json`
+  carries permissions only, and there is no hook registration anywhere in the repo, so there is nothing to
+  double-wire and nothing to unregister. Verified that the **installed plugin cache** (not the marketplace
+  clone) carries the scripts and their registrations: the `2026.818.1` cache holds `guard-bash`,
+  `guard-fire-and-forget`, `guard-uncapped-read` and `on-user-prompt`, each behind its bash pre-filter.
+  Recorded in the rules file as a standing answer, so the next session does not hand-wire a second copy.
+- **AI_USAGE §2's three closure invariants** - `tools/Run-AllTests.ps1` already satisfies all three, which
+  is worth recording because it is the non-obvious case: a missing project, a missing `go.exe` and a
+  missing worker repo are each recorded as **FAIL**, never as a skip, so `exit 1` genuinely means "found a
+  defect OR could not verify". Only the explicit `-SkipGo` opt-out passes, and it is labelled as skipped in
+  the summary table. No change needed.
+- **DEVELOPMENT §10's lock queue** - inert. No `temp/BUILD.LOCK`, no `temp/CODE.LOCK`, no `temp/` at all;
+  single machine, single agent. The rules stand ready for the day that changes.
+- **DEVELOPMENT §15 / TESTING_AND_QA §8 gate-verdict cache** - deliberately NOT adopted, and §8 is the
+  reason: it says measure the per-gate distribution *before* tuning anything. This repo's battery is two
+  `dotnet test` runs plus `go test` and has never been measured, so caching it now would be the exact
+  unmeasured optimisation §8 was written against. Recorded rather than done.
+- **RELEASE_AND_DISTRIBUTION §8 release package plan** - **skipped, with the reason written into the rules
+  file** (`adopt-canon` step 6 permits a one-line skip). §8 projects a ticket store; this repo has none.
+  Specs move by hand between `docs/specifications/` and `docs/specifications/done/` - a two-state lifecycle
+  with no ids, no status field and no single write path to hook a reconcile into. §8's own text makes
+  building that write path the prerequisite, which is an owner scope call, not a consequence of adopting
+  the canon.
+
+### Drift found in the rules file, fixed against the tree
+
+The working tree was the authority in every case; `CLAUDE.md` lost on all of them.
+
+- **"No automated test suite. Validation is manual"** - false, and the most expensive line in the file: the
+  tree carries **37 test sources** across `tests/Lite.Tests/` (27) and `tests/Companion.Tests/` (10), two
+  integration harnesses under `tests/Integration/`, and `tools/Run-AllTests.ps1` to drive them. A sentence
+  saying the suite does not exist is how an agent reaches TESTING_AND_QA §1 with no evidence and no idea
+  one was available. Replaced with the commands, the three suites, and the note on how the runner treats a
+  suite it could not run.
+- **The `#If NETFRAMEWORK` seam list** - the file enumerated **16** files by hand; the tree carries **78**
+  (`grep -rlE "#If (Not )?NETFRAMEWORK" src/ --include=*.vb`). Four-fifths behind. Replaced the list with
+  that command plus the whole-file seams described by shape - a hand-maintained index of a greppable fact
+  is the render-target mistake invariant 16 names, one directory over.
+- **Settings window "five tabs"** - true of the net48 shell only. The modern build rebuilds the window in
+  `Table_Form.ModernLayout.vb` as a sidebar-nav layout of **eight** pages: the same `Tab_Page_1..5` plus
+  `Translation`, `Android / SFTP` and `About` from `BuildExtraModernSettingsPages` (present in `HEAD`, not
+  WIP - checked with `git show HEAD:`). The file also said the Share tab "was removed" while an
+  `Android / SFTP` page exists; corrected to what actually survived - the `btn_Share_Manager` launcher, on
+  "Files and system" in net48 and reparented onto the modern page.
+- **"Ф-1 has no drawing tools"** - stale. `Image_Editor_Form.Tools.vb` is 41 KB with an `EditorTool` enum
+  (crop, brush, rectangle outline/filled, ellipse outline/filled) behind `EditorImageOps.vb` and
+  `EditorUndoStack.vb`.
+- **Two dead spec links** - `SPECIFICATION_COPY_ACTIONS_REWORK.md` and
+  `SPECIFICATION_SEND_LOGS_TO_AUTHOR.md` were linked at `docs/specifications/` and have moved to `done/`.
+  Found by testing all 105 link targets in the file; the other 103 resolve.
+- **`Main_Form.vb` "~665 LOC .. ~20 partials totaling ~7,700 LOC"** - actually 779 LOC across 38 partials
+  totaling ~14,200. Replaced with the counting command rather than with fresher numbers, since the last
+  three numbers were also correct when they were written.
+- **`SharpCompress 0.50.4`** was missing from a dependency list that claims to enumerate. The other nine
+  pinned versions in that section all check out against `FastMediaSorter.Modern.vbproj` and
+  `packages.config`.
+- **The two `docs/guides/` mirror banners** carried the pre-plugin SHA form *and* a source-of-truth path
+  (`P:\WEB\sites.google.comsiteszaodua\Unified_Rules\..`) that no longer exists on this machine.
+  Re-stamped to the digest form, naming the GitHub repo. This closes the item left open in the 2026-07-27
+  entry.
+- One `canon-ok` marker added: the "сборка"/"собери" -> local-flow-only line is invariant 4 mapped onto the
+  two Russian trigger words the owner actually types, which the canon cannot know.
+
+### Recorded, not fixed - each needs someone else's decision
+
+- **DIVERGE, stamp**: `.sza-canon.json` says `"editions": []`, but the repo ships a **Server edition** with
+  its own winget package (`publishing/winget/server/`, `SerZhyAle.FastMediaSorter.Server`), its own Inno
+  `AppId`, ARP name, install dir and `..-server-setup.exe` asset built by `tools/Build-ServerInstaller.ps1`.
+  `editionTagPrefixes: []` **is** right - the Server edition ships off the same `v*` tag, no separate
+  clock. The stamp was declared correct by the owner for this pass and was not touched; `editions` wants a
+  second look in a session that owns it.
+- **DIVERGE, code**: `CLAUDE.md` states "`Is_Russian_Language` is a derived compatibility shim .. **new
+  code must not read it**", and `Table_Form.ModernLayout.vb` reads it (`Dim ru As Boolean =
+  Is_Russian_Language`, in `LocalizeModernSettingsLayout`) - the precise anti-pattern
+  `LocalizationCoverageTests` exists to catch. Left alone because that file carries another task's
+  uncommitted work.
+- **`.claude/` is gitignored here**, so the repo's `build` and `release` skills are per-machine working
+  artifacts rather than shared conventions. The `git add -A` fix noted below therefore does not propagate
+  to another clone. Worth knowing before anyone treats a repo skill as a durable rule surface.
+
+### Evidence - fresh runs, exit codes cited
+
+- **Compliance gate before**: `0 error(s), 9 warning(s)` (overlay A, canon 2026.08.18.1), exit 0.
+- **Compliance gate after**: `0 error(s), 5 warning(s)`, exit 0. Cleared: both `SZA-CANON05` mirror
+  banners, `SZA-STYLE02` in `CLAUDE.md` and in `docs/contracts/SETTINGS_WINDOW_INVENTORY_DOTNET10.md`.
+- **`pwsh -NoProfile -File tools/Build-SitePages.ps1 -Check`** -> "All language pages match
+  site-copy.json.", exit **0**.
+- **`pwsh -NoProfile -File tools/Run-AllTests.ps1`** -> all three suites PASS (viewer 475 net10 + 147
+  net48, Share Manager 82, Go worker 5 pkg ok), exit **0**. `dotnet` is not on `PATH` in this harness's
+  shell and the runner dies on it under `$ErrorActionPreference = "Stop"`; prepending
+  `C:\Program Files\dotnet` is the whole fix, and it is GITHUB_INTERACTION §6's "an interpreter that is not
+  installed is a dead command" in the small.
+- **Honest note on the first run**: the initial `Run-AllTests.ps1` came back **exit 1** with one failure in
+  each .NET suite, neither reproducible on re-run. Another task was writing source into this tree
+  throughout the session - `git status` grew from 14 modified paths to 26 plus 2 untracked, and the viewer
+  test count moved 472 -> 475 mid-session. So the green verdict above is a snapshot of a moving tree, not a
+  claim about a quiet one.
+
+### Warnings left, each with its reason
+
+- `SZA-RULES05 CLAUDE.md: 444 lines` - informational by the gate's own text. Checked: the bulk is
+  module-by-module architecture, the frozen-anchor matrix and the two-exe seam rules. No process
+  restatement; `SZA-RULES03` finds nothing.
+- `SZA-STYLE02 CHANGELOG.md:313,315` - both hits are `- ...` placeholder bullets inside the commented-out
+  release-section template. Legitimate under the rule's own "a CLI placeholder is legitimate"; see canon
+  fix 3.
+- `SZA-SURF02 index.html` JSON-LD, `SZA-SURF03 robots.txt`, `sitemap.xml` - raised as a fork rather than
+  done silently, because all three are live-site work rather than canon reconciliation. **The owner chose
+  to do them now, through the generator**; shipped in a separate commit, and the section below records what
+  that turned up. Open since the 2026-07-27 entry, now closed.
+
+### The site pass the owner asked for, and the two live defects it exposed
+
+Done as its own commit, entirely through `tools/Build-SitePages.ps1` rather than into the twelve rendered
+pages by hand (invariant 16). What made it worth more than a warning count: **the generator had been
+pointing every translated page at two assets that do not exist**, `assets/og-image.png` and
+`assets/favicon.ico`. Confirmed against the published site, not inferred - `GET
+.../assets/og-image.png` returns **404**. So all 12 pages had been shipping a dead link preview and a dead
+favicon, while the hand-authored root page pointed at the real `assets/social-preview-1280x640.png` and
+`assets/icons/Fast_Media_Sorter.ico`. The generated pages also carried `og:*` but no `twitter:card` at all.
+Both assets are now named once at the top of the script, which is what stops the pair from drifting again.
+
+Added: JSON-LD `SoftwareApplication` on the root page and on all 12 translated pages (built via
+`ConvertTo-Json` in the generator, because the localized copy needs JSON escaping and `Esc()` is HTML
+escaping - the wrong tool inside a `ld+json` block); `twitter:card`/`title`/`description`/`image`;
+`og:site_name` and `og:locale`; and `robots.txt` + `sitemap.xml` as render targets of the same script,
+covered by `-Check`. The sitemap derives its public set at run time - every root `*.html` plus one
+directory per translated language, 22 URLs - so adding a page needs no edit; the entry page is listed as
+the bare directory URL to agree with `canonical`, and only that entry carries the `xhtml:link` alternates.
+Deliberately no `softwareVersion`: a version baked into a page is what `SZA-VER04` exists to catch.
+
+**Second live defect, reported and NOT fixed - it needs an owner decision.** The shipped app links to
+`https://serzhyale.github.io/FastMediaSorter_Lite/privacy.html` from its About page
+(`Table_Form.ModernLayout.vb`, `AddProjectLinkRow(flow, "project_privacy", ..)`), and that URL returns
+**404**: Pages serves this repo from the root, and `privacy.html` exists only as `docs/privacy.html`, which
+is the unpublished staging tree. Nothing else in the repo references a privacy URL - the Store listing
+holds its own in Partner Center and could not be checked from here. This is invariant 14 territory (the
+privacy page, the permission list and the store data-safety form must say the same thing) and it cannot be
+satisfied by a page that does not resolve. It was left alone because publishing a privacy text is a content
+decision, and `docs/` is described in this repo as an unpublished redesign - copying it to the root would
+publish whichever revision happens to sit there. It is also why the new `sitemap.xml` does not list it.
+
+### Canon fixes found - not applied from here
+
+1. **`SZA-CANON03` never implements the version-gap rung, so it can only ever warn.** The `adopt-canon`
+   ladder says a gap of 2 or more versions is an **error**; the code branches on `adoptedOn` age alone
+   (`$sev = if ($ageDays -gt 180) { "error" }`) and never compares versions at all. Worse, `adoptedOn` is
+   refreshed by every re-stamp, so the age rung cannot fire either while anyone keeps the stamp current.
+   This repo sat three canon versions behind at warn level - **this is the gate hole that let a three-week
+   drift pass unnoticed**, and it is the highest-value fix in this list.
+2. **`SZA-STYLE02` turns a correct `..` range into a false positive when it abuts a code span.** The check
+   strips backtick spans and then tests the residue, so `` `MoveOn1`..`MoveOn9`. `` collapses to `...` and
+   is reported as an ellipsis. The remedy in this repo was to write a hyphen instead - i.e. the gate pushed
+   a document away from the house `..` form. Test before stripping, or collapse the residue.
+3. **`SZA-STYLE02` does not skip HTML comments**, though it already skips fenced blocks. A changelog's
+   commented-out release template is prose to it, and there is no way to satisfy it without editing a
+   template placeholder into something that reads like real content.
+4. **`SZA-RULES06`'s dead-local-path check should extend to `SZA-CANON05` mirror banners.** The banner here
+   named a local absolute path that had not existed for weeks, in exactly the shape RULES06 exists to
+   catch, while CANON05 looked only at the SHA-versus-digest form.
+5. **The `adopt-canon` re-sync path under-specifies the audit.** Step 7 sends you to re-read "the rule docs
+   whose per-file digest changed", which finds the changed docs but not a *previous entry that understated
+   its own scope* - the failure this session actually hit. One line telling the re-syncer to diff against
+   the last **stamped** version rather than against the last written summary would have caught it.

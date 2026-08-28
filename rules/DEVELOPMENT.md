@@ -140,6 +140,27 @@ compile-only -> targeted tests -> minified release variant -> device) lives in
   so two builds never overlap, a code lock before a multi-file edit *(Android reference:
   `temp/BUILD.LOCK` / `temp/CODE.LOCK`)*. The rest of this section is what that lock grows into once
   several agents actually contend for it - the refuse-shape below is the one it must *not* keep.
+- **A lock is a (kind, domain) pair, and the domain is DERIVED from the changed set, never declared by the
+  caller.** One global word per lock kind serializes agents that never touch the same thing - a watch-module
+  edit against a phone-module edit, or either against a repo-scripts edit. Split each kind by domain, keep
+  the path-to-domain table in exactly one place, and map the caller's file set through it; a caller allowed
+  to declare its own domain will eventually declare the wrong one. Three rules stop the split from becoming
+  a deadlock generator: a set that does not decompose - a build file, a path the table does not know, or no
+  file set at all - takes the **full** set, because over-protection is the safe direction to be wrong; a
+  multi-domain set is taken **all at once, in the table's canonical order, all-or-nothing**, releasing
+  everything it had taken if it cannot complete, since holding half a set in a hand-picked order is exactly
+  what turns a split into a deadlock; and a lock file written before the split is honoured as holding
+  *every* domain of its kind until its owner releases it. Measured after splitting one build lock per
+  module: two module checks that used to serialise ran together in 12 s, with no queue wait and no cache
+  contention.
+- **Abandoning a queued intent obliges you to withdraw your own ticket.** Nothing else will: the eviction
+  sweep judges the owning *session*, that session is alive, and it was the *intent* that died - so the
+  ticket sits at the head while every sibling waits behind it. This fires when the operator switches the
+  agent to other work, when a wait is interrupted, or when a phase collapses mid-queue. Exactly one half of
+  it self-heals: a head that was *granted* its turn and did not take it inside the reservation window is
+  dropped by the sweep, because after that window it holds no privilege anyway and leaving it there tells
+  every remaining waiter "your turn" at once. A ticket that was never granted a turn is never removed by
+  age, so withdrawal stays mandatory.
 - **A busy lock queues the caller; it does not refuse them.** Refusal makes the loser retry on its own
   schedule, which is a busy-wait dressed as a rule. A queue gives an order, and the order is what makes
   several agents fair to each other.
@@ -270,9 +291,33 @@ The machinery that makes the hygiene rules (§9) and the parity gates (§12) run
   only on findings *in the changed file(s)* and downgrades the project-wide count-ratchets to advisory - so
   a clean change closes without tripping on unrelated in-flight work. The full-project strict gate still
   runs for release/CI.
+- **Place a gate by its subject: per-change closure, or release-scope batch.** A check whose subject is the
+  whole tree or a shipped artifact does not belong in the per-change closure. Applied to one changed file it
+  cannot attribute its finding to that change, so it either fails on another session's work in flight or is
+  demoted to advisory and stops meaning anything - measured in the reference project, three such gates
+  produced **68 of the 191 red lines across 53 batch runs**, and one of them spent **33 minutes of closure
+  time in a month to report one finding**. Move it to the **release scope** (a pre-release sweep) when all
+  four hold: between releases the defect cannot reach a user; the subject is the tree or a shipped artifact,
+  not the changed file; the finding names its own location, so no attribution is needed; and batch fixing
+  costs no more than per-change fixing. Keep it **per-change** when any one holds: later work builds on the
+  defect (compilation, resource linking, a migration, a cross-module contract); the evidence exists only at
+  the moment of the change (the author's intent, a ticket state a probe is bound to); or agents read the
+  artifact between releases, where staleness poisons decisions. Two corollaries. A relocation is **a script
+  with an exit code**, never a line of prose - gated rules hold at ~99% and prose rules at 1-8%, so moving a
+  rule in prose changes its force rather than its stage. And **age is not the test**: "we were burned by this
+  long ago" describes no gate in a repo whose gates are all months old. A new gate names its scope class at
+  birth; unnamed means per-change, which is how the imbalance builds. A project with no release boundary - a
+  continuously published library or site - substitutes "CI-only" for the release scope and applies the same
+  four-part test.
 - **One closure facade, not N rituals.** Mechanical closure (dev-log + index/catalog sync + gates) runs as
   a single command (reference: a `post-change` facade), so "I changed a file, now what" has one answer and
   no step is forgotten.
+- **The closure RUNS the ladder's rung; it does not merely ask for it.** When a change set carries an
+  artifact class whose only proof is a link, render or compile step that nothing else performs, the facade
+  must run that step, selected by artifact class. Otherwise the rung in §6 is a request, and a request is an
+  ungated rule. In the reference project nothing in the facade linked resources, and the compile-only check
+  compiles code without linking any - so a broken layout closed **green** and its ticket reached "install
+  this and test it" without the thing to be installed ever having been built.
 - **Reachable exit codes (PowerShell).** Under `$ErrorActionPreference = 'Stop'` a bare `Write-Error`
   throws, so any `exit N` after it never runs and the process reports 1 while the message still prints
   (which is why it survives review). Write `Write-Error $msg -ErrorAction Continue` before `exit N`, and

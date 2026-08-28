@@ -879,3 +879,86 @@ passed clean.
 word. A project whose command set includes `run`, `dev` or `lib` as a slash command would lose the check with
 no signal. Worth either narrowing the allowlist to single letters plus the segments that cannot be command
 names, or emitting a warning rather than a silent skip when the segment is followed by more arguments.
+
+## Spread-back applied 2026-08-28 - gate placement, the closure's own ladder, lock domains, batch drivers, and a locale contradiction
+
+Raised from a session whose original question was "have our rules grown heavy enough to throttle
+development" - the owner had watched another agent close comparable tickets up to 4x faster. The
+measurement that opened the session is the reason five of these six are here, and it is also why two
+obvious-looking fixes are NOT here.
+
+**What the measurement found**, over 2026-08-14..28 (520 sessions, 346.7 h of active wall, idle above
+15 min excluded) plus the competing agent's own timestamped log for the same repository (111 tasks,
+2026-04-10..08-28), controlled on the **31 tickets both agents worked**:
+
+- The gap is real - median wall 16 min against 47 min - but the work is the same size: **166 tool calls
+  against 190, 28 edits against 31**. The other agent runs this repo's *same* process (1,191 catalog
+  calls, 242 closure-facade runs, 347 lock calls) and is still faster, so process volume is not the cause.
+- Process machinery is **27.5% of calls and 16.8% of ticket wall**. Deleting every gate and every catalog
+  write therefore caps out near 1.2x and cannot produce 2.9x.
+- Turn latency tracks **what the model writes, not what it reads**: correlation with output tokens
+  **+0.681**, with context size **+0.065**. By output band: under 200 tokens 2.7 s, 500-1000 7.2 s, over
+  2000 23.8 s. Across context bands 50k to 600k+ the median moves only 3.0 s to 6.2 s.
+- **76.5% of billed output is hidden reasoning** and only **5.6%** of it ever reaches a file. Written
+  artifacts - every spec, every line of code - are 5.6% of generation, and spec prose alone is 3.3%.
+
+**Consequence for the canon, stated once so it is not re-derived:** trimming rule text, spec templates or
+artifact volume is not a *latency* lever any more than it is a cost lever. [AI_USAGE.md](../AI_USAGE.md)
+§3 already says prose is not a cost lever; this session adds that it is not a speed lever either, and by a
+different mechanism.
+
+### Raised
+
+- **Gate placement, per-change or release-scope** -> [DEVELOPMENT.md](../DEVELOPMENT.md) §15. Zero prior
+  presence in `rules/` (grepped: no hit for "release-scope" or "gate placement" outside `contrib/`). The
+  four-part test, both corollaries, and the substitution for a project with no release boundary. Evidence
+  carried across: three tree-scope gates produced 68 of 191 red lines across 53 batch runs; one spent 33
+  minutes of closure time in a month for one finding.
+- **The closure runs the ladder's rung, it does not ask for it** -> §15. The canon had the ladder (§6) and
+  the facade (§15) and never joined them, so a project can hold both and still ship the defect: a broken
+  layout closed green and its ticket reached "install this and test it" without the artifact ever being
+  built.
+- **A lock is a (kind, domain) pair, derived not declared** -> §10, with the all-or-nothing acquisition
+  rule and the "full set when it does not decompose" fallback. Plus the lifecycle hole the split exposes:
+  **abandoning a queued intent obliges you to withdraw your own ticket**, because the sweep judges the
+  session (alive) while it was the intent that died - and only the *granted-but-unclaimed* head self-heals.
+- **For an unattended batch, make the process boundary the reset** -> [AI_USAGE.md](../AI_USAGE.md) §3.
+  A genuine advance on the canon's own "build the halt, not the reset": an external driver pulls the lever
+  the agent cannot. Evidence: 83% of a week's usage spent above 150k of carried context before one existed.
+- **A check only a human can run has not happened yet** -> [TESTING_AND_QA.md](../TESTING_AND_QA.md) §1.
+  A closing audit with no failures but an unticked manual line scores "needs a human test", never
+  "verified". Evidence: a ticket declared done on one unticked device line, and an hour on real hardware
+  failed one of its five acceptance criteria.
+- **A contradiction on the always-loaded page, fixed** -> [INVARIANTS](../INVARIANTS.md) 17 and
+  [DOCUMENTATION_CONCEPT.md](../DOCUMENTATION_CONCEPT.md) §5. The invariant read "every surface and every
+  locale in one edit"; this repo ruled (owner, 2026-08-14) that surfaces move together while the rest of
+  the declared locale set batches to the release, since nothing ships between releases and per-change
+  translation buys ten further translations per key for no shipping benefit. Both now say: every surface
+  and every *authored* locale in one edit, the remainder at the release boundary where one exists. The
+  reference repo was knowingly non-compliant with line 17 until this edit.
+
+### Deliberately NOT raised - two proposals this session's own measurement refuted
+
+- **Relaxing the fire-and-forget guard so gates can be dispatched asynchronously.** The other agent gets a
+  real win this way - 89% of its heavy invocations are background dispatches and it reads **97%** of them
+  back, so it is overlapping, not skipping. But `hooks/guard-fire-and-forget.ps1` already carries the
+  counter-measurement in its own header (~1,297 polling turns and 81 minutes of literal sleep in a month),
+  and the harnesses differ at the decisive point: a completion notification re-invokes this agent rather
+  than letting its loop continue. The guard stands unchanged. The in-repo form of the same idea was already
+  implemented and needed nothing: the closure facade starts its slowest gate as a background job before the
+  lexical ones and joins it after, turning (lexical + heavy) into ~max(lexical, heavy), with the two other
+  build-backed gates inside the same window.
+- **Trimming the spec templates to cut written volume.** Measured and dropped: spec prose is 3.3% of
+  generated tokens, so halving it moves wall-clock by a fraction of a percent while costing information
+  that is demonstrably consumed. Section-level measurement found no dead sections either - the largest
+  near-empty one is 0.8% of spec bytes.
+
+**Verification.** `tools/check-rules.ps1` - expected 0, actual **0**, `check-rules: OK (19 core docs, 11
+contrib docs)`, run before and after the version bump. `CANON_VERSION` **2026.08.18.2 -> 2026.08.28.1** and
+`.claude-plugin/plugin.json` **2026.818.2 -> 2026.828.1** in the same change, per this repo's own delivery
+rule. Six `rules/*.md` files touched, so every adopting repo is marked stale for reconciliation - intended.
+
+**Procedural note, recorded rather than glossed.** This canon edit was made from a *project* session, which
+this repo's `CLAUDE.md` tells every other repo not to do. The owner directed it explicitly after being shown
+the constraint. The gate and both version bumps were run exactly as a canon session would, so the change is
+well-formed regardless of where it was authored; the deviation is the venue, not the process.
