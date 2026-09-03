@@ -1,0 +1,142 @@
+{
+  "$comment": "Project profile for the shipped harness (tools/harness). Copy to the project root as .sza-profile.json and edit. Every key below is OPTIONAL: an omitted key keeps the default in tools/harness/_profile.ps1, and those defaults are the canon's own conventions. Paths are project-relative, forward slashes. Delete what the project does not have rather than leaving a wrong value - a value nothing uses is a value nobody notices going stale.",
+
+  "version": "1",
+  "projectName": "<repo name>",
+  "$comment_envPrefix": "Prefix of every environment variable the harness reads and writes: <prefix>_AGENT_ID, <prefix>_SPEC_CATALOG_DIR, and so on.",
+  "envPrefix": "SZA",
+
+  "paths": {
+    "journal": "PLAN/spec-catalog.jsonl",
+    "journalArchive": "PLAN/spec-catalog-archive.jsonl",
+    "burnedIds": "PLAN/spec-catalog-burned-ids.jsonl",
+    "specsDir": "PLAN",
+    "specArchiveDir": "PLAN/archive",
+    "releaseQueue": "PLAN/RELEASE_QUEUE.md",
+    "releaseReady": "PLAN/RELEASE_READY.md",
+    "releaseQueueDone": "PLAN/RELEASE_QUEUE_DONE.md",
+    "tempDir": "temp",
+    "locksDir": "temp",
+    "leasesDir": "temp/SPEC-TICKET.LEASES",
+    "leaseHandoffDir": "temp/LEASE-HANDOFF",
+    "lockHandoffDir": "temp/LOCK-HANDOFF",
+    "agentChatDir": "temp/AGENT-CHAT",
+    "queueRunsDir": "temp/spec-queue",
+    "queueStopFile": "temp/STOP-SPEC-QUEUE",
+    "specAllQueueLock": "temp/spec-all-queue.lock",
+    "skipCache": "temp/spec-next-skip-cache.json",
+    "changelog": "dev/CHANGELOG.md",
+    "documentRegistry": "docs/DOCUMENT_REGISTRY.jsonl",
+    "docsMap": "docs/DOCS_MAP.md",
+    "sitemap": "sitemap.xml",
+    "allFeatures": "docs/ALL_FEATURES.jsonl",
+    "allFeaturesPrivate": "docs/ALL_FEATURES_private.jsonl",
+    "allFeaturesSchema": "docs/ALL_FEATURES.schema.json",
+    "$comment_featureMatrix": "Generated grid of which build carries which flag. Leave empty when the project has none: the capability ledger then validates against inventory.dimensions instead.",
+    "featureMatrix": "",
+    "commandsDir": ".claude/commands",
+    "probeBaseline": "PLAN/probe-baseline.txt"
+  },
+
+  "grammar": {
+    "ticketIdPattern": "^S\\d{4}$",
+    "specFilePattern": "^PLAN/(archive/)?S\\d{4}_(?!spec_)",
+    "specFileTemplate": "PLAN/{0}_{1}.md",
+    "statusVocabulary": ["Draft", "Approved", "Tactical", "In Progress", "Implemented", "Verified", "Partial", "Broken", "BlockByOtherTask", "BlockNeedUserTest", "BlockQuestions", "BlockExternal", "Archived"]
+  },
+
+  "$comment_modules": "The build units a closure can name. A single-module project leaves this as it is.",
+  "modules": {
+    "default": "main",
+    "names": ["main"]
+  },
+
+  "locks": {
+    "$comment": "Domains are acquired in rank order - the rank IS the contract, and reordering it is a deadlock. A name must be '<type>.<something>' and a type is Build or Code.",
+    "domains": [
+      { "name": "Build.Main", "type": "Build", "rank": 1 },
+      { "name": "Code.Main", "type": "Code", "rank": 2 },
+      { "name": "Code.Scripts", "type": "Code", "rank": 3 }
+    ],
+    "$comment_pathRules": "First match wins. domain = a concrete Code domain; or the bare type 'Code' = every code domain (the fail-closed answer, for a build file or a shared config that could belong to any module); or null = exempt, the path is already serialised by something finer (a ticket lease, a journal mutex) and takes no lock at all. A path no rule matches fails closed.",
+    "pathRules": [
+      { "pattern": "^PLAN/", "domain": null },
+      { "pattern": "^(settings\\.gradle\\.kts|build\\.gradle\\.kts|package\\.json|Cargo\\.toml|go\\.mod)$", "domain": "Code" },
+      { "pattern": "^(scripts|dev|docs|\\.claude|\\.github)/", "domain": "Code.Scripts" },
+      { "pattern": "^(CLAUDE|AGENTS|README)\\.md$", "domain": "Code.Scripts" },
+      { "pattern": "^(\\.sza-profile\\.json|\\.sza-canon\\.json)$", "domain": "Code.Scripts" },
+      { "pattern": "^src/", "domain": "Code.Main" }
+    ],
+    "$comment_agentProcessNames": "Process names of the agent runtime, used to see a headless child that is working a ticket right now.",
+    "agentProcessNames": ["claude.exe", "claude", "codex.exe", "codex"]
+  },
+
+  "$comment_probes": "The debug probe bound to the 'a human still has to watch this' status. scanRoots is what the gates walk, sourceRoots what previews and drift checks search. Set enabled to false in a project that instruments nothing.",
+  "probes": {
+    "enabled": true,
+    "scanRoots": ["src"],
+    "sourceRoots": ["src"],
+    "sourceExtensions": [".kt", ".java", ".py", ".ts", ".js", ".cs", ".go"],
+    "openerRegex": "Timber\\.(?<level>[iwed])\\(",
+    "formRegex": "^Timber\\.d\\(\\s*\"S(?<num>\\d{4}):",
+    "formRegexForId": "^Timber\\.d\\(\\s*\"{Id}:",
+    "tagRegex": "Timber\\.d\\(\"S\\d{4}:",
+    "templateRegex": "^Timber\\.d\\(\\s*\"(?<ticket>S\\d{4}):\\s*(?<message>(?:\\\\.|[^\"\\\\])*)\"",
+    "callTemplate": "Timber.d(\"{Id}: {Message}\")",
+    "callName": "Timber.d"
+  },
+
+  "$comment_hooks": "Project scripts the harness calls out to. postClose runs after a closing transition, in order, with {Module} filled in. An empty string means the project has none and the step is skipped.",
+  "hooks": {
+    "postClose": [],
+    "deviceReady": "",
+    "deviceReadyArgs": [],
+    "moduleCatalog": "",
+    "moduleCatalogSync": ""
+  },
+
+  "$comment_runner": "The batch queue runner: which CLI it starts, what it says to it, and which statuses earn the strong model. Status is read before tier.",
+  "runner": {
+    "command": "claude",
+    "promptTemplate": "/spec-all {Id}",
+    "decisionStatuses": ["Draft", "Approved", "Tactical", "In Progress", "Partial", "Broken", "BlockQuestions"],
+    "cheapStatuses": ["Implemented", "BlockNeedUserTest"],
+    "cheapTierMax": 3
+  },
+
+  "commands": {
+    "$comment_statusCommands": "What to run next for a ticket in each status, printed in the release plan. {Id} is the ticket id.",
+    "statusCommands": {
+      "Draft": ["/spec-all {Id}"],
+      "Approved": ["/spec-tech {Id}", "/spec-dev {Id}"],
+      "Tactical": ["/spec-dev {Id}"],
+      "In Progress": ["/spec-dev {Id}"],
+      "Partial": ["/spec-fix {Id}", "/spec-check {Id}"],
+      "Broken": ["/spec-fix {Id}", "/spec-check {Id}"],
+      "BlockByOtherTask": ["/spec-tech {Id}", "/spec-dev {Id}"],
+      "Implemented": ["/spec-test-device {Id}", "/spec-check {Id}"]
+    },
+    "$comment_aliases": "Short second names for hand-typed commands. One row per canonical command, one key per set passed to the generator with -Sets.",
+    "aliases": []
+  },
+
+  "$comment_inventory": "The capability ledger. dimensionName is the record field naming which builds carry a capability - 'flavors', 'platforms', 'editions'. secondary is an optional second axis; leave its name empty when there is one axis.",
+  "inventory": {
+    "dimensionName": "dimensions",
+    "dimensions": [],
+    "secondary": { "name": "", "values": [] },
+    "noChangePlaceholders": ["no changes"]
+  },
+
+  "site": {
+    "baseUrl": "",
+    "locales": ["en"],
+    "defaultLocale": "en"
+  },
+
+  "$comment_harness": "How a harness script is named in a printed hint. Map a harness-relative path, or a '<cluster>/*' wildcard, to what the operator actually types in this project; an unmapped script prints its absolute path.",
+  "harness": {
+    "invokePrefix": "pwsh -NoProfile -File",
+    "entryPoints": {}
+  }
+}

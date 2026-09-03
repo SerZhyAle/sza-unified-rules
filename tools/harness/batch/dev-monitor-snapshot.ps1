@@ -1,0 +1,545 @@
+#requires -Version 7.0
+<#
+.SYNOPSIS
+    One in-process snapshot of what the development machine is doing (S2406) - the object that both
+    the terminal monitor (`.\a.ps1 rm`) and the monitor page (`.\a.ps1 rmw`) render.
+
+.DESCRIPTION
+    Dot-source this file; it defines functions only. Get-DevMonitorSnapshot reads seven sources and
+    returns a single versioned object (schema 1):
+
+      - ticket leases      temp/SPEC-TICKET.LEASES/*.json, liveness judged by Get-AgentTicketLiveness -
+                           the same helper ticket-lease.ps1 judges by (S1621), read in-process instead
+                           of through a child pwsh (434 ms of a 1000 ms budget, measured 2026-09-02);
+      - locks and queues   temp/<DOMAIN>.LOCK and temp/<DOMAIN>.QUEUE/*.json for every domain in
+                           agent-lock-domains.ps1 plus the two pre-split files, read without eviction;
+      - agent chat         the progress stream (one row per agent, newest first, plus the newest
+                           `phase` message of each agent), the tail of the stream, alive findings;
+      - run journals       temp/spec-queue/runs-<instance>.jsonl, tail rows plus counts;
+      - stop flags         temp/STOP-SPEC-QUEUE*;
+      - headless children  claude.exe started with -p, with the age of the newest file its ticket wrote;
+      - the release queue  PLAN/RELEASE_QUEUE.md rows of the current package, in file order, with the
+                           [taken ..] marker and the Block* statuses the ranker would skip.
+
+    Reads only. No child process, no lock, no chat post, no sweep (every chat read passes -NoSweep),
+    no file written - the contract suite proves the fixture is byte-for-byte untouched by one call.
+    The whole call is timed into `durationMs`; the page prints it, the suite bounds it.
+
+    Exit codes: none - library.
+#>
+
+. (Join-Path $PSScriptRoot '..\_profile.ps1')
+. (Get-SzaHarnessScript 'locks/agent-lock-domains.ps1')
+
+function ConvertFrom-DevMonitorEpoch {
+    <# Epoch milliseconds -> local DateTime, or $null for anything unreadable. #>
+    param($Epoch)
+    if ($null -eq $Epoch -or "$Epoch" -eq '') { return $null }
+    try { return [DateTimeOffset]::FromUnixTimeMilliseconds([int64]$Epoch).LocalDateTime }
+    catch { return $null }
+}
+
+function Get-DevMonitorMinutesSince {
+    param($When)
+    if ($null -eq $When) { return $null }
+    return [math]::Round(((Get-Date) - [DateTime]$When).TotalMinutes, 1)
+}
+
+function ConvertTo-DevMonitorUtcText {
+    param($When)
+    if ($null -eq $When) { return $null }
+    return ([DateTime]$When).ToUniversalTime().ToString('o')
+}
+
+function Get-DevMonitorRelativePath {
+    param([string]$RepoRoot, [string]$Path)
+    if ($Path.StartsWith($RepoRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+        $Path = $Path.Substring($RepoRoot.Length).TrimStart('\', '/')
+    }
+    return $Path.Replace('\', '/')
+}
+
+function Read-DevMonitorJson {
+    param([string]$Path)
+    try { return (Get-Content -LiteralPath $Path -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop) }
+    catch { return $null }
+}
+
+function Get-DevMonitorProp {
+    param($Object, [string]$Name, $Default = $null)
+    if ($null -eq $Object) { return $Default }
+    $p = $Object.PSObject.Properties[$Name]
+    if ($null -eq $p -or $null -eq $p.Value) { return $Default }
+    return $p.Value
+}
+
+function Get-DevMonitorTicketLastWrite {
+    <#
+        The newest file a ticket wrote: its spec and tactical folder under PLAN/, its scratch dir under
+        temp/. The lease heartbeat is deliberately not counted - it proves the process is scheduled,
+        only a file it wrote proves it is working.
+    #>
+    param([string]$RepoRoot, [string]$Id)
+    if ($Id -notmatch '^S\d{4}$') { return $null }
+    $files = @()
+    $planDir = Join-Path $RepoRoot 'PLAN'
+    if (Test-Path -LiteralPath $planDir) {
+        # Two passes on purpose: -Filter applies at every level of -Recurse, so one recursive call
+        # filtered by the id prefix would miss INDEX.md and the phase files inside the folder.
+        foreach ($top in @(Get-ChildItem -LiteralPath $planDir -Filter ($Id + '_*') -ErrorAction SilentlyContinue)) {
+            if ($top.PSIsContainer) { $files += @(Get-ChildItem -LiteralPath $top.FullName -Recurse -File -ErrorAction SilentlyContinue) }
+            else { $files += $top }
+        }
+    }
+    $scratch = Join-Path (Join-Path $RepoRoot (Get-SzaPath 'tempDir' -Relative)) $Id
+    if (Test-Path -LiteralPath $scratch) {
+        $files += @(Get-ChildItem -LiteralPath $scratch -Recurse -File -ErrorAction SilentlyContinue)
+    }
+    if ($files.Count -eq 0) { return $null }
+    $newest = $files | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    return [pscustomobject]@{
+        Minutes = [math]::Round(((Get-Date) - $newest.LastWriteTime).TotalMinutes, 1)
+        Path    = Get-DevMonitorRelativePath -RepoRoot $RepoRoot -Path $newest.FullName
+    }
+}
+
+function Get-DevMonitorLeaseFiles {
+    param([string]$RepoRoot)
+    $dir = (Join-Path $RepoRoot (Get-SzaPath 'leasesDir' -Relative))
+    $out = @()
+    if (-not (Test-Path -LiteralPath $dir)) { return $out }
+    foreach ($f in @(Get-ChildItem -LiteralPath $dir -Filter '*.json' -ErrorAction SilentlyContinue | Sort-Object Name)) {
+        $lease = Read-DevMonitorJson -Path $f.FullName
+        if ($null -eq $lease) { continue }
+        $claimed = ConvertFrom-DevMonitorEpoch (Get-DevMonitorProp $lease 'claimedAt')
+        $out += [pscustomobject][ordered]@{
+            id              = [string](Get-DevMonitorProp $lease 'id' $f.BaseName)
+            sessionId       = [string](Get-DevMonitorProp $lease 'sessionId' '')
+            name            = ''
+            reason          = [string](Get-DevMonitorProp $lease 'reason' '')
+            host            = [string](Get-DevMonitorProp $lease 'host' '')
+            pid             = Get-DevMonitorProp $lease 'pid'
+            claimedAtUtc    = ConvertTo-DevMonitorUtcText $claimed
+            ageMinutes      = Get-DevMonitorMinutesSince $claimed
+            lastSeenMinutes = $null
+            liveness        = 'unknown'
+            transcriptPath  = [string](Get-DevMonitorProp $lease 'transcriptPath' '')
+            lastSeenAt      = Get-DevMonitorProp $lease 'lastSeenAt'
+        }
+    }
+    return $out
+}
+
+function Get-DevMonitorQueueTickets {
+    param([string]$RepoRoot, [string]$Domain)
+    $tickets = @()
+    $dirs = @((Join-Path (Join-Path $RepoRoot (Get-SzaPath 'locksDir' -Relative)) "$($Domain.ToUpper()).QUEUE"))
+    try { $dirs += (Join-Path (Join-Path $RepoRoot (Get-SzaPath 'locksDir' -Relative)) ((Get-AgentLockLegacyName -Name $Domain).ToUpper() + '.QUEUE')) } catch { }
+    foreach ($dir in $dirs) {
+        if (-not (Test-Path -LiteralPath $dir)) { continue }
+        foreach ($file in @(Get-ChildItem -LiteralPath $dir -Filter '*.json' -ErrorAction SilentlyContinue)) {
+            $t = Read-DevMonitorJson -Path $file.FullName
+            if ($null -eq $t) { continue }
+            $enq = ConvertFrom-DevMonitorEpoch (Get-DevMonitorProp $t 'enqueuedAt')
+            $seen = ConvertFrom-DevMonitorEpoch (Get-DevMonitorProp $t 'lastSeenAt')
+            $tickets += [pscustomobject][ordered]@{
+                seq             = [int](Get-DevMonitorProp $t 'seq' 0)
+                sessionId       = [string](Get-DevMonitorProp $t 'sessionId' '')
+                name            = ''
+                reason          = [string](Get-DevMonitorProp $t 'reason' '')
+                waitedMinutes   = Get-DevMonitorMinutesSince $enq
+                lastSeenMinutes = Get-DevMonitorMinutesSince $seen
+            }
+        }
+    }
+    return @($tickets | Sort-Object seq)
+}
+
+function Get-DevMonitorLocks {
+    param([string]$RepoRoot)
+    $out = @()
+    $rows = @()
+    foreach ($d in @(Get-AgentLockDomainTable)) { $rows += [pscustomobject]@{ Domain = $d.Domain; Legacy = $false } }
+    # The pre-split files still hold every domain of their type until their owner releases them.
+    foreach ($legacy in @('Build', 'Code')) {
+        if (Test-Path -LiteralPath (Join-Path (Join-Path $RepoRoot (Get-SzaPath 'locksDir' -Relative)) "$($legacy.ToUpper()).LOCK")) {
+            $rows += [pscustomobject]@{ Domain = $legacy; Legacy = $true }
+        }
+    }
+    foreach ($r in $rows) {
+        $lockPath = Join-Path (Join-Path $RepoRoot (Get-SzaPath 'locksDir' -Relative)) "$($r.Domain.ToUpper()).LOCK"
+        $held = Test-Path -LiteralPath $lockPath
+        $body = if ($held) { Read-DevMonitorJson -Path $lockPath } else { $null }
+        $acquired = ConvertFrom-DevMonitorEpoch (Get-DevMonitorProp $body 'acquiredAt')
+        $queue = if ($r.Legacy) { @() } else { @(Get-DevMonitorQueueTickets -RepoRoot $RepoRoot -Domain $r.Domain) }
+        $out += [pscustomobject][ordered]@{
+            domain        = $r.Domain
+            legacy        = $r.Legacy
+            held          = $held
+            unreadable    = ($held -and $null -eq $body)
+            reason        = [string](Get-DevMonitorProp $body 'reason' '')
+            sessionId     = [string](Get-DevMonitorProp $body 'sessionId' '')
+            name          = ''
+            host          = [string](Get-DevMonitorProp $body 'host' '')
+            pid           = Get-DevMonitorProp $body 'pid'
+            acquiredAtUtc = ConvertTo-DevMonitorUtcText $acquired
+            heldMinutes   = Get-DevMonitorMinutesSince $acquired
+            queue         = $queue
+        }
+    }
+    return $out
+}
+
+function Get-DevMonitorInstances {
+    param([string]$RepoRoot, [int]$Tail)
+    $out = @()
+    $runDir = (Join-Path $RepoRoot (Get-SzaPath 'queueRunsDir' -Relative))
+    if (-not (Test-Path -LiteralPath $runDir)) { return $out }
+    foreach ($j in @(Get-ChildItem -LiteralPath $runDir -Filter 'runs-*.jsonl' -ErrorAction SilentlyContinue | Sort-Object Name)) {
+        $lines = @()
+        try { $lines = @(Get-Content -LiteralPath $j.FullName -ErrorAction Stop | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) } catch { $lines = @() }
+        # Counts by regex, rows by parse: parsing three hundred rows to show five costs more than
+        # the rest of the snapshot together.
+        $moved = @($lines | Where-Object { $_ -match '"moved"\s*:\s*true' }).Count
+        $rows = @()
+        foreach ($line in @($lines | Select-Object -Last $Tail)) {
+            try { $r = $line | ConvertFrom-Json -ErrorAction Stop } catch { continue }
+            $rows += [pscustomobject][ordered]@{
+                id           = [string](Get-DevMonitorProp $r 'id' '')
+                statusBefore = [string](Get-DevMonitorProp $r 'statusBefore' '')
+                statusAfter  = [string](Get-DevMonitorProp $r 'statusAfter' '')
+                moved        = [bool](Get-DevMonitorProp $r 'moved' $false)
+                outcome      = [string](Get-DevMonitorProp $r 'outcome' '')
+                exitCode     = Get-DevMonitorProp $r 'exitCode'
+                minutes      = Get-DevMonitorProp $r 'minutes'
+                model        = [string](Get-DevMonitorProp $r 'model' '')
+                finishedAt   = [string](Get-DevMonitorProp $r 'finishedAt' '')
+            }
+        }
+        $out += [pscustomobject][ordered]@{
+            instance = ($j.BaseName -replace '^runs-', '')
+            recorded = $lines.Count
+            moved    = $moved
+            stayed   = ($lines.Count - $moved)
+            rows     = $rows
+        }
+    }
+    return $out
+}
+
+function Get-DevMonitorStopFlags {
+    param([string]$RepoRoot)
+    $out = @()
+    $tempDir = (Join-Path $RepoRoot (Get-SzaPath 'tempDir' -Relative))
+    if (-not (Test-Path -LiteralPath $tempDir)) { return $out }
+    $stopFlag = Join-Path $RepoRoot (Get-SzaPath 'queueStopFile' -Relative)
+    foreach ($f in @(Get-ChildItem -LiteralPath (Split-Path $stopFlag -Parent) -Filter ((Split-Path $stopFlag -Leaf) + '*') -File -ErrorAction SilentlyContinue)) {
+        $out += [pscustomobject][ordered]@{
+            name             = $f.Name
+            requestedMinutes = [math]::Round(((Get-Date) - $f.LastWriteTime).TotalMinutes, 1)
+        }
+    }
+    return $out
+}
+
+function Get-DevMonitorChildren {
+    param([string]$RepoRoot)
+    $out = @()
+    $procs = @()
+    try {
+        $procs = @((Get-SzaAgentProcesses) |
+                Where-Object { $_.CommandLine -and $_.CommandLine -match '\s-p\s' })
+    } catch { $procs = @() }
+    foreach ($c in $procs) {
+        $started = $null
+        try { $started = $c.CreationDate } catch { $started = $null }
+        $ageMinutes = if ($started) { [math]::Round(((Get-Date) - $started).TotalMinutes, 1) } else { $null }
+        $ticket = if ($c.CommandLine -match '(S\d{4})') { $Matches[1] } else { '?' }
+        $model = if ($c.CommandLine -match '--model\s+(\S+)') { $Matches[1] } else { 'default' }
+        $write = Get-DevMonitorTicketLastWrite -RepoRoot $RepoRoot -Id $ticket
+        # Judge the silence against this run's own age, never against the file's absolute date: a
+        # five-minute-old child cannot have been quiet for longer than five minutes.
+        $quiet = if ($null -eq $write) { $ageMinutes }
+            elseif ($null -eq $ageMinutes) { $write.Minutes }
+            else { [math]::Min($write.Minutes, $ageMinutes) }
+        $out += [pscustomobject][ordered]@{
+            pid              = $c.ProcessId
+            ticket           = $ticket
+            model            = $model
+            ageMinutes       = $ageMinutes
+            lastWriteMinutes = if ($null -ne $write) { $write.Minutes } else { $null }
+            lastWritePath    = if ($null -ne $write) { $write.Path } else { $null }
+            writeBeforeStart = ($null -ne $write -and $null -ne $ageMinutes -and $write.Minutes -gt ($ageMinutes + 1))
+            quietMinutes     = $quiet
+        }
+    }
+    return $out
+}
+
+function Get-DevMonitorNextUp {
+    <#
+        The current package of PLAN/RELEASE_QUEUE.md in file order - the file IS the execution order
+        (CLAUDE.md section 4); the ranker only skips leased, blocked and skip-cached rows, and the first
+        two of those are visible on the row itself.
+    #>
+    param([string]$RepoRoot, [int]$NextUp)
+    $result = [pscustomobject][ordered]@{ package = $null; rows = @(); totalInPackage = 0 }
+    $path = (Join-Path $RepoRoot (Get-SzaPath 'releaseQueue' -Relative))
+    if (-not (Test-Path -LiteralPath $path)) { return $result }
+    $lines = @()
+    try { $lines = @(Get-Content -LiteralPath $path -ErrorAction Stop) } catch { return $result }
+    $package = $null
+    foreach ($line in $lines) {
+        if ($line -match '^current-next-release:\s*(\S+)') { $package = $Matches[1]; break }
+    }
+    $result.package = $package
+    if ($null -eq $package) { return $result }
+    $rows = @()
+    $inPackage = $false
+    $total = 0
+    foreach ($line in $lines) {
+        if ($line -match '^(\d+|--)\s+(S\d{4})_(\S+)\s+(\d{4}-\d{2}-\d{2})\s+(\S+)(?:\s+\[taken ([^\]]+)\])?') {
+            if ($Matches[1] -ne $package) { $inPackage = $false; continue }
+            $inPackage = $true
+            $total++
+            if ($rows.Count -ge $NextUp -and $NextUp -gt 0) { continue }
+            $taken = if ($Matches[6]) { $Matches[6] } else { $null }
+            $rows += [pscustomobject][ordered]@{
+                kind    = 'row'
+                rel     = $Matches[1]
+                id      = $Matches[2]
+                slug    = $Matches[3]
+                changed = $Matches[4]
+                status  = $Matches[5]
+                taken   = $taken
+                leased  = ($null -ne $taken)
+                blocked = ($Matches[5] -like 'Block*')
+            }
+            continue
+        }
+        # A package sub-heading (`# 36.0 ..`) keeps the order readable the way the file reads.
+        if ($line -match "^#\s+$([regex]::Escape($package))\.\d+\s+(.*)$") {
+            $inPackage = $true
+            if ($rows.Count -ge $NextUp -and $NextUp -gt 0) { continue }
+            $rows += [pscustomobject][ordered]@{ kind = 'group'; text = ("{0}.{1}" -f $package, ($line -replace "^#\s+$([regex]::Escape($package))\.", '')) }
+        }
+    }
+    $result.rows = $rows
+    $result.totalInPackage = $total
+    return $result
+}
+
+function Get-DevMonitorSnapshot {
+    <#
+    .SYNOPSIS
+        The whole picture as one object (schema 1). See the file header for the sources.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$RepoRoot,
+        # Finished tickets per instance.
+        [int]$Tail = 5,
+        # Rows of the current package shown under next-up (0 = all).
+        [int]$NextUp = 25,
+        # Newest progress messages kept in the chat tail.
+        [int]$ChatTail = 40
+    )
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    $RepoRoot = (Resolve-Path -LiteralPath $RepoRoot).Path.TrimEnd('\', '/')
+
+    $leases = @(Get-DevMonitorLeaseFiles -RepoRoot $RepoRoot)
+    $locks = @(Get-DevMonitorLocks -RepoRoot $RepoRoot)
+    $instances = @(Get-DevMonitorInstances -RepoRoot $RepoRoot -Tail $Tail)
+    $stop = @(Get-DevMonitorStopFlags -RepoRoot $RepoRoot)
+    $children = @(Get-DevMonitorChildren -RepoRoot $RepoRoot)
+    # Not `$nextUp`: PowerShell names are case-insensitive, so that would be the [int] parameter.
+    $queueRows = Get-DevMonitorNextUp -RepoRoot $RepoRoot -NextUp $NextUp
+
+    # Everything that needs the lock library runs inside one scriptblock: its strict mode and its
+    # timings stay out of the caller's scope (the pattern the terminal monitor used for the chat).
+    $lockLib = (Get-SzaHarnessScript 'locks/agent-lock.ps1')
+    $chat = $null
+    try {
+        $chat = & {
+            param($LockLib, $Leases, $Locks, $ChatTail)
+            Set-StrictMode -Off
+            $ErrorActionPreference = 'Continue'
+            . $LockLib
+            $timings = Get-AgentLockTimings -Name SpecTicket
+            $w = Get-AgentChatWindows
+            $messages = @(Get-AgentChatMessages -Stream progress -Last 0 -NoSweep)
+
+            # Nicknames: the name a message carries first (an FMS_AGENT_NAME override never reaches the
+            # registry), then the registry, then the id's first eight characters - the last one is
+            # never cached, so a lease read before the agent's message cannot pin the fallback.
+            $names = @{}
+            foreach ($m in $messages) {
+                $agent = Get-AgentChatProp $m 'agent'
+                $id = [string](Get-AgentChatProp $agent 'id' '')
+                $n = [string](Get-AgentChatProp $agent 'name' '')
+                if ($id -and $n -and -not $names.ContainsKey($id)) { $names[$id] = $n }
+            }
+            $nameOf = {
+                param($Id, $Agent)
+                if ([string]::IsNullOrWhiteSpace($Id)) { return '' }
+                if ($names.ContainsKey($Id)) { return $names[$Id] }
+                $n = [string](Get-AgentChatProp $Agent 'name' '')
+                if (-not $n) { try { $n = [string](Get-AgentNickname -Id $Id -NoCreate) } catch { $n = '' } }
+                if ($n) { $names[$Id] = $n; return $n }
+                if ($Id.Length -gt 8) { return $Id.Substring(0, 8) }
+                return $Id
+            }
+
+            foreach ($l in $Leases) {
+                $shim = [pscustomobject]@{ sessionId = $l.sessionId; transcriptPath = $l.transcriptPath; lastSeenAt = $l.lastSeenAt; enqueuedAt = $null }
+                $verdict = 'unknown'
+                try { $verdict = [string](Get-AgentTicketLiveness -Ticket $shim -StaleMinutes $timings.SessionStaleMinutes) } catch { $verdict = 'unknown' }
+                $l.liveness = $verdict
+                $l.name = & $nameOf $l.sessionId $null
+                # The same three marks ticket-lease.ps1's quiet-time reads: transcript write, heartbeat,
+                # newest chat line; the freshest one is how long ago the holder was last seen.
+                $marks = @()
+                if ($l.transcriptPath -and (Test-Path -LiteralPath $l.transcriptPath)) { try { $marks += (Get-Item -LiteralPath $l.transcriptPath).LastWriteTime } catch { } }
+                if ($l.lastSeenAt) { try { $marks += [DateTimeOffset]::FromUnixTimeMilliseconds([int64]$l.lastSeenAt).LocalDateTime } catch { } }
+                try { $seen = Get-AgentChatLastSeen -AgentId $l.sessionId; if ($null -ne $seen) { $marks += $seen.ToLocalTime() } } catch { }
+                if ($marks.Count -gt 0) { $l.lastSeenMinutes = [math]::Round(((Get-Date) - ($marks | Sort-Object -Descending | Select-Object -First 1)).TotalMinutes, 1) }
+            }
+            foreach ($k in $Locks) {
+                if ($k.sessionId) { $k.name = & $nameOf $k.sessionId $null }
+                foreach ($q in @($k.queue)) { if ($q.sessionId) { $q.name = & $nameOf $q.sessionId $null } }
+            }
+
+            $seenAgents = [ordered]@{}
+            $phaseOf = @{}
+            foreach ($m in $messages) {
+                $agent = Get-AgentChatProp $m 'agent'
+                $id = [string](Get-AgentChatProp $agent 'id' '?')
+                if (-not $seenAgents.Contains($id)) { $seenAgents[$id] = $m }
+                if (-not $phaseOf.ContainsKey($id) -and [string](Get-AgentChatProp $m 'kind' '') -eq 'phase') { $phaseOf[$id] = $m }
+            }
+            $agents = @()
+            foreach ($id in $seenAgents.Keys) {
+                $m = $seenAgents[$id]
+                $agent = Get-AgentChatProp $m 'agent'
+                $ph = if ($phaseOf.ContainsKey($id)) { $phaseOf[$id] } else { $null }
+                $leaseId = $null
+                foreach ($l in $Leases) { if ($l.sessionId -eq $id) { $leaseId = $l.id; break } }
+                $age = [double](Get-AgentChatProp $m 'ageMinutes' 0)
+                $agents += [pscustomobject][ordered]@{
+                    id              = $id
+                    name            = & $nameOf $id $agent
+                    runtime         = [string](Get-AgentChatProp $agent 'runtime' 'unknown')
+                    model           = [string](Get-AgentChatProp $agent 'model' 'unknown')
+                    instance        = [string](Get-AgentChatProp $agent 'instance' '-')
+                    host            = [string](Get-AgentChatProp $agent 'host' '')
+                    ageMinutes      = $age
+                    silent          = ($age -gt $w.SilentMinutes)
+                    lastKind        = [string](Get-AgentChatProp $m 'kind' '')
+                    lastTicket      = [string](Get-AgentChatProp $m 'ticket' '')
+                    lastNote        = [string](Get-AgentChatProp $m 'note' '')
+                    lease           = $leaseId
+                    phaseTicket     = if ($ph) { [string](Get-AgentChatProp $ph 'ticket' '') } else { $null }
+                    phase           = if ($ph) { [string](Get-AgentChatProp $ph 'phase' '') } else { $null }
+                    phaseNote       = if ($ph) { [string](Get-AgentChatProp $ph 'note' '') } else { $null }
+                    phaseAgeMinutes = if ($ph) { [double](Get-AgentChatProp $ph 'ageMinutes' 0) } else { $null }
+                }
+            }
+            $agents = @($agents | Sort-Object ageMinutes)
+
+            $tail = @()
+            foreach ($m in @($messages | Select-Object -First $ChatTail)) {
+                $agent = Get-AgentChatProp $m 'agent'
+                $id = [string](Get-AgentChatProp $agent 'id' '?')
+                $tail += [pscustomobject][ordered]@{
+                    atUtc      = ([DateTime](Get-AgentChatProp $m 'atUtc' ([DateTime]::UtcNow))).ToString('o')
+                    ageMinutes = [double](Get-AgentChatProp $m 'ageMinutes' 0)
+                    kind       = [string](Get-AgentChatProp $m 'kind' '')
+                    name       = & $nameOf $id $agent
+                    ticket     = [string](Get-AgentChatProp $m 'ticket' '')
+                    phase      = [string](Get-AgentChatProp $m 'phase' '')
+                    note       = [string](Get-AgentChatProp $m 'note' '')
+                }
+            }
+
+            $alive = @()
+            $dead = 0
+            $deadReasons = [pscustomobject][ordered]@{
+                expired      = 0
+                scopeChanged = 0
+                deviceGone   = 0
+                unreadable   = 0
+            }
+            $scopeCache = @{}
+            foreach ($f in @(Get-AgentChatMessages -Stream finding -Last 0 -NoSweep)) {
+                $verdict = $null
+                try { $verdict = Test-AgentChatFindingAlive -Finding $f -ScopeCache $scopeCache } catch { $verdict = $null }
+                if ($null -eq $verdict -or -not $verdict.Alive) {
+                    $dead++
+                    $reason = if ($null -eq $verdict) { 'unreadable' } else { [string]$verdict.Reason }
+                    if ($reason -eq 'expired' -or $reason -like 'unreadable*') { $deadReasons.expired++ }
+                    elseif ($reason -like 'scope changed*' -or $reason -like 'scope path gone*') { $deadReasons.scopeChanged++ }
+                    elseif ($reason -like 'device not listed*' -or $reason -like 'adb not found*') { $deadReasons.deviceGone++ }
+                    else { $deadReasons.unreadable++ }
+                    continue
+                }
+                $agent = Get-AgentChatProp $f 'agent'
+                $id = [string](Get-AgentChatProp $agent 'id' '?')
+                $alive += [pscustomobject][ordered]@{
+                    topic      = [string](Get-AgentChatProp $f 'topic' '')
+                    kind       = [string](Get-AgentChatProp $f 'kind' '')
+                    name       = & $nameOf $id $agent
+                    atUtc      = ([DateTime](Get-AgentChatProp $f 'atUtc' ([DateTime]::UtcNow))).ToString('o')
+                    ageMinutes = [double](Get-AgentChatProp $f 'ageMinutes' 0)
+                    expiresAt  = [string](Get-AgentChatProp $f 'expiresAt' '')
+                    scopeCount = @(Get-AgentChatProp $f 'scope' @()).Count
+                    device     = [string](Get-AgentChatProp $f 'device' '')
+                    note       = [string](Get-AgentChatProp $f 'note' '')
+                }
+            }
+
+            [pscustomobject]@{
+                Windows     = [pscustomobject][ordered]@{
+                    silentMinutes    = [int]$w.SilentMinutes
+                    retentionMinutes = [int]$w.ProgressRetentionMinutes
+                    staleMinutes     = [int]$timings.SessionStaleMinutes
+                    ceilingMinutes   = [int]$timings.TicketCeilingMinutes
+                }
+                Agents      = $agents
+                Tail        = $tail
+                Findings    = $alive
+                Dead        = $dead
+                DeadReasons = $deadReasons
+                Error       = $null
+            }
+        } $lockLib $leases $locks $ChatTail
+    } catch {
+        $chat = [pscustomobject]@{ Windows = $null; Agents = @(); Tail = @(); Findings = @(); Dead = 0; DeadReasons = $null; Error = "$_" }
+    }
+
+    # The transport fields of a lease are not for display.
+    foreach ($l in $leases) { $l.PSObject.Properties.Remove('transcriptPath'); $l.PSObject.Properties.Remove('lastSeenAt') }
+
+    $sw.Stop()
+    $now = Get-Date
+    return [pscustomobject][ordered]@{
+        schema              = 1
+        takenAtUtc          = $now.ToUniversalTime().ToString('o')
+        takenAtLocal        = $now.ToString('yyyy-MM-dd HH:mm:ss')
+        host                = $env:COMPUTERNAME
+        repoRoot            = $RepoRoot.Replace('\', '/')
+        durationMs          = [int]$sw.ElapsedMilliseconds
+        chatError           = $chat.Error
+        windows             = $chat.Windows
+        leases              = $leases
+        locks               = $locks
+        agents              = @($chat.Agents)
+        chat                = @($chat.Tail)
+        findings            = @($chat.Findings)
+        findingsDead        = [int]$chat.Dead
+        findingsDeadReasons = $chat.DeadReasons
+        instances           = $instances
+        stop                = $stop
+        children            = $children
+        nextUp              = $queueRows
+    }
+}

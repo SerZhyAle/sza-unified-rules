@@ -962,3 +962,147 @@ rule. Six `rules/*.md` files touched, so every adopting repo is marked stale for
 this repo's `CLAUDE.md` tells every other repo not to do. The owner directed it explicitly after being shown
 the constraint. The gate and both version bumps were run exactly as a canon session would, so the change is
 well-formed regardless of where it was authored; the deviation is the venue, not the process.
+
+## Canon re-sync 2026-08-28 - reconciling the repo against the rules it had just raised
+
+Immediately after the spread-back above, run in the same project session at the owner's direction. Six
+rules in this repo's `CLAUDE.md` had become restatements of canon text by virtue of that spread-back, which
+is the exact condition step 4 of `adopt-canon` exists to clear.
+
+**Plugin root used: the live canon checkout `P:\WEB\sza-unified-rules`, not the plugin cache.** The cache
+on this machine holds `2026.818.1` and `2026.818.2`; the canon had just moved to `2026.08.28.1`. Stamping
+against the cache would have recorded a canon version that no longer exists, so the digest was taken with
+`tools/check-compliance.ps1 -PrintDigest` from the checkout - reported here because the skill asks which
+root was used.
+
+### Converted from restatement to pointer
+
+Each keeps its repo wiring, its script names and its ticket ids, and drops the principle now stated once in
+the canon:
+
+- **Rule 33** -> `DEVELOPMENT.md` 15. Keeps the two runners (`assert-release-scope-gates.ps1` at step 0.4
+  of `/spec-prerelease`; `post-change.ps1` and `a.ps1 fg`) and notes that the canon carries S1939's and
+  S1392's numbers without naming a project because they came from here.
+- **Rule 23** -> `DEVELOPMENT.md` 10. Keeps the five domain names, the table's location, exit code **4**,
+  the waiting contract, the withdraw commands and the pre-split honouring; drops the (kind, domain) pair,
+  the derived-not-declared rule, the full-set fallback, all-or-nothing acquisition and the withdrawal
+  rationale, all now canon.
+- **Rule 30** -> `DOCUMENTATION_CONCEPT.md` 5. Keeps the thirteen-locale `locales_config.xml` fact and the
+  gate at step 0.8; records that until 2026-08-28 this rule contradicted invariant 17.
+- **Validation ladder, layout/manifest rung** (section 12) -> `DEVELOPMENT.md` 15. Keeps `resource-link-gate`
+  and its measured 1.9-41.8 s per flavor.
+- **Open manual check** (section 4) -> `TESTING_AND_QA.md` 1. Keeps the `## Last Audit` mechanism and the
+  `MANUAL` -> `BlockNeedUserTest` scoring.
+- **Unattended batches** (section 3) -> `AI_USAGE.md` 3. Keeps `run-spec-queue.ps1` and the parallel-instance
+  detail - **and was corrected in the same edit**, because the model tiers stated there had gone stale that
+  morning: routing now reads status before tier, with the code-complete states (`Implemented`,
+  `BlockNeedUserTest`) and tiers 1-3 on the cheap model, decision states and tier 4+ on the strong one.
+
+### A divergence kept, and why
+
+`AGENTS.md`, `GEMINI.md` and `.github/copilot-instructions.md` keep the **full statement** of every rule
+converted above. They are the parallel rule set for agents that do not load the canon plugin, so a pointer
+there would leave those agents with no rule at all. The registry's sibling prompt named them and the
+acknowledgement was deliberate, not a skip. `assert-rule-digest-sync.ps1` is what keeps them honest, and it
+passes with **33 rules cited across 2 full digests, 1 pointer reachable**.
+
+### Verification
+
+`assert-rule-digest-sync.ps1` - expected 0, actual **0**. `post-change.ps1` over `CLAUDE.md` +
+`.sza-canon.json` with `-ScopeToFile -RegistryAck 'repository-rules' -ChangeType Mixed` - expected 0, actual
+**0**, `post-change: PASS (Mixed, 9166 ms)`, one dev-log row. `check-compliance.ps1` before **9 error(s), 7
+warning(s)**, after **9 error(s), 6 warning(s)** - the cleared warning is `SZA-CANON03`, the stamp now
+reading `2026.08.28.1` / `sha256:cdf49be6..` with `adoptedOn` deliberately left at 2026-08-18, since a
+re-sync is a reconciliation and not a re-adoption.
+
+The **9 errors are pre-existing and none is attributable to this work**: all are `SZA-STYLE01` em/en-dashes
+in prose across the locale triplets of `docs/launcher`, `docs/wear` and `README`, in files this session never
+opened. The 2026-08-18 record above cites `check-compliance` at 0 errors, so this is a regression from the
+ten days between. Parked as **S2216** (Draft) rather than fixed here, with the gate output captured verbatim
+and two open questions: whether any gate judges house style in `docs/**` at all (the neuroslop gate covers
+`.kt` only), and whether such a check is per-ticket or release-scope under the rule this session just raised.
+
+### Canon fix worth considering, not applied
+
+`tools/check-compliance.ps1` raises `SZA-HOOK03` for five hook scripts in this repo that are "registered
+nowhere and in no inventory row", while the repo's own `assert-hook-inventory.ps1` passes on the same tree.
+One of the two is reading the wrong place. Worth reconciling the two inventories rather than leaving a
+warning the repo's own gate contradicts.
+
+## The development-process harness moves into the canon (S2402, 2026-09-03)
+
+The rules described the process; this repository was the only place it actually ran. 71 scripts and
+16 843 lines of PowerShell drove 2 389 tickets here, and every one of the ten adopting projects got
+the description and had to write the implementation itself. That is now a shipped layer:
+`tools/harness/` with a single seam, `templates/.sza-profile.json`.
+
+### What travelled
+
+Eight clusters, measured before anything moved (the entanglement dossier and the dependency graph in
+`PLAN/S2402_propagate-dev-release-tooling-canon/research/`), and all eight selected by the owner:
+
+- `spec_catalog/` - the ticket journal, its CRUD and every closing gate, plus the two probe helpers
+  the gates and the tree checker have to agree on.
+- `locks/` - domain locks, the queue and its head reservation, ticket leases, agent identity.
+- `chat/` - the descriptive layer beside the locks.
+- `devlog/` - the change journal.
+- `document_registry/` - the document catalogue, its query CLI and the map/sitemap generator.
+- `batch/` - the queue runner, its monitor and the snapshot both surfaces render.
+- `all_features/` - the capability ledger.
+- `aliases/` - the command-alias generator.
+
+### The seam
+
+`_profile.ps1` merges `<project root>/.sza-profile.json` over defaults that ARE the canon's own
+conventions, so a project overrides only what differs. It carries the working-directory roots, the
+ticket-id and spec-file grammars, the status vocabulary, the lock domain table with its path rules,
+the probe shape, the runner's model policy, the status -> command map, the ledger's dimension, the
+site's locales, and an entry-point map used only in printed hints.
+
+Three findings the conversion produced, each of which would have shipped as a defect:
+
+- **The path -> domain table is data, not code.** It was fourteen hand-written branches with the
+  reasoning for each in comments; the reasoning stays as the rule ("first match wins; a bare type is
+  the fail-closed answer; null means already serialised by something finer"), the fourteen product
+  paths became six template rows.
+- **An empty list in a profile read as one blank entry.** `$v = if (..) {..} else {..}` sends its
+  value through the pipeline, which unrolls an empty array to nothing; the merge then stored `$null`,
+  and `@($null).Count` is 1. "This project declares no aliases" arrived as one alias row with no
+  canonical command. Fixed with plain assignment and `[object[]]@(..)` at every storage site.
+- **Half the set is dot-sourced and half is invoked**, so a consuming project's forwarder cannot
+  choose one shape: `& $target` defines nothing a dot-sourcing caller can see, and `exit` inside a
+  dot-sourced file kills the caller. The forwarder branches on `$MyInvocation.InvocationName -eq '.'`.
+
+### What deliberately stayed behind
+
+- **The test suites.** A `*.tests/Run-Tests.ps1` exercises the harness through one project's paths,
+  statuses and fixtures. Run in the project it belongs to it proves the shipped layer works there,
+  which is exactly what an adopting project's own suite proves for its own; exported, it would ship
+  this repository's `PLAN/`, `temp/` and `Sxxxx` grammar as if they were the canon's.
+- **Platform gates.** The 99 files of `scripts/quality/` are tied to Gradle, Kotlin, Android, Room,
+  detekt and a device. The contrib record already declared them unfit for the core.
+- **Command bodies.** `.claude/commands/*.md` is one product's pipeline. The alias generator ships;
+  the commands it aliases do not.
+- **`migrate_from_log.ps1`**, which migrated this repository's retired `FUNCTIONALITY.log` once.
+
+### The layer's own gate
+
+`tools/harness/assert-portable.ps1` refuses a harness script whose CODE lines (comments stripped)
+name a product path, an environment prefix, a log call or a build-system marker - the values a
+profile could no longer override. It is the check that turned "the scripts were copied" into "the
+scripts were converted": the first run reported 405 such lines.
+
+### This repository as a consumer
+
+The 2 383 call sites here were not rewritten. Each exported script's local path became a generated
+five-line forwarder that resolves the shipped copy - `SZA_HARNESS_ROOT`, then the plugin cache's
+newest version, then the canon checkout - and re-invokes it. The plugin cache path carries both the
+home directory and the plugin version, so no call site could name it and stay correct across an
+update; the forwarder is the one place that resolution belongs.
+
+### Venue
+
+Landed from the project session at the owner's explicit direction, exactly as the 2026-08-18 and
+2026-08-28 entries above record for their own changes. The canon's guardrail against editing it from
+a project session stands; this is a recorded deviation, not a precedent, and it is recorded here for
+the same reason those two were.
