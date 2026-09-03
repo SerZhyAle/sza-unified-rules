@@ -548,3 +548,32 @@ publish whichever revision happens to sit there. It is also why the new `sitemap
    whose per-file digest changed", which finds the changed docs but not a *previous entry that understated
    its own scope* - the failure this session actually hit. One line telling the re-syncer to diff against
    the last **stamped** version rather than against the last written summary would have caught it.
+
+## Canon re-sync 2026-09-03 - the 08-28 update reaches a repo that owns none of its machinery
+
+Run from the canon repo against `P:\WINDOWS\FastMediaSorter_Lite` (`check-compliance.ps1 -RepoRoot`), not
+from a session inside it - the gate reads a repo root, so the five Windows products were re-synced in one
+pass with a separate commit each.
+
+**What had to be re-read.** The stamp sat at `2026.08.18.1` / digest `961c9c8a`, two canon updates behind:
+`Canon update 2026-08-28` (the only one that touched rule docs - AI_USAGE, DEVELOPMENT, DOCUMENTATION_CONCEPT,
+INVARIANTS, TESTING_AND_QA) and today's `2026.09.03.x`, which is `tools/harness/` only and therefore moves no
+digest at all.
+
+**Reconciled: nothing to change here, and the reason is structural.** Four of the five new rules describe
+machinery this repo deliberately does not have - the unattended batch driver (AI_USAGE), the lock split by
+derived domain and the queued-ticket withdrawal (DEVELOPMENT §10), and the closure facade that must run the
+ladder's rung (DEVELOPMENT). This repo has no ticket store, no lock queue and no `post-change` facade; the
+release package plan was already recorded as deliberately SKIPPED, and that answer still holds. The fifth,
+INVARIANT 17 with DOCUMENTATION_CONCEPT §5, is a **relaxation**: the fan-out of locales beyond the authored
+ones may now wait for the release boundary. The 13-language `Localization` layer and its two parity tests do
+more than the canon now demands, which is not a divergence - the rule says those locales *need not* move per
+change, never that they may not.
+
+**Evidence.**
+- `check-compliance.ps1 -RepoRoot P:/WINDOWS/FastMediaSorter_Lite` before -> `0 error(s), 3 warning(s)`,
+  after -> `0 error(s), 2 warning(s)`, exit 0. The cleared one is SZA-CANON03.
+- The two that remain are accounted for, not ignored: SZA-RULES05 (458 lines, and the bulk is the dual-runtime
+  seam guide and the module map, exactly what the gate's own fix line says to check for) and SZA-STYLE02 on
+  `CHANGELOG.md:352,354` - both hits are the `- ...` placeholder lines inside the **HTML-commented release
+  template**, a fill-in marker rather than prose. Rewriting them to `..` would make the template read as text.

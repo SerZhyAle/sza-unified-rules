@@ -415,3 +415,23 @@ carried the same defect and got the same fix. `DC2a` is now marked `negatable`, 
 mention preceded by a negation **in the same clause** - so the `canon-ok` comment on the ledger-shape bullet
 in this repo's `AGENTS.md` is no longer needed: replaying that file with the comment stripped goes from
 `WARN SZA-RULES03 .. restates DC2a` to no finding at all.
+
+## Canon re-sync 2026-09-03 - clean, and the gate says so with nothing left over
+
+Run from the canon repo against `P:\WINDOWS\EPUB_2_HTML` (`check-compliance.ps1 -RepoRoot`).
+
+**What had to be re-read.** The stamp was at `2026.08.18.1` / digest `961c9c8a`. Only one of the two canon
+updates since then touched rule docs - `Canon update 2026-08-28` (AI_USAGE, DEVELOPMENT, DOCUMENTATION_CONCEPT,
+INVARIANTS, TESTING_AND_QA); today's ships `tools/harness/` alone and moves no digest.
+
+**Reconciled: no change owed.** The lock-domain split, the queued-ticket withdrawal, the unattended batch
+driver and the "closure runs the ladder's rung" rule all address a ticket store, a lock queue and a closure
+facade; this repo has none of the three. The one rule that does reach it is the relaxation in
+DOCUMENTATION_CONCEPT §5 / INVARIANT 17 - authored locales move with the change, the rest of the declared set
+may fan out at the release boundary. The repo already routes documentation through its own `/docs-sync`
+command, which is precisely the ship-together manifest the rule names, so the relaxation loosens a constraint
+it was meeting rather than asking for new work.
+
+**Evidence.** `check-compliance.ps1 -RepoRoot P:/WINDOWS/EPUB_2_HTML` before -> `0 error(s), 1 warning(s)`,
+after -> **`0 error(s), 0 warning(s)`**, exit 0. The single warning was SZA-CANON03 and the stamp bump cleared
+it; nothing else in the repo was touched.

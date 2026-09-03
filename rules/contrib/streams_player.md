@@ -491,3 +491,30 @@ context rather than as this change's own evidence - nothing in this pass touched
   findable only by grepping adopters for the *old* wording. When a canon rule flips, the update is
   cheap to write and expensive to propagate; a short "adopters carrying X should remove it" line in the
   changed doc would make the next re-sync mechanical instead of archaeological.
+
+## Canon re-sync 2026-09-03 - two updates behind, and only the stamp moved
+
+Run from the canon repo against `P:\WINDOWS\Streams_Player` (`check-compliance.ps1 -RepoRoot`).
+
+**What had to be re-read.** The stamp was at `2026.08.18.1` / digest `961c9c8a`. `Canon update 2026-08-28` is
+the only one of the two intervening updates that touched rule docs (AI_USAGE, DEVELOPMENT,
+DOCUMENTATION_CONCEPT, INVARIANTS, TESTING_AND_QA); the 2026-09-03 movement is `tools/harness/` and moves no
+digest, only the plugin version.
+
+**Reconciled: nothing owed, and one rule checked rather than assumed.** The lock-domain split, the abandoned
+ticket's withdrawal, the unattended batch driver and the closure-runs-the-rung rule all presuppose machinery
+absent here - no lock queue, no ticket store with a single write path, no closure facade. The locale rule
+(INVARIANT 17 / DOCUMENTATION_CONCEPT §5) relaxed rather than tightened, so the three authored READMEs and the
+12 `Localization.*.xaml` tables are already inside what it permits. The one worth checking on the tree instead
+of by assumption was TESTING_AND_QA's new "a check only a human can run has not happened yet": it wants the
+closing status held back by an unticked manual line, and `PLAN/` carries **no checkbox at all** - `grep -rn
+"- \[ \]" PLAN/` returns nothing across all 21 specs and `PLAN/DONE/`. So the rule has no surface to bind to
+here; standing up an audit section per spec is an owner call, not a re-sync side effect. Carried forward.
+
+**Evidence.** `check-compliance.ps1 -RepoRoot P:/WINDOWS/Streams_Player` before -> `0 error(s), 2 warning(s)`,
+after -> `0 error(s), 1 warning(s)`, exit 0. The remaining SZA-STYLE02 is `memory/MEMORY.md:659,856`, and both
+hits are quoted material - an in-app string ("Add a channel someone sent you as text..") and a quoted GitHub
+error about the `workflow` scope - which the check's own fix line names as legitimate.
+
+**Commit discipline.** The working tree carried in-flight work across the three READMEs and twelve
+`Localization.*.xaml` files. Only `.sza-canon.json` was staged; `git add -A` was never run.

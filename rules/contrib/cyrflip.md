@@ -456,3 +456,28 @@ files only - so they are recorded here to stop the next session rediscovering th
 `LayoutIdentity`/palette feature across `src/`, the docs and the READMEs), including **pre-existing
 uncommitted edits inside `CLAUDE.md` itself**. Only the canon hunks of `CLAUDE.md` plus `.sza-canon.json`
 were staged; `git add -A` was never run and the foreign work was left uncommitted for its own session.
+
+## Canon re-sync 2026-09-03 - the stamp catches up, the four style hits stay
+
+Run from the canon repo against `P:\WINDOWS\CyrFlip` (`check-compliance.ps1 -RepoRoot`).
+
+**What had to be re-read.** The stamp was at `2026.08.18.1` / digest `961c9c8a`, so the owed reading was
+`Canon update 2026-08-28` (AI_USAGE, DEVELOPMENT, DOCUMENTATION_CONCEPT, INVARIANTS, TESTING_AND_QA). Today's
+canon change is `tools/harness/` only: it bumps the plugin version and leaves the digest where it was.
+
+**Reconciled: no change owed.** The batch driver, the lock split by derived domain, the queued-ticket
+withdrawal and the closure facade rung all describe machinery CyrFlip does not run - `PLAN/` holds spec ideas,
+not a ticket store with a single write path, and there is no lock queue or closure facade. The locale change is
+a relaxation, and this repo sits comfortably inside it: the 13-language store listing is **generated** from one
+source (`msix/build-store-listing-csv.ps1`), which is the ship-together manifest rule working as intended
+rather than something the relaxation asks to undo.
+
+**Evidence.** `check-compliance.ps1 -RepoRoot P:/WINDOWS/CyrFlip` before -> `0 error(s), 6 warning(s)`, after ->
+`0 error(s), 5 warning(s)`, exit 0. SZA-CANON03 is the one that cleared. The five that remain are the same ones
+the 2026-08-18 record already accounted for: the informational size warning (693 lines, the process section is
+a small tail of it) and the four SZA-STYLE02 hits, which are the recorded DIVERGE - each is a quoted UI string
+carrying its own ellipsis ("Импорт из OneClickRunner..", "Diagnose caret position..", **Settings…**), and
+rewriting them would make the docs quote a button that does not exist.
+
+**Commit discipline.** The working tree carried unrelated in-flight work under `msix/` (the store-listing CSVs,
+its build script, a new screenshot). Only `.sza-canon.json` was staged; `git add -A` was never run.

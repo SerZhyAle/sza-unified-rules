@@ -520,3 +520,21 @@ already carried. `docs/` has **no generator**, so these are edits in place and n
    nothing and remove a class of dead turns.
 4. Minor: the plugin cache ships **CRLF** and the canon repo **LF**, so a naive byte comparison between the
    two trees reports every rule doc as differing. Worth one line wherever the two are compared.
+
+## Canon re-sync 2026-09-03 - clean, no deltas disturbed
+
+Run from the canon repo against `P:\WINDOWS\FileDo` (`check-compliance.ps1 -RepoRoot`).
+
+**What had to be re-read.** The stamp was at `2026.08.18.1` / digest `961c9c8a`, so the rule-doc changes owed
+were those of `Canon update 2026-08-28`: AI_USAGE, DEVELOPMENT, DOCUMENTATION_CONCEPT, INVARIANTS,
+TESTING_AND_QA. Today's canon movement is `tools/harness/` only - it bumps the plugin version and no digest.
+
+**Reconciled: no change owed.** Four of the five additions are process machinery this repo does not run - the
+headless batch driver, the (kind, domain) lock split with its all-or-nothing multi-domain take, the mandatory
+withdrawal of an abandoned queue ticket, and the closure facade obliged to run the artifact-class rung. FileDo
+has no lock queue, no ticket store and no closure facade; its gates are the Go build and its test suite, which
+are per-change by nature and correctly placed under the new gate-placement test. The fifth is the locale
+relaxation (INVARIANT 17), which only widens what is allowed - the five READMEs already move together.
+
+**Evidence.** `check-compliance.ps1 -RepoRoot P:/WINDOWS/FileDo` before -> `0 error(s), 1 warning(s)`, after ->
+**`0 error(s), 0 warning(s)`**, exit 0 (overlay C). The cleared warning was SZA-CANON03.
