@@ -115,3 +115,73 @@ it should not be a number.
 
 Verification: `check-compliance: sites.google.comsiteszaodua - 0 error(s), 0 warning(s) (overlay ?, canon 2026.08.05)` -
 clean, as on 2026-08-02.
+
+## Canon re-sync 2026-09-03 - gate placement, authored locales, human-only checks
+
+Canon **2026.08.18.2 -> 2026.09.03.3**, core digest `sha256:961c9c8a..` -> `sha256:cdf49be6..`. The stamp
+had recorded the version as `2026.08.18.1` while its digest was `.2`'s; the bump corrects both. Changed rule
+docs: [AI_USAGE](../AI_USAGE.md), [DEVELOPMENT](../DEVELOPMENT.md),
+[DOCUMENTATION_CONCEPT](../DOCUMENTATION_CONCEPT.md), [INVARIANTS](../INVARIANTS.md),
+[TESTING_AND_QA](../TESTING_AND_QA.md). Sixteen days and one minor apart, so the staleness ladder's warn
+path applied - those five re-read, no full re-adoption, adoption model unchanged (**reference**).
+
+**Stamp bookkeeping first, because it explains the gap.** The hub's last commit was 2026-07-27, yet the
+working tree carried a stamp bumped on 2026-08-18. The 2026-08-02 and 2026-08-05 reconciles recorded above
+updated the stamp and never committed it, and the 08-18 bump then overwrote them - so three reconciles left
+no trace in this repo's history. This session commits the stamp.
+
+What landed here:
+
+- **The publish now runs the gate.** [DEVELOPMENT](../DEVELOPMENT.md) §7's new gate-placement bullet ends
+  with the case this repo is in: a project with no release boundary substitutes CI-only for the release
+  scope. The hub has neither - no CI, no tags, and a push that reaches sza.od.ua in about a minute - so its
+  only boundary is the publish itself, and the gate existed only as a line of prose in `CLAUDE.md`. The
+  corollary is explicit that a relocation is a script with an exit code, never a line of prose. `deploy.bat`
+  now runs the gate **before** staging and refuses to commit or push on an error. `SZA_SKIP_GATE=1`
+  publishes anyway; a machine without PowerShell 7 or without the `sza` plugin degrades to a warning rather
+  than blocking a site update on a developer-machine convenience.
+- **`tools/check.ps1` added**, because the documented command could not work. `CLAUDE.md` carried
+  `pwsh -File "$env:CLAUDE_PLUGIN_ROOT/tools/check-compliance.ps1"` - the exact failure
+  [epub_2_html](epub_2_html.md) reported: the variable is not exported into a tool shell, the path collapses
+  to `/tools/check-compliance.ps1`, exit 64. The wrapper resolves the installed plugin from
+  `installed_plugins.json` and is what `deploy.bat` and the rules file now both point at.
+- **Two defects found by driving `deploy.bat` rather than reading it.** `git remote | findstr /R "^origin$"`
+  never matched, because git prints LF-only lines and findstr's `$` anchor wants CR - every publish since
+  the script was written tried to re-add an existing remote and printed a git error. And `where pwsh` found
+  `C:\Users\serzh\bin\pwsh`, an extension-less Git Bash shim that cmd cannot execute, so a `where`-based
+  guard would have passed and the invocation still failed. Replaced with `git remote get-url origin` and a
+  `where /q pwsh.exe` plus `%ProgramFiles%\PowerShell\7\pwsh.exe` fallback.
+- **The locale rule confirms the four-edits trap, it does not relax it.**
+  [DOCUMENTATION_CONCEPT](../DOCUMENTATION_CONCEPT.md) §5 and [INVARIANTS](../INVARIANTS.md) 17 now say
+  *authored* locales move in the one edit and the rest fan out at the release boundary. Read carelessly that
+  is permission to defer `ru` and `uk` here. It is not: all three locales are authored in this repo's `i18n`
+  dictionaries, and the closing clause - a continuously published product has no boundary to batch to - is
+  exactly this page. The reason is now written into `CLAUDE.md` next to the trap, so the next session
+  inherits it instead of re-deriving it from the new canon text.
+- **`.vscode/` gitignored.** An untracked per-machine editor tint that `deploy.bat`'s `git add .` would have
+  published with the site on the next run.
+
+[TESTING_AND_QA](../TESTING_AND_QA.md) §1's new paragraph - a check only a human can run has not happened
+yet - is this repo's normal condition rather than an exception: there is no test suite, and the real proof
+of a page change is a person looking at the rendered page in a browser. Not restated in `CLAUDE.md`, which
+would be a restatement of a rule with a canon home; it is the reason the compliance gate is a floor here and
+never a proof that the page is right.
+
+Inert: [AI_USAGE](../AI_USAGE.md)'s unattended-batch driver and [DEVELOPMENT](../DEVELOPMENT.md) §10's
+lock-domain split and queued-intent withdrawal. One author, one page, no batch runner, no lock queue.
+
+Open questions - both closed:
+
+- **`index.html` / `embed.html` duplication** (open since 2026-07-23): closed as **keep the duplication**.
+  The question was about drift risk, and the risk is now mechanically gone - `byteIdenticalPairs` in the
+  stamp makes divergence a gate error, and as of this session the gate runs on the publish path. Two stable
+  entry URLs at the cost of a check that cannot be forgotten beats a generated copy.
+- **Canon co-hosting**: closed on 2026-07-27 by the move to `sza-unified-rules`; recorded here so the
+  question list is empty rather than silently dropped.
+
+Verification: `pwsh -File tools/check.ps1` -> `0 error(s), 0 warning(s) (overlay ?, canon 2026.09.03.3)`,
+exit 0, and identical under `-Strict`; before the session it was 0 errors and 1 warning (stale adoption).
+`cmp index.html embed.html` -> identical, 38828 bytes. The `deploy.bat` gate block was driven in all three
+branches with the tail of the script stubbed out, so nothing was committed or pushed: gate clean -> falls
+through, exit 0; `SZA_SKIP_GATE` set -> warns and falls through, exit 0; stamp moved aside -> `FAIL
+SZA-CANON01`, the refusal banner, exit 1 with nothing staged.
