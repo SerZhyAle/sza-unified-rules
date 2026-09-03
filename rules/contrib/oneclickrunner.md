@@ -216,3 +216,34 @@ from this session.
 
 Verification: `check-compliance: OneClickRunner - 0 error(s), 2 warning(s) (overlay A, canon 2026.08.05)` -
 warnings are pre-existing and none was introduced here.
+
+## Canon re-sync 2026-09-03 - two updates owed, an uncommitted one recovered, and the gate cleared
+
+Run from the canon repo against `P:\WINDOWS\OneClickRunner` (`check-compliance.ps1 -RepoRoot`).
+
+**The stamp was two things at once.** Committed, it read `2026.07.27`; the working tree carried an
+**uncommitted** bump to `2026.08.18.1` that had been sitting there since 2026-08-18 - which is why this
+record stops at 2026-08-05 while the repo behaved as if re-synced. That edit was folded into this pass
+rather than reverted, so the history now shows the move to `2026.09.03.3` in one commit with a record
+behind it.
+
+**Reconciled against `Canon update 2026-08-28`** (AI_USAGE, DEVELOPMENT, DOCUMENTATION_CONCEPT,
+INVARIANTS, TESTING_AND_QA; the 2026-09-03 canon movement is `tools/harness/` and moves no digest). Three
+of the five describe machinery this repo does not run - no lock queue, no headless batch driver, no
+closure facade. The locale rule is a relaxation and this repo is monolingual, so it cannot bind. The
+fifth, TESTING_AND_QA's **"a check only a human can run has not happened yet"**, lands squarely on
+`PLAN/` - and finds it already compliant, which is worth recording rather than assuming: the lifecycle
+is `Draft -> Approved -> Tactical -> In Progress -> Implemented -> Verified`, `Implemented` **is** the
+awaiting-verification status the rule demands a done-set include, and `PLAN/INDEX.md` states outright
+that 23 tickets sit at `Implemented` with the interactive `/verify` pass still owed while only T0024 is
+`Verified`. That is exactly the honesty the new rule asks for, written before the rule existed.
+
+**Drift closed in this pass (SZA-SURF02, both site pages).** `docs/index.html` and `docs/guide.html`
+carried `canonical`, `og:title`, `og:description`, `og:image` and `twitter:card` but no `og:url` and no
+JSON-LD. Added: `og:url` on each, a `SoftwareApplication` block on the landing page and a `TechArticle`
+block on the guide, every field taken from what the page already asserts - no `downloadUrl`, because this
+repo's distribution is a portable zip on the Release page and inventing a URL for it is exactly the kind
+of stamp-fiction the skill forbids. Both blocks were parsed with `ConvertFrom-Json` before committing.
+
+**Evidence.** `check-compliance.ps1 -RepoRoot P:/WINDOWS/OneClickRunner` before -> `0 error(s), 3
+warning(s)`; after -> **`0 error(s), 0 warning(s)`**, exit 0.

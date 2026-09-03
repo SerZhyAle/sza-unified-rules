@@ -168,3 +168,26 @@ not applied from this session.
 
 Verification: `check-compliance: internal_IP_manager - 0 error(s), 1 warning(s) (overlay A, canon 2026.08.05)` -
 the warning is pre-existing and none was introduced here.
+
+## Canon re-sync 2026-09-03 - the internal case, now at zero
+
+Run from the canon repo against `P:\WINDOWS\internal_IP_manager` (`check-compliance.ps1 -RepoRoot`).
+
+**Same uncommitted-stamp story as OneClickRunner.** The committed stamp read `2026.07.27` while the
+working tree held an uncommitted bump to `2026.08.18.1` from 2026-08-18, so this record's last entry was
+2026-08-05 even though the reconcile had been done. Folded in and carried to `2026.09.03.3`.
+
+**Reconciled against `Canon update 2026-08-28`.** Nothing binds: no lock queue, no ticket store with a
+single write path, no closure facade, no unattended batch, one locale. The repo's shape is still the one
+this record was written to capture - an internal tool with **no remote, no tags, no CI, no site, no
+store** - so the new gate-placement rule's escape hatch (a project with no release boundary substitutes
+CI-only) has nothing to attach to either. The commit for this re-sync is therefore local only; there is
+no remote to push to, and that is the shape, not a gap.
+
+**Drift closed in this pass (SZA-LAY03).** `docs/` held four method documents - `SPEC_LIFECYCLE.md`,
+`VALIDATION.md`, `CODE_QUALITY.md`, `AGENT_MEMORY.md` - and no index, so a reader landing in the folder
+got a file list and no map. Added `docs/README.md`: one row per document saying what question it answers,
+plus the pointer that none of them restate the canon.
+
+**Evidence.** `check-compliance.ps1 -RepoRoot P:/WINDOWS/internal_IP_manager` before -> `0 error(s), 2
+warning(s)`; after -> **`0 error(s), 0 warning(s)`**, exit 0.
