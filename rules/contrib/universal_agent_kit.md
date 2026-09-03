@@ -338,3 +338,88 @@ travels. Measurements travel **with their shape and their window, without their 
 - A candidate canon edit, unchanged from 2026-08-05: `role: sibling-distillation` still does not exist in
   `check-compliance.ps1`; `portfolio` remains mechanically correct for the one thing `role` decides.
 - Canon @ 6906983 (moved mid-session by a concurrent canon session); kit repo @ 0880457 + working tree.
+
+## Canon re-sync 2026-09-03 - canon `2026.09.03.3`
+
+Pure re-sync, entered through `SZA-CANON03`: the stamp read `2026.08.18.1` / `sha256:961c9c8a..` against
+a canon at `2026.09.03.3` / `sha256:cdf49be6..`. Baseline gate **0 error(s), 1 warning(s)**, exit 0 - the
+warning being exactly that staleness and nothing else, so the alignment work from 2026-08-18 held.
+
+Five rule docs moved between the two versions (`AI_USAGE`, `DEVELOPMENT`, `DOCUMENTATION_CONCEPT`,
+`INVARIANTS`, `TESTING_AND_QA`), diffed against the still-cached `2026.818.2` plugin rather than re-read
+whole. All five carry transferable method; none needed a repo behaviour change; all five reached `kit/`.
+The posture is unchanged and governed every line: no canon name, no product name, no portfolio path, no
+canon-internal doc name travels, and measurements travel **with their shape and their window, without
+their provenance**.
+
+### What changed, per target
+
+| Target | Change |
+| --- | --- |
+| `.sza-canon.json` | Re-stamped to `2026.09.03.3` / `sha256:cdf49be6..`, `adoptedOn` 2026-09-03. Digest recomputed with `-PrintDigest`, not copied. Nothing else in the stamp moved: no product build appeared, no channel, no tag, so `role`, `overlay`, `versionShape`, `ledgerShape` and `site` are unchanged and still true. |
+| `kit/docs/COST.md` | Three additions. **Context hygiene** gains the process-boundary reset for unattended runs - a driver outside the session running each item in a fresh headless process, because a self-imposed halt depends on somebody noticing a threshold and an unattended run has nobody watching; carries the 83%-above-150k observation with an explicit note that the threshold is that machine's window and not a recommendation, plus the two things the boundary buys on top of the reset (per-item model choice, several instances at once). The **lock queue** gains the (kind, domain) rule with its three anti-deadlock clauses and the 12 s observation, and the abandoned-intent withdrawal rule with the one half of it that self-heals. |
+| `kit/docs/VALIDATION.md` | Four additions. A new rung note **"The top rung is often a human, and a human check has not happened yet"** - no failures plus an unobserved manual line scores *needs a human test*, not *verified*; carries the five-acceptance-criteria observation and points at `SPEC_LIFECYCLE.md` / `/spec-check`, which already own the mechanics. **Post-change discipline** now says *every surface and every authored locale*, with the release-boundary batching for the rest of the declared set and the continuously-published exception. **Composition** gains "the closure RUNS the rung; it does not merely ask for it", with the closed-green broken-layout failure. **Closing a change on a dirty tree** gains "Place a gate by its subject, not by how much it once hurt" - the four-part release-scope test, the three keep-per-change conditions, both corollaries, and the 68-of-191 / 33-minutes measurement. |
+| `kit/docs/AUTHORING.md` | The automated-gate row in "Where each kind of directive lives" now says a gate names its **scope class** at birth and that unnamed defaults to per-change. One clause, pointing at `VALIDATION.md` - the substance is stated there once. |
+| `kit/CLAUDE.md` | Section 10 gains the human-check line and the authored-locale nuance; section 12 gains the lock-domain sentence, the withdrawal sentence, and the unattended process-boundary bullet. |
+| `kit/.claude/commands/backlog.md` | A blockquote after Step 5: prefer looping the **process**, not the session. This is the payload defect the `AI_USAGE` addition exposed - the kit shipped an unattended drainer whose loop is explicitly in-session, so ticket 1 sits in context while ticket 9 runs. Says where the skip-cache and report buckets must live for the loop to survive a process boundary, and keeps the in-session shape as the fallback where no headless mode exists. |
+| `.gitignore` | `.vscode/` ignored, closing an item this record carried twice. Not an owner decision on inspection: the directory holds one `settings.json` containing only a personal editor colour scheme, which the file's own "OS / editor junk" section already covers. |
+| `universal-agent-kit.zip` | Rebuilt. 42 entries, 0 mismatches by per-entry SHA-256 against source. Extraction root `universal-agent-kit/` unchanged. |
+
+### Deliberately not propagated
+
+- **Every tuning constant.** The reservation window, the eviction ceiling, the sweep interval. None was
+  measured; the kit states the shape and says the constants are per project. The one number in the
+  withdrawal rule is a *behaviour* ("granted but not taken inside the window"), not a duration.
+- **The canon's own section numbers and doc names.** The kit's cross-references point at kit docs only.
+- **`index.html` and the READMEs.** No document was added or removed, so no doc list changed. The page is
+  a narrative article that enumerates no doc list - re-checked, not assumed - and nothing on it became
+  false, so it was not padded to satisfy a checklist. Both README trees still list ten `docs/*` files
+  correctly.
+- **The stamp's structural fields.** A re-sync is not an excuse to re-derive facts that did not move.
+
+### Honesty constraints held
+
+- **No effect is claimed for any of it.** Each addition names the failure it was authored against; none
+  names an improvement it produced, and `COST.md`'s "Measure before you rule" forbids the latter.
+- **The numbers that travelled, each with its window:** 83% of one machine's week above 150k of carried
+  context; two module checks running together in 12 s after a lock split; 68 of 191 red lines across 53
+  batch runs, and 33 minutes of closure time in a month for one finding; one ticket closed with an
+  unticked device line failing one of five acceptance criteria on real hardware; ten unauthored
+  translations per key against three authored. The 150k figure is explicitly labelled as that machine's
+  window rather than a recommended threshold.
+- **Substance stated once.** The gate-scope rule lives in `VALIDATION.md` and `AUTHORING.md` points at
+  it; the human-check rule lives in `VALIDATION.md` and defers its mechanics to `SPEC_LIFECYCLE.md`; the
+  1-8% prose-compliance figure is cited from `AUTHORING.md`, not restated.
+
+### Verification
+
+| Check | Expected | Actual |
+| --- | --- | --- |
+| `check-compliance.ps1` | exit 0, no errors, no warnings | **0 error(s), 0 warning(s)**, exit **0** (canon 2026.09.03.3). Baseline was 0 errors / **1 warning** (SZA-CANON03) |
+| `.sza-canon.json` re-parses | valid JSON, new version and digest | parsed; `2026.09.03.3` / `sha256:cdf49be6..` / `adoptedOn` 2026-09-03 |
+| Zip vs source | every file byte-identical inside the archive | 41 kit files + `merge-prompt.txt` = **42 entries**, **0 mismatches** by per-entry SHA-256 |
+| House style in the new prose | no en-dash, em-dash or three-dot ellipsis | only `go build ./...` inside code spans, unchanged from the previous pass |
+| Scrub | no canon name, no product name, no portfolio path, no canon doc name in `kit/` | empty. The one FastMediaSorter provenance credit in `kit/README.md` is present once, deliberately, as recorded on 2026-08-18 |
+| Doc lists still complete | ten `docs/*` entries in both READMEs | complete; no doc added or removed this pass |
+
+### Questions closed
+
+- "`.vscode/` untracked and neither ignored nor committed" (carried 2026-08-18) -> **closed**: ignored,
+  with the reason in the file.
+- "The owner's per-project memory index points at three memory files that no longer exist" (carried
+  2026-08-18) -> **closed** outside the repo: the index was rebuilt against what exists. One of the three
+  was recreated (an editorial standard, not derivable from any file), one was folded into the zip-rebuild
+  memory it duplicated, and one was dropped as a verbatim restatement of the global rules file.
+  Separately, the `reference-unified-rules` memory was **wrong** and is rewritten: it still asserted that
+  this repo carries no canon pointer because one would leak a private path - both halves untrue since
+  2026-08-05.
+
+### Remains
+
+- **A candidate canon edit, unchanged since 2026-08-05:** `role: sibling-distillation` still does not
+  exist in `check-compliance.ps1`; `portfolio` remains mechanically correct for the one thing `role`
+  decides, and the `$comment` still carries the real relationship.
+- **The two PROPOSED core edits from 2026-07-23** are still unapplied. The `README.md`
+  third-consumption-model wording still needs the correction noted on 2026-08-05 - it can no longer say
+  "never carries a canon pointer".
+- Canon @ ae5f37f (clean); kit repo committed this session, not pushed.
