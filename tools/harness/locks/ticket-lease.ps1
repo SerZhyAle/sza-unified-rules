@@ -149,11 +149,14 @@ if ($Verb -eq 'Clean' -and $QuietMinutes -gt 0 -and $QuietMinutes -lt $timings.S
 
 # Test seam (S2404): the hermetic suite points this at a throwaway root so a run never reads
 # or writes the repository's real leases. Precedent: FMS_AGENT_CHAT_ROOT (S2372).
+# The override replaces the ROOT the profile's directories hang under, so both of them move
+# together - resolving the lease directory from the profile alone would ignore the seam and send a
+# hermetic run at the repository's real leases, which is what the seam exists to prevent.
 $root = (Get-SzaEnv 'TICKET_LEASE_ROOT')
 if ([string]::IsNullOrWhiteSpace($root)) {
     $root = (Get-SzaProjectRoot)
 }
-$leaseDir = (Get-SzaPath 'leasesDir')
+$leaseDir = Join-Path $root (Get-SzaPath 'leasesDir' -Relative)
 if (-not (Test-Path -LiteralPath $leaseDir)) {
     New-Item -ItemType Directory -Path $leaseDir -Force | Out-Null
 }
@@ -186,7 +189,8 @@ function Save-TicketLeaseHandoff {
         [Parameter(Mandatory)][string]$TicketId,
         [Parameter(Mandatory)][string]$SessionId
     )
-    $dir = (Get-SzaPath 'leaseHandoffDir')
+    # Under the same root as the leases above, so the test seam moves both.
+    $dir = Join-Path $root (Get-SzaPath 'leaseHandoffDir' -Relative)
     if (-not (Test-Path -LiteralPath $dir)) {
         New-Item -ItemType Directory -Path $dir -Force | Out-Null
     }

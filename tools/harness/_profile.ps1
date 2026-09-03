@@ -29,8 +29,12 @@
     . (Get-SzaHarnessScript 'locks/agent-lock.ps1')
 #>
 
-Set-StrictMode -Version Latest
-
+# Deliberately NO Set-StrictMode here. This file is dot-sourced, and a strict-mode switch in a
+# dot-sourced file changes the CALLER's scope for the rest of its run: a script that legitimately
+# reads an absent property to mean "absent" would start throwing instead. That is not theoretical -
+# it turned close-and-log.ps1's own `-DevLogs` validation, which tests `$parsed.desc` exactly to
+# reject an entry missing it, into a crash with a different exit code. Each harness script sets its
+# own strictness; the helpers below are written to be safe under either.
 $Script:SzaHarnessRoot = $PSScriptRoot
 if (-not $Script:SzaHarnessRoot) { $Script:SzaHarnessRoot = Split-Path -Parent $MyInvocation.MyCommand.Path }
 $Script:SzaProfileFileName = '.sza-profile.json'

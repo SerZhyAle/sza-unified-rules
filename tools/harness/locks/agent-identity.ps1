@@ -18,14 +18,18 @@
                                      hooks sets THIS one first - see AGENTS.md section 9.1.
       2. CLAUDE_CODE_SESSION_ID    - the runtime's own session id.
       3. host-<name>-<pid>-<ticks> - the first long-lived ancestor process, found by walking past
-                                     shells and interpreters (S2408). A runtime that spawns a
-                                     fresh shell per command has nothing stable below that
-                                     process, so this is the lowest level at which one session
-                                     can still answer with one id.
-      4. pid-<PID>                 - process-scoped fallback, reached only when the walk cannot
-                                     resolve a host or FMS_AGENT_HOST_WALK turned it off; liveness
-                                     for it degrades to the wall-clock ceiling, which is still
-                                     better than a blank owner.
+                                     shells and interpreters (S2408), or - when the walk runs into
+                                     a machine-wide process - the ancestor standing directly below
+                                     it (S2417). A runtime that spawns a fresh shell per command
+                                     has nothing stable below that process, so this is the lowest
+                                     level at which one session can still answer with one id.
+      4. pid-<PID>                 - process-scoped fallback, reached only when the walk found no
+                                     ancestor to adopt at all or FMS_AGENT_HOST_WALK turned it
+                                     off; liveness for it degrades to the wall-clock ceiling,
+                                     which is still better than a blank owner.
+
+    Every identity carries hostWalk, the outcome of its own walk, because the S2417 investigation
+    needed exactly that fact and both failing processes had exited by the time anyone looked.
 
     Why the walk sits at step 3 and not higher: measured 2026-09-02, one hookless session wrote
     itself as 46 different agents with 46 nicknames in an hour, because every command got a new
@@ -44,13 +48,17 @@ $Script:AgentHostPassThroughNames = @(
     'bash', 'sh', 'zsh', 'dash', 'mintty', 'git', 'winpty', 'wsl', 'wslhost', 'busybox',
     'python', 'python3', 'py', 'node', 'npm', 'npx', 'env', 'sudo'
 )
-# Names that ABORT the walk: reaching one means the real host was already passed, and adopting a
-# machine-wide process would merge every session on the box into a single identity - strictly
-# worse than the pid fallback it replaces (strategic section 7, first risk row).
+# Names that END the walk: adopting a machine-wide process would merge every session on the box
+# into a single identity - strictly worse than the pid fallback it replaces (S2408 section 7,
+# first risk row). Reaching one means the real host was already passed, so S2417 adopts THAT one
+# instead of returning nothing; the machine-wide process itself is still never the identity.
 $Script:AgentHostNeverNames = @(
     'explorer', 'services', 'svchost', 'wininit', 'winlogon', 'csrss', 'smss', 'lsass',
     'system', 'idle', 'runtimebroker', 'dllhost', 'taskhostw', 'fontdrvhost', 'sihost'
 )
+# Bounded: a cycle or a pathologically deep tree must not turn identity resolution into a hang,
+# and no real agent host sits twelve interpreters above its own shell.
+$Script:AgentHostWalkMaxDepth = 12
 
 function Format-AgentHostIdentityId {
     <#
@@ -73,41 +81,118 @@ function Format-AgentHostIdentityId {
     return ('host-{0}-{1}-{2}' -f $slug, $Process.Id, $ticks)
 }
 
-function Get-AgentHostIdentityId {
+function Resolve-AgentHostWalk {
     <#
     .SYNOPSIS
-        Identity of the first long-lived ancestor process, or $null when there is none.
+        Over a chain of ancestor process NAMES, which one is the host and why the walk ended:
+        Index (-1 for none) and Outcome.
+    .DESCRIPTION
+        Pure by design (S2417): names in, a verdict out, so both branches are provable without a
+        process tree shaped to order. The two S2408 cases that demanded a long-lived ancestor from
+        the tree they happened to run in were red on every runtime that has none, which measures
+        the runtime rather than the rule.
+
+        Outcomes: resolved (a non-pass-through ancestor), adopted-below-<name> (the ancestor one
+        step under a machine-wide process), no-host-below-<name> (that process is the direct
+        parent, so there is nothing under it to adopt), no-host-trail-lost (the chain ran out),
+        no-host-depth (the depth bound was reached).
+    #>
+    param([AllowEmptyCollection()][string[]]$AncestorNames = @())
+
+    $lastPassed = -1
+    $limit = [Math]::Min($AncestorNames.Count, $Script:AgentHostWalkMaxDepth)
+    for ($i = 0; $i -lt $limit; $i++) {
+        $key = ([string]$AncestorNames[$i]).ToLowerInvariant()
+        if ($Script:AgentHostNeverNames -contains $key) {
+            # Directly under a machine-wide process stands the root of ONE session's tree, not the
+            # machine's: three queue runners started from the same explorer give three different
+            # roots, so adopting it merges nothing that S2408 kept apart (S2417 section 5).
+            if ($lastPassed -ge 0) {
+                return [pscustomobject]@{ Index = $lastPassed; Outcome = "adopted-below-$key" }
+            }
+            return [pscustomobject]@{ Index = -1; Outcome = "no-host-below-$key" }
+        }
+        if ($Script:AgentHostPassThroughNames -notcontains $key) {
+            return [pscustomobject]@{ Index = $i; Outcome = 'resolved' }
+        }
+        $lastPassed = $i
+    }
+    # A lost trail and an exhausted depth adopt nothing on purpose: the shell they stopped on lives
+    # one command, so a host- id minted from it would claim a lifetime it does not have, and the
+    # S2408 case asserting "the host, not this process" would pass while proving nothing.
+    if ($AncestorNames.Count -ge $Script:AgentHostWalkMaxDepth) {
+        return [pscustomobject]@{ Index = -1; Outcome = 'no-host-depth' }
+    }
+    return [pscustomobject]@{ Index = -1; Outcome = 'no-host-trail-lost' }
+}
+
+function Get-AgentHostAncestorChain {
+    <#
+    .SYNOPSIS
+        This process's ancestors, nearest first, up to and including the one that ends the walk.
     .DESCRIPTION
         Walks Parent, which in pwsh 7 is a property of the process object. Measured on the owner's
         machine 2026-09-02: the whole warm walk averages 0.42 ms, while a SINGLE step through
         Get-CimInstance costs 118 ms - and identity is resolved by every coordination script, so
-        the per-step price decides the design (strategic ADR-1).
+        the per-step price decides the design (S2408 ADR-1). Collection stops on exactly the
+        conditions Resolve-AgentHostWalk decides on, so the number of .Parent reads is what it was
+        before S2417 split the two apart.
+    #>
+    $chain = [System.Collections.Generic.List[object]]::new()
+    try {
+        $current = Get-Process -Id $PID -ErrorAction Stop
+        for ($depth = 0; $depth -lt $Script:AgentHostWalkMaxDepth; $depth++) {
+            $parent = $null
+            try { $parent = $current.Parent } catch { $parent = $null }
+            if ($null -eq $parent) { break }
+            $chain.Add($parent)
+            $key = ([string]$parent.ProcessName).ToLowerInvariant()
+            if ($Script:AgentHostNeverNames -contains $key) { break }
+            if ($Script:AgentHostPassThroughNames -notcontains $key) { break }
+            $current = $parent
+        }
+    }
+    catch { }
+    # Returned unwrapped on purpose: the caller collects with @(..), and the comma operator would
+    # hand it ONE element holding the whole array - member access then reads every ancestor at once
+    # and the id comes out as 'host-pwsh-bash-System.Object[]-0' (measured 2026-09-03).
+    return $chain.ToArray()
+}
 
-        FMS_AGENT_HOST_WALK set to 0/off/false/no returns $null without walking, which is the
+function Get-AgentHostIdentity {
+    <#
+    .SYNOPSIS
+        The host identity and the outcome of the walk that produced it: Id ($null when none) and
+        Outcome (never empty).
+    .DESCRIPTION
+        FMS_AGENT_HOST_WALK set to 0/off/false/no answers 'disabled' without walking, which is the
         documented escape for a runtime that must not be merged with its neighbours.
     #>
     $walkSwitch = [string](Get-SzaEnv 'AGENT_HOST_WALK')
     if (-not [string]::IsNullOrWhiteSpace($walkSwitch) -and
-        $walkSwitch.Trim().ToLowerInvariant() -in @('0', 'off', 'false', 'no')) { return $null }
-
-    try {
-        $current = Get-Process -Id $PID -ErrorAction Stop
-        # Bounded: a cycle or a pathologically deep tree must not turn identity resolution into a
-        # hang, and no real agent host sits twelve interpreters above its own shell.
-        for ($depth = 0; $depth -lt 12; $depth++) {
-            $parent = $null
-            try { $parent = $current.Parent } catch { $parent = $null }
-            if ($null -eq $parent) { return $null }
-            $key = ([string]$parent.ProcessName).ToLowerInvariant()
-            if ($Script:AgentHostNeverNames -contains $key) { return $null }
-            if ($Script:AgentHostPassThroughNames -notcontains $key) {
-                return (Format-AgentHostIdentityId -Process $parent)
-            }
-            $current = $parent
-        }
+        $walkSwitch.Trim().ToLowerInvariant() -in @('0', 'off', 'false', 'no')) {
+        return [pscustomobject]@{ Id = $null; Outcome = 'disabled' }
     }
-    catch { return $null }
-    return $null
+
+    $chain = @(Get-AgentHostAncestorChain)
+    $names = @($chain | ForEach-Object { [string]$_.ProcessName })
+    $decision = Resolve-AgentHostWalk -AncestorNames $names
+    if ($decision.Index -lt 0) {
+        return [pscustomobject]@{ Id = $null; Outcome = $decision.Outcome }
+    }
+    return [pscustomobject]@{
+        Id      = (Format-AgentHostIdentityId -Process $chain[$decision.Index])
+        Outcome = $decision.Outcome
+    }
+}
+
+function Get-AgentHostIdentityId {
+    <#
+    .SYNOPSIS
+        Identity of the host ancestor process alone, or $null when the walk found none - the
+        companion accessor for a caller that does not want the walk outcome.
+    #>
+    return (Get-AgentHostIdentity).Id
 }
 
 function Test-AgentIdentityProcessAlive {
@@ -188,20 +273,37 @@ $Script:AgentNickAnimals = @(
     'raven', 'sable', 'tapir', 'vole', 'walrus', 'wren', 'yak', 'zebra'
 )
 
+function Get-AgentIdentityResolution {
+    <#
+    .SYNOPSIS
+        The agent id together with how it was reached: Id and HostWalk, neither ever empty.
+    .DESCRIPTION
+        HostWalk is 'not-reached' when an environment variable answered and the walk never ran,
+        'disabled' when it was turned off, and otherwise the outcome Resolve-AgentHostWalk gave.
+    #>
+    $explicit = (Get-SzaEnv 'AGENT_ID')
+    if (-not [string]::IsNullOrWhiteSpace($explicit)) {
+        return [pscustomobject]@{ Id = $explicit.Trim(); HostWalk = 'not-reached' }
+    }
+    $session = $env:CLAUDE_CODE_SESSION_ID
+    if (-not [string]::IsNullOrWhiteSpace($session)) {
+        return [pscustomobject]@{ Id = $session.Trim(); HostWalk = 'not-reached' }
+    }
+    # S2408: below the runtime's own session id, the caller's process is the wrong unit - it dies
+    # with the command. The host process above it does not.
+    $walk = Get-AgentHostIdentity
+    if (-not [string]::IsNullOrWhiteSpace($walk.Id)) {
+        return [pscustomobject]@{ Id = $walk.Id; HostWalk = $walk.Outcome }
+    }
+    return [pscustomobject]@{ Id = "pid-$PID"; HostWalk = $walk.Outcome }
+}
+
 function Get-AgentIdentityId {
     <#
     .SYNOPSIS
         The agent id alone - the value every coordination file records as the owner.
     #>
-    $explicit = (Get-SzaEnv 'AGENT_ID')
-    if (-not [string]::IsNullOrWhiteSpace($explicit)) { return $explicit.Trim() }
-    $session = $env:CLAUDE_CODE_SESSION_ID
-    if (-not [string]::IsNullOrWhiteSpace($session)) { return $session.Trim() }
-    # S2408: below the runtime's own session id, the caller's process is the wrong unit - it dies
-    # with the command. The host process above it does not.
-    $hostId = Get-AgentHostIdentityId
-    if (-not [string]::IsNullOrWhiteSpace($hostId)) { return $hostId }
-    return "pid-$PID"
+    return (Get-AgentIdentityResolution).Id
 }
 
 function Get-AgentIdentityRuntime {
@@ -291,7 +393,8 @@ function Get-AgentIdentity {
     .SYNOPSIS
         The whole identity: id, nickname and the human-readable fields, none of them empty.
     #>
-    $id = Get-AgentIdentityId
+    $resolution = Get-AgentIdentityResolution
+    $id = $resolution.Id
     $name = (Get-SzaEnv 'AGENT_NAME')
     if ([string]::IsNullOrWhiteSpace($name)) { $name = Get-AgentNickname -Id $id }
     if ([string]::IsNullOrWhiteSpace($name)) { $name = $id }
@@ -317,6 +420,10 @@ function Get-AgentIdentity {
         host       = $hostName
         pid        = $PID
         parentPid  = $parentPid
+        # S2417: the identity object is embedded whole in every chat message, so the outcome of
+        # this walk lands in files that outlive the process - which is what the investigation of
+        # the failing runtimes had to reconstruct by hand, from processes that had already exited.
+        hostWalk   = $resolution.HostWalk
     }
 }
 
