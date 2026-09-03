@@ -18,8 +18,11 @@
 
 .NOTES
     Exit codes:
-      0 inventory valid, and the S1934 ungated-flavors ratchet is at or below its baseline.
-      1 a schema rule was violated, the ratchet grew past its baseline, or the baseline is unreadable.
+      0 inventory valid, and the S1934 ungated-dimension ratchet is at or below its baseline - or
+        the profile declares no baseline / no feature matrix, so there is no ratchet to run.
+      1 a schema rule was violated, the ratchet grew past its baseline, or the baseline is not an integer.
+      2 could not verify: the profile DECLARES a baseline or a feature matrix that cannot be read,
+        so the ratchet did not run (S2434). Distinct from 0 on purpose - "did not look" is not "clean".
 #>
 param(
     [switch]$NoLegal,
@@ -290,33 +293,51 @@ if ($errors.Count -gt 0) {
 }
 
 # S1934 ratchet. The public inventory only: the noLegal file has its own contents and no baseline.
+#
+# S2434 splits two answers this block used to give as one silent SKIPPED at exit 0. "This repository
+# declares no ratchet" and "this repository declares one that cannot be read" are opposite states:
+# the first is a configuration choice, the second is the gate not running while its caller is told
+# PASS. Both a baseline and a matrix are therefore judged twice - declared at all, then reachable -
+# and only the undeclared half stays quiet. The refusal prints even under -Gate, because -Gate
+# silences SUCCESS, and a check that could not look is not one.
 if (-not $NoLegal) {
-    $baselineFile = Join-Path $PSScriptRoot "unexplained-flavors-baseline.txt"
-    if ($matrixFlags.Count -eq 0) {
+    $baselineRel = [string](Get-SzaProfileValue 'paths.allFeaturesFlavorsBaseline')
+    $baselineFile = if ($baselineRel) { Get-SzaPath 'allFeaturesFlavorsBaseline' } else { '' }
+    if (-not $matrixRel) {
         if (-not $Gate) {
-            Write-Host "ALL_FEATURES: ungated-$dimensionName ratchet SKIPPED - $matrixLabel unreadable" -ForegroundColor Yellow
+            Write-Host "ALL_FEATURES: ungated-$dimensionName ratchet SKIPPED - paths.featureMatrix is unset" -ForegroundColor Yellow
+        }
+    }
+    elseif ($matrixFlags.Count -eq 0) {
+        Write-Host "ALL_FEATURES: ungated-$dimensionName ratchet COULD NOT RUN - $matrixLabel is declared but unreadable ($matrixPath)" -ForegroundColor Red
+        Write-Host "  Regenerate the matrix, or clear paths.featureMatrix if this repository has no such grid." -ForegroundColor Red
+        exit 2
+    }
+    elseif (-not $baselineRel) {
+        if (-not $Gate) {
+            Write-Host "ALL_FEATURES: ungated-$dimensionName ratchet SKIPPED - paths.allFeaturesFlavorsBaseline is unset" -ForegroundColor Yellow
         }
     }
     elseif (-not (Test-Path -LiteralPath $baselineFile)) {
-        if (-not $Gate) {
-            Write-Host "ALL_FEATURES: ungated-flavors ratchet SKIPPED - baseline file missing ($baselineFile)" -ForegroundColor Yellow
-        }
+        Write-Host "ALL_FEATURES: ungated-$dimensionName ratchet COULD NOT RUN - the profile declares a baseline that does not exist ($baselineFile)" -ForegroundColor Red
+        Write-Host "  Create it with the current count, or clear paths.allFeaturesFlavorsBaseline to declare no ratchet." -ForegroundColor Red
+        exit 2
     }
     else {
         $baseline = 0
         $baselineRaw = ((Get-Content -LiteralPath $baselineFile -Raw) -replace '\s', '')
         if (-not [int]::TryParse($baselineRaw, [ref]$baseline)) {
-            Write-Host "ALL_FEATURES: ungated-flavors baseline is not an integer ($baselineFile)" -ForegroundColor Red
+            Write-Host "ALL_FEATURES: ungated-$dimensionName baseline is not an integer ($baselineFile)" -ForegroundColor Red
             exit 1
         }
         if ($unexplained.Count -gt $baseline) {
-            Write-Host ("ALL_FEATURES: ungated-flavors ratchet FAILED - {0} record(s) claim a reach the build system does not produce, baseline {1}." -f $unexplained.Count, $baseline) -ForegroundColor Red
+            Write-Host ("ALL_FEATURES: ungated-$dimensionName ratchet FAILED - {0} record(s) claim a reach the build system does not produce, baseline {1}." -f $unexplained.Count, $baseline) -ForegroundColor Red
             Write-Host "  An ungated record carries every $dimensionName value, or exactly one flag's row in $matrixLabel (S1934)." -ForegroundColor Red
             foreach ($u in $unexplained) { Write-Host "  $u" -ForegroundColor Red }
             exit 1
         }
         if ($unexplained.Count -lt $baseline -and -not $Gate) {
-            Write-Host ("ALL_FEATURES: ungated-flavors ratchet improved - {0} record(s) against baseline {1}; lower the baseline in {2}." -f $unexplained.Count, $baseline, $baselineFile) -ForegroundColor Yellow
+            Write-Host ("ALL_FEATURES: ungated-$dimensionName ratchet improved - {0} record(s) against baseline {1}; lower the baseline in {2}." -f $unexplained.Count, $baseline, $baselineFile) -ForegroundColor Yellow
         }
     }
 }

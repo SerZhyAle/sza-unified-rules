@@ -89,7 +89,9 @@ function Get-SpecSectionLines {
     # condition from a malformed one, and callers treat "nothing to check" as a pass.
     param(
         [Parameter(Mandatory, ParameterSetName = 'Path')][string] $Path,
-        [Parameter(Mandatory, ParameterSetName = 'Lines')][AllowEmptyCollection()][string[]] $Lines,
+        # AllowEmptyString is what makes this set usable at all: every spec has blank lines, and
+        # without it binding dies on the first one with "because it is an empty string".
+        [Parameter(Mandatory, ParameterSetName = 'Lines')][AllowEmptyCollection()][AllowEmptyString()][string[]] $Lines,
         [Parameter(Mandatory)][string[]] $HeadingPattern
     )
     if ($PSCmdlet.ParameterSetName -eq 'Path') {

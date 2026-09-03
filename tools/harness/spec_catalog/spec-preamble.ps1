@@ -61,8 +61,6 @@ $leasePs1   = (Get-SzaHarnessScript 'locks/ticket-lease.ps1')
 $driftPs1   = Join-Path $PSScriptRoot 'drift-check.ps1'
 $registryPs1 = (Get-SzaHarnessScript 'document_registry/query.ps1')
 $driftStatuses = @('Draft', 'Approved', 'Tactical', 'Broken')
-# Same spelling rule as _research-items.ps1: a numbered `## 6. Last Audit` is a real heading on disk.
-$lastAuditPattern = '^##\s*(\d+\.\s*)?Last Audit\s*$'
 
 # 1. Record + what is on disk for it.
 $record = Find-Record -Id $Id
@@ -74,7 +72,12 @@ $specPath = Resolve-SpecPath -PathRef ([string]$record.file)
 $specExists = Test-Path -LiteralPath $specPath -PathType Leaf
 $lastAudit = $false
 if ($specExists) {
-    $lastAudit = [bool](Get-Content -LiteralPath $specPath -Encoding utf8 | Where-Object { $_ -match $lastAuditPattern } | Select-Object -First 1)
+    # Answered by the same code as the closing gate and preview.ps1, never by a second pattern of
+    # our own: the operator's flag and the gate's verdict may not disagree (S1621), and a local
+    # copy had already drifted - it missed `## 5.1 Last Audit`, on which /spec-all's 0a-drift then
+    # sent a ticket with a written verdict back through a full re-audit. The call is free:
+    # _lib.ps1 dot-sources _research-items.ps1, so both functions are already in scope.
+    $lastAudit = @(Get-SpecSectionLines -Path $specPath -HeadingPattern (Get-AuditSectionHeadingPattern)).Count -gt 0
 }
 $tacticalDir = [System.IO.Path]::ChangeExtension($specPath, $null).TrimEnd('.')
 $phaseCount = 0

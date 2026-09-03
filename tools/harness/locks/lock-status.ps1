@@ -25,6 +25,11 @@
     turn, so nobody behind it can advance no matter how long they wait. In text mode such a row
     is suffixed `<- holds the lock`.
 
+    -Queue also carries the stalled-holder verdict (S2413): held, a queue behind it, and an owner
+    quiet for longer than the domain's LockStaleMinutes. Text mode prints a red STALLED line after
+    the listing, `-Json` a `stall` property that is null when the domain is not stalled. It changes
+    no exit code - a stalled holder is a status this query reports, not a failure of the query.
+
     Exit code: 0 = status determined and reported (free, stale, or held).
                2 = could not determine (lock file unreadable), or -Wait ran out of time.
                1 = held, ONLY under -StrictExit.
@@ -137,6 +142,20 @@ if ($Queue) {
     }
 }
 
+# S2413: the two halves of the stalled-holder predicate are both already on this page - the holder
+# and the queue - and only the conclusion was missing. Read-only, and a status rather than a
+# failure: the exit contract above is unchanged, because "the holder went quiet" is an answer to
+# this query, not a fault of it.
+$stall = $null
+if ($Queue -and $held -and -not [string]::IsNullOrWhiteSpace([string]$status.SessionId)) {
+    try {
+        $stall = Get-AgentLockStall -Name $Name -HolderSessionId ([string]$status.SessionId) `
+            -HolderTranscriptPath ([string]$status.TranscriptPath) `
+            -HeldMinutes ([math]::Round(([double]$status.AgeSeconds) / 60.0, 1)) -Queue $queueTickets
+    }
+    catch { $stall = $null }
+}
+
 if ($Json) {
     $status | Add-Member -NotePropertyName 'status' -NotePropertyValue $state -Force
     $status | Add-Member -NotePropertyName 'held' -NotePropertyValue $held -Force
@@ -145,6 +164,7 @@ if ($Json) {
         $status | Add-Member -NotePropertyName 'queue' -NotePropertyValue $queueTickets -Force
         $status | Add-Member -NotePropertyName 'myPosition' -NotePropertyValue $position -Force
         $status | Add-Member -NotePropertyName 'headOwnedByHolder' -NotePropertyValue $headOwnedByHolder -Force
+        $status | Add-Member -NotePropertyName 'stall' -NotePropertyValue $stall -Force
     }
     $status | ConvertTo-Json -Compress -Depth 4
 }
@@ -180,6 +200,17 @@ else {
                 Write-Host ("  {0} #{1} pos {2}  session {3}  waited {4}m  reason '{5}'{6}" -f
                     $marker, $ticket.seq, $ticket.position, $ticket.sessionId, $waitedMinutes, $ticket.reason, $suffix)
             }
+        }
+        if ($stall) {
+            $processNote = if ($stall.holderProcessAlive) {
+                'its process is still running - hung rather than gone'
+            }
+            else {
+                'no process of its own is observable'
+            }
+            Write-Host ("$Name STALLED: the holder has been quiet {0}m (threshold {1}m) while {2} session(s) wait, the longest {3}m." -f
+                $stall.quietMinutes, $stall.thresholdMinutes, $stall.queueDepth, $stall.longestWaitMinutes) -ForegroundColor Red
+            Write-Host ("  holder session $($stall.sessionId), holding $($stall.heldMinutes)m; $processNote.") -ForegroundColor Red
         }
     }
 }

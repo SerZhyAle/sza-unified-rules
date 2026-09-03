@@ -11,6 +11,9 @@
       - ticket leases      temp/SPEC-TICKET.LEASES/*.json, liveness judged by Get-AgentTicketLiveness -
                            the same helper ticket-lease.ps1 judges by (S1621), read in-process instead
                            of through a child pwsh (434 ms of a 1000 ms budget, measured 2026-09-02);
+      - stalled holders    the S2413 predicate per code domain, computed from the locks below
+                           rather than re-read: held, a queue behind it, and an owner quiet past
+                           that domain's LockStaleMinutes. Empty array when nothing is stalled.
       - locks and queues   temp/<DOMAIN>.LOCK and temp/<DOMAIN>.QUEUE/*.json for every domain in
                            agent-lock-domains.ps1 plus the two pre-split files, read without eviction;
       - agent chat         the progress stream (one row per agent, newest first, plus the newest
@@ -184,6 +187,10 @@ function Get-DevMonitorLocks {
             pid           = Get-DevMonitorProp $body 'pid'
             acquiredAtUtc = ConvertTo-DevMonitorUtcText $acquired
             heldMinutes   = Get-DevMonitorMinutesSince $acquired
+            # Transport only, stripped before the snapshot is returned: the stall predicate needs
+            # the path the holder stamped at acquire time, and resolving it again would walk the
+            # whole projects tree once per domain (S2413).
+            transcriptPath = [string](Get-DevMonitorProp $body 'transcriptPath' '')
             queue         = $queue
         }
     }
@@ -396,17 +403,31 @@ function Get-DevMonitorSnapshot {
                 try { $verdict = [string](Get-AgentTicketLiveness -Ticket $shim -StaleMinutes $timings.SessionStaleMinutes) } catch { $verdict = 'unknown' }
                 $l.liveness = $verdict
                 $l.name = & $nameOf $l.sessionId $null
-                # The same three marks ticket-lease.ps1's quiet-time reads: transcript write, heartbeat,
-                # newest chat line; the freshest one is how long ago the holder was last seen.
-                $marks = @()
-                if ($l.transcriptPath -and (Test-Path -LiteralPath $l.transcriptPath)) { try { $marks += (Get-Item -LiteralPath $l.transcriptPath).LastWriteTime } catch { } }
-                if ($l.lastSeenAt) { try { $marks += [DateTimeOffset]::FromUnixTimeMilliseconds([int64]$l.lastSeenAt).LocalDateTime } catch { } }
-                try { $seen = Get-AgentChatLastSeen -AgentId $l.sessionId; if ($null -ne $seen) { $marks += $seen.ToLocalTime() } } catch { }
-                if ($marks.Count -gt 0) { $l.lastSeenMinutes = [math]::Round(((Get-Date) - ($marks | Sort-Object -Descending | Select-Object -First 1)).TotalMinutes, 1) }
+                # S2413: the quiet time goes through the lock library's own helper, so this page and
+                # the eviction that reads the same marks cannot disagree about one holder. The
+                # hand-rolled copy of the loop that stood here counted a transcript write without
+                # the subagent subtree, and so read a session working through a subagent as quiet.
+                $quiet = Get-AgentOwnerQuietMinutes -SessionId $l.sessionId -TranscriptPath $l.transcriptPath -LastSeenAt $l.lastSeenAt
+                if ($null -ne $quiet) { $l.lastSeenMinutes = $quiet }
             }
+            $stalls = @()
             foreach ($k in $Locks) {
                 if ($k.sessionId) { $k.name = & $nameOf $k.sessionId $null }
                 foreach ($q in @($k.queue)) { if ($q.sessionId) { $q.name = & $nameOf $q.sessionId $null } }
+                # Computed from the locks already read - the snapshot reads every lock file once and
+                # the predicate must not read them a second time.
+                if (-not $k.held -or $k.legacy -or -not $k.sessionId) { continue }
+                $stall = $null
+                try {
+                    $stall = Get-AgentLockStall -Name $k.domain -HolderSessionId $k.sessionId `
+                        -HolderTranscriptPath $k.transcriptPath -HeldMinutes $k.heldMinutes -Queue @($k.queue)
+                }
+                catch { $stall = $null }
+                if ($null -ne $stall) {
+                    $stall | Add-Member -NotePropertyName 'name' -NotePropertyValue $k.name -Force
+                    $stall | Add-Member -NotePropertyName 'reason' -NotePropertyValue $k.reason -Force
+                    $stalls += $stall
+                }
             }
 
             $seenAgents = [ordered]@{}
@@ -505,6 +526,7 @@ function Get-DevMonitorSnapshot {
                     ceilingMinutes   = [int]$timings.TicketCeilingMinutes
                 }
                 Agents      = $agents
+                Stalls      = $stalls
                 Tail        = $tail
                 Findings    = $alive
                 Dead        = $dead
@@ -513,11 +535,12 @@ function Get-DevMonitorSnapshot {
             }
         } $lockLib $leases $locks $ChatTail
     } catch {
-        $chat = [pscustomobject]@{ Windows = $null; Agents = @(); Tail = @(); Findings = @(); Dead = 0; DeadReasons = $null; Error = "$_" }
+        $chat = [pscustomobject]@{ Windows = $null; Agents = @(); Stalls = @(); Tail = @(); Findings = @(); Dead = 0; DeadReasons = $null; Error = "$_" }
     }
 
     # The transport fields of a lease are not for display.
     foreach ($l in $leases) { $l.PSObject.Properties.Remove('transcriptPath'); $l.PSObject.Properties.Remove('lastSeenAt') }
+    foreach ($k in $locks) { $k.PSObject.Properties.Remove('transcriptPath') }
 
     $sw.Stop()
     $now = Get-Date
@@ -532,6 +555,9 @@ function Get-DevMonitorSnapshot {
         windows             = $chat.Windows
         leases              = $leases
         locks               = $locks
+        # Additive, so the schema stays 1: a reader that does not know the field is unaffected, and
+        # every reader that does draws the same verdict rather than deriving its own (S2413).
+        stalls              = @($chat.Stalls)
         agents              = @($chat.Agents)
         chat                = @($chat.Tail)
         findings            = @($chat.Findings)

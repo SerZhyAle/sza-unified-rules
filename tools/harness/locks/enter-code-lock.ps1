@@ -57,7 +57,10 @@
     2 - the resource name is not an accepted domain or bare type (S2109); nothing was enqueued.
     4 - queued: another session holds one of your domains, or you are not its queue head. Your
         ticket is in the queue; wait for your turn with scripts/utils/wait-for-lock-turn.ps1 (or
-        re-run with -Wait). Do not edit sources yet.
+        re-run with -Wait). Do not edit sources yet. The domain this message names is the one
+        observed to hold the set - resolved by Get-AgentLockBlockingDomain, never a placeholder
+        such as the set's first domain (S2410); when no domain of the set is observably blocking,
+        the message names the whole set and no single domain at all.
 
         Also returned, WITHOUT enqueueing anything, when this session holds a domain that
         outranks a domain still missing from the request (S2200) - granting that directly would
@@ -252,6 +255,23 @@ else {
 # S2372: the refusal is the one moment the chat is worth reading - what the holder is on, and since
 # when - and this wait is itself a trace for whoever queues next. Neither changes the verdict.
 Write-AgentChatContext -AgentId $holderChatId -Domain $blocked
+# S2413: the waiting session learns of a stalled holder before the operator does, and the chat lines
+# above are exactly what made one look alive - its last message was fresh while its transcript had
+# stopped ten minutes earlier. This says so outright. It changes no verdict: the refusal and its
+# exit code are the same either way, and the queue is still the way through.
+$stallVerdict = $null
+try { $stallVerdict = Get-AgentLockStall -Name $blocked } catch { $stallVerdict = $null }
+if ($stallVerdict) {
+    $stallProcessNote = if ($stallVerdict.holderProcessAlive) {
+        'its process is still running, so it is hung rather than gone'
+    }
+    else {
+        'no process of its own is observable'
+    }
+    Write-Host ("  STALLED: that holder has been quiet {0}m (limit {1}m) while holding {2}m - {3}." -f
+        $stallVerdict.quietMinutes, $stallVerdict.thresholdMinutes, $stallVerdict.heldMinutes, $stallProcessNote) -ForegroundColor Red
+    Write-Host "  Waiting is still correct - the lock goes stale on its own and the waiter takes it. Say so in chat if it does not." -ForegroundColor Red
+}
 [void](Send-AgentChatMessage -Kind wait -Domains $acquireDomains -Note "queued at position $($turn.Position) for ${blocked}: $Reason")
 $reservationMinutesHint = (Get-AgentLockTimings -Name $blocked).ReservationMinutes
 Write-Host "  Your ticket: #$($ticket.seq). Wait in the background - the waiter TAKES the lock for you:" -ForegroundColor Yellow
@@ -260,9 +280,6 @@ Write-Host "  Its exit means the lock is already yours - start editing, and rele
 Write-Host "  Without -Acquire the turn waits for your next call instead, and the head reservation" -ForegroundColor Gray
 Write-Host "  (${reservationMinutesHint} min) is spent on that round trip while the lock sits free:" -ForegroundColor Gray
 Write-Host "    $(Get-SzaInvocation 'locks/enter-code-lock.ps1') -Reason '$Reason'$(if ($Files) { " -Files '$($Files -join ',')'" }) -Handoff `"$handoffPath`"" -ForegroundColor Gray
-Write-Host "  Meanwhile do lock-free work: reading, research, specs, catalog, log analysis." -ForegroundColor Gray
-Write-Host "  A docs/ or dev/ edit is NOT lock-free - it needs Code.Scripts (S2338)." -ForegroundColor Gray
-exit 4
 Write-Host "  Meanwhile do lock-free work: reading, research, specs, catalog, log analysis." -ForegroundColor Gray
 Write-Host "  A docs/ or dev/ edit is NOT lock-free - it needs Code.Scripts (S2338)." -ForegroundColor Gray
 exit 4

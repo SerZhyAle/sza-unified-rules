@@ -132,7 +132,11 @@ try {
         })
     }
 
-    $hits = & $findMatches $ProductArea $Trigger
+    # @() around the call, not just inside the scriptblock: a scriptblock that emits an empty
+    # array has its output unrolled to nothing, so $hits lands as $null and the .Count reads
+    # below throw under any caller running Set-StrictMode. The registry loop dot-sources this
+    # set from strict scopes, and the same read exited 2 on every filtered query (S2425).
+    $hits = @(& $findMatches $ProductArea $Trigger)
     $resolutionLines = @()
 
     if ($hits.Count -eq 0 -and ($ProductArea -or $Trigger)) {
@@ -165,7 +169,7 @@ try {
             }
         }
         if ($resolutionLines.Count -gt 0) {
-            $hits = & $findMatches $resolvedArea $resolvedTrigger
+            $hits = @(& $findMatches $resolvedArea $resolvedTrigger)
         }
     }
 

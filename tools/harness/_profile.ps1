@@ -74,6 +74,12 @@ $Script:SzaProfileDefaults = [ordered]@{
         allFeatures      = 'docs/ALL_FEATURES.jsonl'
         allFeaturesPrivate = 'docs/ALL_FEATURES_private.jsonl'
         allFeaturesSchema  = 'docs/ALL_FEATURES.schema.json'
+        # Empty means "this repository declares no ungated-dimension ratchet", which is a legitimate
+        # state and stays exit 0. A non-empty value is a promise the file exists: the ratchet counts
+        # ONE inventory's records, so the baseline is project data and must resolve into the project.
+        # Until S2434 it was read from the harness's own directory, where a shipped canon never put
+        # it - the ratchet skipped silently under the word PASS in every consuming repository.
+        allFeaturesFlavorsBaseline = ''
         featureMatrix    = ''
         commandsDir      = '.claude/commands'
         probeBaseline    = 'PLAN/probe-baseline.txt'

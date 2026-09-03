@@ -95,6 +95,13 @@ function Get-Today {
 function Read-JsonlFile {
     # Parse one JSONL journal file into a sorted-by-id object array.
     # Missing file -> empty array. Parse errors carry the file name + line.
+    # Returns through `return ,` against unrolling, so never pipe a BARE call into a filter: the
+    # pipeline enumerates only the outer wrapper and the next command receives the whole
+    # collection as one object, which makes a per-member test pass everything through. Wrapping
+    # the call - or the pipeline - in @(..) does not fix it (measured 2026-09-03, S2420).
+    # Assign the call to a variable first, which unrolls the wrapper, then pipe that variable.
+    # In an assignment the extra layer comes straight back off, so @(..) there is harmless -
+    # which is why the safe and the broken form look identical at a call site.
     param([Parameter(Mandatory)][string] $Path)
     if (-not (Test-Path $Path)) {
         return ,@()
@@ -415,6 +422,13 @@ function Read-ReleaseFile {
     # Returns the file as an ordered list of line objects. Data lines are parsed; everything
     # else (heading, prose, blanks, the owner's own notes) is carried through verbatim so a
     # reconcile never rewrites anything the owner typed.
+    # Returns through `return ,` against unrolling, so never pipe a BARE call into a filter: the
+    # pipeline enumerates only the outer wrapper and the next command receives the whole
+    # collection as one object, which makes a per-member test pass everything through. Wrapping
+    # the call - or the pipeline - in @(..) does not fix it (measured 2026-09-03, S2420).
+    # Assign the call to a variable first, which unrolls the wrapper, then pipe that variable.
+    # In an assignment the extra layer comes straight back off, so @(..) there is harmless -
+    # which is why the safe and the broken form look identical at a call site.
     param([Parameter(Mandatory)][string] $Path)
     $result = New-Object System.Collections.Generic.List[object]
     if (-not (Test-Path $Path)) { return ,$result }

@@ -159,6 +159,22 @@ function Show-Snapshot {
         Write-Host ("  " + ($parts -join ', '))
     }
 
+    # --- stalled holders (S2413) --------------------------------------------------------------
+    # Above the locks section and printed only when non-empty: a signal that appears every run is a
+    # signal the operator stops reading, and the incident this exists for was one line in a page of
+    # normal ones. Nothing here decides anything - the queue and the eviction ignore it entirely.
+    $stalls = @($Snapshot.stalls)
+    if ($stalls.Count -gt 0) {
+        Write-Section 'stalled holders (quiet, holding, and blocking someone)'
+        foreach ($stall in $stalls) {
+            $processNote = if ($stall.holderProcessAlive) { 'process alive - hung' } else { 'no process observable' }
+            Write-Host ("  {0,-13} {1} quiet {2:N0}m (limit {3}m), holding {4:N0}m, {5} waiting up to {6:N0}m  [{7}]" -f
+                $stall.domain, $stall.name, [double]$stall.quietMinutes, $stall.thresholdMinutes,
+                [double]$stall.heldMinutes, $stall.queueDepth, [double]$stall.longestWaitMinutes, $processNote) -ForegroundColor Red
+            Write-Host ("  {0,-13} on '{1}'" -f '', $stall.reason) -ForegroundColor DarkGray
+        }
+    }
+
     # --- locks -----------------------------------------------------------------------------------
     Write-Section 'locks (who is building or editing)'
     $free = @()

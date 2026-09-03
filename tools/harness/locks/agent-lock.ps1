@@ -502,6 +502,166 @@ function Get-AgentTicketLiveness {
     return 'foreign-stale'
 }
 
+function Get-AgentOwnerQuietMinutes {
+    <#
+    .SYNOPSIS
+        Minutes since the freshest sign of life from a session, or $null when no mark is readable.
+    .DESCRIPTION
+        S2413. The marks are exactly the ones Get-AgentTicketLiveness already judges by - the
+        transcript write counting the subagent subtree, the record's own heartbeat, the newest chat
+        line - so a signal built on this number and the eviction built on that verdict can never
+        disagree about the same owner (S1621). No fourth source is added here.
+
+        It reports a number and judges nothing: no threshold is read, because a threshold belongs to
+        the resource and every caller already takes its own from $Script:AgentLockTimings.
+
+        The transcript path is resolved only when the caller has none - resolving it walks the whole
+        projects tree, while every record that matters stored the path at enqueue time.
+    #>
+    param(
+        [Parameter(Mandatory)][AllowEmptyString()][string]$SessionId,
+        [string]$TranscriptPath,
+        # Epoch milliseconds, as a ticket or a lease stores its heartbeat.
+        [object]$LastSeenAt
+    )
+
+    if ([string]::IsNullOrWhiteSpace($SessionId)) { return $null }
+
+    if ([string]::IsNullOrWhiteSpace($TranscriptPath)) {
+        try { $TranscriptPath = Get-AgentSessionTranscriptPath -SessionId $SessionId } catch { $TranscriptPath = $null }
+    }
+
+    $marks = @()
+    if (-not [string]::IsNullOrWhiteSpace($TranscriptPath)) {
+        try {
+            $write = Get-AgentSessionTranscriptLastWrite -TranscriptPath $TranscriptPath
+            if ($null -ne $write) { $marks += $write }
+        }
+        catch { }
+    }
+    if ($null -ne $LastSeenAt -and "$LastSeenAt" -ne '') {
+        try { $marks += [DateTimeOffset]::FromUnixTimeMilliseconds([int64]$LastSeenAt).LocalDateTime } catch { }
+    }
+    try {
+        $chatSeen = Get-AgentChatLastSeen -AgentId $SessionId
+        if ($null -ne $chatSeen) { $marks += $chatSeen.ToLocalTime() }
+    }
+    catch { }
+
+    if ($marks.Count -eq 0) { return $null }
+    $freshest = @($marks | Sort-Object -Descending)[0]
+    return [math]::Round(((Get-Date) - $freshest).TotalMinutes, 1)
+}
+
+function Get-AgentLockStall {
+    <#
+    .SYNOPSIS
+        The stalled-holder verdict for one code domain, or $null when the domain is not stalled.
+    .DESCRIPTION
+        S2413. Held, a queue behind it, and an owner quiet for longer than that domain's
+        LockStaleMinutes. All three halves already existed and were read by four different readers;
+        none of them joined the two, so a session that stopped moving at 00:19 while holding three
+        code domains was noticed at 00:29 by the owner's eyes and by nothing else.
+
+        Read-only and decision-free: nothing here evicts, sweeps or writes, and no lock, queue or
+        lease branches on the result. It names what a human was left to spot.
+
+        Three deliberate exclusions, each of which would otherwise make the signal noise:
+          - a build domain, judged by pid, where a dead owner already makes the lock stale and the
+            next claimant reclaims it unaided;
+          - an empty queue, where a quiet holder blocks nobody;
+          - the holder's own leftover ticket, which is the S1448 starvation shape rather than a
+            second session waiting.
+
+        A live holder process does NOT clear the verdict - it is reported beside it, because
+        "hung" and "gone" cost the queue exactly the same and only differ in what to do next.
+
+        The threshold is the domain's own LockStaleMinutes (10 for code), deliberately below its
+        SessionStaleMinutes (15): the warning is worth having before the lock becomes reclaimable,
+        not after.
+
+        A caller that has already read the lock file passes the holder facts in; with none supplied
+        the lock is read here.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [string]$HolderSessionId,
+        [string]$HolderTranscriptPath,
+        [object]$HeldMinutes,
+        # Queue tickets already read, carrying either waitedMinutes or enqueuedAt.
+        [object[]]$Queue
+    )
+
+    $resolved = @()
+    try { $resolved = @(Resolve-AgentLockDomains -Name $Name) } catch { return $null }
+    if ($resolved.Count -ne 1) { return $null }
+    $domain = [string]$resolved[0]
+    if ($domain -like 'Build*') { return $null }
+
+    $sessionId = $HolderSessionId
+    $transcriptPath = $HolderTranscriptPath
+    $heldMinutes = $HeldMinutes
+    if ([string]::IsNullOrWhiteSpace($sessionId)) {
+        $status = $null
+        try { $status = Get-AgentLockStatus -Name $domain } catch { return $null }
+        if (-not $status.Exists -or $status.Stale) { return $null }
+        $sessionId = [string]$status.SessionId
+        $transcriptPath = [string]$status.TranscriptPath
+        $heldMinutes = [math]::Round(([double]$status.AgeSeconds) / 60.0, 1)
+    }
+    if ([string]::IsNullOrWhiteSpace($sessionId)) { return $null }
+
+    # ContainsKey, not a null test: a caller that read the queue and found it empty is stating a
+    # fact, and $null -ne @() would silently re-read the directory and answer a different question.
+    $tickets = if ($PSBoundParameters.ContainsKey('Queue')) { @($Queue) } else { @(Get-AgentLockQueue -Name $domain) }
+    $waits = @()
+    foreach ($ticket in $tickets) {
+        if ([string]$ticket.sessionId -eq $sessionId) { continue }
+        $waited = $null
+        $fields = $ticket.PSObject.Properties.Name
+        if ($fields -contains 'waitedMinutes' -and $null -ne $ticket.waitedMinutes) {
+            $waited = [double]$ticket.waitedMinutes
+        }
+        elseif ($fields -contains 'enqueuedAt' -and $ticket.enqueuedAt) {
+            $waited = ([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() - [int64]$ticket.enqueuedAt) / 60000.0
+        }
+        $waits += [double]$(if ($null -eq $waited) { 0 } else { $waited })
+    }
+    if ($waits.Count -eq 0) { return $null }
+
+    $quietMinutes = Get-AgentOwnerQuietMinutes -SessionId $sessionId -TranscriptPath $transcriptPath
+    if ($null -eq $quietMinutes) { return $null }
+    $threshold = (Get-AgentLockTimings -Name $domain).LockStaleMinutes
+    if ($quietMinutes -le $threshold) { return $null }
+
+    $processAlive = $false
+    try { $processAlive = [bool](Test-AgentIdentityProcessAlive -Id $sessionId) } catch { $processAlive = $false }
+
+    return [pscustomobject][ordered]@{
+        domain             = $domain
+        sessionId          = $sessionId
+        heldMinutes        = $heldMinutes
+        quietMinutes       = $quietMinutes
+        thresholdMinutes   = [int]$threshold
+        queueDepth         = $waits.Count
+        longestWaitMinutes = [math]::Round((@($waits | Sort-Object -Descending)[0]), 1)
+        holderProcessAlive = $processAlive
+    }
+}
+
+function Get-AgentLockStalls {
+    <#
+    .SYNOPSIS
+        Every stalled domain of the table, in canonical rank order. Empty when nothing is stalled.
+    #>
+    $out = @()
+    foreach ($row in @(Get-AgentLockDomainTable)) {
+        $stall = Get-AgentLockStall -Name $row.Domain
+        if ($null -ne $stall) { $out += $stall }
+    }
+    return @($out)
+}
+
 function Remove-StaleAgentLockTickets {
     <#
     .SYNOPSIS
@@ -517,6 +677,13 @@ function Remove-StaleAgentLockTickets {
           2. S2194 - the ticket is its queue's head, its turn was granted more than
              ReservationMinutes ago, and it never took the lock. See the comment at that branch
              for why this is not the ticket-age timer the timings table forbids.
+
+        S2421 qualifies reason 2, which was written assuming a free lock and never said so.
+        turnGrantedAt records that a free lock was OBSERVED, not that it stayed free:
+        Set-AgentTicketTurnGranted is one-shot, so the stamp keeps ageing while somebody else holds
+        the lock, and Test-AgentLockTurn now clears it on every observation of a held lock so the
+        window restarts from the release. Reason 2 is additionally not even considered while a live
+        foreign lock exists - "granted and never taken" is false when entering was impossible.
     #>
     param([Parameter(Mandatory)][string]$Name)
 
@@ -592,6 +759,16 @@ function Remove-StaleAgentLockTickets {
         if ([string]$headTicket.sessionId -eq $selfSessionId) { continue }
         # The head may have taken the lock and simply not cleared its ticket yet.
         if ($lockStatus.Exists -and [string]$lockStatus.SessionId -eq [string]$headTicket.sessionId) { continue }
+        # S2421: a THIRD session holds the lock, so the head could not enter however hard it tried.
+        # The forfeit below asserts "the turn was granted and never taken"; against a foreign holder
+        # that assertion is simply false, and acting on it evicts a live waiter for obeying the
+        # waiting contract - measured 2026-09-03, a waiter that had polled every 5 s for 292 s lost
+        # its Code.Scripts place to a session that was never in the queue. The two exemptions above
+        # are both about identity, so neither covers this state. S2194's own scenario survives
+        # intact: an abandoned head only blocks its neighbours while the lock is FREE, and under a
+        # held lock every waiter is waiting on the lock rather than on the head. A torn or expired
+        # lock reports Stale, so the forfeit still runs there - a stale lock has no live holder.
+        if ($lockStatus.Exists -and -not $lockStatus.Stale) { continue }
         if (($nowMs - [int64]$headTicket.turnGrantedAt) -le $reservationMs) { continue }
 
         Remove-Item -LiteralPath $head.File.FullName -Force -ErrorAction SilentlyContinue
@@ -741,6 +918,43 @@ function Set-AgentTicketTurnGranted {
     return $Ticket
 }
 
+function Clear-AgentTicketTurnGranted {
+    <#
+    .SYNOPSIS
+        Drop a ticket's turnGrantedAt stamp. Best-effort, idempotent.
+    .DESCRIPTION
+        S2421. Set-AgentTicketTurnGranted is one-shot by design, so the stamp records "a free lock
+        was observed once", never "the lock has been free since". Left alone it keeps ageing while a
+        foreign session holds the lock, and the reservation window it feeds is therefore already
+        spent at the moment the lock is finally released - the head would be evictable before its
+        owner's next 5-second poll. Clearing it whenever the lock is observed held restarts the
+        window from the release, which is what the field was always meant to measure.
+
+        Costs at most one write per period of occupancy: the field is removed once and there is
+        nothing left to remove afterwards.
+    #>
+    param([Parameter(Mandatory)]$Ticket)
+
+    # Property-bag probe for the same reason Set-AgentTicketTurnGranted uses one: a ticket written
+    # before the field existed has no such property, and a direct read under Set-StrictMode is a
+    # terminating error that would take the whole sweep down with it.
+    if (-not ($Ticket.PSObject.Properties['turnGrantedAt'] -and $Ticket.turnGrantedAt)) { return $Ticket }
+    if (-not ($Ticket.PSObject.Properties['path'] -and $Ticket.path)) { return $Ticket }
+    $Ticket.PSObject.Properties.Remove('turnGrantedAt')
+    try {
+        $body = $Ticket | Select-Object -ExcludeProperty path | ConvertTo-Json -Compress
+        # Write-then-rename, never in place: the sweeper deletes a ticket it cannot parse, so a
+        # reader catching a half-written file could evict the very head being cleared.
+        $staging = "$($Ticket.path).tmp-$PID"
+        Set-Content -LiteralPath $staging -Value $body -Encoding utf8NoBOM -ErrorAction Stop
+        Move-Item -LiteralPath $staging -Destination $Ticket.path -Force -ErrorAction Stop
+    }
+    catch {
+        # A failed clear costs nothing beyond one more occupied poll: the next observer of the held
+        # lock retries, and the forfeit branch is exempt while that lock is held anyway.
+    }
+    return $Ticket
+}
 function Set-AgentTicketHeartbeat {
     <#
     .SYNOPSIS
@@ -824,6 +1038,15 @@ function Test-AgentLockTurn {
 
     $lockStatus = Get-AgentLockStatus -Name $Name
     if ($lockStatus.Exists -and -not $lockStatus.Stale) {
+        # S2421: turnGrantedAt below means "a free lock was observed", not "the lock is free", and
+        # Set-AgentTicketTurnGranted never rewrites it. So a stamp taken in a brief free window goes
+        # on ageing under a foreign holder, and Remove-StaleAgentLockTickets would read that age as
+        # a forfeited turn. Reset it here, so the head's reservation is counted from the moment the
+        # lock actually became free. Skipped when the head IS the holder: its stamp is the record of
+        # the turn it took, and the sweep exempts it on identity anyway.
+        if ([string]$lockStatus.SessionId -ne [string]$head.sessionId) {
+            [void](Clear-AgentTicketTurnGranted -Ticket $head)
+        }
         return [pscustomobject]@{ IsMyTurn = $false; Position = $position; HeadSessionId = $head.sessionId; Reason = 'lock held' }
     }
 
@@ -1134,6 +1357,9 @@ function Get-AgentLockStatus {
         Host          = $null
         AcquiredAtIso = $null
         SessionId     = $null
+        # S2413: the holder stamped it at acquire time, and resolving it again would walk the whole
+        # projects tree - the one thing the queue poll may not do.
+        TranscriptPath = $null
         Stale         = $false
     }
 
@@ -1200,6 +1426,7 @@ function Get-AgentLockStatus {
         # lock makes the difference matter: a blindly-expiring lock stalls everyone waiting.
         $result.ProcessAlive = $null
         $result.SessionId = [string]$raw.sessionId
+        $result.TranscriptPath = [string]$raw.transcriptPath
         if ([string]::IsNullOrWhiteSpace($result.SessionId)) {
             # schema 1 - nothing to ask about the owner, so the wall clock is all there is.
             $result.Stale = $ageSeconds -gt ($StaleMinutes * 60)
