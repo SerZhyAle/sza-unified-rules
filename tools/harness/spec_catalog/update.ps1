@@ -168,7 +168,11 @@ if ($PSBoundParameters.ContainsKey('Status') -and $Status -eq 'Approved' -and $o
 # this path and close.ps1 enforce the same set - a second copy here is what let close.ps1
 # drift into enforcing nothing at all.
 if ($PSBoundParameters.ContainsKey('Status')) {
-    Assert-ClosingGates -Id $Id -OldStatus $oldStatus -NewStatus $Status
+    # S2581 - the note travels with the transition. The gate judges what is being WRITTEN, and
+    # the journal below still holds the previous note, so a checker reading the record would
+    # validate the text being replaced rather than the text replacing it.
+    Assert-ClosingGates -Id $Id -OldStatus $oldStatus -NewStatus $Status `
+        -StatusNote ([string]$StatusNote) -NoteSupplied ($PSBoundParameters.ContainsKey('StatusNote'))
 }
 
 $updated.updated = Get-Now
@@ -203,8 +207,18 @@ if ($newIsArchived) {
 # source of truth and is never rolled back by a header problem.
 $statusChanged = $PSBoundParameters.ContainsKey('Status') -and $oldStatus -ne $updated.status
 $noteExplicit  = $PSBoundParameters.ContainsKey('StatusNote')
-if ($statusChanged -or $noteExplicit) {
-    if (Sync-SpecHeaderStatus -PathRef $updated.file -Status $updated.status -StatusNote $resolvedNote) {
+# S2512: the sync is keyed to "-Status was asked for", NOT to "the journal moved". Keyed to the
+# move, a re-run of the SAME status was a no-op for the header, so a journal/header divergence had
+# no CLI repair at all - the only remaining cure was hand-editing the spec file, which the rules
+# otherwise forbid. Measured on the diverged fixture: `S9002 Tactical -> Tactical`, exit 0, header
+# left reading Approved. Syncing unconditionally costs one read, because Sync-SpecHeaderStatus
+# skips the write outright when the text would not change, and it makes any ordinary transition
+# repair a drifted header on the way past.
+$headerWrote = $false
+if ($PSBoundParameters.ContainsKey('Status') -or $noteExplicit) {
+    $headerOk = Sync-SpecHeaderStatus -PathRef $updated.file -Status $updated.status `
+        -StatusNote $resolvedNote -Wrote ([ref]$headerWrote)
+    if ($headerOk -and $headerWrote) {
         $noteHint = if ($null -ne $resolvedNote -and $resolvedNote -ne '') { ' + note' } elseif ($resolvedNote -eq '') { ' (note cleared)' } else { '' }
         Write-Host ("  header synced -> {0}{1}" -f $updated.status, $noteHint) -ForegroundColor DarkGray
     }

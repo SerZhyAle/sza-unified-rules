@@ -79,7 +79,7 @@ $verdictBearing = @(
     @{ Pattern = '[\\/](spec_catalog|document_registry|all_features)[\\/]'; What = 'a catalog mutator or query' }
     @{ Pattern = '\badd_to_dev_log\.ps1\b';                                 What = 'a journal mutator' }
     @{ Pattern = '\bcatalog_sync\.ps1\b';                                   What = 'an index rebuild' }
-    @{ Pattern = '\ba\.ps1\s+(fk|fkn|fc|fr|fg|dq|ch|ss|bf)\b';              What = 'a fast check' }
+    @{ Pattern = '\ba\.ps1\s+(fk|fkn|fc|fr|fg|dq|ch|ss|bf|fw|fwr|fwu)\b';  What = 'a fast check' }
 )
 
 foreach ($entry in $verdictBearing) {

@@ -24,10 +24,17 @@
 
       - The ranking already skips a ticket a live sibling holds, because spec-next-preflight.ps1
         reads the lease store.
-      - The window between "I ranked it" and "my child claimed it" is a few seconds wide. If two
-        instances land in it, the second child's own claim returns exit 3, /spec-all stops before
-        doing any work, and this script records claim-lost and moves on. The wasted cost is one CLI
-        startup, not a duplicated ticket.
+      - The window between "I ranked it" and "my child claimed it" is closed from both sides. Before
+        the launch, the lease store is re-read: a ticket a sibling now holds is journalled
+        claim-lost-before-launch and the loop moves on, so a lost race costs one pwsh call and no
+        child at all. After the launch, the child is watched for -ClaimGraceSeconds: a lease whose
+        claimedAt predates the child's own start time was written by a sibling, so the child is
+        killed with its process tree and the run is journalled claim-lost.
+      - Until 2026-09-05 this paragraph put the window at seconds and its cost at one CLI startup,
+        and nothing enforced either number. Measured that day: instances a and b took S2578 thirty
+        seconds apart, the loser ran 16 minutes of Opus, and its journal row claimed the winner's
+        Draft -> Approved transition as its own. The two checks above are what the sentence now
+        describes.
       - -StartDelaySeconds staggers instances launched from the same keystroke so they do not rank
         on the same instant.
       - Everything heavier is already serialised by the repository's own locks: gradle waits on
@@ -110,6 +117,12 @@ param(
 
     # Random stagger before the first ranking, so instances launched together do not rank in lockstep.
     [int] $StartDelaySeconds = 0,
+
+    # How long to watch a freshly started child for its lease claim before letting it run unwatched.
+    # A lease that appears in this window carrying a claimedAt EARLIER than the child's start time was
+    # written by a sibling, so the child lost the race and is killed. Long enough to cover a cold CLI
+    # start plus /spec-all stage 0a; 0 disables the watch entirely.
+    [int] $ClaimGraceSeconds = 180,
 
     # The command each child runs. {id} is replaced with the ticket id. Empty = the profile's
     # runner.promptTemplate.
@@ -375,6 +388,73 @@ function Stop-ProcessTree {
     & taskkill.exe /PID $ProcessId /T /F 2>&1 | Out-Null
 }
 
+function Get-LeaseStoreDir {
+    <#
+        The lease directory, resolved exactly the way locks/ticket-lease.ps1 resolves it: the
+        TICKET_LEASE_ROOT override first, the repository root as the fallback. Reading it from the
+        profile alone would ignore that override, and the runner and the lease library would then be
+        watching two different stores while both reported success.
+    #>
+    $leaseRoot = (Get-SzaEnv 'TICKET_LEASE_ROOT')
+    if ([string]::IsNullOrWhiteSpace($leaseRoot)) { $leaseRoot = $RepoRoot }
+    return (Join-Path $leaseRoot (Get-SzaPath 'leasesDir' -Relative))
+}
+
+function Get-LiveLeaseFor {
+    <#
+        The live lease record for one ticket, or $null. It goes through ticket-lease.ps1 -Verb Status
+        so the sweep, the liveness window and the 'mine' verdict stay the library's - a second opinion
+        computed here would have to be kept in step with it for ever.
+
+        An unreadable store returns $null, which launches the child. That is deliberate: "I could not
+        read the leases" is not evidence the ticket is free, but stalling the whole queue behind a
+        transient is worse than falling back to the child's own claim, which was the only check that
+        existed before this one.
+    #>
+    param([string] $Id)
+    if (-not (Test-Path -LiteralPath $leaseScript)) { return $null }
+    try {
+        $raw = & pwsh -NoProfile -File $leaseScript -Verb Status -Json 2>$null | Out-String
+        if ([string]::IsNullOrWhiteSpace($raw)) { return $null }
+        $leases = @($raw | ConvertFrom-Json)
+        return ($leases | Where-Object { [string]$_.id -eq $Id } | Select-Object -First 1)
+    } catch {
+        return $null
+    }
+}
+
+function Add-RunRecord {
+    <#
+        The journal row, written from one place. A run that never launched a child records a row just
+        as a finished one does, and a second copy of this shape is how two exits drift into disagreeing
+        about what a row means.
+    #>
+    param(
+        [string] $Id,
+        [string] $ChildModel,
+        [string] $StatusBefore,
+        [string] $StatusAfter,
+        [bool] $Moved,
+        [string] $Outcome,
+        $ExitCode,
+        [int] $Minutes
+    )
+    $record = [pscustomobject][ordered]@{
+        id           = $Id
+        model        = $ChildModel
+        statusBefore = $StatusBefore
+        statusAfter  = $StatusAfter
+        moved        = $Moved
+        outcome      = $Outcome
+        exitCode     = $ExitCode
+        minutes      = $Minutes
+        finishedAt   = (Get-Date).ToString('s')
+    }
+    $results.Add($record)
+    Add-Content -Path $journal -Value (($record | ConvertTo-Json -Compress)) -Encoding UTF8
+    return $record
+}
+
 # ---------------------------------------------------------------------------------------------
 # Build the work list
 # ---------------------------------------------------------------------------------------------
@@ -407,12 +487,28 @@ Write-Host ("                   {0}  (this one)" -f $stopFileMine)
 Write-Host ''
 
 if ($DryRun) {
+    # The dry run answers "what would this launch", so it runs the same pre-launch lease check the
+    # real loop does and says which tickets would be skipped for it. Without this the one thing a
+    # dry run cannot show is the one thing that decides whether a child starts at all.
+    function Write-DryRunLeaseNote {
+        param([string] $Id)
+        $held = Get-LiveLeaseFor -Id $Id
+        if ($null -eq $held) { return }
+        if ($held.mine) {
+            Write-Host ("      lease held by THIS instance - would launch anyway ('already-mine')." ) -ForegroundColor DarkGray
+            return
+        }
+        Write-Host ("      HELD by session {0} on {1} - would skip, no child launched." -f `
+                $held.sessionId, $held.host) -ForegroundColor Yellow
+    }
+
     if ($explicit.Count) {
         $i = 1
         foreach ($id in $explicit) {
             $rec = Get-TicketRecord -Id $id
             Write-Host ("  {0,2}. {1}  (status: {2}, tier {3}) -> model {4}" -f `
                     $i, $id, $rec.status, $rec.tier, (Select-ModelFor -Ticket $rec))
+            Write-DryRunLeaseNote -Id $id
             $i++
         }
     } else {
@@ -420,6 +516,7 @@ if ($DryRun) {
         if ($next -and $next -ne 'PARSE_ERROR') {
             Write-Host ("  next up: {0}  (status: {1}, tier {2}) -> model {3}" -f `
                     $next.id, $next.status, $next.tier, (Select-ModelFor -Ticket $next))
+            Write-DryRunLeaseNote -Id ([string]$next.id)
             Write-Host '  the rest is re-ranked after every ticket, so only the head is knowable in advance.'
         } else {
             Write-Host '  nothing eligible.'
@@ -496,6 +593,31 @@ while ($true) {
 
     $statusBefore = if ($ticket) { [string]$ticket.status } else { Get-TicketStatus -Id $id }
     $childModel = Select-ModelFor -Ticket $ticket
+
+    # --- is it still free? ----------------------------------------------------------------
+    # The ranking above read the lease store, but nothing reserves a ticket between that read and
+    # the launch below, and the gap is a cold CLI start plus /spec-all stage 0a - tens of seconds,
+    # not the "few seconds" this script used to claim. Re-read it here, where the answer is one
+    # pwsh call old instead of a whole ranking old.
+    #
+    # A lease this instance already owns must NOT skip: it is usually what a killed child of ours
+    # left behind, and skipping on it would hide the ticket from every later run. The child's own
+    # claim answers 'already-mine' and carries on.
+    $preLaunchLease = Get-LiveLeaseFor -Id $id
+    if ($null -ne $preLaunchLease -and -not $preLaunchLease.mine) {
+        Write-Host ''
+        Write-Host ("  {0}: held by session {1} on {2} - not launching a child." -f `
+                $id, $preLaunchLease.sessionId, $preLaunchLease.host) -ForegroundColor Yellow
+        if ($preLaunchLease.reason) {
+            Write-Host ("      holder's reason: {0}" -f $preLaunchLease.reason) -ForegroundColor DarkGray
+        }
+        [void](Add-RunRecord -Id $id -ChildModel $childModel -StatusBefore $statusBefore `
+                -StatusAfter $statusBefore -Moved $false -Outcome 'claim-lost-before-launch' `
+                -ExitCode $null -Minutes 0)
+        $processed.Add($id)
+        continue
+    }
+
     $started = Get-Date
 
     Write-Host ''
@@ -543,15 +665,67 @@ while ($true) {
             $errTask = $proc.StandardError.ReadToEndAsync()
         }
 
-        if (-not $proc.WaitForExit($TimeoutMinutes * 60 * 1000)) {
-            $outcome = 'timeout'
+        # --- did this child win the claim? ------------------------------------------------
+        # The pre-launch check narrows the race but cannot close it: the child claims its lease tens
+        # of seconds after it starts, so a sibling can still take the ticket inside that window. The
+        # test is the lease's own claimedAt against this process's start time - a lease claimed
+        # BEFORE the child existed cannot be the child's. It needs no knowledge of identity, which is
+        # what makes it hold whether or not FMS_AGENT_ID happens to be exported.
+        #
+        # It is skipped when the pre-launch check already found a lease of our own: that lease was
+        # claimed long before this child started and would read as foreign, and the child's claim
+        # returns 'already-mine' without rewriting claimedAt, so there is nothing here to observe.
+        $claimVerdict = 'none'
+        $childExited = $false
+        if ($ClaimGraceSeconds -gt 0 -and $null -eq $preLaunchLease) {
+            # The process's own start time, not $started: the gap between them is where a sibling's
+            # claim would land, and attributing it to the wrong side of the test is the whole bug.
+            $childStart = $started
+            try { $childStart = $proc.StartTime } catch { $childStart = $started }
+            $leasePath = Join-Path (Get-LeaseStoreDir) ("{0}.json" -f $id)
+            $pollDeadline = (Get-Date).AddSeconds($ClaimGraceSeconds)
+            while ((Get-Date) -lt $pollDeadline) {
+                # WaitForExit is the sleep, so a child that exits inside the window is noticed here
+                # instead of after the whole grace has been slept away.
+                if ($proc.WaitForExit(2000)) { $childExited = $true; break }
+                $leaseNow = $null
+                try {
+                    if (Test-Path -LiteralPath $leasePath) {
+                        $leaseNow = Get-Content -LiteralPath $leasePath -Raw -ErrorAction Stop | ConvertFrom-Json
+                    }
+                } catch {
+                    # Mid-write, most likely. The next poll reads it whole.
+                    $leaseNow = $null
+                }
+                if ($null -eq $leaseNow -or -not $leaseNow.claimedAt) { continue }
+                $claimedAt = [DateTimeOffset]::FromUnixTimeMilliseconds([int64]$leaseNow.claimedAt).LocalDateTime
+                $claimVerdict = if ($claimedAt -ge $childStart) { 'own' } else { 'foreign' }
+                break
+            }
+        }
+
+        if ($claimVerdict -eq 'foreign') {
+            $outcome = 'claim-lost'
             Write-Host ''
-            Write-Host ("  run-spec-queue: {0} exceeded {1} min - killing the process tree." -f $id, $TimeoutMinutes) -ForegroundColor Red
+            Write-Host ("  run-spec-queue: {0} was claimed before this child started - a sibling owns it. Killing the process tree." -f $id) -ForegroundColor Red
             Stop-ProcessTree -ProcessId $proc.Id
-            # A killed child cannot release its ticket lease; drop it so a later run is not refused.
-            & pwsh -NoProfile -File (Get-SzaHarnessScript 'locks/ticket-lease.ps1') -Verb Release -Id $id 2>&1 | Out-Null
-        } else {
+        } elseif ($childExited) {
             $exitCode = $proc.ExitCode
+        } else {
+            # The grace window came out of the ticket's own budget, so spend what is left of it,
+            # never a fresh full timeout.
+            $remainingMs = ($TimeoutMinutes * 60 * 1000) - [int]((Get-Date) - $started).TotalMilliseconds
+            if ($remainingMs -lt 0) { $remainingMs = 0 }
+            if (-not $proc.WaitForExit($remainingMs)) {
+                $outcome = 'timeout'
+                Write-Host ''
+                Write-Host ("  run-spec-queue: {0} exceeded {1} min - killing the process tree." -f $id, $TimeoutMinutes) -ForegroundColor Red
+                Stop-ProcessTree -ProcessId $proc.Id
+                # A killed child cannot release its ticket lease; drop it so a later run is not refused.
+                & pwsh -NoProfile -File (Get-SzaHarnessScript 'locks/ticket-lease.ps1') -Verb Release -Id $id 2>&1 | Out-Null
+            } else {
+                $exitCode = $proc.ExitCode
+            }
         }
 
         if ($Quiet -and $logFile) {
@@ -579,7 +753,12 @@ while ($true) {
     # started that process and watched it exit. The cost of leaving it is not cosmetic - the preflight
     # ranker skips a leased ticket, so the ticket that just advanced (the one most ready to continue) is
     # exactly the one locked out; measured with S1884 first in its package and passed over for the fourth.
-    if (Test-Path -LiteralPath $leaseScript) {
+    #
+    # Never on a lost claim. That lease is the sibling's, won fairly seconds before this child was
+    # killed for losing it, and forcing it open here would hand the ticket straight to the next
+    # ranker while its real owner is still working - the exact outcome the two checks above exist
+    # to prevent.
+    if ($outcome -ne 'claim-lost' -and (Test-Path -LiteralPath $leaseScript)) {
         try {
             & pwsh -NoProfile -File $leaseScript -Verb Release -Id $id -Force *> $null
             if ($LASTEXITCODE -ne 0) {
@@ -597,6 +776,12 @@ while ($true) {
     # A child that exits within a couple of minutes having changed nothing almost always lost the
     # claim to a parallel instance: /spec-all stage 0a.5 reports the holder and stops before any
     # work. Naming that outcome keeps the summary honest - it is not the same as "nothing to do".
+    #
+    # It is a guess from elapsed time, and it stays only for the cases the two lease checks above do
+    # not reach. Those checks observed the lease itself, so their verdict outranks this one, and the
+    # `-eq 'ok'` test is what stops this line overwriting an already-established claim-lost: neither
+    # 'claim-lost' nor 'claim-lost-before-launch' is 'ok'.
+    $claimLost = ($outcome -like 'claim-lost*')
     if ($outcome -eq 'ok' -and $statusBefore -eq $statusAfter -and $elapsedSeconds -lt 120) {
         $outcome = 'no-progress-or-claim-lost'
     }
@@ -605,21 +790,16 @@ while ($true) {
 
     # A ticket handed back with the status it started with has no autonomous next step; it stays in
     # $processed, so the re-ranking below never offers it again this run.
-    $moved = ($statusBefore -ne $statusAfter)
+    #
+    # A run that lost the claim gets $false regardless of what the two statuses say. statusAfter is
+    # read from the catalog after the child exits, so the sibling working the same ticket writes the
+    # value this run would then report as its own: runs-a.jsonl recorded 'Draft -> Approved,
+    # moved: true, outcome: ok' for a child that changed nothing at all (2026-09-05, S2578).
+    $moved = if ($claimLost) { $false } else { ($statusBefore -ne $statusAfter) }
 
-    $record = [ordered]@{
-        id           = $id
-        model        = $childModel
-        statusBefore = $statusBefore
-        statusAfter  = $statusAfter
-        moved        = $moved
-        outcome      = $outcome
-        exitCode     = $exitCode
-        minutes      = $elapsed
-        finishedAt   = (Get-Date).ToString('s')
-    }
-    $results.Add([pscustomobject]$record)
-    Add-Content -Path $journal -Value ((([pscustomobject]$record) | ConvertTo-Json -Compress)) -Encoding UTF8
+    [void](Add-RunRecord -Id $id -ChildModel $childModel -StatusBefore $statusBefore `
+            -StatusAfter $statusAfter -Moved $moved -Outcome $outcome -ExitCode $exitCode `
+            -Minutes $elapsed)
 
     $colour = if ($moved) { 'Green' } elseif ($outcome -ne 'ok') { 'Red' } else { 'Yellow' }
     Write-Host ''

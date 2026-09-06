@@ -104,6 +104,12 @@ if ($blockers.Count -gt 0) {
     Write-Output "     Reuse an open ticket that already covers it, or create one:"
     Write-Output "         /spec-draft <the question, verbatim>"
     Write-Output "     Dedup first: $(Get-SzaInvocation 'spec_catalog/search.ps1' "-Query '<keyword>'")"
+    Write-Output ""
+    Write-Output "Why this gate exists (S1607): measured 2026-08-13, 134 of 1506 closed specs"
+    Write-Output "carried 372 such items - 8.9% of closures, each one a question that left the"
+    Write-Output "queue with its ticket. The token is read literally for the reason Blocker: Sxxxx"
+    Write-Output "is (S1482): the prose around an item names neighbours as often as owners, so a"
+    Write-Output "bare id cannot say which way the arrow points."
     exit 1
 }
 

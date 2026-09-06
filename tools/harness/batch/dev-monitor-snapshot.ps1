@@ -419,8 +419,12 @@ function Get-DevMonitorSnapshot {
                 if (-not $k.held -or $k.legacy -or -not $k.sessionId) { continue }
                 $stall = $null
                 try {
+                    # S2582: the pid goes in for the same reason the session id does - the build rule
+                    # judges the holder PROCESS, and without it the predicate would re-read the lock
+                    # file this loop has already read.
                     $stall = Get-AgentLockStall -Name $k.domain -HolderSessionId $k.sessionId `
-                        -HolderTranscriptPath $k.transcriptPath -HeldMinutes $k.heldMinutes -Queue @($k.queue)
+                        -HolderTranscriptPath $k.transcriptPath -HeldMinutes $k.heldMinutes `
+                        -HolderPid ([int]$(if ($null -eq $k.pid) { 0 } else { $k.pid })) -Queue @($k.queue)
                 }
                 catch { $stall = $null }
                 if ($null -ne $stall) {

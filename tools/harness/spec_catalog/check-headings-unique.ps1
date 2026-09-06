@@ -138,4 +138,11 @@ Write-Output "A section written twice is not visible to any other check: the sha
 Write-Output "at the next '## ', so every consumer reads the first copy and ignores the rest."
 Write-Output "Keep ONE copy - the one carrying the confirmed content, which is not always the"
 Write-Output "first: in S1884 the complete audit block was the lower one. Then delete the other."
+Write-Output ""
+Write-Output "Why this gate exists (S2357): measured 2026-09-02 over all 1395 files under the"
+Write-Output "plan root, three carried the defect - and it does not merely add noise, it"
+Write-Output "substitutes a verdict. S1884's split '## Last Audit' made check-audit-recorded.ps1"
+Write-Output "- the gate whose whole job is to refuse a Verified with no recorded verdict -"
+Write-Output "answer PASS on a three-line stub carrying no '**Outcome:**', while the real block"
+Write-Output "with its counts and eight device checks sat below, unread by anything."
 exit 1

@@ -159,17 +159,28 @@ function Show-Snapshot {
         Write-Host ("  " + ($parts -join ', '))
     }
 
-    # --- stalled holders (S2413) --------------------------------------------------------------
+    # --- stalled holders (S2413, S2582) ---------------------------------------------------------
     # Above the locks section and printed only when non-empty: a signal that appears every run is a
     # signal the operator stops reading, and the incident this exists for was one line in a page of
     # normal ones. Nothing here decides anything - the queue and the eviction ignore it entirely.
+    #
+    # S2582: each row names its RULE, because the two rules rest on different evidence - owner
+    # silence on a code domain, CPU on a build one - and a build row read as a code row invites the
+    # exact dismissal this signal exists to prevent ("the agent is fine, it just posted a message").
     $stalls = @($Snapshot.stalls)
     if ($stalls.Count -gt 0) {
-        Write-Section 'stalled holders (quiet, holding, and blocking someone)'
+        Write-Section 'stalled holders (holding, blocking someone, and not progressing)'
         foreach ($stall in $stalls) {
             $processNote = if ($stall.holderProcessAlive) { 'process alive - hung' } else { 'no process observable' }
-            Write-Host ("  {0,-13} {1} quiet {2:N0}m (limit {3}m), holding {4:N0}m, {5} waiting up to {6:N0}m  [{7}]" -f
-                $stall.domain, $stall.name, [double]$stall.quietMinutes, $stall.thresholdMinutes,
+            $rule = if ($stall.PSObject.Properties.Name -contains 'rule' -and $stall.rule) { [string]$stall.rule } else { 'quiet-owner' }
+            $evidence = if ($rule -eq 'no-cpu') {
+                "no CPU (tree {0}s, engine {1}s over {2}s)" -f $stall.treeCpuSeconds, $stall.engineCpuSeconds, $stall.sampleSeconds
+            }
+            else {
+                "quiet {0:N0}m (limit {1}m)" -f [double]$stall.quietMinutes, $stall.thresholdMinutes
+            }
+            Write-Host ("  {0,-13} {1} [{2}] {3}, holding {4:N0}m, {5} waiting up to {6:N0}m  [{7}]" -f
+                $stall.domain, $stall.name, $rule, $evidence,
                 [double]$stall.heldMinutes, $stall.queueDepth, [double]$stall.longestWaitMinutes, $processNote) -ForegroundColor Red
             Write-Host ("  {0,-13} on '{1}'" -f '', $stall.reason) -ForegroundColor DarkGray
         }

@@ -77,6 +77,11 @@ $pwshExe = if (Test-Path "$env:ProgramFiles\PowerShell\7\pwsh.exe") {
 # release files - one definition instead of two that drifted apart.
 . (Join-Path $PSScriptRoot '_status-sets.ps1')
 
+# S2581: and again for the directional blocker channels, shared with the closing gate that
+# refuses a BlockByOtherTask recording none - so the refusal at write time and the skip at
+# selection time cannot disagree about what counts as a blocker.
+. (Join-Path $PSScriptRoot '_blocker-links.ps1')
+
 # 1. Resolve catalog record
 $selectPath = Join-Path $PSScriptRoot 'select.ps1'
 $catJson = & $pwshExe -File $selectPath -Id $Id -Format json 2>$null
@@ -172,35 +177,14 @@ finally {
 }
 
 # 8. Depends-on resolution. Only sources whose FORM states the direction, because "related to" is not
-# "blocked by" (S1482). Two of them: a `**Depends on:**` line, else every explicit `Blocker:` /
-# `Блокер:` token in the `## 10.` section and in the catalog record's statusNote.
+# "blocked by" (S1482) - the rules, the measurements behind them and the two accepted channels all live
+# in `_blocker-links.ps1` now.
 #
-# Section 10 is no longer scraped for bare ids. Its heading is "Связи с другими спеками" and it lists
-# consumers, successors and neighbours next to blockers: 98 spec files yield ids there against 15 with
-# a real Depends-on line, so the scrape made a producer look blocked by its own consumers. Direction is
-# not recoverable from that prose either - of the 20 section-10 lines containing "блокир", most use it
-# to DENY a dependency ("не блокирует", "блокирующей зависимости нет", "зависимость снята"), so a
-# keyword filter would invert the arrow exactly where the author took care to say there is none.
-#
-# The token source is S1073's, promoted ahead of the section body and widened: `Matches` not `Match`,
-# so a ticket recording two blockers no longer loses the second, and the same token is honoured in the
-# spec file as well as in the note. Only that token, never every Sxxxx around it: S0426-S0429 each
-# mention two ids ("..Blocker: S0404" plus a passing "for S0429, external OAuth/CASA cost"), so
-# scraping all of them names a sibling as a blocker - the right verdict for the wrong reason.
+# S2581 moved the resolution out of this file rather than copying it: the closing gate that refuses a
+# BlockByOtherTask carrying no directional blocker has to answer the same question this auto-skip does,
+# and two counters of one thing is the divergence `_research-items.ps1` was extracted to end (S1621).
 $dependsOn = @()
-$depIds = @()
-$depMatch = [regex]::Match($specText, '(?ms)\*\*Depends on:\*\*\s*(.+?)(?:^\*\*|\r?\n##\s|\z)')
-if ($depMatch.Success) {
-    $depIds = @([regex]::Matches($depMatch.Groups[1].Value, '\bS\d{4}\b') | ForEach-Object { $_.Value })
-}
-else {
-    $tokenText = [string]$rec.statusNote
-    $sec10Match = [regex]::Match($specText, '(?ms)^##\s+10\.[^\n]*\n(.+?)(?:\r?\n##\s|\z)')
-    if ($sec10Match.Success) { $tokenText = $sec10Match.Groups[1].Value + "`n" + $tokenText }
-    $depIds = @([regex]::Matches($tokenText, '(?i)(?:Blocker|Блокер)\s*:\s*\**\s*(S\d{4})') |
-        ForEach-Object { $_.Groups[1].Value })
-}
-$depIds = @($depIds | Sort-Object -Unique | Where-Object { $_ -ne $Id })
+$depIds = @(Get-BlockerLinks -SpecText $specText -StatusNote ([string]$rec.statusNote) -SelfId $Id)
 foreach ($dep in $depIds) {
     $depJson = & $pwshExe -File $selectPath -Id $dep -Format json 2>$null
     if ($depJson -and $depJson -ne '[]') {

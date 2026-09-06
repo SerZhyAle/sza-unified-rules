@@ -123,6 +123,8 @@ Write-Host '--- guard-fire-and-forget (canon AI_USAGE.md section 1) ---'
 # collides head-on with the other half of the same canon bullet and gets switched off.
 Invoke-Case 'backgrounded closure facade'      'guard-fire-and-forget.ps1' '{"tool_input":{"command":"pwsh -NoProfile -File scripts/post-change.ps1 -File a.kt -ChangeType Kotlin","run_in_background":true}}' 2
 Invoke-Case 'backgrounded fast check'          'guard-fire-and-forget.ps1' '{"tool_input":{"command":"pwsh -NoProfile -File ./a.ps1 fk","run_in_background":true}}' 2
+Invoke-Case 'backgrounded wear fast check'     'guard-fire-and-forget.ps1' '{"tool_input":{"command":"pwsh -NoProfile -File ./a.ps1 fwu","run_in_background":true}}' 2
+Invoke-Case 'wear fast check in foreground - allowed' 'guard-fire-and-forget.ps1' '{"tool_input":{"command":"pwsh -NoProfile -File ./a.ps1 fwu"}}' 0
 Invoke-Case 'backgrounded catalog mutator'     'guard-fire-and-forget.ps1' '{"tool_input":{"command":"pwsh -NoProfile -File scripts/spec_catalog/update.ps1 -Id S0001 -Status Verified","run_in_background":true}}' 2
 Invoke-Case 'same facade in foreground - allowed' 'guard-fire-and-forget.ps1' '{"tool_input":{"command":"pwsh -NoProfile -File scripts/post-change.ps1 -File a.kt -ChangeType Kotlin"}}' 0
 Invoke-Case 'backgrounded full build - allowed' 'guard-fire-and-forget.ps1' '{"tool_input":{"command":"pwsh -NoProfile -File ./a.ps1 d","run_in_background":true}}' 0

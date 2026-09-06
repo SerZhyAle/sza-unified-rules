@@ -109,4 +109,12 @@ Write-Output ("  2. if the ticket changed no executable path (docs, scripts, res
 Write-Output ("     to {1}: `"{0}  <why a probe cannot exist, and what the human reads instead>`"" -f $Id, (Get-SzaPath 'probeBaseline' -Relative))
 Write-Output ""
 Write-Output "Insert the probe BEFORE flipping the status - that is the order CLAUDE.md Rule 2 already prescribes."
+Write-Output ""
+Write-Output "Why this is a gate and not a sweep (S2324): measured 2026-09-02, 20 tickets sat"
+Write-Output "in BlockNeedUserTest with no probe, and the set had turned over rather than shrunk"
+Write-Output "- it gained three in a single day. A backlog that refills needs a gate at the"
+Write-Output "moment the invariant becomes violable, which is this transition. Nothing caught it"
+Write-Output "before because post-change.ps1 scopes the tree gate and downgrades this half to an"
+Write-Output "advisory, leaving the project-wide run as the only fatal one - red for whichever"
+Write-Output "session happened to run it, over debt belonging to tickets it could not fix."
 exit 1

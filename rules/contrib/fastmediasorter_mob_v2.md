@@ -1106,3 +1106,70 @@ Landed from the project session at the owner's explicit direction, exactly as th
 2026-08-28 entries above record for their own changes. The canon's guardrail against editing it from
 a project session stands; this is a recorded deviation, not a precedent, and it is recorded here for
 the same reason those two were.
+
+## 2026-09-05 - S2520: six gate refusals carry their own evidence
+
+### What changed
+
+Six harness scripts now print, on their refusal branch only, the date, the measured quantity and
+the ticket id behind the rule they enforce: `spec_catalog/check-open-items-carried.ps1` (S1607,
+2026-08-13), `check-audit-recorded.ps1` (S2298 and S2367, two measured populations),
+`check-probe-present.ps1` (S2324), `check-headings-unique.ps1` (S2357),
+`check-audit-current.ps1` (S2367, both FAIL branches), and `locks/enter-code-lock.ps1` (S2342,
+S2109 and S2419 on the exit-4 branch). Every number already sat in each script's header comment
+and in the consumer's rule pages; none of it reached the operator the script stopped.
+
+### Why the refusal and not the rule page
+
+The consumer keeps two rule sets. `CLAUDE.md` can push a topic into `.claude/rules/<topic>.md`
+with `paths:` frontmatter, which Claude Code loads only after reading a matching file - the lever
+S2521 used. `AGENTS.md`, the parallel set for agents that never load this plugin, has no such
+lever: a pointer there leaves the reader with no rule at all. A gate refusal is the one
+destination both sets can delegate to, because `Assert-ClosingGates` runs for every agent that
+changes a status, whatever the runtime. Measured 2026-09-05, that is 4 959 B of rationale in
+`.claude/rules/spec-catalog.md` and 1 853 B in `AGENTS.md`.
+
+### Deploy owed
+
+**These edits are not deployed.** `CANON_VERSION`, `.claude-plugin/plugin.json` and `deploy.ps1`
+were deliberately left to a canon session, per the S2410 split of the edit from the deploy. Until
+that runs, the checkout is ahead of plugin cache `2026.903.3` and the refusals still print their
+previous text at run time. The consumer's own removal of the duplicated rationale is gated on this
+deploy and has not been performed - stripping first would leave the rule unexplained in both
+places.
+
+### Verification performed
+
+Each of the five closing gates was invoked directly with `SZA_HARNESS_ROOT` pointed at the
+checkout and returned exit 1 with the new text. `enter-code-lock.ps1` was driven to exit 4 in a
+sandboxed `SZA_PROJECT_ROOT`, so the consumer's live lock files and queue were never written -
+note that the sandbox only holds when the harness script is called directly, because the
+consumer's forwarder sets `SZA_PROJECT_ROOT` to its own repository root before delegating.
+
+## 2026-09-06 - S1809: the fire-and-forget guard now sees the wear module's fast targets
+
+### What changed
+
+`hooks/guard-fire-and-forget.ps1`'s verdict-bearing "fast check" pattern gained the wear module's
+three targets: `fw|fwr|fwu` join `fk|fkn|fc|fr|fg|dq|ch|ss|bf`. Before this, `a.ps1 fwu` dispatched
+with `run_in_background` passed the guard untouched, so a wear gate could be backgrounded and its
+exit code never read - exactly the shape rule 26 exists to stop.
+
+They belong in the list on the same evidence as the rest of it: S1807 measured their foreground cost
+on a warm daemon at 2 s (`fw`), 1 s (`fwr`) and 11 s (`fwu`), all far inside the 120 s threshold the
+rule gates on. A backgrounded call at that cost does not save a turn, it adds one.
+
+### Verification performed
+
+`hooks/tests/smoke-hooks.ps1` passes at 48 cases, up from 46: the fix carries its own regression
+pair - `backgrounded wear fast check` (expect deny, exit 2) and `wear fast check in foreground -
+allowed` (expect exit 0). All three targets were additionally driven through the hook directly, both
+backgrounded and in the foreground, and each returned the expected code.
+
+### The S2520 deploy owed above is now performed
+
+This deploy carries the six harness scripts of the 2026-09-05 entry as well - they sat committed
+nowhere, waiting for exactly this canon session, per the S2410 split of the edit from the deploy.
+Both ship as `CANON_VERSION` **2026.09.06.1**, plugin `2026.906.1`. The consumer's removal of the
+rationale it duplicates from those refusals is no longer gated: the refusals now print it at run
+time from the cache, once `claude plugin update` has run.

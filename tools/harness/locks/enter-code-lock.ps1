@@ -282,4 +282,17 @@ Write-Host "  (${reservationMinutesHint} min) is spent on that round trip while 
 Write-Host "    $(Get-SzaInvocation 'locks/enter-code-lock.ps1') -Reason '$Reason'$(if ($Files) { " -Files '$($Files -join ',')'" }) -Handoff `"$handoffPath`"" -ForegroundColor Gray
 Write-Host "  Meanwhile do lock-free work: reading, research, specs, catalog, log analysis." -ForegroundColor Gray
 Write-Host "  A docs/ or dev/ edit is NOT lock-free - it needs Code.Scripts (S2338)." -ForegroundColor Gray
+Write-Host ""
+Write-Host "  Why the domains are split this finely, and why the window is the edit alone:" -ForegroundColor DarkGray
+Write-Host "    2026-09-02 - 8 of 11 recent full-set acquisitions were content-tree edits that" -ForegroundColor DarkGray
+Write-Host "    needed only Code.Scripts; none of them compiles, links or packs into a build," -ForegroundColor DarkGray
+Write-Host "    so serialising phone and watch work against them protected nothing (S2342)." -ForegroundColor DarkGray
+Write-Host "    2026-09-02 - 55% of recent closures were plan-only sets, each taking a domain" -ForegroundColor DarkGray
+Write-Host "    that protected nothing: a spec is already exclusive by ticket lease and the" -ForegroundColor DarkGray
+Write-Host "    journals only move through the catalog mutex, so that tree is exempt (S2109)." -ForegroundColor DarkGray
+Write-Host "    2026-09-02..03 - over 112 lock events and 51 closed acquire/release pairs," -ForegroundColor DarkGray
+Write-Host "    holds on Code.Scripts ran to a 95 s median and a 703 s maximum while the" -ForegroundColor DarkGray
+Write-Host "    closure's own gate batch measured 19.0-48.8 s; all 51 queue waits in the window" -ForegroundColor DarkGray
+Write-Host "    were on that one domain and it reached ten deep. That is why release is yours" -ForegroundColor DarkGray
+Write-Host "    to make at the last file written, not the closure's to make afterwards (S2419)." -ForegroundColor DarkGray
 exit 4

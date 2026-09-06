@@ -25,10 +25,12 @@
     turn, so nobody behind it can advance no matter how long they wait. In text mode such a row
     is suffixed `<- holds the lock`.
 
-    -Queue also carries the stalled-holder verdict (S2413): held, a queue behind it, and an owner
-    quiet for longer than the domain's LockStaleMinutes. Text mode prints a red STALLED line after
-    the listing, `-Json` a `stall` property that is null when the domain is not stalled. It changes
-    no exit code - a stalled holder is a status this query reports, not a failure of the query.
+    -Queue also carries the stalled-holder verdict (S2413, S2582): held, a queue behind it, and a
+    holder that is not progressing - by owner silence past the domain's StallMinutes on a code
+    domain (`quiet-owner`), by no CPU in the holder tree and none in the build engine on a build
+    domain (`no-cpu`). Text mode prints a red STALLED line naming the rule after the listing,
+    `-Json` a `stall` property that is null when the domain is not stalled. It changes no exit code
+    - a stalled holder is a status this query reports, not a failure of the query.
 
     Exit code: 0 = status determined and reported (free, stale, or held).
                2 = could not determine (lock file unreadable), or -Wait ran out of time.
@@ -146,11 +148,18 @@ if ($Queue) {
 # and the queue - and only the conclusion was missing. Read-only, and a status rather than a
 # failure: the exit contract above is unchanged, because "the holder went quiet" is an answer to
 # this query, not a fault of it.
+#
+# S2582: a build lock reaches the predicate too, and it is passed the holder PID instead of a
+# session id - that type stamps a session but is judged by its process, and the line printed for it
+# so far (processAlive: True) is exactly what made a 51-minute hang read as a healthy build.
 $stall = $null
-if ($Queue -and $held -and -not [string]::IsNullOrWhiteSpace([string]$status.SessionId)) {
+$holderIdentified = if ($Name -like 'Build*') { [int]$status.Pid -gt 0 }
+                    else { -not [string]::IsNullOrWhiteSpace([string]$status.SessionId) }
+if ($Queue -and $held -and $holderIdentified) {
     try {
         $stall = Get-AgentLockStall -Name $Name -HolderSessionId ([string]$status.SessionId) `
             -HolderTranscriptPath ([string]$status.TranscriptPath) `
+            -HolderPid ([int]$status.Pid) `
             -HeldMinutes ([math]::Round(([double]$status.AgeSeconds) / 60.0, 1)) -Queue $queueTickets
     }
     catch { $stall = $null }
@@ -177,9 +186,27 @@ else {
         $color = if ($status.Stale) { "Yellow" } else { "Red" }
         Write-Host "$Name.LOCK: $label" -ForegroundColor $color
         Write-Host "  path:       $($status.Path)"
-        Write-Host "  pid:        $($status.Pid)"
+        # S2623: on a code domain the recorded pid is dead by construction - enter-code-lock.ps1
+        # acquires and exits 0 in the same breath, and a later exit-code-lock.ps1 process releases -
+        # so it was measured dead milliseconds after a valid acquire. Printing it bare, above no
+        # sessionId at all, is what made a correctly HELD lock read as a leak while its owner was
+        # still working: the one prominent number meant nothing and the deciding one was absent.
         if ($Name -like 'Build*') {
+            Write-Host "  pid:        $($status.Pid)"
             Write-Host "  processAlive: $($status.ProcessAlive)"
+        }
+        else {
+            Write-Host "  pid:        $($status.Pid)  (acquiring process - exits at acquire, not the holder)"
+            $ownerId = [string]$status.SessionId
+            if ([string]::IsNullOrWhiteSpace($ownerId)) {
+                # schema 1 stamped no session, so the wall clock really is all there is. Say that,
+                # rather than printing an empty owner the reader would take for a lost one.
+                Write-Host "  owner:      none stamped (schema 1) - judged by age against LockStaleMinutes"
+            }
+            else {
+                $livenessNote = if ($status.OwnerLiveness) { $status.OwnerLiveness } else { 'unknown' }
+                Write-Host "  owner:      $ownerId  ($livenessNote) - this is what decides the lock"
+            }
         }
         Write-Host "  age:        $([int]$status.AgeSeconds)s"
         Write-Host "  acquiredAt: $($status.AcquiredAtIso)"
@@ -208,9 +235,20 @@ else {
             else {
                 'no process of its own is observable'
             }
-            Write-Host ("$Name STALLED: the holder has been quiet {0}m (threshold {1}m) while {2} session(s) wait, the longest {3}m." -f
-                $stall.quietMinutes, $stall.thresholdMinutes, $stall.queueDepth, $stall.longestWaitMinutes) -ForegroundColor Red
-            Write-Host ("  holder session $($stall.sessionId), holding $($stall.heldMinutes)m; $processNote.") -ForegroundColor Red
+            if ($stall.rule -eq 'no-cpu') {
+                # The build rule's evidence is CPU, so its line quotes CPU. Printing the code rule's
+                # sentence here would say "quiet" about a holder whose owner may be writing chat
+                # lines all along, and the reader would then discount the whole verdict.
+                Write-Host ("$Name STALLED ({0}): holding {1}m (threshold {2}m), no CPU - the holder tree burned {3}s and the build engine {4}s over {5}s, while {6} session(s) wait, the longest {7}m." -f
+                    $stall.rule, $stall.heldMinutes, $stall.thresholdMinutes, $stall.treeCpuSeconds,
+                    $stall.engineCpuSeconds, $stall.sampleSeconds, $stall.queueDepth, $stall.longestWaitMinutes) -ForegroundColor Red
+                Write-Host ("  holder pid $($stall.holderPid), session $($stall.sessionId); $processNote. Owner quiet $($stall.quietMinutes)m - reported, not judged: a session waiting on its own build writes nothing.") -ForegroundColor Red
+            }
+            else {
+                Write-Host ("$Name STALLED ({0}): the holder has been quiet {1}m (threshold {2}m) while {3} session(s) wait, the longest {4}m." -f
+                    $stall.rule, $stall.quietMinutes, $stall.thresholdMinutes, $stall.queueDepth, $stall.longestWaitMinutes) -ForegroundColor Red
+                Write-Host ("  holder session $($stall.sessionId), holding $($stall.heldMinutes)m; $processNote.") -ForegroundColor Red
+            }
         }
     }
 }

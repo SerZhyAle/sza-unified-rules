@@ -94,6 +94,28 @@ if (-not $Force -and -not $status.Stale) {
     if ($status.SessionId) {
         Write-Host "  session: $($status.SessionId)" -ForegroundColor Yellow
     }
+    # S2582: the refusal above is the one an operator hits while staring at a jammed queue, and its
+    # advice used to name a single condition - the holder being gone - which a HUNG holder never
+    # reaches. So say whether it is hung: the predicate answers that with measurement, and the
+    # answer changes what the operator should do, not what this script does.
+    $stall = $null
+    try {
+        $stall = Get-AgentLockStall -Name $Name -HolderSessionId ([string]$status.SessionId) `
+            -HolderTranscriptPath ([string]$status.TranscriptPath) -HolderPid ([int]$status.Pid) `
+            -HeldMinutes ([math]::Round(([double]$status.AgeSeconds) / 60.0, 1))
+    }
+    catch { $stall = $null }
+    if ($stall) {
+        if ($stall.rule -eq 'no-cpu') {
+            Write-Host ("  STALLED ({0}): no CPU - the holder tree burned {1}s and the build engine {2}s over {3}s, {4} session(s) waiting." -f
+                $stall.rule, $stall.treeCpuSeconds, $stall.engineCpuSeconds, $stall.sampleSeconds, $stall.queueDepth) -ForegroundColor Red
+        }
+        else {
+            Write-Host ("  STALLED ({0}): the holder has been quiet {1}m (threshold {2}m), {3} session(s) waiting." -f
+                $stall.rule, $stall.quietMinutes, $stall.thresholdMinutes, $stall.queueDepth) -ForegroundColor Red
+        }
+        Write-Host "  A hung holder never becomes 'gone' on its own: the process has to end first, and ending someone else's process is the owner's call, not this script's." -ForegroundColor Gray
+    }
     $shortcut = if ($Name -like 'Build*') { 'ub' } else { 'uc' }
     Write-Host "  Override once the holder is confirmed gone:  .\a.ps1 $shortcut -Force" -ForegroundColor Gray
     exit 1

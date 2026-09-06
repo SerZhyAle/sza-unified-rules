@@ -29,6 +29,17 @@ later invocations through -Handoff, the one session-scoped channel two processes
 logical session share (S2403's conclusion, same pattern as temp/LOCK-HANDOFF). The test seam
 FMS_TICKET_LEASE_ROOT overrides the root both directories live under.
 
+S2578 - a host- identity is a WINDOW, not a session, so neither its running process nor a
+command run somewhere under it is evidence that any one ticket is being worked. The host walk
+picks that process for outliving a session and strategic ADR-2 shares one id across every chat
+in the window, so the signal is both unbounded and unattributable. Three consequences, all
+confined to this file: the process no longer vouches (Test-LeaseOwnerProcessVouches), a
+foreign-live verdict on such an owner is re-judged against the quiet-minutes aggregator
+(Get-LeaseLiveness), and the heartbeat refreshes only the lease the invocation names
+(Update-LeaseHeartbeat -OnlyId). Test-AgentIdentityProcessAlive is deliberately untouched: its
+answer is factually right, and a lock or a queue ticket bounds the same signal with a 20-60
+minute ceiling rather than this file's 480.
+
 .PARAMETER Verb
     Claim   - take the ticket. Atomic; idempotent for a lease this session already owns.
     Release - give it back. Owner-checked: a live foreign lease is refused.
@@ -95,7 +106,9 @@ FMS_TICKET_LEASE_ROOT overrides the root both directories live under.
     2 - refused to look: Clean was asked to judge liveness by a window narrower than the shared
         one without -Force, so it dropped nothing rather than apply a threshold of its own.
     3 - claim lost: a live foreign session already holds this ticket.
-    4 - release refused: a live foreign session owns this lease (never returned under -Force).
+    4 - release refused: a live foreign session owns this lease. Returned under -Force too, when
+        the owner is demonstrably there rather than merely looking live - its process still runs
+        (S2500), or it holds or awaits a lock naming this ticket (S2608).
 #>
 [CmdletBinding()]
 param(
@@ -116,6 +129,13 @@ param(
     # the file stops growing either way. A supervisor that spawned the owning process and watched it
     # exit knows what that heuristic cannot reach, and only such a caller may pass this. Never pass it
     # to clear a lease you merely believe is idle: that is what Sweep and the staleness window are for.
+    # S2578: a host- owner is the one shape where no caller can ever have watched the process exit,
+    # because the process is the IDE. Such a lease is judged by its work signals instead, so -Force
+    # regains its meaning there rather than being refused unconditionally.
+    # S2608: and it is refused outright, for any owner, while that owner holds or awaits a lock
+    # naming this ticket. The supervisor's claim is that the owning process exited; a process that
+    # exited holds no lock and stands in no queue, so the two cannot both be true and the direct
+    # observation wins over the assertion.
     [switch]$Force,
 
     [int]$StaleMinutes = 0,
@@ -270,6 +290,107 @@ function Test-LeaseOwnerHoldsLock {
     return $false
 }
 
+function Test-LeaseOwnerQueuedForLock {
+    <#
+        S2608. The sibling of the test above, for the half of a working session it cannot see: a
+        session STANDING IN A LOCK QUEUE with a queue ticket whose reason names this ticket id is
+        working it just as surely as one holding the lock, and for a longer stretch - the queue is
+        where a session waits out somebody else's build.
+
+        This is not a hypothetical gap. Measured 2026-09-05 on S2583, in this exact order: the
+        owner posted 'queued at position 1 for Code.Scripts: /spec-all S2583 phase 01 digests', a
+        sibling force-released its lease, and only THEN did the owner acquire the lock. At the
+        instant of the release the owner held nothing, so Test-LeaseOwnerHoldsLock was false, every
+        process signal S2500 added was false too, and the lease of a demonstrably working session
+        went. A third session took the ticket two minutes later and threw the first one's research
+        away.
+
+        Get-AgentLockQueue evicts stale tickets before it returns, so a surviving ticket is a live
+        waiter by construction and a dead one vouches for nothing - the same self-cleaning property
+        that lets Get-AgentLockStatus's Stale flag be trusted above.
+    #>
+    param([Parameter(Mandatory)]$Lease)
+
+    $ownerSessionId = [string]$Lease.sessionId
+    $ticketId = [string]$Lease.id
+    if ([string]::IsNullOrWhiteSpace($ownerSessionId) -or [string]::IsNullOrWhiteSpace($ticketId)) { return $false }
+
+    $lockNames = @(Resolve-AgentLockDomains -Name 'Code') + @(Resolve-AgentLockDomains -Name 'Build')
+    foreach ($lockName in $lockNames) {
+        foreach ($queued in @(Get-AgentLockQueue -Name $lockName)) {
+            if ([string]$queued.sessionId -ne $ownerSessionId) { continue }
+            if ([string]$queued.reason -match [regex]::Escape($ticketId)) { return $true }
+        }
+    }
+    return $false
+}
+
+function Test-LeaseOwnerWorksTicket {
+    <#
+        S2608. The ONE answer to "is this lease's owner demonstrably working this ticket right now".
+
+        Before this the file answered it twice and differently: Clean kept a lease whose owner held
+        a lock naming the ticket, Get-LeaseLiveness promoted such a lease back to foreign-live, and
+        Release -Force consulted neither - so one script called the same lease 'live work' and
+        'litter' in the same minute, which is S1621's rule broken with a measured price (S2466, then
+        S2583 two days later). Every site that needs the question now calls this, so a signal added
+        here reaches all of them and none can drift.
+
+        Both signals are DIRECT proof - the owner is queued for, or holds, a serialising resource
+        under a reason that names this ticket - as opposed to the inferences (transcript write time,
+        heartbeat, chat) that Get-AgentTicketLiveness aggregates. That is why they outrank -Force:
+        -Force asserts that a supervisor watched the owning process exit, and a process that exited
+        does not hold a lock and is not in a queue.
+    #>
+    param([Parameter(Mandatory)]$Lease)
+
+    if (Test-LeaseOwnerHoldsLock -Lease $Lease) { return $true }
+    return (Test-LeaseOwnerQueuedForLock -Lease $Lease)
+}
+
+function Test-LeaseIdentityIsHostWindow {
+    <#
+        S2578. Is this identity a host- id, i.e. a WINDOW rather than a session?
+
+        Resolve-AgentHostWalk mints one only after climbing deliberately PAST every shell and
+        interpreter to reach an ancestor that outlives a session (agent-identity.ps1 step 3), and
+        strategic ADR-2 accepts as its price that every chat inside one host process shares the
+        resulting id. Both facts matter to a lease and neither is visible from the id's value
+        alone, so the test is named rather than spelled inline at the three places that need it.
+    #>
+    param([Parameter(Mandatory)][AllowEmptyString()][string]$Id)
+    if ([string]::IsNullOrWhiteSpace($Id)) { return $false }
+    return $Id.StartsWith('host-')
+}
+
+function Test-LeaseOwnerProcessVouches {
+    <#
+        S2578. May the owner's running process stand as evidence that THIS ticket is being worked?
+
+        Yes when the identity names the process that did the work: pid-<PID> IS the claiming
+        process, so finding it alive is that process still running. No for a host- id, and the
+        reason is the host walk's own contract - a process selected for outliving the session
+        cannot testify that the work continues, and one host- id covers every chat in the window,
+        so the signal does not even name which claimant, if any, is still there.
+
+        Measured 2026-09-05: three leases under one host-language-server id, the oldest held 6.3
+        hours, and no path out of any of them - the sweep saw foreign-live, Clean saw a live
+        owner, Status printed "last seen 0 min ago", and Release refused even under -Force.
+
+        This narrows S2500's check rather than removing it, and it takes nothing from an ordinary
+        session: Test-AgentIdentityProcessAlive already answers false for a session guid, which
+        names no process, so transcript, heartbeat and chat were always its only signals. Host
+        identities were the single exemption from that discipline, and being exempt is what made
+        them immortal.
+    #>
+    param(
+        [Parameter(Mandatory)][AllowEmptyString()][string]$SessionId,
+        [datetime]$NotStartedAfter = [datetime]::MinValue
+    )
+    if (Test-LeaseIdentityIsHostWindow -Id $SessionId) { return $false }
+    return (Test-AgentIdentityProcessAlive -Id $SessionId -NotStartedAfter $NotStartedAfter)
+}
+
 function Get-LeaseLiveness {
     # Get-AgentTicketLiveness falls back to $Ticket.enqueuedAt when the transcript is unreachable.
     # The lease's own field is claimedAt, so shim it across rather than storing the value twice.
@@ -290,7 +411,25 @@ function Get-LeaseLiveness {
         enqueuedAt     = $Lease.claimedAt
     }
     $verdict = Get-AgentTicketLiveness -Ticket $shim -StaleMinutes $effectiveWindow
-    if ($verdict -eq 'foreign-stale' -and (Test-LeaseOwnerHoldsLock -Lease $Lease)) { return 'foreign-live' }
+    if ($verdict -eq 'foreign-stale' -and (Test-LeaseOwnerWorksTicket -Lease $Lease)) { return 'foreign-live' }
+    # S2578, the mirror of the line above. Every way out of a lease reads this verdict - the sweep
+    # drops on foreign-stale, Clean keeps on foreign-live, Release refuses on it - so a host- owner
+    # whose IDE process pinned it at foreign-live (Get-AgentTicketLiveness step 0) jammed all three
+    # at once. Re-judge that ONE case against Get-LeaseQuietMinutes, and the re-judgement is
+    # conservative by construction rather than by intent: S2407's note in Clean records that the
+    # aggregator takes the NEWEST of heartbeat, transcript, chat and process while the shared
+    # verdict reaches chat only when the first two are unreadable, so it is strictly the more
+    # generous of the two and this can fire only where no signal at all falls inside the window.
+    # 'self' and 'undetermined' are unreachable here - both return above the process check - and a
+    # lock naming the ticket still wins, being direct proof of work rather than an inference.
+    # S2608 widens that exemption from the lock to the lock QUEUE, which is the same proof one step
+    # earlier: a host- window whose chat sits in a queue under this ticket id is being worked, and
+    # re-judging it stale would sweep the lease out from under the waiter.
+    if ($verdict -eq 'foreign-live' -and (Test-LeaseIdentityIsHostWindow -Id ([string]$Lease.sessionId)) -and
+        -not (Test-LeaseOwnerWorksTicket -Lease $Lease)) {
+        $quiet = Get-LeaseQuietMinutes -Lease $Lease
+        if ($null -ne $quiet -and $quiet -gt $effectiveWindow) { return 'foreign-stale' }
+    }
     return $verdict
 }
 
@@ -428,12 +567,15 @@ function Get-LeaseQuietMinutes {
     # S2408 decision 5: a running owner process is being observed right now, so the honest reading
     # is zero quiet minutes. Clean sweeps on quiet minutes rather than on the liveness verdict, so
     # without this the keep-signal would hold in Claim and not in Clean.
+    # S2578 routes it through Test-LeaseOwnerProcessVouches: for a host- owner that mark was
+    # permanently (Get-Date), which is why Status reported "last seen 0 min ago" against a lease
+    # held six hours and why Clean's fallback kept it for ever.
     try {
         $writtenAt = [datetime]::MinValue
         if ($Lease.claimedAt) {
             $writtenAt = [DateTimeOffset]::FromUnixTimeMilliseconds([int64]$Lease.claimedAt).LocalDateTime
         }
-        if (Test-AgentIdentityProcessAlive -Id ([string]$Lease.sessionId) -NotStartedAfter $writtenAt) {
+        if (Test-LeaseOwnerProcessVouches -SessionId ([string]$Lease.sessionId) -NotStartedAfter $writtenAt) {
             $marks += (Get-Date)
         }
     }
@@ -463,6 +605,10 @@ function Write-LeaseFile {
         id             = $TicketId
         sessionId      = $SessionId
         host           = $env:COMPUTERNAME
+        # S2605: identity of the pwsh that WROTE this file, kept for forensics only. That process
+        # exits seconds after the claim, so this pid is dead for every lease ever written and proves
+        # nothing about whether the owner is still working. Liveness is claimedAt, lastSeenAt, the
+        # owner's transcript and its chat - never this.
         pid            = $PID
         reason         = $Reason
         claimedAt      = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
@@ -489,11 +635,19 @@ function Update-LeaseHeartbeat {
         active - it just ran a lease verb - is never judged gone. Best-effort and write-then-rename:
         a reader that caught a half-written lease would treat it as unreadable.
     #>
-    param([Parameter(Mandatory)][string]$SessionId)
+    param(
+        [Parameter(Mandatory)][string]$SessionId,
+        # S2578. Refresh only this ticket's lease. Set for a host- owner, where the identity is a
+        # window and "a command ran under it" cannot say which of the window's chats ran it, so it
+        # vouches for none of the window's OTHER tickets. Empty keeps S1448 whole for every other
+        # shape, where the identity is one session and refreshing all its leases is honest.
+        [string]$OnlyId
+    )
 
     foreach ($file in (Get-ChildItem -LiteralPath $leaseDir -Filter '*.json' -ErrorAction SilentlyContinue)) {
         $lease = Read-Lease -Path $file.FullName
         if ($null -eq $lease -or [string]$lease.sessionId -ne $SessionId) { continue }
+        if (-not [string]::IsNullOrWhiteSpace($OnlyId) -and [string]$lease.id -ne $OnlyId) { continue }
         try {
             $lease | Add-Member -NotePropertyName 'lastSeenAt' -NotePropertyValue ([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()) -Force
             $staging = "$($file.FullName).tmp-$PID"
@@ -513,7 +667,14 @@ $sessionId = Get-SessionId
 # every verb falls back to the caller's own identity, i.e. today's semantics.
 $adoptedSessionId = Read-TicketLeaseHandoff -Path $Handoff -TicketId $Id
 $effectiveSessionId = if ($adoptedSessionId) { $adoptedSessionId } else { $sessionId }
-Update-LeaseHeartbeat -SessionId $effectiveSessionId
+# S2578: for a host- owner, scope the refresh to the ticket this invocation names - exactly one
+# lease for Claim and Release, and none for List, Status, Sweep and Clean, so reading the store
+# stops keeping alive the very leases it reports. Measured 2026-09-05: one active chat in an IDE
+# window refreshed the heartbeat of that window's two ABANDONED leases on every command, which is
+# how three leases stayed immortal together and why the operator's own -Verb Status could not
+# outlast them. Every other identity is one session, so it keeps S1448's whole-store refresh.
+$heartbeatOnlyId = if (Test-LeaseIdentityIsHostWindow -Id ([string]$effectiveSessionId)) { $Id } else { '' }
+Update-LeaseHeartbeat -SessionId $effectiveSessionId -OnlyId $heartbeatOnlyId
 
 switch ($Verb) {
 
@@ -566,6 +727,13 @@ switch ($Verb) {
                 # S2406 had exactly this block on screen, saw a chat row two minutes old, and
                 # lowered Clean's window anyway - so a command file was the wrong place for it.
                 Write-Host "ticket-lease: a chat row younger than $StaleMinutes min means the holder is alive - do not run Clean with a lowered -QuietMinutes to take this ticket." -ForegroundColor DarkGray
+                # S2605: the two inferences that talked an agent into deleting a live lease by hand
+                # on 2026-09-05. Both are structurally false, so neither can ever be evidence, and
+                # this refusal is the only text guaranteed to be on screen at the moment they are
+                # made - which is where S2407 put the warning above it for the same reason.
+                Write-Host "ticket-lease: the holder's lease.pid is the ephemeral pwsh that wrote the lease and exited seconds later. It is dead for EVERY lease, including the ones held by working sessions, so it measures nothing." -ForegroundColor DarkGray
+                Write-Host "ticket-lease: a holder transcript ending in a prompt identical to yours is that holder's own prompt, not a handoff to you - two runs of one queue carry the same command line by construction." -ForegroundColor DarkGray
+                Write-Host "ticket-lease: never delete a lease file by hand. Release refuses a lease that is not yours on purpose (exit 4); deleting the file is the same act with the check removed." -ForegroundColor DarkGray
             }
             exit 3
         }
@@ -598,10 +766,64 @@ switch ($Verb) {
         # invocation - stronger than the liveness guess and weaker than -Force, which asserts a
         # supervised exit. A handoff naming anyone else proves nothing and the refusal stands.
         $handoffProof = ($null -ne $lease -and $null -ne $adoptedSessionId -and [string]$lease.sessionId -eq $adoptedSessionId)
-        if ($liveness -eq 'foreign-live' -and -not $Force -and -not $handoffProof) {
+
+        # S2500: process check. Is the owner process demonstrably STILL ALIVE on this system?
+        $processAlive = $false
+        if ($null -ne $lease -and $liveness -eq 'foreign-live' -and -not $handoffProof) {
+            $writtenAt = [datetime]::MinValue
+            if ($lease.claimedAt) {
+                $writtenAt = [DateTimeOffset]::FromUnixTimeMilliseconds([int64]$lease.claimedAt).LocalDateTime
+            }
+            # S2578: through the vouching test, so a host- owner's immortal IDE process no longer
+            # overrides -Force. What still protects a host lease that is genuinely being worked is
+            # the live-run check below - a headless child naming this ticket - which observes the
+            # work rather than the window.
+            if (Test-LeaseOwnerProcessVouches -SessionId ([string]$lease.sessionId) -NotStartedAfter $writtenAt) {
+                $processAlive = $true
+            }
+            elseif ($lease.pid -and ([string]$lease.host -eq $env:COMPUTERNAME -or [string]::IsNullOrWhiteSpace([string]$lease.host))) {
+                try {
+                    $proc = Get-Process -Id ([int]$lease.pid) -ErrorAction Stop
+                    $started = $null
+                    try { $started = $proc.StartTime } catch { }
+                    if ($null -eq $started -or $writtenAt -eq [datetime]::MinValue -or $started -le $writtenAt.AddMinutes(1)) {
+                        $processAlive = $true
+                    }
+                } catch { }
+            }
+            if (-not $processAlive -and [string]$lease.id) {
+                if (@(Get-LiveRunTicketIds) -contains [string]$lease.id) {
+                    $processAlive = $true
+                }
+            }
+        }
+
+        # S2608: the work check, which is what S2500's three process signals could not reach. All
+        # three are false BY CONSTRUCTION for an ordinary interactive session - the sessionId is a
+        # guid naming no process, the recorded pid is the pwsh that wrote the lease and exited
+        # immediately, and only a headless child registers a run ticket - so the guard above passes
+        # a session that is plainly working and -Force takes its lease. Holding or awaiting a lock
+        # under a reason that names this ticket is direct evidence of the work itself, and it is the
+        # same evidence Clean and Get-LeaseLiveness already trusted; Release simply never asked.
+        $ownerWorking = $false
+        if ($null -ne $lease -and $liveness -eq 'foreign-live' -and -not $handoffProof) {
+            $ownerWorking = Test-LeaseOwnerWorksTicket -Lease $lease
+        }
+
+        if ($liveness -eq 'foreign-live' -and -not $handoffProof -and (-not $Force -or $processAlive -or $ownerWorking)) {
             $holderId = [string]$lease.sessionId
-            if ($Json) { [pscustomobject]@{ outcome = 'release-refused'; id = $Id; heldBy = $holderId } | ConvertTo-Json -Compress }
-            else { Write-Host "ticket-lease: refusing to release $Id - live session $holderId owns it." -ForegroundColor Yellow }
+            if ($Json) { [pscustomobject]@{ outcome = 'release-refused'; id = $Id; heldBy = $holderId; processAlive = $processAlive; ownerWorking = $ownerWorking } | ConvertTo-Json -Compress }
+            else {
+                # Name the signal that fired. A refusal that only says "live session owns it" leaves
+                # the caller to guess whether waiting or re-running would change the answer, and the
+                # three cases want opposite reactions: a held lock clears on its own, a queued
+                # ticket may be waiting on the caller's own build, and a running process will not.
+                $msg = if ($ownerWorking) { "refusing to release $Id - live session $holderId holds or awaits a lock naming this ticket." }
+                    elseif ($processAlive) { "refusing to release $Id - live session $holderId process is still running." }
+                    else { "refusing to release $Id - live session $holderId owns it." }
+                Write-Host "ticket-lease: $msg" -ForegroundColor Yellow
+                Write-AgentChatContext -AgentId $holderId
+            }
             exit 4
         }
 
@@ -668,7 +890,7 @@ switch ($Verb) {
                     if (((Get-Date) - $file.LastWriteTime).TotalSeconds -le 60) { $keepReason = 'unreadable but written seconds ago' }
                 }
                 elseif ($liveTickets -contains $id) { $keepReason = 'a running headless child names this ticket' }
-                elseif (Test-LeaseOwnerHoldsLock -Lease $lease) { $keepReason = 'its owner holds a lock naming this ticket' }
+                elseif (Test-LeaseOwnerWorksTicket -Lease $lease) { $keepReason = 'its owner holds or is queued for a lock naming this ticket' }
                 else {
                     $keepReason = switch (Get-LeaseLiveness -Lease $lease -Window $cleanWindow) {
                         'self' { 'this session owns it' }

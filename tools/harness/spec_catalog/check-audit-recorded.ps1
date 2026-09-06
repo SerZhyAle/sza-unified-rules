@@ -104,6 +104,14 @@ if ($section.Count -eq 0 -or $content.Count -eq 0) {
     Write-Output "  3. if the re-read shows the work does not cover the task, that is Partial or"
     Write-Output "     Broken with the gap written into the spec - not a handover."
     Write-Output "Implemented is not gated - use it when the code is done but no audit has run yet."
+    Write-Output ""
+    Write-Output "Why this gate exists, measured twice for the two transitions it guards:"
+    Write-Output "  Verified (S2298) - 2026-09-01, 7 of 129 live Verified specs carried no block"
+    Write-Output "  at all, and they had closed through three different paths, which is why the"
+    Write-Output "  check sits in Assert-ClosingGates rather than in any one command."
+    Write-Output "  BlockNeedUserTest (S2367) - 2026-09-02, 72 of the 158 tickets in that status"
+    Write-Output "  carried none either. That was instruction, not forgetfulness: /spec-check may"
+    Write-Output "  not run before parking, so the parking command writes the block itself."
     exit 1
 }
 

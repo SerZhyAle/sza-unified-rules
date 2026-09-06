@@ -16,14 +16,30 @@
     and refuses separate elements as positional, so every caller crossing a process boundary sends
     the CSV form (S1184).
 
+    S2617: an id whose strategic artefact is absent is REFUSED, not archived behind a warning. The
+    archive record is the only durable account of why a closed decision was made, so a row whose
+    `file` names a path that does not exist is a lie the catalog then carries forever - and the
+    moment of archiving is the only one at which the loss is fresh enough to be recoverable. The
+    refusal names both probed paths and all three ways forward, because a refusal with no exit
+    would strand the record in the active journal and back into PLAN/RELEASE_READY.md on every
+    release. `-AllowMissingArtefact` is the third of those exits.
+
     Exit codes:
-      0  every id archived.
-      1  at least one id failed (invalid, not found, already archived with nothing left to move, or a
-         move/journal error) - the failed ids are named in the output.
+      0  every id archived (including any archived under -AllowMissingArtefact, which is behaviour
+         the caller asked for, not a failure).
+      1  at least one id failed (invalid, not found, already archived with nothing left to move, a
+         missing strategic artefact without -AllowMissingArtefact, or a move/journal error) - the
+         failed ids are named in the output.
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)][string[]] $Id
+    [Parameter(Mandatory)][string[]] $Id,
+
+    # Archive an id whose strategic artefact is gone anyway. The record keeps its original `file`
+    # path - no fabricated one is invented - and the id is named after `NO ARTEFACT:` on the summary
+    # line. The durable registry of a known loss stays scripts/quality/archive-artefacts-baseline.txt
+    # in the consuming repo; this switch is per-call, so it cannot silently become a second one.
+    [switch] $AllowMissingArtefact
 )
 
 . (Join-Path $PSScriptRoot '..\_profile.ps1')
@@ -56,9 +72,13 @@ if (-not (Test-Path $doneDir)) {
 $doneLabel = ($doneDir.Substring($repoRoot.Length).TrimStart('\', '/') -replace '\\', '/') + '/'
 
 $planDir = Join-Path $repoRoot 'PLAN'
-$lines   = [System.Collections.Generic.List[string]]::new()
-$failed  = [System.Collections.Generic.List[string]]::new()
-$plans   = [System.Collections.Generic.List[object]]::new()
+$lines      = [System.Collections.Generic.List[string]]::new()
+$failed     = [System.Collections.Generic.List[string]]::new()
+$plans      = [System.Collections.Generic.List[object]]::new()
+# S2617: ids archived with no strategic artefact found. A lone Write-Warning is unreadable in the
+# release sweep's stream - step 12c archived 187 ids in one process - so the fact has to reach the
+# one line an operator actually reads, the summary.
+$noArtefact = [System.Collections.Generic.List[string]]::new()
 
 # Phase 1: resolve every id and locate its artefacts before anything is touched.
 foreach ($oneId in $ids) {
@@ -103,6 +123,22 @@ foreach ($oneId in $ids) {
         Write-Warning "$oneId is already Archived in the catalog; continuing to move remaining artefacts from $(Get-SzaPath 'specsDir' -Relative)/."
     }
 
+    # S2617: refuse here, in phase 1, so a refused id never enters $plans and nothing is moved for
+    # it - that separation is the whole reason phase 1 exists. An already-Archived record is
+    # exempt: its archive row was written by an earlier call, this one only carries the leftovers
+    # of a partial move across, and refusing would make those leftovers unmovable forever.
+    if ($null -eq $specFile -and -not $AllowMissingArtefact -and $record.status -ne 'Archived') {
+        $failed.Add($oneId)
+        # Deduplicated for the same reason the candidate loop above is: the record path and the
+        # fallback are the SAME string for every id that was never renamed, which is most of them,
+        # and "looked in 'X' and 'X'" reads as a bug in the message rather than a missing file.
+        $fallbackRel = ($fallbackSpecFile.Substring($repoRoot.Length).TrimStart('\', '/') -replace '\\', '/')
+        $probed = @($recordFileRelative, $fallbackRel) | Select-Object -Unique
+        $probedStr = ($probed | ForEach-Object { "'$_'" }) -join ' and '
+        $lines.Add(("{0}: strategic artefact not found - looked in {1}. The archive record would name a path that does not exist. Three ways on: the text is elsewhere -> fix the path with update.ps1 and re-run; the record never had a text (an orphan) -> delete.ps1, there is nothing to archive; the text existed and is lost -> re-run with -AllowMissingArtefact." -f $oneId, $probedStr))
+        continue
+    }
+
     $plans.Add([pscustomobject]@{
         Id           = $oneId
         Record       = $record
@@ -141,6 +177,7 @@ if ($plans.Count -gt 0) {
                     Move-Item -LiteralPath $plan.SpecFile -Destination (Join-Path $doneDir $specFileName) -Force
                     $moved.Add($specFileName)
                 } else {
+                    $noArtefact.Add($oneId)
                     Write-Warning "Strategic file not found in PLAN for '$($plan.SpecFileRel)' - skipping file move."
                 }
                 foreach ($tacticalDir in $plan.TacticalDirs) {
@@ -208,7 +245,9 @@ if ($plans.Count -gt 0) {
 
 foreach ($line in $lines) { Write-Output $line }
 if ($ids.Count -gt 1) {
-    $tail = if ($failed.Count -gt 0) { ' | FAILED: ' + ($failed -join ', ') } else { '' }
+    $tail = ''
+    if ($noArtefact.Count -gt 0) { $tail += ' | NO ARTEFACT: ' + ($noArtefact -join ', ') }
+    if ($failed.Count -gt 0) { $tail += ' | FAILED: ' + ($failed -join ', ') }
     Write-Output ("ARCHIVED: $($archivedIds.Count) of $($ids.Count)$tail")
 }
 if ($failed.Count -gt 0) { exit 1 }

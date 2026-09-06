@@ -85,10 +85,12 @@ if ($Status -eq 'Archived') {
 
 # Mirror the terminal status into the spec file header the same way update.ps1 does,
 # so closing a ticket cannot leave the human-readable spec stale.
-if ($oldStatus -ne $Status) {
-    if (Sync-SpecHeaderStatus -PathRef $updated.file -Status $Status) {
-        Write-Host ("  header synced -> {0}" -f $Status) -ForegroundColor DarkGray
-    }
+# S2512: unconditional for update.ps1's reason - gated on the journal having moved, a re-close at
+# the same status skipped the header and left a divergence with no CLI cure. This is the closing
+# path, so the transitions it skipped were the latest and most expensive ones a ticket makes.
+$headerWrote = $false
+if ((Sync-SpecHeaderStatus -PathRef $updated.file -Status $Status -Wrote ([ref]$headerWrote)) -and $headerWrote) {
+    Write-Host ("  header synced -> {0}" -f $Status) -ForegroundColor DarkGray
 }
 
 Exit-CatalogLock

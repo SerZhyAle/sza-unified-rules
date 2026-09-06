@@ -24,13 +24,22 @@
     S1432 adds a third state between free and held: QUEUED. Each lock has a queue directory
     temp/<NAME>.QUEUE holding one ticket file per waiter, named <seq:0000>__<sessionId>.json:
       {"schema":1,"seq":7,"lockType":"Build","sessionId":"<uuid>","host":"<COMPUTERNAME>",
-       "pid":12345,"reason":"a.ps1 d","enqueuedAt":<unix-ms>,"transcriptPath":"<path|null>"}
+       "pid":12345,"procStart":<ticks>,"reason":"a.ps1 d","enqueuedAt":<unix-ms>,
+       "transcriptPath":"<path|null>"}
     A ticket's owner is an agent SESSION, not a process: the waiter that holds a place exits
     the moment the turn arrives (its exit IS the "your turn" signal), so process liveness can
-    never identify a live queue member. Liveness comes from the owning session's transcript
-    write time - a live session appends to it every turn - with transcriptPath resolved once at
-    enqueue time so a poll never rescans ~/.claude/projects. Timings per resource live in
-    $Script:AgentLockTimings.
+    never on its own identify a live queue member. Liveness comes from the owning session's
+    transcript write time - a live session appends to it every turn - with transcriptPath
+    resolved once at enqueue time so a poll never rescans ~/.claude/projects. Timings per
+    resource live in $Script:AgentLockTimings.
+
+    S2577 qualifies that in one direction only, and only for a BUILD domain: there the waiting
+    is done IN the enqueueing process (Enter-BuildLockOrExit waits in-process and removes its
+    own tickets if the wait fails), so a dead pid proves nobody is left to spend that turn even
+    while the session stays live. A dead process therefore evicts a build ticket; it never
+    evicts a code one, where the enqueueing process is expected to be gone, and it never keeps
+    alive a ticket the session-liveness rule already judged stale. See
+    Test-AgentTicketProcessAlive and reason 1b in Remove-StaleAgentLockTickets.
 
 .EXAMPLE
     . (Get-SzaHarnessScript 'locks/agent-lock.ps1')
@@ -153,48 +162,67 @@ function Get-AgentLockPath {
 # unchanged - strategic section 5.1 pillar A makes ownership, eviction and head-of-queue
 # reservation properties of the mechanism, not of the domain, and every one of those rules is
 # read out of this table alone. A domain with different numbers would be a second policy.
+#
+# S2582: StallMinutes is the age at which a HELD lock with a queue behind it becomes worth a
+# warning, and it is a separate number from LockStaleMinutes because the two answer different
+# questions. For a code domain they coincide at 10 - one below its SessionStaleMinutes of 15, so
+# the warning arrives before the lock is even reclaimable, which is S2413's whole point and stays
+# bit-identical here. For a build domain LockStaleMinutes is an hour of wall clock, the outer
+# bound on a legitimately long build, and warning at that age arrives after the damage: measured
+# 2026-09-05, thirteen sessions had queued behind one hung holder by minute 51. The 25 is the
+# threshold the external reaper already runs on, raised there from 12 because engine startup plus
+# a cold configuration phase routinely exceeds 12 and the signal must not fire on those.
+# Lease-shaped records keep 0 alongside their LockStaleMinutes: no lock file, no queue, nothing
+# to stall.
 $Script:AgentLockTimings = @{
     Build = [pscustomobject]@{
         LockStaleMinutes    = 60
         TicketCeilingMinutes = 60
         ReservationMinutes   = 5
         SessionStaleMinutes  = 45
+        StallMinutes         = 25
     }
     'Build.Phone' = [pscustomobject]@{
         LockStaleMinutes    = 60
         TicketCeilingMinutes = 60
         ReservationMinutes   = 5
         SessionStaleMinutes  = 45
+        StallMinutes         = 25
     }
     'Build.Wear' = [pscustomobject]@{
         LockStaleMinutes    = 60
         TicketCeilingMinutes = 60
         ReservationMinutes   = 5
         SessionStaleMinutes  = 45
+        StallMinutes         = 25
     }
     Code  = [pscustomobject]@{
         LockStaleMinutes    = 10
         TicketCeilingMinutes = 20
         ReservationMinutes   = 1
         SessionStaleMinutes  = 15
+        StallMinutes         = 10
     }
     'Code.Phone' = [pscustomobject]@{
         LockStaleMinutes    = 10
         TicketCeilingMinutes = 20
         ReservationMinutes   = 1
         SessionStaleMinutes  = 15
+        StallMinutes         = 10
     }
     'Code.Wear' = [pscustomobject]@{
         LockStaleMinutes    = 10
         TicketCeilingMinutes = 20
         ReservationMinutes   = 1
         SessionStaleMinutes  = 15
+        StallMinutes         = 10
     }
     'Code.Scripts' = [pscustomobject]@{
         LockStaleMinutes    = 10
         TicketCeilingMinutes = 20
         ReservationMinutes   = 1
         SessionStaleMinutes  = 15
+        StallMinutes         = 10
     }
     # S1437: a spec-ticket lease has no lock file and no queue, so LockStaleMinutes and
     # ReservationMinutes do not apply and stay 0. SessionStaleMinutes matches the round-state
@@ -206,6 +234,7 @@ $Script:AgentLockTimings = @{
         TicketCeilingMinutes = 480
         ReservationMinutes   = 0
         SessionStaleMinutes  = 45
+        StallMinutes         = 0
     }
     # S1926: a device lease has the same shape as a spec-ticket lease - no lock file, no queue -
     # so LockStaleMinutes and ReservationMinutes stay 0 for the same reason.
@@ -222,6 +251,7 @@ $Script:AgentLockTimings = @{
         TicketCeilingMinutes = 120
         ReservationMinutes   = 0
         SessionStaleMinutes  = 45
+        StallMinutes         = 0
     }
 }
 
@@ -371,9 +401,20 @@ function New-AgentLockTicket {
     if (-not $ForceNew) {
         $existing = @(Get-AgentLockQueue -Name $Name | Where-Object { [string]$_.sessionId -eq $sessionId })
         if ($existing.Count -gt 0) {
-            return $existing[0]
+            # S2577: the place is kept, the PROCESS carrying it is stamped afresh. A session whose
+            # first build was killed inherits the killed process's pid here, and reason 1b below
+            # judges a build ticket by exactly that field - so without this the re-run's own live
+            # wait would be swept by the next sibling that read the queue. seq and enqueuedAt are
+            # untouched: the ticket keeps the position and the age it earned.
+            return (Set-AgentTicketHeartbeat -Ticket $existing[0])
         }
     }
+
+    # Read once, outside the retry loop: a lost CreateNew race re-runs the loop, and the start
+    # time of this process cannot change between attempts. 0 means "unreadable", which
+    # Test-AgentTicketProcessAlive treats as a ticket with no start stamp at all.
+    $procStartTicks = 0
+    try { $procStartTicks = (Get-Process -Id $PID).StartTime.Ticks } catch { $procStartTicks = 0 }
 
     for ($attempt = 1; $attempt -le 50; $attempt++) {
         $highest = 0
@@ -400,6 +441,9 @@ function New-AgentLockTicket {
             sessionId      = $sessionId
             host           = $env:COMPUTERNAME
             pid            = $PID
+            # S2577: stamped exactly as the lock file stamps its holder. A bare pid cannot
+            # survive pid reuse, and reason 1b judges a build ticket by this pair.
+            procStart      = $procStartTicks
             reason         = $Reason
             enqueuedAt     = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
             transcriptPath = $transcriptPath
@@ -502,6 +546,63 @@ function Get-AgentTicketLiveness {
     return 'foreign-stale'
 }
 
+function Test-AgentTicketProcessAlive {
+    <#
+    .SYNOPSIS
+        Is the process that took this ticket still running? True on every doubt.
+    .DESCRIPTION
+        S2577. Get-AgentTicketLiveness judges the owning SESSION, which is right for a code
+        domain - there enter-code-lock.ps1 enqueues and exits 4 at once, and the waiting is done
+        by a different process entirely, so a dead pid is the normal state of a perfectly live
+        ticket. It is wrong for a build domain: Enter-BuildLockOrExit enqueues and then waits IN
+        THAT PROCESS, removing its own tickets when the wait fails, so a live build ticket always
+        has a live process behind it. A dead one means nobody is left to spend that turn - and
+        until this existed nothing removed it, because the session stayed live: the ticket rode to
+        the head of the queue and held a reservation it could never take. Measured 2026-09-05,
+        three such tickets sat on Build.Phone behind one hung holder and were deleted by hand,
+        no other path existing.
+
+        Deliberately NOT Test-AgentIdentityProcessAlive. That one judges an identity STRING and
+        answers false whenever StartTime cannot be read (another user, elevation) - harmless
+        there, because its answer may only keep a record alive, never evict one. Here the same
+        false is a deletion, so every doubt has to read as ALIVE instead: no pid field, an
+        unreadable StartTime, a pre-S2577 ticket carrying no procStart whose process started
+        before it was written.
+
+        Two guards against a recycled pid, mirroring Get-AgentLockStatus's build branch. procStart
+        must match the running process exactly. A ticket written before S2577 carries none, so its
+        enqueue time bounds it instead - a process that started after the ticket was written
+        cannot be the process that wrote it. The one-minute grace covers clock granularity
+        between the two writes, not a real gap.
+    #>
+    param([Parameter(Mandatory)]$Ticket)
+
+    if (-not $Ticket) { return $true }
+    if ($Ticket.PSObject.Properties.Name -notcontains 'pid') { return $true }
+    $ticketPid = 0
+    try { $ticketPid = [int]$Ticket.pid } catch { $ticketPid = 0 }
+    if ($ticketPid -le 0) { return $true }
+
+    $process = Get-Process -Id $ticketPid -ErrorAction SilentlyContinue
+    if (-not $process) { return $false }
+
+    $started = $null
+    try { $started = $process.StartTime } catch { $started = $null }
+    if ($null -eq $started) { return $true }
+
+    $expectedTicks = 0
+    if ($Ticket.PSObject.Properties.Name -contains 'procStart' -and $Ticket.procStart) {
+        $expectedTicks = [int64]$Ticket.procStart
+    }
+    if ($expectedTicks -gt 0) { return ([int64]$started.Ticks -eq $expectedTicks) }
+
+    if ($Ticket.PSObject.Properties.Name -contains 'enqueuedAt' -and $Ticket.enqueuedAt) {
+        $writtenAt = [DateTimeOffset]::FromUnixTimeMilliseconds([int64]$Ticket.enqueuedAt).LocalDateTime
+        if ($started -gt $writtenAt.AddMinutes(1)) { return $false }
+    }
+    return $true
+}
+
 function Get-AgentOwnerQuietMinutes {
     <#
     .SYNOPSIS
@@ -553,32 +654,177 @@ function Get-AgentOwnerQuietMinutes {
     return [math]::Round(((Get-Date) - $freshest).TotalMinutes, 1)
 }
 
+# S2582. Rates, not per-window constants: the same numbers are run by the external reaper over a
+# 6-second window, and expressing them per second is what keeps the signal and the reaper from
+# reaching opposite verdicts about one holder just because they sampled for different lengths.
+# 0.067 CPU-seconds per second is the reaper's 0.4-per-6s idle floor; 0.5 is its busy floor, half
+# a core. The window is 3 seconds rather than the reaper's 6 because this runs inside an operator's
+# status query and a monitor refresh, and it is only ever paid in the already-broken state.
+$Script:AgentStallSampleSeconds = 3
+$Script:AgentStallIdleCpuRate   = 0.067
+$Script:AgentStallBusyCpuRate   = 0.5
+
+function Get-AgentBuildEngineMatch {
+    <#
+    .SYNOPSIS
+        The project's build-engine vocabulary from locks.buildEngine, or $null when it declares none.
+    .DESCRIPTION
+        S2582. The mechanism ships with the canon and the vocabulary belongs to the project, so the
+        process names and command-line pattern that identify a working build engine are read from
+        the profile and never written here. A project that declares none gets no build stall verdict
+        at all - deliberately fail-closed, because half the predicate is unmeasurable without it and
+        the half that remains is the one measured to be wrong on its own.
+    #>
+    $node = $null
+    try { $node = Get-SzaProfileValue 'locks.buildEngine' } catch { return $null }
+    if ($null -eq $node) { return $null }
+    $names = @()
+    if (Test-SzaHasProperty -Object $node -Name 'processNames') { $names = @($node.processNames) }
+    $busy = if (Test-SzaHasProperty -Object $node -Name 'busyMatch') { [string]$node.busyMatch } else { '' }
+    $exclude = if (Test-SzaHasProperty -Object $node -Name 'busyExclude') { [string]$node.busyExclude } else { '' }
+    if ($names.Count -eq 0 -or [string]::IsNullOrWhiteSpace($busy)) { return $null }
+    return [pscustomobject]@{ ProcessNames = $names; BusyMatch = $busy; BusyExclude = $exclude }
+}
+
+function Measure-AgentBuildActivity {
+    <#
+    .SYNOPSIS
+        CPU burned by a build lock holder's process tree and by the build engine, over ONE window.
+        $null when the project declares no build engine.
+    .DESCRIPTION
+        S2582. Two sets, one Start-Sleep. Both halves are needed and neither is sufficient:
+
+          - The holder's tree, breadth first, because a build is a wrapper plus a launcher client
+            plus workers, and judging the wrapper alone reports idle for a tree that is compiling.
+          - Every build-engine process on the machine, because the engine DETACHES: its parent is
+            gone by design, so it is never a descendant of the wrapper holding the lock, and the
+            wrapper legitimately sits at zero while the engine compiles at full speed elsewhere in
+            the process table. Measured 2026-09-05: a reaper that judged the tree alone killed 24
+            live builds in 105 minutes, always exactly at its threshold, while one build in that
+            window reached success.
+
+        One window rather than two, so a domain costs one sleep and both halves describe the same
+        stretch of time. Read only - it starts nothing, stops nothing and writes nothing.
+    #>
+    param(
+        [Parameter(Mandatory)][int]$HolderPid,
+        [int]$SampleSeconds = 0
+    )
+
+    $engine = Get-AgentBuildEngineMatch
+    if ($null -eq $engine) { return $null }
+    if ($SampleSeconds -le 0) { $SampleSeconds = $Script:AgentStallSampleSeconds }
+
+    $all = @()
+    try { $all = @(Get-CimInstance Win32_Process -Property ProcessId, ParentProcessId, Name, CommandLine -ErrorAction Stop) }
+    catch { return $null }
+
+    $byParent = @{}
+    foreach ($p in $all) {
+        $key = [int]$p.ParentProcessId
+        if (-not $byParent.ContainsKey($key)) { $byParent[$key] = @() }
+        $byParent[$key] += [int]$p.ProcessId
+    }
+    $tree = [System.Collections.Generic.HashSet[int]]::new()
+    $pending = [System.Collections.Generic.Queue[int]]::new()
+    $pending.Enqueue($HolderPid)
+    while ($pending.Count -gt 0) {
+        $current = $pending.Dequeue()
+        if (-not $tree.Add($current)) { continue }
+        if ($byParent.ContainsKey($current)) {
+            foreach ($child in $byParent[$current]) { $pending.Enqueue($child) }
+        }
+    }
+    # The holder pid itself is in the set even when the process is already gone; a dead pid simply
+    # contributes no CPU below, which is the right answer rather than a special case.
+    $engineIds = @()
+    foreach ($p in $all) {
+        if ([string]$p.Name -notin $engine.ProcessNames) { continue }
+        $cmd = [string]$p.CommandLine
+        if ([string]::IsNullOrWhiteSpace($cmd)) { continue }
+        if ($cmd -notmatch $engine.BusyMatch) { continue }
+        if ($engine.BusyExclude -and $cmd -match $engine.BusyExclude) { continue }
+        $engineIds += [int]$p.ProcessId
+    }
+
+    $sample = {
+        param([int[]]$Ids)
+        $out = @{}
+        foreach ($id in $Ids) {
+            $proc = Get-Process -Id $id -ErrorAction SilentlyContinue
+            if ($proc -and $null -ne $proc.CPU) { $out[$id] = [double]$proc.CPU }
+        }
+        return $out
+    }
+    $treeIds = @($tree)
+    $treeBefore = & $sample $treeIds
+    $engineBefore = & $sample $engineIds
+    Start-Sleep -Seconds $SampleSeconds
+    $treeAfter = & $sample $treeIds
+    $engineAfter = & $sample $engineIds
+
+    $delta = {
+        param([hashtable]$Before, [hashtable]$After)
+        $sum = 0.0
+        foreach ($id in $Before.Keys) {
+            if ($After.ContainsKey($id)) { $sum += ($After[$id] - $Before[$id]) }
+        }
+        return [math]::Round($sum, 2)
+    }
+
+    return [pscustomobject][ordered]@{
+        sampleSeconds    = $SampleSeconds
+        treeCount        = $treeIds.Count
+        treeCpuSeconds   = (& $delta $treeBefore $treeAfter)
+        engineCount      = $engineIds.Count
+        engineCpuSeconds = (& $delta $engineBefore $engineAfter)
+    }
+}
+
 function Get-AgentLockStall {
     <#
     .SYNOPSIS
-        The stalled-holder verdict for one code domain, or $null when the domain is not stalled.
+        The stalled-holder verdict for one domain, or $null when the domain is not stalled.
     .DESCRIPTION
-        S2413. Held, a queue behind it, and an owner quiet for longer than that domain's
-        LockStaleMinutes. All three halves already existed and were read by four different readers;
-        none of them joined the two, so a session that stopped moving at 00:19 while holding three
-        code domains was noticed at 00:29 by the owner's eyes and by nothing else.
+        S2413. Held, a queue behind it, and a holder that is not making progress. All the halves
+        already existed and were read by four different readers; none of them joined them, so a
+        session that stopped moving at 00:19 while holding three code domains was noticed at 00:29
+        by the owner's eyes and by nothing else.
 
         Read-only and decision-free: nothing here evicts, sweeps or writes, and no lock, queue or
         lease branches on the result. It names what a human was left to spot.
 
-        Three deliberate exclusions, each of which would otherwise make the signal noise:
-          - a build domain, judged by pid, where a dead owner already makes the lock stale and the
-            next claimant reclaims it unaided;
-          - an empty queue, where a quiet holder blocks nobody;
+        TWO RULES, because the two resource types fail differently and neither test transfers.
+
+          - `quiet-owner`, code domains (S2413). The owner is quiet for longer than the domain's
+            StallMinutes, measured exactly as eviction measures it. On a code domain an agent
+            between edits writes, so silence really is the absence of work.
+          - `no-cpu`, build domains (S2582). The holder is past StallMinutes, its process is alive,
+            its whole tree burns no CPU across a sampling window AND no build-engine process on the
+            machine burns any either. Owner silence is deliberately NOT the test here: a session
+            waiting on its own foreground build legitimately writes nothing for the build's whole
+            length, so that rule would fire on every healthy build. The engine half is equally
+            mandatory - the engine detaches and is never a descendant of the wrapper, so a healthy
+            build's tree also reads idle; a reaper judging the tree alone killed 24 live builds in
+            105 minutes (measured 2026-09-05).
+
+        Exclusions common to both rules, each of which would otherwise make the signal noise:
+          - an empty queue, where a stuck holder blocks nobody;
           - the holder's own leftover ticket, which is the S1448 starvation shape rather than a
-            second session waiting.
+            second session waiting;
+          - a dead build holder, which already makes the lock stale so the next claimant reclaims
+            it unaided - there is nothing for a human to do about it.
 
         A live holder process does NOT clear the verdict - it is reported beside it, because
-        "hung" and "gone" cost the queue exactly the same and only differ in what to do next.
+        "hung" and "gone" cost the queue exactly the same and only differ in what to do next. On a
+        build domain that is the entire point: `processAlive: True` was the line that made a
+        51-minute hang look healthy.
 
-        The threshold is the domain's own LockStaleMinutes (10 for code), deliberately below its
-        SessionStaleMinutes (15): the warning is worth having before the lock becomes reclaimable,
-        not after.
+        The threshold is the domain's own StallMinutes: 10 for code, below its SessionStaleMinutes
+        of 15, so the warning arrives before the lock is even reclaimable; 25 for build, far below
+        its hour of wall clock, because by minute 51 thirteen sessions had queued.
+
+        The sample is paid LAST, after four free conditions, so a healthy build never pays for it.
 
         A caller that has already read the lock file passes the holder facts in; with none supplied
         the lock is read here.
@@ -588,35 +834,60 @@ function Get-AgentLockStall {
         [string]$HolderSessionId,
         [string]$HolderTranscriptPath,
         [object]$HeldMinutes,
+        # The build rule judges the holder process, so a caller that read the lock passes its pid.
+        [int]$HolderPid = 0,
         # Queue tickets already read, carrying either waitedMinutes or enqueuedAt.
-        [object[]]$Queue
+        [object[]]$Queue,
+        [int]$SampleSeconds = 0
     )
 
     $resolved = @()
     try { $resolved = @(Resolve-AgentLockDomains -Name $Name) } catch { return $null }
     if ($resolved.Count -ne 1) { return $null }
     $domain = [string]$resolved[0]
-    if ($domain -like 'Build*') { return $null }
+    $isBuild = $domain -like 'Build*'
 
     $sessionId = $HolderSessionId
     $transcriptPath = $HolderTranscriptPath
     $heldMinutes = $HeldMinutes
-    if ([string]::IsNullOrWhiteSpace($sessionId)) {
+    $holderPid = $HolderPid
+    $needStatus = if ($isBuild) { $holderPid -le 0 -or $null -eq $heldMinutes }
+                  else { [string]::IsNullOrWhiteSpace($sessionId) }
+    if ($needStatus) {
         $status = $null
         try { $status = Get-AgentLockStatus -Name $domain } catch { return $null }
         if (-not $status.Exists -or $status.Stale) { return $null }
         $sessionId = [string]$status.SessionId
         $transcriptPath = [string]$status.TranscriptPath
         $heldMinutes = [math]::Round(([double]$status.AgeSeconds) / 60.0, 1)
+        if ($null -ne $status.Pid) { $holderPid = [int]$status.Pid }
     }
-    if ([string]::IsNullOrWhiteSpace($sessionId)) { return $null }
+    if ($isBuild) {
+        if ($holderPid -le 0) { return $null }
+        if ([string]::IsNullOrWhiteSpace($sessionId)) {
+            # Get-AgentLockStatus reports pid and not session for a build lock: it judges that type
+            # by process liveness, and filling SessionId there would change how the head-of-queue
+            # reservation and the self-ownership check read every build lock. The holder stamps the
+            # id in the file all the same, and the verdict wants it only to name the holder and to
+            # drop the holder's own leftover ticket below.
+            try {
+                $rawLock = Get-Content -LiteralPath (Get-AgentLockPath -Name $domain) -Raw -ErrorAction Stop |
+                    ConvertFrom-Json -ErrorAction Stop
+                $lockFields = $rawLock.PSObject.Properties.Name
+                if ($lockFields -contains 'sessionId') { $sessionId = [string]$rawLock.sessionId }
+                if ($lockFields -contains 'transcriptPath') { $transcriptPath = [string]$rawLock.transcriptPath }
+            }
+            catch { }
+        }
+    }
+    elseif ([string]::IsNullOrWhiteSpace($sessionId)) { return $null }
 
     # ContainsKey, not a null test: a caller that read the queue and found it empty is stating a
     # fact, and $null -ne @() would silently re-read the directory and answer a different question.
     $tickets = if ($PSBoundParameters.ContainsKey('Queue')) { @($Queue) } else { @(Get-AgentLockQueue -Name $domain) }
     $waits = @()
     foreach ($ticket in $tickets) {
-        if ([string]$ticket.sessionId -eq $sessionId) { continue }
+        if (-not [string]::IsNullOrWhiteSpace($sessionId) -and [string]$ticket.sessionId -eq $sessionId) { continue }
         $waited = $null
         $fields = $ticket.PSObject.Properties.Name
         if ($fields -contains 'waitedMinutes' -and $null -ne $ticket.waitedMinutes) {
@@ -629,16 +900,38 @@ function Get-AgentLockStall {
     }
     if ($waits.Count -eq 0) { return $null }
 
-    $quietMinutes = Get-AgentOwnerQuietMinutes -SessionId $sessionId -TranscriptPath $transcriptPath
-    if ($null -eq $quietMinutes) { return $null }
-    $threshold = (Get-AgentLockTimings -Name $domain).LockStaleMinutes
-    if ($quietMinutes -le $threshold) { return $null }
-
+    $threshold = (Get-AgentLockTimings -Name $domain).StallMinutes
+    $quietMinutes = $null
+    $rule = 'quiet-owner'
+    $activity = $null
     $processAlive = $false
-    try { $processAlive = [bool](Test-AgentIdentityProcessAlive -Id $sessionId) } catch { $processAlive = $false }
+
+    if ($isBuild) {
+        $rule = 'no-cpu'
+        if ($null -eq $heldMinutes -or [double]$heldMinutes -lt [double]$threshold) { return $null }
+        $processAlive = [bool](Get-Process -Id $holderPid -ErrorAction SilentlyContinue)
+        if (-not $processAlive) { return $null }
+        $activity = Measure-AgentBuildActivity -HolderPid $holderPid -SampleSeconds $SampleSeconds
+        if ($null -eq $activity) { return $null }
+        if ([double]$activity.treeCpuSeconds -gt ($Script:AgentStallIdleCpuRate * $activity.sampleSeconds)) { return $null }
+        if ([double]$activity.engineCpuSeconds -ge ($Script:AgentStallBusyCpuRate * $activity.sampleSeconds)) { return $null }
+        # Reported beside the verdict, never part of it, and measured only once the verdict is
+        # certain: on a build domain the owner is legitimately silent for the build's whole length,
+        # so this number is a second clue for the reader and would be a false positive as a test.
+        if (-not [string]::IsNullOrWhiteSpace($sessionId)) {
+            $quietMinutes = Get-AgentOwnerQuietMinutes -SessionId $sessionId -TranscriptPath $transcriptPath
+        }
+    }
+    else {
+        $quietMinutes = Get-AgentOwnerQuietMinutes -SessionId $sessionId -TranscriptPath $transcriptPath
+        if ($null -eq $quietMinutes) { return $null }
+        if ($quietMinutes -le $threshold) { return $null }
+        try { $processAlive = [bool](Test-AgentIdentityProcessAlive -Id $sessionId) } catch { $processAlive = $false }
+    }
 
     return [pscustomobject][ordered]@{
         domain             = $domain
+        rule               = $rule
         sessionId          = $sessionId
         heldMinutes        = $heldMinutes
         quietMinutes       = $quietMinutes
@@ -646,6 +939,10 @@ function Get-AgentLockStall {
         queueDepth         = $waits.Count
         longestWaitMinutes = [math]::Round((@($waits | Sort-Object -Descending)[0]), 1)
         holderProcessAlive = $processAlive
+        holderPid          = $holderPid
+        sampleSeconds      = $(if ($activity) { $activity.sampleSeconds } else { $null })
+        treeCpuSeconds     = $(if ($activity) { $activity.treeCpuSeconds } else { $null })
+        engineCpuSeconds   = $(if ($activity) { $activity.engineCpuSeconds } else { $null })
     }
 }
 
@@ -672,8 +969,10 @@ function Remove-StaleAgentLockTickets {
         agent waits forever - a worse failure than the contention the queue exists to fix.
         A malformed ticket file is deleted, mirroring how a torn lock file is already treated.
 
-        Two independent reasons, in this order:
+        Three independent reasons, in this order:
           1. the owner is stale by Get-AgentTicketLiveness against SessionStaleMinutes;
+          1b. S2577 - a BUILD ticket whose own process is gone while its session stays live. The
+             narrowest of the three: build domain only, five conditions, see that branch;
           2. S2194 - the ticket is its queue's head, its turn was granted more than
              ReservationMinutes ago, and it never took the lock. See the comment at that branch
              for why this is not the ticket-age timer the timings table forbids.
@@ -723,6 +1022,42 @@ function Remove-StaleAgentLockTickets {
         if ($liveness -eq 'foreign-stale') {
             Remove-Item -LiteralPath $file.FullName -Force -ErrorAction SilentlyContinue
             $removed++
+            continue
+        }
+
+        # S2577 - reason 1b. A build ticket whose enqueueing process is gone while the session it
+        # belongs to keeps writing: session liveness alone can never see this, and it is what
+        # parks a dead waiter at the head of a live queue. Five conditions, each closing one way
+        # this could evict somebody still working - the mirror image of S2421, which was this
+        # sweep evicting a live waiter and cost a session 292 s of correct polling.
+        #   - build domain only: a code ticket's enqueueing process is EXPECTED to be gone;
+        #   - foreign-live only: 'self' is our own place and 'undetermined' means we have no
+        #     session id, so ours and theirs are indistinguishable - never grounds for eviction;
+        #   - the process is provably gone, every doubt reading as alive
+        #     (Test-AgentTicketProcessAlive);
+        #   - no heartbeat inside ReservationMinutes: a live wait-for-lock-turn.ps1 under an
+        #     inherited ticket (session dedup, or -Handoff where the runtime has no session id)
+        #     stamps its own pid and lastSeenAt on every poll;
+        #   - no live turn reservation: between "your turn" and the build actually starting, the
+        #     ticket deliberately outlives the waiter process that earned it.
+        # No new constant: the two windows read ReservationMinutes from $Script:AgentLockTimings,
+        # which is the single home of every minute in this file.
+        if ($Name -like 'Build*' -and $liveness -eq 'foreign-live' -and
+            -not (Test-AgentTicketProcessAlive -Ticket $ticket)) {
+            $graceMs = [double]$timings.ReservationMinutes * 60000.0
+            $sweepNowMs = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+            $heartbeatFresh = $false
+            if ($ticket.PSObject.Properties.Name -contains 'lastSeenAt' -and $ticket.lastSeenAt) {
+                $heartbeatFresh = (($sweepNowMs - [int64]$ticket.lastSeenAt) -le $graceMs)
+            }
+            $reservationLive = $false
+            if ($ticket.PSObject.Properties.Name -contains 'turnGrantedAt' -and $ticket.turnGrantedAt) {
+                $reservationLive = (($sweepNowMs - [int64]$ticket.turnGrantedAt) -le $graceMs)
+            }
+            if (-not $heartbeatFresh -and -not $reservationLive) {
+                Remove-Item -LiteralPath $file.FullName -Force -ErrorAction SilentlyContinue
+                $removed++
+            }
         }
     }
 
@@ -975,6 +1310,13 @@ function Set-AgentTicketHeartbeat {
 
     if (-not $Ticket -or -not $Ticket.path) { return $Ticket }
     $Ticket | Add-Member -NotePropertyName 'lastSeenAt' -NotePropertyValue ([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()) -Force
+    # S2577: the heartbeat also names WHO is watching now. A waiter routinely inherits a ticket
+    # another process wrote - session dedup in New-AgentLockTicket, or -Handoff in a runtime with
+    # no session id - and reason 1b of the sweep judges a build ticket by its pid, so a live
+    # waiter under an inherited ticket has to re-stamp its own process or be swept as abandoned.
+    $Ticket | Add-Member -NotePropertyName 'pid' -NotePropertyValue $PID -Force
+    try { $Ticket | Add-Member -NotePropertyName 'procStart' -NotePropertyValue ((Get-Process -Id $PID).StartTime.Ticks) -Force }
+    catch { $Ticket | Add-Member -NotePropertyName 'procStart' -NotePropertyValue 0 -Force }
     try {
         $body = $Ticket | Select-Object -ExcludeProperty path | ConvertTo-Json -Compress
         # Write-then-rename for the same reason Set-AgentTicketTurnGranted does it: the sweeper
@@ -1360,6 +1702,10 @@ function Get-AgentLockStatus {
         # S2413: the holder stamped it at acquire time, and resolving it again would walk the whole
         # projects tree - the one thing the queue poll may not do.
         TranscriptPath = $null
+        # S2623: the verdict that actually decides a code lock's fate, published rather than folded
+        # into Stale and discarded. Null on a Build domain, where Pid/ProcessAlive answer instead,
+        # and on a schema-1 code lock, which stamped no session to ask about.
+        OwnerLiveness = $null
         Stale         = $false
     }
 
@@ -1442,6 +1788,7 @@ function Get-AgentLockStatus {
                     transcriptPath = $raw.transcriptPath
                     enqueuedAt     = $raw.acquiredAt
                 }) -StaleMinutes (Get-AgentLockTimings -Name $Name).SessionStaleMinutes
+            $result.OwnerLiveness = $liveness
             $result.Stale = switch ($liveness) {
                 'foreign-stale' { $true }
                 'undetermined' { $ageSeconds -gt ($StaleMinutes * 60) }
@@ -1667,6 +2014,12 @@ function Enter-AgentLock {
 
                 else { Resolve-AgentLockDomains -Name $Name })
     $deadline = (Get-Date).AddSeconds($WaitTimeoutSeconds)
+    # S2582: a waiting session is the first to be hurt by a stuck holder and the last to hear about
+    # it - this loop polls every couple of seconds and says nothing until its timeout an hour later.
+    # Measured 2026-09-05, thirteen sessions waited between 5 and 51 minutes behind one hung build
+    # holder in exactly this silence. Five minutes, not every poll: the verdict can cost a sampling
+    # window, and a line repeated every two seconds is noise nobody reads.
+    $nextStallNotice = (Get-Date).AddMinutes(5)
 
     while ($true) {
         $taken = @()
@@ -1708,6 +2061,22 @@ function Enter-AgentLock {
                 Acquired = $false; Status = $failure.Status; WaitTimedOut = $true
                 BlockedBy = $failure.BlockedBy; Turn = $failure.Turn; Domain = $failure.Domain
                 Domains = $domains
+            }
+        }
+        if ((Get-Date) -ge $nextStallNotice) {
+            $nextStallNotice = (Get-Date).AddMinutes(5)
+            $blockedDomain = if ($failure.Domain) { [string]$failure.Domain } else { [string]$domains[0] }
+            $waitStall = $null
+            try { $waitStall = Get-AgentLockStall -Name $blockedDomain } catch { $waitStall = $null }
+            if ($waitStall) {
+                $evidence = if ($waitStall.rule -eq 'no-cpu') {
+                    "no CPU - holder tree $($waitStall.treeCpuSeconds)s, build engine $($waitStall.engineCpuSeconds)s over $($waitStall.sampleSeconds)s"
+                }
+                else {
+                    "owner quiet $($waitStall.quietMinutes)m (threshold $($waitStall.thresholdMinutes)m)"
+                }
+                Write-Host "$blockedDomain STALLED ($($waitStall.rule)): you are waiting behind a holder that is not progressing - held $($waitStall.heldMinutes)m, $evidence, $($waitStall.queueDepth) session(s) in the queue." -ForegroundColor Red
+                Write-Host "  This wait continues; nothing is evicted on this verdict. Inspect: $(Get-SzaInvocation 'locks/lock-status.ps1') -Name $blockedDomain -Queue" -ForegroundColor Gray
             }
         }
         Start-Sleep -Seconds $PollSeconds

@@ -320,7 +320,20 @@ function Write-Catalog {
     Write-JsonlFile -Path $script:CatalogPath -Lines $lines
     # Single choke point for every catalog mutation (insert/update/complete/archive/delete/
     # bulk-update), so the release queue follows along without any skill knowing about it.
-    Sync-ReleaseQueue -Records $Records
+    #
+    # S2512: a failure to RE-RENDER the queue must not abort the caller. Both release files are a
+    # projection of the journal, rewritten on every mutation and rebuildable on demand, whereas the
+    # journal write above has already landed and cannot be rolled back. Letting a throw escape here
+    # therefore aborted the caller AFTER the journal moved but BEFORE it mirrored the new status
+    # into the spec header - leaving the two sources of truth silently disagreeing, printing no
+    # confirmation line, and reporting a projection's error as if the transition itself had failed.
+    # That is the exact shape recorded on 2026-09-04. Warn, name the repair, carry on.
+    try {
+        Sync-ReleaseQueue -Records $Records
+    } catch {
+        Write-Host ("  release queue not re-rendered: {0}" -f $_.Exception.Message) -ForegroundColor DarkYellow
+        Write-Host "  the journal is written and authoritative - rebuild the files with release-queue.ps1 -Reconcile" -ForegroundColor DarkYellow
+    }
 }
 
 # ── Release queue (PLAN/RELEASE_QUEUE.md) ────────────────────────────────────────────────────
@@ -764,6 +777,39 @@ function Resolve-SpecPath {
     return (Join-Path $script:RepoRoot $p)
 }
 
+function Invoke-SpecCheckers {
+    # Run a list of checker scripts, refusing the transition on the first non-zero exit.
+    #
+    # Extracted by S2581 so the Block*-only path and the closing path run checkers through
+    # identical code. Duplicating the loop for the early return would have given the refusal
+    # two spellings and two chances to drift - the same reason the checkers themselves are
+    # invoked from one function rather than from each mutator (S1607).
+    param(
+        [Parameter(Mandatory)][string] $Id,
+        [Parameter(Mandatory)][string] $NewStatus,
+        [Parameter(Mandatory)] $Checkers,
+        [hashtable] $CheckerArgs = @{}
+    )
+    foreach ($name in $Checkers) {
+        $checker = Join-Path $PSScriptRoot $name
+        # A missing checker is tolerated, matching how the owner-inputs gate call behaves:
+        # a partial checkout must not make the catalog unwritable.
+        if (-not (Test-Path -LiteralPath $checker)) { continue }
+        # Splatted per checker: most declare -Id alone and [CmdletBinding()] throws on an
+        # unknown named parameter, so the extras cannot be passed to all of them.
+        $extra = if ($CheckerArgs.ContainsKey($name)) { $CheckerArgs[$name] } else { @{} }
+        $output = & $checker -Id $Id @extra 2>&1
+        # Exit 2 fails too: "could not look" is not "found nothing".
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host ""
+            Write-Host ("Status gate blocked {0} -> {1} ({2}):" -f $Id, $NewStatus, $name) -ForegroundColor Yellow
+            $output | ForEach-Object { Write-Host $_ }
+            Write-Host ""
+            throw ("Cannot set '{0}' to '{1}': {2} reported exit {3}. Fix what it names, then re-run." -f $Id, $NewStatus, $name, $LASTEXITCODE)
+        }
+    }
+}
+
 function Assert-ClosingGates {
     # Run every gate that guards a transition INTO a gated status, from the one place
     # all three status-change paths reach (update.ps1, close.ps1, bulk-update.ps1).
@@ -783,7 +829,14 @@ function Assert-ClosingGates {
     param(
         [Parameter(Mandatory)][string] $Id,
         [string] $OldStatus,
-        [Parameter(Mandatory)][string] $NewStatus
+        [Parameter(Mandatory)][string] $NewStatus,
+        # S2581 - the note being WRITTEN, and whether the caller supplied one at all. The gate
+        # cannot read this off the record: at this point the journal still carries the previous
+        # note, and on a Block* -> Block* transition that note describes a different blocker.
+        # Only the mutator knows the incoming value, and only it can tell '' (clear) from
+        # omitted (preserve), which are different intents in update.ps1.
+        [string] $StatusNote,
+        [bool] $NoteSupplied
     )
     # S2324 - BlockNeedUserTest joins the gated set. It is NOT a closed status, and the
     # difference decides which checkers run: the two contracts below ask what a FINISHED
@@ -793,9 +846,43 @@ function Assert-ClosingGates {
     # in this status with no probe, and the set had turned over in a day rather than sitting
     # still, so a sweep alone would refill.
     $gatedStatuses = @('Implemented', 'Verified', 'BlockNeedUserTest')
-    if ($gatedStatuses -notcontains $NewStatus -or $OldStatus -eq $NewStatus) { return }
+
+    # S2581 - the other three Block* statuses enter this function now, but they are NOT added to
+    # $gatedStatuses: they bring the note checker and nothing else. Widening that list instead
+    # would have pulled check-headings-unique.ps1 into them, and BlockQuestions is /spec-tech's
+    # standard escape hatch when a placement decision is missing and asking is forbidden. Refusing
+    # THAT transition leaves a stuck pipeline with nowhere to park its ticket, which is a worse
+    # failure than the duplicate heading it would be refusing over.
+    $isBlockEntry = $NewStatus -like 'Block*'
+    if (($gatedStatuses -notcontains $NewStatus -and -not $isBlockEntry) -or $OldStatus -eq $NewStatus) { return }
 
     $checkers = New-Object System.Collections.Generic.List[string]
+    # Extra arguments per checker, splatted at the call. A hashtable rather than widening the
+    # shared invocation: every other checker declares -Id alone, and [CmdletBinding()] throws on
+    # an unknown named parameter, so passing -StatusNote to all of them would break the five that
+    # do not want it.
+    $checkerArgs = @{}
+
+    if ($isBlockEntry) {
+        # S2581 - every entry INTO a Block* status must state what it is waiting for. CLAUDE.md
+        # section 4 has listed this first among the gated transitions since it was written, and
+        # nothing implemented it; measured 2026-09-05, the rule held by hand on 150 of 151 records,
+        # and the one exception cost S1126 two weeks of being silently unselectable.
+        $checkers.Add('check-block-note.ps1')
+        $checkerArgs['check-block-note.ps1'] = @{
+            NewStatus    = $NewStatus
+            StatusNote   = $StatusNote
+            NoteSupplied = $NoteSupplied
+        }
+    }
+
+    if ($isBlockEntry -and $NewStatus -ne 'BlockNeedUserTest') {
+        # The three lightweight Block* entries are done: a reason, and for BlockByOtherTask a
+        # readable blocker. Everything below asks what a ticket ACHIEVED, which is not a question
+        # about one being parked.
+        Invoke-SpecCheckers -Id $Id -NewStatus $NewStatus -Checkers $checkers -CheckerArgs $checkerArgs
+        return
+    }
 
     # S2357 - added before the split because it is the one check here that does not ask what
     # the ticket achieved: it asks whether its files contradict themselves, which is equally
@@ -844,21 +931,7 @@ function Assert-ClosingGates {
         if ($NewStatus -eq 'Verified') { $checkers.Add('check-audit-current.ps1') }
     }
 
-    foreach ($name in $checkers) {
-        $checker = Join-Path $PSScriptRoot $name
-        # A missing checker is tolerated, matching how the owner-inputs gate call behaves:
-        # a partial checkout must not make the catalog unwritable.
-        if (-not (Test-Path -LiteralPath $checker)) { continue }
-        $output = & $checker -Id $Id 2>&1
-        # Exit 2 fails too: "could not look" is not "found nothing".
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host ""
-            Write-Host ("Status gate blocked {0} -> {1} ({2}):" -f $Id, $NewStatus, $name) -ForegroundColor Yellow
-            $output | ForEach-Object { Write-Host $_ }
-            Write-Host ""
-            throw ("Cannot set '{0}' to '{1}': {2} reported exit {3}. Fix what it names, then re-run." -f $Id, $NewStatus, $name, $LASTEXITCODE)
-        }
-    }
+    Invoke-SpecCheckers -Id $Id -NewStatus $NewStatus -Checkers $checkers -CheckerArgs $checkerArgs
 
     # S1665 - advisories run after the hard gates and are structurally unable to stop a close: their
     # output is shown, their exit code is not read. The list is separate rather than a flag on the loop
@@ -895,12 +968,23 @@ function Sync-SpecHeaderStatus {
     #   non-empty string - upsert '**Status note:** <note>' right after **Status:**.
     #   empty string     - remove '**Status note:**' line if present.
     #
-    # Returns $true when the header now reads the target Status.
+    # Returns $true when the header now reads the target Status - which includes the case where
+    # it already did and nothing was written. A caller that wants to announce a REPAIR needs to
+    # tell those two apart, so -Wrote reports whether the file was actually rewritten (S2512):
+    # the callers below now sync on every status-bearing call rather than only on a journal move,
+    # and without this they would print 'header synced' on every no-op.
     param(
         [Parameter(Mandatory)][string] $PathRef,
         [Parameter(Mandatory)][string] $Status,
-        [string] $StatusNote = $null
+        [string] $StatusNote = $null,
+        # No ` = $null` default: PowerShell coerces a parameter's DEFAULT through its type, and
+        # [ref] refuses $null with "Reference type is expected in argument" - so a default would
+        # have thrown on every caller that omits this, which is archive.ps1 and bulk-update.ps1,
+        # i.e. the release archive sweep. Left undefaulted the parameter is simply $null when
+        # omitted, and the guards below already test for that.
+        [ref] $Wrote
     )
+    if ($null -ne $Wrote) { $Wrote.Value = $false }
     try {
         $abs = Resolve-SpecPath -PathRef $PathRef
         if (-not (Test-Path -LiteralPath $abs -PathType Leaf)) { return $false }
@@ -942,6 +1026,7 @@ function Sync-SpecHeaderStatus {
             $tmp = "$abs.tmp"
             [System.IO.File]::WriteAllText($tmp, $patched, $utf8NoBom)
             Move-Item -LiteralPath $tmp -Destination $abs -Force
+            if ($null -ne $Wrote) { $Wrote.Value = $true }
         }
         return $true
     } catch {

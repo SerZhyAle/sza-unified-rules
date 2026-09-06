@@ -87,6 +87,11 @@ if (-not $recorded) {
     Write-Output ("  1. run the audit that writes both:  /spec-check {0}" -f $Id)
     Write-Output ("  2. re-read the task, then add to the '## Last Audit' block:")
     Write-Output ("     **Task fingerprint:** {0}" -f $current)
+    Write-Output ""
+    Write-Output "Why the stamp is required (S2367, 2026-09-02): a pipeline reads the spec once at"
+    Write-Output "its first stage and works from that reading for the whole run, while the owner,"
+    Write-Output "/spec-quiz writing an answer in, and sibling sessions all edit the file under it."
+    Write-Output "Without the stamp a verdict can be a true statement about words nobody kept."
     exit 1
 }
 
@@ -102,6 +107,12 @@ if ($recorded -ne $current) {
     Write-Output ("  /spec-check {0}" -f $Id)
     Write-Output "If the re-read shows the work no longer covers the task, that is a Partial or"
     Write-Output "Broken verdict with the gap written into the spec - not a re-stamp."
+    Write-Output ""
+    Write-Output "Why a re-stamp is never the fix (S2367, 2026-09-02): the fingerprint deliberately"
+    Write-Output "excludes the status, status-note and priority header lines and the audit block"
+    Write-Output "itself, so it cannot move on the very status flip it guards. A gate that fired on"
+    Write-Output "its own trigger would be switched off, so every remaining difference is a real"
+    Write-Output "edit to the task - which is the thing the verdict has to be re-read against."
     exit 1
 }
 
