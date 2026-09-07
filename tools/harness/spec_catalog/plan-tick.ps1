@@ -21,7 +21,10 @@
     Ticket id, Sxxxx. Its plan folder is PLAN/<Id>_<slug>/.
 
 .PARAMETER Phase
-    Phase number, one or two digits. Selects PLAN/<Id>_<slug>/PHASE_<Phase>__*.md.
+    Phase number, one or two digits. Selects PLAN/<Id>_<slug>/PHASE_<Phase>__*.md in the folder
+    layout, or the `# Phase <Phase>` block inside PLAN/<Id>_<slug>.md in the compact layout, where
+    the Simple path writes the phase into the strategic file itself (S2666). Both layouts get the
+    same states, the same counters and the same Step Log; only the folder layout has an INDEX.md.
 
 .PARAMETER Steps
     Comma-separated step numbers. Either bare (3,4,5) or fully qualified (02.3,02.4).
@@ -70,7 +73,7 @@
 .EXIT CODES
     0 - every listed step was rewritten.
     1 - a listed step was not found, or a file could not be written.
-    2 - usage error, or the plan folder or phase file does not exist.
+    2 - usage error, or neither layout holds the requested phase.
     3 - INDEX.md and the phase file disagreed before the write; nothing was written at all.
     4 - a -Checkbox fragment matched no bullet, or matched more than one.
 #>
@@ -124,9 +127,74 @@ if ($State -eq 'Manual' -and [string]::IsNullOrWhiteSpace($Note)) {
 
 $planFolder = Get-ChildItem -LiteralPath $planRoot -Directory -Filter "$($Id)_*" -ErrorAction SilentlyContinue |
     Select-Object -First 1
-if (-not $planFolder) {
-    Write-Error "plan-tick: no tactical plan folder $(Get-SzaPath 'specsDir' -Relative)/$($Id)_<slug>/ - nothing to tick." -ErrorAction Continue
+# S2666: the compact layout is the majority shape, not an edge case - 123 of the strategic files in
+# PLAN/ carry their steps inline rather than in a tactical folder, because the Simple path writes
+# them there. Resolving the folder alone made every one of those tickets unreachable through the
+# documented tool, so a session either hand-edited the very markers this script exists to keep in
+# step, or the ticket stalled. The strategic file is a SECOND surface, not a fallback for a missing
+# folder: a compact ticket may legitimately own a folder holding only research/ and evidence/.
+$compactFile = Get-ChildItem -LiteralPath $planRoot -File -Filter "$($Id)_*.md" -ErrorAction SilentlyContinue |
+    Select-Object -First 1
+if (-not $planFolder -and -not $compactFile) {
+    $specsDir = Get-SzaPath 'specsDir' -Relative
+    Write-Error "plan-tick: neither $specsDir/$($Id)_<slug>/ nor $specsDir/$($Id)_<slug>.md exists - nothing to tick." -ErrorAction Continue
     exit 2
+}
+
+function Resolve-PhaseSurface {
+    <#
+        Returns the file a phase lives in, plus the half-open line range that phase owns.
+
+        Folder layout: the range is the whole file, so every pass below behaves exactly as it did
+        before this function existed. Compact layout: the range runs from `# Phase <NN>` to the next
+        level-1 heading or end of file, and the bound is load-bearing rather than tidy - a compact
+        file holds the strategic sections AND, for a multi-phase ticket, its sibling phases, so an
+        unbounded scan would count another phase's markers into this phase's **Steps done:** and
+        rewrite that phase's header from this phase's tick.
+    #>
+    param(
+        [Parameter(Mandatory)][AllowNull()][object]$Folder,
+        [Parameter(Mandatory)][AllowNull()][object]$Compact,
+        [Parameter(Mandatory)][string]$PhaseNumber
+    )
+    if ($Folder) {
+        $folderCandidate = Get-ChildItem -LiteralPath $Folder.FullName -File -Filter "PHASE_$($PhaseNumber)__*.md" -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+        if ($folderCandidate) {
+            $folderBody = [System.IO.File]::ReadAllLines($folderCandidate.FullName)
+            return [PSCustomObject]@{
+                Path  = $folderCandidate.FullName
+                Shape = 'phase-file'
+                Start = 0
+                End   = $folderBody.Length
+                Lines = $folderBody
+            }
+        }
+    }
+    if ($Compact) {
+        $compactBody = [System.IO.File]::ReadAllLines($Compact.FullName)
+        # `0*1` rather than the padded string: a plan may write `# Phase 1` or `# Phase 01` and both
+        # name the same phase, while the negative lookahead keeps phase 1 from matching phase 12.
+        $headingPattern = "^#\s+Phase\s+0*$([int]$PhaseNumber)(?!\d)"
+        $compactStart = -1
+        for ($scan = 0; $scan -lt $compactBody.Length; $scan++) {
+            if ($compactBody[$scan] -match $headingPattern) { $compactStart = $scan; break }
+        }
+        if ($compactStart -ge 0) {
+            $compactEnd = $compactBody.Length
+            for ($scan = $compactStart + 1; $scan -lt $compactBody.Length; $scan++) {
+                if ($compactBody[$scan] -match '^#\s') { $compactEnd = $scan; break }
+            }
+            return [PSCustomObject]@{
+                Path  = $Compact.FullName
+                Shape = 'compact'
+                Start = $compactStart
+                End   = $compactEnd
+                Lines = $compactBody
+            }
+        }
+    }
+    return $null
 }
 
 if ($PSCmdlet.ParameterSetName -eq 'Checkbox') {
@@ -143,19 +211,37 @@ if ($PSCmdlet.ParameterSetName -eq 'Checkbox') {
         exit 2
     }
 
-    $boxFile = if ($Target -eq 'Index') {
-        Join-Path $planFolder.FullName 'INDEX.md'
+    $boxSurface = $null
+    if ($Target -eq 'Index') {
+        if ($planFolder) {
+            $indexCandidate = Join-Path $planFolder.FullName 'INDEX.md'
+            if (Test-Path -LiteralPath $indexCandidate) {
+                $indexBody = [System.IO.File]::ReadAllLines($indexCandidate)
+                $boxSurface = [PSCustomObject]@{
+                    Path  = $indexCandidate
+                    Shape = 'index'
+                    Start = 0
+                    End   = $indexBody.Length
+                    Lines = $indexBody
+                }
+            }
+        }
+        if (-not $boxSurface) {
+            # A compact ticket has no INDEX.md by construction. Matching nothing would read as "the
+            # fragment was wrong" and send the caller hunting for a typo in their own text.
+            Write-Error "plan-tick: -Target Index needs $(Get-SzaPath 'specsDir' -Relative)/$($Id)_<slug>/INDEX.md and this ticket has none - a compact spec keeps its gates in the phase block, so use -Target Phase." -ErrorAction Continue
+            exit 2
+        }
     } else {
-        $candidate = Get-ChildItem -LiteralPath $planFolder.FullName -File -Filter "PHASE_$($phaseNumber)__*.md" -ErrorAction SilentlyContinue |
-            Select-Object -First 1
-        if ($candidate) { $candidate.FullName } else { $null }
-    }
-    if (-not $boxFile -or -not (Test-Path -LiteralPath $boxFile)) {
-        Write-Error "plan-tick: no file to match -Checkbox against for -Target $Target." -ErrorAction Continue
-        exit 2
+        $boxSurface = Resolve-PhaseSurface -Folder $planFolder -Compact $compactFile -PhaseNumber $phaseNumber
+        if (-not $boxSurface) {
+            Write-Error "plan-tick: no phase $phaseNumber to match -Checkbox against - looked for PHASE_$($phaseNumber)__*.md and for a '# Phase $phaseNumber' block in $($Id)_<slug>.md." -ErrorAction Continue
+            exit 2
+        }
     }
 
-    $boxLines = [System.IO.File]::ReadAllLines($boxFile)
+    $boxFile = $boxSurface.Path
+    $boxLines = $boxSurface.Lines
     $boxMark = if ($State -eq 'Done') { 'x' } else { ' ' }
     $flipped = New-Object System.Collections.Generic.List[object]
 
@@ -166,7 +252,7 @@ if ($PSCmdlet.ParameterSetName -eq 'Checkbox') {
         # as character classes, and plan files are made of `code spans` and [links]. A fragment
         # lifted straight out of the document would silently match nothing.
         $hits = @()
-        for ($i = 0; $i -lt $boxLines.Length; $i++) {
+        for ($i = $boxSurface.Start; $i -lt $boxSurface.End; $i++) {
             if ($boxLines[$i] -match '^\s*-\s*\[[ xX]\]\s*(.*)$') {
                 $label = $Matches[1]
                 if ($label.IndexOf($fragment, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
@@ -197,6 +283,7 @@ if ($PSCmdlet.ParameterSetName -eq 'Checkbox') {
     $boxResult = [ordered]@{
         id      = $Id
         target  = $Target
+        shape   = $boxSurface.Shape
         file    = (Split-Path -Leaf $boxFile)
         state   = $State
         flipped = @($flipped | ForEach-Object { $_.fragment })
@@ -213,12 +300,16 @@ if ($PSCmdlet.ParameterSetName -eq 'Checkbox') {
     exit 0
 }
 
-$phaseFile = Get-ChildItem -LiteralPath $planFolder.FullName -File -Filter "PHASE_$($phaseNumber)__*.md" -ErrorAction SilentlyContinue |
-    Select-Object -First 1
-if (-not $phaseFile) {
-    Write-Error "plan-tick: no PHASE_$($phaseNumber)__*.md in $($planFolder.Name)." -ErrorAction Continue
+$surface = Resolve-PhaseSurface -Folder $planFolder -Compact $compactFile -PhaseNumber $phaseNumber
+if (-not $surface) {
+    $folderName = if ($planFolder) { $planFolder.Name } else { "$($Id)_<slug>/" }
+    $compactName = if ($compactFile) { $compactFile.Name } else { "$($Id)_<slug>.md" }
+    Write-Error "plan-tick: no phase $phaseNumber - looked for PHASE_$($phaseNumber)__*.md in $folderName and for a '# Phase $phaseNumber' block in $compactName." -ErrorAction Continue
     exit 2
 }
+$phaseFileName = Split-Path -Leaf $surface.Path
+$blockStart = $surface.Start
+$blockEnd = $surface.End
 
 # Step ids arrive either bare (3) or qualified (02.3). Both normalise to <phase>.<n>; a
 # qualified id naming a different phase is a caller mistake worth refusing rather than
@@ -264,14 +355,14 @@ function Get-MarkerText {
     }
 }
 
-$lines = [System.IO.File]::ReadAllLines($phaseFile.FullName)
+$lines = $surface.Lines
 
 # Map every step heading to the index of the Status marker that belongs to it: the first
 # marker after the heading and before the next heading. Scanning once keeps the rewrite
 # independent of how much prose a step carries.
 $markerIndexByStep = @{}
 $currentStep = $null
-for ($i = 0; $i -lt $lines.Length; $i++) {
+for ($i = $blockStart; $i -lt $blockEnd; $i++) {
     $line = $lines[$i]
     if ($line -match '^###\s+Step\s+(\d{1,2})\.(\d{1,3})([a-z]?)(?![\w.])') {
         $currentStep = "$('{0:d2}' -f [int]$Matches[1]).$([int]$Matches[2])$($Matches[3])"
@@ -285,7 +376,7 @@ for ($i = 0; $i -lt $lines.Length; $i++) {
 
 $missing = @($requested | Where-Object { -not $markerIndexByStep.ContainsKey($_) })
 if ($missing.Count -gt 0) {
-    Write-Error "plan-tick: no step marker for $($missing -join ', ') in $($phaseFile.Name) - nothing was written." -ErrorAction Continue
+    Write-Error "plan-tick: no step marker for $($missing -join ', ') in $phaseFileName - nothing was written." -ErrorAction Continue
     exit 1
 }
 
@@ -308,11 +399,13 @@ $doneBefore = Measure-DoneMarkers -Body $lines -MarkerMap $markerIndexByStep
 
 # The index is checked BEFORE anything is written. Reporting a divergence after half the write
 # has landed would be a report about damage this script had just done.
-$indexFile = Join-Path $planFolder.FullName 'INDEX.md'
+# A compact ticket has no INDEX.md, so the divergence check and its exit 3 simply do not apply -
+# there is no second surface to disagree with the phase block.
+$indexFile = if ($planFolder) { Join-Path $planFolder.FullName 'INDEX.md' } else { $null }
 $indexLines = $null
 $indexRowNumber = -1
 $reconciledIndex = $false
-if (Test-Path -LiteralPath $indexFile) {
+if ($indexFile -and (Test-Path -LiteralPath $indexFile)) {
     $indexLines = [System.IO.File]::ReadAllLines($indexFile)
     for ($i = 0; $i -lt $indexLines.Length; $i++) {
         $cells = $indexLines[$i] -split '\|'
@@ -335,7 +428,7 @@ if ($indexRowNumber -ge 0) {
             } else {
                 # Built first, then reported on one line: a Write-Error whose -ErrorAction lands on a
                 # continuation line reads to assert-exit-contract as a bare terminating call.
-                $divergence = "plan-tick: INDEX.md says phase $phaseNumber is $recorded but $($phaseFile.Name) has $doneBefore/$totalSteps - the two surfaces disagree, so nothing was written. Reconcile them first."
+                $divergence = "plan-tick: INDEX.md says phase $phaseNumber is $recorded but $phaseFileName has $doneBefore/$totalSteps - the two surfaces disagree, so nothing was written. Reconcile them first."
                 Write-Error $divergence -ErrorAction Continue
                 exit 3
             }
@@ -364,7 +457,7 @@ $doneAfter = Measure-DoneMarkers -Body $lines -MarkerMap $markerIndexByStep
 
 # The phase file carries the same counter in its own header; leaving it stale while fixing the
 # index would swap one divergence for another. Done before the write, so the file is touched once.
-for ($i = 0; $i -lt $lines.Length; $i++) {
+for ($i = $blockStart; $i -lt $blockEnd; $i++) {
     if ($lines[$i] -match '^\*\*Steps done:\*\*') {
         $lines[$i] = "**Steps done:** $doneAfter / $totalSteps"
         break
@@ -392,7 +485,7 @@ $phaseStatusLabel = if ($doneAfter -ge $totalSteps -and $totalSteps -gt 0) {
 }
 $phaseStatusText = "**Status:** $phaseStatusLabel"
 $today = Get-Date -Format 'yyyy-MM-dd'
-for ($i = 0; $i -lt $lines.Length; $i++) {
+for ($i = $blockStart; $i -lt $blockEnd; $i++) {
     if ($lines[$i] -match '^\*\*Status:\*\*\s*(⛔|⏭)') {
         # Blocked and Skipped are set by a person and carry a reason no step counter can express, so
         # a tick leaves them standing; the operator clears them deliberately. The index row below
@@ -438,7 +531,9 @@ if ($State -eq 'Done' -and $changed.Count -gt 0) {
 
         $existingLog = -1
         for ($i = $markerLine + 1; $i -lt $body.Count; $i++) {
-            if ($body[$i] -match '^###\s' -or $body[$i] -match '^##\s' -or $body[$i] -match '^---\s*$') { break }
+            # `^#\s` is listed with the other two because a compact file's next phase opens with a
+            # level-1 heading, and walking past it would append this step's log into that phase.
+            if ($body[$i] -match '^#{1,3}\s' -or $body[$i] -match '^---\s*$') { break }
             if ($body[$i] -match '^\*\*Step Log:\*\*') { $existingLog = $i; break }
         }
 
@@ -463,12 +558,12 @@ if ($State -eq 'Done' -and $changed.Count -gt 0) {
 try {
     # Preserve the file's own newline convention rather than imposing one: these files are
     # diffed constantly and a wholesale line-ending flip would swamp the real change.
-    $raw = [System.IO.File]::ReadAllText($phaseFile.FullName)
+    $raw = [System.IO.File]::ReadAllText($surface.Path)
     $newline = if ($raw -match "`r`n") { "`r`n" } else { "`n" }
     $trailingNewline = if ($raw.EndsWith("`n")) { $newline } else { '' }
-    [System.IO.File]::WriteAllText($phaseFile.FullName, ($lines -join $newline) + $trailingNewline)
+    [System.IO.File]::WriteAllText($surface.Path, ($lines -join $newline) + $trailingNewline)
 } catch {
-    Write-Error "plan-tick: could not write $($phaseFile.Name): $($_.Exception.Message)" -ErrorAction Continue
+    Write-Error "plan-tick: could not write ${phaseFileName}: $($_.Exception.Message)" -ErrorAction Continue
     exit 1
 }
 
@@ -522,7 +617,8 @@ if ($indexRowNumber -ge 0) {
 $result = [ordered]@{
     id           = $Id
     phase        = $phaseNumber
-    file         = $phaseFile.Name
+    shape        = $surface.Shape
+    file         = $phaseFileName
     state        = $State
     reconciled   = $reconciledIndex
     steps        = @($changed | ForEach-Object { $_.step })

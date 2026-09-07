@@ -854,7 +854,37 @@ function Assert-ClosingGates {
     # THAT transition leaves a stuck pipeline with nowhere to park its ticket, which is a worse
     # failure than the duplicate heading it would be refusing over.
     $isBlockEntry = $NewStatus -like 'Block*'
-    if (($gatedStatuses -notcontains $NewStatus -and -not $isBlockEntry) -or $OldStatus -eq $NewStatus) { return }
+    if ($gatedStatuses -notcontains $NewStatus -and -not $isBlockEntry) { return }
+
+    # S2656 - a re-affirmation (the same status written again, typically to replace a -StatusNote)
+    # used to leave through the line above with every checker unreached. That is right for most of
+    # them and wrong for exactly one, and the split is by what each checker's subject IS:
+    #
+    #   * check-evidence-durable / check-open-items-carried / check-audit-recorded /
+    #     check-audit-current / check-headings-unique / check-block-note ask what the ticket
+    #     ACHIEVED, or what its own spec file says. That was answered at the entry transition and
+    #     does not decay on its own, so re-judging it turns a housekeeping rewrite into a refusal.
+    #     check-audit-current is the sharpest case: it compares a fingerprint of a spec that is
+    #     edited under a running pipeline, so a re-close done purely to repair a diverged header
+    #     (the unconditional header sync close.ps1 gained in S2512) would meet an audit refusal
+    #     instead of the repair it came for.
+    #   * check-probe-present asks what is TRUE OF THE TICKET NOW, and its subject is not the spec
+    #     but the source tree, which changes under a standing ticket by other hands - a release
+    #     sweep, remove-ticket-probes.ps1 (closed off in S2639), a probe deleted alongside the code
+    #     it sat in. It is the only checker in this function whose answer goes stale with no status
+    #     transition at all, which is why it is the only one a re-affirmation re-runs.
+    #
+    # This does not make the invariant continuously enforced and is not meant to: a ticket nobody
+    # re-affirms still drifts, and the project-wide assert-fast-gates run stays the sweep that
+    # catches that. It closes the last path that wrote the status while skipping the gate.
+    # Measured 2026-09-06 on the consumer repo: 134 tickets in BlockNeedUserTest, 127 carrying a
+    # probe and 29 excused in the baseline, none missing - so this refuses no ticket alive today.
+    if ($OldStatus -eq $NewStatus) {
+        if ($NewStatus -eq 'BlockNeedUserTest') {
+            Invoke-SpecCheckers -Id $Id -NewStatus $NewStatus -Checkers @('check-probe-present.ps1')
+        }
+        return
+    }
 
     $checkers = New-Object System.Collections.Generic.List[string]
     # Extra arguments per checker, splatted at the call. A hashtable rather than widening the
