@@ -42,6 +42,15 @@
 
     Give each instance its own -Instance name so the journal and the per-ticket logs do not collide.
 
+    What each instance LAUNCHES is the profile's, per instance (S2698). runner.instances maps an
+    -Instance name onto a record whose `command`, `argsTemplate` and `headlessMatch` each fall back
+    to the shared runner.<field> beside it, so a project declaring no map launches exactly what it
+    launched before. The template's substitutions are {prompt}, {permissionMode} and {model}, and
+    an element carrying {model} is dropped with the flag before it when no model was chosen. That
+    is what lets one instance of three run a different agent or a different model while the other
+    two are untouched - the comparison then needs no new journal field, since the run journal is
+    already per instance and already records the model.
+
     Model: chosen per ticket, from the ticket's own shape, by -ModelPolicy tiered (the default). The
     saving in this script comes from the process boundary, not from a weak model, so the strong tier
     is the default and the cheap tiers have to be earned:
@@ -60,6 +69,25 @@
                  spec, a tactical plan, gate verdicts and a build log at once. Where haiku belongs is
                  inside a session, on the search and doc subagents (CLAUDE.md Rule 31), and that is a
                  property of those agent definitions, not of this script.
+
+    -ModelPolicy shape is the same split re-cut by the SHAPE of the work rather than by the status,
+    because for a ticket the queue actually offers, the status does not vary. PLAN/RELEASE_QUEUE.md
+    holds everything below Implemented and runner.decisionStatuses lists exactly those, so the first
+    test above answers "strong" for every queue ticket and the tier test is never reached; the cheap
+    statuses describe RELEASE_READY.md, the file the runner does not take work from. Measured on the
+    full run journal, 2026-09-07: 625 runs strong against 65 cheap, and all 65 cheap ones came from
+    the two ready-file statuses. Under shape the order is
+
+      1. a status in runner.alwaysStrongStatuses  -> strong (BlockQuestions, whose whole product is
+         a set of questions put to the owner),
+      2. tier at or above runner.strongTierMin    -> strong,
+      3. tier from 1 to runner.shapeCheapTierMax  -> cheap, whatever the status,
+      4. anything else                            -> falls through to the tiered order, unchanged.
+
+    Step 4 falls through rather than defaulting to strong on purpose: a ticket with no tier, or with
+    a status neither list names, must get exactly what it gets today, or the policy would change
+    behaviour where it promised nothing. Step 3 starts at 1 for the same reason - a blank or zero
+    tier is not a small ticket, it is an unstated one.
 
     Pass -ModelPolicy fixed with -Model <name> to override the whole run.
 
@@ -102,7 +130,7 @@ param(
 
     # How the child's model is chosen. 'tiered' reads it off the ticket (see the description);
     # 'fixed' uses -Model for every ticket; 'default' passes nothing and lets the CLI decide.
-    [ValidateSet('tiered', 'fixed', 'default')]
+    [ValidateSet('tiered', 'shape', 'fixed', 'default')]
     [string] $ModelPolicy = 'tiered',
 
     # The model used when -ModelPolicy is 'fixed'.
@@ -163,6 +191,7 @@ param(
 )
 
 . (Join-Path $PSScriptRoot '..\_profile.ps1')
+. (Join-Path $PSScriptRoot '_idle-runs.ps1')
 if ([string]::IsNullOrWhiteSpace($RepoRoot)) { $RepoRoot = Get-SzaProjectRoot }
 
 if ($Help) {
@@ -181,15 +210,80 @@ if ([string]::IsNullOrWhiteSpace($PromptTemplate)) {
     # The profile spells the placeholder {Id}; this script has always accepted {id}. Both work.
     $PromptTemplate = ([string](Get-SzaProfileValue 'runner.promptTemplate')).Replace('{Id}', '{id}')
 }
-$runnerCommand = [string](Get-SzaProfileValue 'runner.command')
+function Get-InstanceSetting {
+    <#
+        One field of the child invocation, resolved instance first (S2698). The chain is
+        runner.instances.<instance>.<field> -> runner.<field>, and the profile's own defaults sit
+        under the second of those - so a project that declares no instances map gets exactly what
+        it got before this existed, and an instance absent from a non-empty map does too.
+    #>
+    param([Parameter(Mandatory)][string] $Field)
+
+    $map = Get-SzaProfileValue 'runner.instances'
+    if (Test-SzaHasProperty -Object $map -Name $Instance) {
+        $entry = $map.$Instance
+        if (Test-SzaHasProperty -Object $entry -Name $Field) { return $entry.$Field }
+    }
+    return (Get-SzaProfileValue ("runner.{0}" -f $Field))
+}
+
+function Expand-ChildArgs {
+    <#
+        The child's argument vector, from the instance's template (S2698). Substitutions are
+        {prompt}, {permissionMode} and {model}, applied per element and BEFORE ArgumentList, so
+        escaping stays .NET's job - the property that stopped three tickets being lost to
+        Start-Process's unquoted join.
+    #>
+    param(
+        [string[]] $Template,
+        [string] $Prompt,
+        [string] $Mode,
+        [string] $Model
+    )
+
+    $out = @()
+    foreach ($element in $Template) {
+        $text = [string]$element
+        if ($text -match '\{model\}' -and [string]::IsNullOrWhiteSpace($Model)) {
+            # No model chosen: the placeholder's element goes, and so does the flag in front of it.
+            # Passing it through as an empty string is NOT the same thing - ArgumentList hands the
+            # child a real empty argument, so `--model ""` would reach a CLI that today sees no
+            # --model at all, which is exactly what -ModelPolicy default asks for.
+            if ($out.Count -gt 0 -and ([string]$out[-1]).StartsWith('-')) {
+                $out = @($out | Select-Object -First ($out.Count - 1))
+            }
+            continue
+        }
+        $out += $text.Replace('{prompt}', $Prompt).Replace('{permissionMode}', $Mode).Replace('{model}', $Model)
+    }
+    # A bare return, not `, $out`: the comma hands the caller a one-element wrapper AROUND the
+    # vector, so `@(Expand-ChildArgs ..)` would be one argument holding an array and every child
+    # would launch with a single stringified Object[]. Every call site already wraps in @().
+    return $out
+}
+
+$runnerCommand = [string](Get-InstanceSetting -Field 'command')
+$runnerArgsTemplate = @(Get-InstanceSetting -Field 'argsTemplate')
+$headlessMatch = [string](Get-InstanceSetting -Field 'headlessMatch')
 $claudeCmd = Get-Command $runnerCommand -ErrorAction SilentlyContinue
 $claude = if ($claudeCmd) { $claudeCmd.Source } else { $null }
-if (-not $claude) {
+if (-not $claude -and $runnerCommand -eq 'claude') {
+    # The fallback is a fact about ONE command - where the Claude CLI installs itself when it is not
+    # on PATH - so it is gated on that command being the one asked for. Ungated, an instance pointed
+    # at another agent whose CLI is missing would silently launch claude instead, and its journal
+    # rows would attribute a week of runs to a provider that never ran: the exact comparison the
+    # per-instance command exists to make.
     $fallback = Join-Path $env:USERPROFILE '.local\bin\claude.exe'
     if (Test-Path $fallback) { $claude = $fallback }
 }
 if (-not $claude) {
-    Write-Host "run-spec-queue: the Claude CLI was not found on PATH or at ~/.local/bin/claude.exe." -ForegroundColor Red
+    # Name the instance and its command, not just "the CLI": a watchdog restarts a fallen instance
+    # on a timer, so an instance pointed at a command this machine does not have would otherwise
+    # fail identically and silently every interval, and the queue would lose that instance's share
+    # of the throughput with nothing on screen saying which of the three stopped working.
+    $where = if ($runnerCommand -eq 'claude') { 'on PATH or at ~/.local/bin/claude.exe' } else { 'on PATH' }
+    Write-Host ("run-spec-queue: instance '{0}' asks for command '{1}', which was not found {2}." -f $Instance, $runnerCommand, $where) -ForegroundColor Red
+    Write-Host "  Fix the command in .sza-profile.json (runner.instances.$Instance.command, or runner.command)." -ForegroundColor Yellow
     exit 2
 }
 
@@ -226,7 +320,7 @@ if ($Stop) {
     # during a 40-minute pipeline does nothing visible for 40 minutes - and silence is indistinguishable
     # from a broken command. Whoever asked for the stop is owed the reason it has not happened yet.
     $inFlight = @((Get-SzaAgentProcesses) |
-            Where-Object { $_.CommandLine -and $_.CommandLine -match '\s-p\s' })
+            Where-Object { $_.CommandLine -and $_.CommandLine -match $headlessMatch })
     if ($inFlight.Count -eq 0) {
         Write-Host '  nothing is running - the next start clears this flag and proceeds.' -ForegroundColor DarkGray
     } else {
@@ -248,7 +342,7 @@ if ($Stop) {
         # Only the children this repository's runs started. A claude process serving the operator's
         # own interactive window must not be killed by a queue command.
         $victims = @((Get-SzaAgentProcesses) |
-                Where-Object { $_.CommandLine -and $_.CommandLine -match '\s-p\s' })
+                Where-Object { $_.CommandLine -and $_.CommandLine -match $headlessMatch })
         if ($victims.Count -eq 0) {
             Write-Host '  -Kill: no headless claude child is running.' -ForegroundColor DarkGray
         } else {
@@ -279,7 +373,7 @@ if (Test-Path $stopFileMine) {
 #
 # Live children are what tells the two apart: a stop still in progress has processes behind it.
 $liveChildren = @((Get-SzaAgentProcesses) |
-        Where-Object { $_.CommandLine -and $_.CommandLine -match '\s-p\s' })
+        Where-Object { $_.CommandLine -and $_.CommandLine -match $headlessMatch })
 if (Test-Path $stopFileAll) {
     if ($liveChildren.Count -gt 0) {
         Write-Host "run-spec-queue: a stop is in progress - $($liveChildren.Count) child process(es) are still finishing." -ForegroundColor Red
@@ -356,6 +450,35 @@ function Select-ModelFor {
         $tier = [int]$Matches[1]
     }
 
+    # SHAPE decides before status, and only under -ModelPolicy shape. The order below is the canon's;
+    # the three cut lines are the project's (runner.alwaysStrongStatuses, runner.strongTierMin,
+    # runner.shapeCheapTierMax in the profile). The justification for the status-first order that
+    # follows holds only while the status distinguishes tickets, and for a ticket taken off the
+    # queue it does not: all seven decision statuses give the same answer, so tier is the only
+    # signal that varies there. Nothing here returns a default - an uncovered ticket falls through
+    # to the tiered order below and gets exactly what it gets today.
+    if ($ModelPolicy -eq 'shape') {
+        if (@(Get-SzaProfileValue 'runner.alwaysStrongStatuses') -contains $status) { return $StrongModel }
+
+        # The code-complete states are tested BEFORE the strong tier, and this order was set by a
+        # measurement rather than by taste. Written the other way round - strong tier first - shape
+        # upgraded 12 tier-4 tickets sitting in Implemented and BlockNeedUserTest from cheap to
+        # strong while moving only 7 down, so the policy whose entire purpose is to reach the cheap
+        # model more often cost MORE than the one it replaces. The reason those states are cheap
+        # does not weaken with size: the run audits code the tree already carries, and a big change
+        # already made is not a big decision still to take.
+        if (@(Get-SzaProfileValue 'runner.cheapStatuses') -contains $status) { return $CheapModel }
+
+        $strongTierMin = [int](Get-SzaProfileValue 'runner.strongTierMin')
+        if ($strongTierMin -gt 0 -and $tier -ge $strongTierMin) { return $StrongModel }
+
+        # The floor of 1 excludes a blank or zero tier, which is an unstated size rather than a
+        # small one - 6 of the 44 open decision-status tickets carried no tier when this was
+        # written, and routing them by absence would be routing them by an author's omission.
+        $shapeCheapTierMax = [int](Get-SzaProfileValue 'runner.shapeCheapTierMax')
+        if ($tier -ge 1 -and $tier -le $shapeCheapTierMax) { return $CheapModel }
+    }
+
     # STATUS decides before tier, because a status names what work is left while a tier only names
     # how big it is. These are the states where the run still has to decide something - design a
     # spec, plan it, write Kotlin, diagnose a failure - plus BlockQuestions, whose whole product is
@@ -379,6 +502,36 @@ function Select-ModelFor {
     if ($tier -ge 1 -and $tier -le [int](Get-SzaProfileValue 'runner.cheapTierMax')) { return $CheapModel }
 
     return $StrongModel
+}
+
+function Get-TicketStepMarkCount {
+    <#
+        How many steps of this ticket's tactical plan are ticked done, or $null when it has no
+        tactical folder at all. $null and 0 must stay distinguishable: "no plan" means this ticket
+        can never produce the signal and keeps the flat deadline, while "a plan with nothing done
+        yet" is a child that may still earn an extension.
+
+        The tick shape is spec_catalog/plan-tick.ps1's own - one writer, one reader, so a change to
+        the marker cannot silently stop being observed here.
+    #>
+    param([string] $Id)
+    try {
+        $record = Get-TicketRecord -Id $Id
+        if ($null -eq $record -or [string]::IsNullOrWhiteSpace([string] $record.file)) { return $null }
+        $specFile = Join-Path $RepoRoot ([string] $record.file)
+        $folder = $specFile -replace '\.md$', ''
+        if (-not (Test-Path -LiteralPath $folder -PathType Container)) { return $null }
+        $done = 0
+        foreach ($file in (Get-ChildItem -LiteralPath $folder -Filter '*.md' -ErrorAction SilentlyContinue)) {
+            foreach ($line in @(Get-Content -LiteralPath $file.FullName -Encoding UTF8 -ErrorAction SilentlyContinue)) {
+                if ($line -match '^\*\*Status:\*\*\s*`\[x\]`') { $done++ }
+            }
+        }
+        return $done
+    } catch {
+        # An unreadable plan is not evidence of a stalled child - fall back to the flat deadline.
+        return $null
+    }
 }
 
 function Stop-ProcessTree {
@@ -442,6 +595,11 @@ function Add-RunRecord {
     $record = [pscustomobject][ordered]@{
         id           = $Id
         model        = $ChildModel
+        # Beside model, because it explains that field and nothing else. The instance already
+        # distinguishes the journals by file name, but that answers "who wrote this", while
+        # comparing two rules asks "which rule chose the model". The two answers agree only until
+        # an instance is re-pointed or a run is launched by hand, and then they disagree silently.
+        policy       = $ModelPolicy
         statusBefore = $StatusBefore
         statusAfter  = $StatusAfter
         moved        = $Moved
@@ -629,8 +787,8 @@ while ($true) {
 
     # --- run it in its own process --------------------------------------------------------
     $prompt = $PromptTemplate.Replace('{id}', $id)
-    $childArgs = @('-p', $prompt, '--permission-mode', $PermissionMode)
-    if ($childModel) { $childArgs += @('--model', $childModel) }
+    $childArgs = @(Expand-ChildArgs -Template $runnerArgsTemplate -Prompt $prompt `
+            -Mode $PermissionMode -Model $childModel)
 
     # ProcessStartInfo.ArgumentList, never Start-Process -ArgumentList. Start-Process joins the array
     # into one command line WITHOUT quoting, so an element containing a space is split at the space:
@@ -714,12 +872,49 @@ while ($true) {
         } else {
             # The grace window came out of the ticket's own budget, so spend what is left of it,
             # never a fresh full timeout.
-            $remainingMs = ($TimeoutMinutes * 60 * 1000) - [int]((Get-Date) - $started).TotalMilliseconds
-            if ($remainingMs -lt 0) { $remainingMs = 0 }
-            if (-not $proc.WaitForExit($remainingMs)) {
+            #
+            # S2695: the deadline follows the PLAN, not the clock alone. A child that ticks another
+            # step off its tactical plan has demonstrably done a unit of work, so its deadline moves
+            # to a full -TimeoutMinutes from that moment. The step mark is the only signal used, and
+            # deliberately so: the agent chat is written by the lock, lease and status scripts as a
+            # side effect, so a spinning child would renew itself on it for ever, and a dev-log row
+            # arrives once at the end when there is nothing left to extend. The extension can only
+            # ADD time, so a ticket with no plan - or a child that ticks nothing - dies exactly when
+            # it did before this.
+            $deadline = $started.AddMinutes($TimeoutMinutes)
+            $stepMarks = Get-TicketStepMarkCount -Id $id
+            $stepMarksAtStart = $stepMarks
+            $extensions = 0
+            $timedOut = $false
+            while ($true) {
+                $remainingMs = [int](($deadline - (Get-Date)).TotalMilliseconds)
+                if ($remainingMs -le 0) { $timedOut = -not $proc.HasExited; break }
+                # Sliced so a new step mark is noticed inside the window rather than after it. A
+                # ticket with no tactical folder gives no signal, so it waits in one slice and pays
+                # nothing for the polling.
+                $sliceMs = if ($null -eq $stepMarks) { $remainingMs } else { [Math]::Min($remainingMs, 60000) }
+                if ($proc.WaitForExit($sliceMs)) { break }
+                if ($null -eq $stepMarks) { continue }
+                $now = Get-TicketStepMarkCount -Id $id
+                if ($null -ne $now -and $now -gt $stepMarks) {
+                    $stepMarks = $now
+                    $deadline = (Get-Date).AddMinutes($TimeoutMinutes)
+                    $extensions++
+                    Write-Host ("  {0}: step {1} of its plan ticked - deadline moved to {2}." -f `
+                            $id, $now, $deadline.ToString('HH:mm:ss')) -ForegroundColor DarkGray
+                }
+            }
+            if ($timedOut) {
                 $outcome = 'timeout'
+                $progress = if ($null -eq $stepMarksAtStart) {
+                    'no tactical plan - flat deadline'
+                } elseif ($extensions -eq 0) {
+                    "no step marked in the whole window (plan at $stepMarksAtStart done)"
+                } else {
+                    "$extensions extension(s), plan went $stepMarksAtStart -> $stepMarks done"
+                }
                 Write-Host ''
-                Write-Host ("  run-spec-queue: {0} exceeded {1} min - killing the process tree." -f $id, $TimeoutMinutes) -ForegroundColor Red
+                Write-Host ("  run-spec-queue: {0} exceeded {1} min - killing the process tree. {2}." -f $id, $TimeoutMinutes, $progress) -ForegroundColor Red
                 Stop-ProcessTree -ProcessId $proc.Id
                 # A killed child cannot release its ticket lease; drop it so a later run is not refused.
                 & pwsh -NoProfile -File (Get-SzaHarnessScript 'locks/ticket-lease.ps1') -Verb Release -Id $id 2>&1 | Out-Null
@@ -797,15 +992,27 @@ while ($true) {
     # moved: true, outcome: ok' for a child that changed nothing at all (2026-09-05, S2578).
     $moved = if ($claimLost) { $false } else { ($statusBefore -ne $statusAfter) }
 
-    [void](Add-RunRecord -Id $id -ChildModel $childModel -StatusBefore $statusBefore `
+    $runRecord = Add-RunRecord -Id $id -ChildModel $childModel -StatusBefore $statusBefore `
             -StatusAfter $statusAfter -Moved $moved -Outcome $outcome -ExitCode $exitCode `
-            -Minutes $elapsed)
+            -Minutes $elapsed
+
+    # Read AFTER the row is written, and forced fresh, so the series includes the run that just
+    # ended. The count is attached to the in-memory record only - the journal is the input to this
+    # number, so writing it back into the journal would make the series feed on itself.
+    $series = Get-IdleRunSeries -Id $id -Refresh
+    Add-Member -InputObject $runRecord -NotePropertyName 'idle' -NotePropertyValue $series.Count -Force
 
     $colour = if ($moved) { 'Green' } elseif ($outcome -ne 'ok') { 'Red' } else { 'Yellow' }
     Write-Host ''
     Write-Host ("  {0}: {1} -> {2}   ({3}, {4} min)" -f $id, $statusBefore, $statusAfter, $outcome, $elapsed) -ForegroundColor $colour
     if (-not $moved) {
         Write-Host ("  {0} did not move - dropped for the rest of this run." -f $id) -ForegroundColor DarkYellow
+    }
+    if ($series.Count -ge (Get-IdleRunPolicy).Threshold) {
+        Write-Host ("  {0}: {1} run(s) in a row without a status move, last '{2}' - automatic ranking will pass it over until the status moves." -f `
+                $id, $series.Count, $series.LastOutcome) -ForegroundColor DarkYellow
+        Write-Host ("  it is marked [idle {0}, {1}] in {2}; run it by name to override." -f `
+                $series.Count, $series.LastOutcome, (Get-SzaPath 'releaseQueue' -Relative)) -ForegroundColor DarkGray
     }
 }
 
@@ -821,7 +1028,7 @@ Write-Host ('=' * 78) -ForegroundColor DarkGray
 if ($results.Count -eq 0) {
     Write-Host '  nothing ran.'
 } else {
-    $results | Format-Table -AutoSize id, statusBefore, statusAfter, outcome, minutes | Out-String | Write-Host
+    $results | Format-Table -AutoSize id, statusBefore, statusAfter, outcome, minutes, idle | Out-String | Write-Host
     $movedCount = ($results | Where-Object { $_.moved }).Count
     Write-Host ("  {0} ticket(s) run, {1} moved, {2} stayed put." -f $results.Count, $movedCount, ($results.Count - $movedCount))
     Write-Host ("  journal: {0}" -f $journal)

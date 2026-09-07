@@ -44,6 +44,12 @@ param(
 
 . (Join-Path $PSScriptRoot '_lib.ps1')
 
+# S2695: the idle-run series, so a ticket that has come back unmoved twice in a row is passed over
+# instead of being offered again for ever. It belongs here rather than in the skip cache because
+# the runner wipes that cache at every start by design, while this walk is re-derived live on
+# every ranking.
+. (Get-SzaHarnessScript 'batch/_idle-runs.ps1')
+
 $pwshExe = if (Test-Path "$env:ProgramFiles\PowerShell\7\pwsh.exe") {
     "$env:ProgramFiles\PowerShell\7\pwsh.exe"
 } else {
@@ -229,6 +235,21 @@ $scan = 0
 foreach ($cand in $rankedLive) {
     if ($scan -ge $MaxScan) { break }
     $scan++
+
+    # Tested BEFORE the preview spawns: a held ticket is already decided, and previewing it would
+    # spend a child process to learn nothing. The series is read from the run journals, so it costs
+    # one cached file walk for the whole loop.
+    $idleSeries = Get-IdleRunSeries -Id $cand.id
+    if ($idleSeries.Count -ge (Get-IdleRunPolicy).Threshold) {
+        $autoSkipped += [PSCustomObject]@{
+            id     = $cand.id
+            reason = 'idle-hold'
+            detail = ("{0} run(s) in a row did not move the status, last outcome '{1}' at {2} - held until the status moves; an explicit id is never held" -f `
+                    $idleSeries.Count, $idleSeries.LastOutcome, $idleSeries.LastFinishedAt)
+        }
+        continue
+    }
+
     $pvRaw = & $pwshExe -NoProfile -File $previewPath -Id $cand.id -Format json 2>$null
     if (-not $pvRaw) { $malformed += $cand.id; continue }
     try {

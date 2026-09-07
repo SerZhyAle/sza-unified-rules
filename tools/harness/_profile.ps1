@@ -145,6 +145,23 @@ $Script:SzaProfileDefaults = [ordered]@{
         decisionStatuses = @('Draft', 'Approved', 'Tactical', 'In Progress', 'Partial', 'Broken', 'BlockQuestions')
         cheapStatuses    = @('Implemented', 'BlockNeedUserTest')
         cheapTierMax     = 3
+        # The child invocation, per runner instance. A key is the -Instance name; the value may
+        # carry `command`, `argsTemplate` and `modelPolicy`, each falling back to the shared value
+        # beside it. Empty is the honest default: every instance launches the same command, which
+        # is what a single-provider project wants and what this file described before S2698.
+        instances        = [ordered]@{}
+        # The argument vector handed to the child, as a template. The substitutions are {prompt},
+        # {permissionMode} and {model}; an element carrying {model} is dropped together with the
+        # flag before it when no model was chosen, because an empty element in ArgumentList is a
+        # real empty argument rather than an absent one. Templated rather than appended: a second
+        # provider spells the model flag differently and takes the prompt in a different position,
+        # so the part that varies is the whole vector, not its tail.
+        argsTemplate     = @('-p', '{prompt}', '--permission-mode', '{permissionMode}', '--model', '{model}')
+        # How a queue child is told from the operator's own interactive session, matched against
+        # the process command line. The default is the headless flag of the default command; an
+        # instance running another agent overrides it, or -Stop, -Kill and the "a stop is still
+        # draining" guard all stop seeing that instance's children.
+        headlessMatch    = '\s-p\s'
     }
     commands    = [ordered]@{
         statusCommands = [ordered]@{

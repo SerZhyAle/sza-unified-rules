@@ -365,11 +365,60 @@ function Get-TicketBaseName {
 $script:ReleaseQueueLeaseMarkerPattern = '\s*\[taken\s[^\]]*\]\s*$'
 $script:ReleaseQueueLeaseMap = $null
 
+# The second marker (S2695): `[idle 2, timeout]` on a ticket automatic ranking is passing over
+# because two runs in a row handed it back without moving its status. Same contract as the one
+# above - derived from the run journals on every write, never stored - so the first status move
+# erases it with nothing to clear.
+$script:ReleaseQueueIdleMarkerPattern = '\s*\[idle\s[^\]]*\]\s*$'
+$script:ReleaseQueueIdleMap = $null
+
 function Remove-ReleaseQueueLeaseMarker {
     # Strip before parsing: status is the LAST field on the line, so an unstripped marker is read
     # as part of the status and drifts the whole file against the catalog.
+    #
+    # Both marker shapes, repeatedly: a row can carry the occupancy marker and the idle marker at
+    # once, and each pattern is anchored to the end of the line, so one pass would leave whichever
+    # sits further left glued to the status field.
     param([Parameter(Mandatory)][AllowEmptyString()][string] $Line)
-    return ($Line -replace $script:ReleaseQueueLeaseMarkerPattern, '')
+    $stripped = $Line
+    while ($true) {
+        $before = $stripped
+        $stripped = $stripped -replace $script:ReleaseQueueIdleMarkerPattern, ''
+        $stripped = $stripped -replace $script:ReleaseQueueLeaseMarkerPattern, ''
+        if ($stripped -eq $before) { break }
+    }
+    return $stripped
+}
+
+function Get-ReleaseQueueIdleMap {
+    <#
+        Ticket id -> `[idle <count>, <last outcome>]`, for tickets at or above the project's idle
+        threshold. The counting is the runner library's, never a second copy of it: the ranker's
+        refusal and this marker have to name the same set, and two implementations of "held" would
+        eventually disagree in the file the owner uses to pick the next task (the S1621 rule).
+    #>
+    param([switch] $Refresh)
+    if ($null -ne $script:ReleaseQueueIdleMap -and -not $Refresh) { return $script:ReleaseQueueIdleMap }
+
+    $map = @{}
+    $script:ReleaseQueueIdleMap = $map
+    try {
+        . (Get-SzaHarnessScript 'batch/_idle-runs.ps1')
+    } catch {
+        # No library means no honest marker: render none rather than a guess.
+        return $map
+    }
+    try {
+        $threshold = (Get-IdleRunPolicy).Threshold
+        foreach ($series in (Get-IdleRunMap -Refresh:$Refresh).Values) {
+            if ($series.Count -lt $threshold) { continue }
+            $outcome = if ([string]::IsNullOrWhiteSpace([string] $series.LastOutcome)) { 'no outcome' } else { [string] $series.LastOutcome }
+            $map[[string] $series.Id] = ('[idle {0}, {1}]' -f $series.Count, $outcome)
+        }
+    } catch {
+        return $map
+    }
+    return $map
 }
 
 function Get-ReleaseQueueLeaseMap {
@@ -478,6 +527,7 @@ function Write-ReleaseFile {
     )
     $out = New-Object System.Collections.Generic.List[string]
     $leaseMap = Get-ReleaseQueueLeaseMap
+    $idleMap = Get-ReleaseQueueIdleMap
     # Iterate the List directly: @(..) around a List[object] of PSCustomObject throws
     # "Argument types do not match" (the array subexpression cannot build the PSObject[] copy).
     foreach ($l in $Lines) {
@@ -487,6 +537,12 @@ function Write-ReleaseFile {
             # Padded to a fixed column: the status field is ragged ('Draft' against
             # 'BlockNeedUserTest'), and an unpadded marker zig-zags down the block.
             if ($marker) { $row = ('{0,-98}{1}' -f $row, $marker) }
+            $idleMarker = $idleMap[[string] $l.Id]
+            # The idle marker follows the occupancy one when both apply, and takes the same fixed
+            # column when it stands alone, so the two never overlap and the block stays aligned.
+            if ($idleMarker) {
+                $row = if ($marker) { '{0} {1}' -f $row, $idleMarker } else { '{0,-98}{1}' -f $row, $idleMarker }
+            }
             $out.Add($row)
         } else {
             $out.Add($l.Text)
