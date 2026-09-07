@@ -155,4 +155,5 @@ CANON_VERSION       the monotonic version the stamp records
 - Run `pwsh -File tools/check-rules.ps1` (exit 0 required) before committing under `rules/`.
 - A project's own record lives in [`rules/contrib/`](rules/contrib/) and is the one file a project session
   may edit here.
-- Bump `CANON_VERSION` when a rule doc changes; that is what tells adopters to re-sync.
+- `deploy.ps1` raises `CANON_VERSION` and the plugin version for you, through
+  [`tools/bump-canon-version.ps1`](tools/bump-canon-version.ps1) - do not write either by hand.

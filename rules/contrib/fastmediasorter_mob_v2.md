@@ -1173,3 +1173,53 @@ nowhere, waiting for exactly this canon session, per the S2410 split of the edit
 Both ship as `CANON_VERSION` **2026.09.06.1**, plugin `2026.906.1`. The consumer's removal of the
 rationale it duplicates from those refusals is no longer gated: the refusals now print it at run
 time from the cache, once `claude plugin update` has run.
+
+
+## 2026-09-07 - S2463: the deploy raises the version pair, so a pushed canon change actually reaches consumers
+
+`deploy.ps1` ran the gate, committed and pushed, and stopped there. Nothing raised
+`.claude-plugin/plugin.json` `version` or `CANON_VERSION`, and the consumer's cache is a directory named
+for the plugin version - so content pushed under an already-installed number is never refetched. The
+deploy returns 0 and `claude plugin update` reports "already at the latest version", so nothing announces
+the gap.
+
+Measured twice. On 2026-09-03 the canon was pushed at `8f39a93` with the S2421 lock fix present in the
+checkout, while `2026.903.2/tools/harness/locks/agent-lock.ps1` in the cache carried zero occurrences of
+that ticket id; the forwarder resolved to the cache, so the fixed mechanism was in no runtime. On
+2026-09-07, four days after the manual rule was written into `CLAUDE.md`, `ec00587` shipped three
+`tools/harness/spec_catalog/` files with both version files untouched at `2026.09.06.1` / `2026.906.1` -
+the same number this machine's newest cache directory already held.
+
+### What changed
+
+- `tools/bump-canon-version.ps1` - new, and the only writer of the pair. Reads `CANON_VERSION` as
+  `yyyy.MM.dd.N`, keeps the stored date and increments `N` when that date is today or later, otherwise
+  starts today at `N = 1`, and derives the plugin version as `yyyy.<month without a leading zero><day>.N`.
+  It replaces the one `version` line rather than re-serialising the manifest. `-Print`, `-DryRun`, exit
+  codes 0 / 1 / 2.
+- `deploy.ps1` - calls it before staging whenever the pending set reaches a consumer, then re-reads the
+  status so both version files ride in the same commit; `-NoVersionBump` opts out, and the bump is skipped
+  on its own when the whole set is `README.md`, `LICENSE`, `.gitignore`, `CANON_VERSION`, the manifest
+  itself or `rules/contrib/`. After the push it compares the newest directory under
+  `~/.claude/plugins/cache/sza-unified-rules/sza/` with the version just written and names
+  `claude plugin update sza` when they differ - a report, never a gate, since updating the plugin is the
+  operator's action.
+- `CLAUDE.md` and `README.md` - the manual-bump instructions now say the deploy owns the number. The
+  recorded consequence of shipping without one is kept, and the 2026-09-07 miss added to it.
+
+### Verification performed
+
+`tools/check-rules.ps1` exits 0. `bump-canon-version.ps1 -Print` reports the live pair
+`2026.09.06.1` / `2026.906.1`; `-DryRun` names `2026.09.07.1` / `2026.907.1` and leaves both files
+byte-identical. `deploy.ps1 -DryRun` runs the gate, prints that dry-run bump, lists the two pending
+changes and stages nothing; `-DryRun -NoVersionBump` prints the opt-out line instead. The two decision
+helpers were driven directly: a rename porcelain line yields the new path, a `tools/` path ships, a set of
+only `rules/contrib/` plus `README.md` does not, and a mixed set does.
+
+### What is owed
+
+The deploy itself. It is the operator's command (INVARIANTS 18) and was not run from this session, so
+these changes sit in the checkout and reach no consumer until the owner runs `pwsh -File deploy.ps1` -
+which will now raise the pair on its own. One line in `rules/README.md` still tells a maintainer to bump
+`CANON_VERSION` by hand; `rules/` is not a file a project session may edit, so that correction is left to
+a canon session.

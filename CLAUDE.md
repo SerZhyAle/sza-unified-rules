@@ -17,21 +17,27 @@ does not apply here; this is where fixes land. It applies everywhere else.
 
 - **Gate before committing anything under `rules/`:** `pwsh -File tools/check-rules.ps1` (exit 0 required).
   It validates internal links, section numbering, `§` references and the house text style.
-- **Changing a rule doc changes the digest**, which marks every adopting repo stale. That is intended - but
-  bump [CANON_VERSION](CANON_VERSION) in the same commit so the staleness ladder can tell a minor
-  reconciliation from a hard re-adoption.
-- **Bump `.claude-plugin/plugin.json` `version` in that same commit**, derived from `CANON_VERSION`:
+- **Changing a rule doc changes the digest**, which marks every adopting repo stale. That is intended: the
+  version raised alongside it lets the staleness ladder tell a minor reconciliation from a hard re-adoption.
+- **The version pair is written by `deploy.ps1`, not by hand.** It calls
+  [tools/bump-canon-version.ps1](tools/bump-canon-version.ps1) before staging, which is the only writer of
+  [CANON_VERSION](CANON_VERSION) and of `.claude-plugin/plugin.json` `version`, derived from it:
   `2026.08.18.1` -> `2026.818.1` (semver forbids the leading zero, so the month and day join into one
-  numeric identifier). This is what actually delivers the canon: `claude plugin update` compares that
-  number and nothing else - not the digest, not the commit - so a canon change shipped without it leaves
-  every consumer on the cached copy of the previous version while `update` reports "already at the latest
-  version". That is not hypothetical: the portfolio ran five canon updates against a plugin cache frozen
-  at `2026.07.27`, and no session anywhere loaded them.
+  numeric identifier). The plugin version is what actually delivers the canon: `claude plugin update`
+  compares that number and nothing else - not the digest, not the commit - so a canon change shipped
+  without it leaves every consumer on the cached copy of the previous version while `update` reports
+  "already at the latest version". `-NoVersionBump` is the way out for a commit that reaches no consumer;
+  the deploy also skips the bump on its own when the whole change set is `README.md`, `LICENSE`,
+  `.gitignore` or `rules/contrib/`.
+- **This was a manual step until 2026-09-07 and it was missed twice.** The portfolio first ran five canon
+  updates against a plugin cache frozen at `2026.07.27`, and no session anywhere loaded them; then, four
+  days after that was written down here, `ec00587` shipped three `tools/harness/spec_catalog/` files under
+  an already-installed version. Both the deploy and the plugin update reported success each time. The rule
+  did not change - only who executes it.
 - **A fix under `skills/`, `tools/` or `hooks/` ships the same way, and only that way.** The digest covers
   `rules/*.md` alone, so such a fix marks nothing stale and needs no reconciliation - but a consumer still
-  runs the cached copy until the plugin version moves. Bump `CANON_VERSION`'s last segment and derive the
-  plugin version from it as above, so the two never drift apart: a broken skill command left in the cache is
-  as invisible as a rule that never arrived.
+  runs the cached copy until the plugin version moves, and a broken skill command left in the cache is as
+  invisible as a rule that never arrived.
 - **Editing a skill**: the SKILL.md body is what loads on trigger; heavy payload goes in `references/`
   beside it. Keep the frontmatter `description` written in the words the owner actually uses to ask for the
   task, in both languages where that is how the request arrives - it is the trigger, not a summary.
