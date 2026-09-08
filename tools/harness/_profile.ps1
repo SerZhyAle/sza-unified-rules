@@ -145,6 +145,16 @@ $Script:SzaProfileDefaults = [ordered]@{
         decisionStatuses = @('Draft', 'Approved', 'Tactical', 'In Progress', 'Partial', 'Broken', 'BlockQuestions')
         cheapStatuses    = @('Implemented', 'BlockNeedUserTest')
         cheapTierMax     = 3
+        # The three cut lines of -ModelPolicy shape (S2696), which decides by the work's shape
+        # before its status: these statuses always take the strong model, a tier at or above
+        # strongTierMin takes it too, and tiers 1..shapeCheapTierMax take the cheap one whatever
+        # the status. Declared here rather than left to each project because Get-SzaProfileValue
+        # throws on an unknown path by design, so a consumer that never wrote them would meet an
+        # exception on its first ticket instead of a policy (S2705). A project whose boundary sits
+        # elsewhere overrides all three in its own profile.
+        alwaysStrongStatuses = @('BlockQuestions')
+        strongTierMin        = 4
+        shapeCheapTierMax    = 2
         # The child invocation, per runner instance. A key is the -Instance name; the value may
         # carry `command`, `argsTemplate` and `modelPolicy`, each falling back to the shared value
         # beside it. Empty is the honest default: every instance launches the same command, which

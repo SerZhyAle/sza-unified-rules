@@ -68,6 +68,92 @@ function Read-DevMonitorJson {
     catch { return $null }
 }
 
+function Read-DevMonitorTailLines {
+    <# Read only the final bounded portion of an append-only text source. #>
+    param([string]$Path, [int]$MaxBytes = 131072)
+    if (-not (Test-Path -LiteralPath $Path)) { return @() }
+    $stream = $null
+    $reader = $null
+    try {
+        $stream = [System.IO.File]::Open($Path, 'Open', 'Read', 'ReadWrite')
+        $start = [Math]::Max(0, $stream.Length - $MaxBytes)
+        [void]$stream.Seek($start, [System.IO.SeekOrigin]::Begin)
+        $reader = [System.IO.StreamReader]::new($stream, [System.Text.UTF8Encoding]::new($false), $true)
+        $text = $reader.ReadToEnd()
+        $lines = @($text -split "`r?`n" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+        if ($start -gt 0 -and $lines.Count -gt 0) { $lines = @($lines | Select-Object -Skip 1) }
+        return $lines
+    }
+    catch { return @() }
+    finally {
+        if ($reader) { $reader.Dispose() }
+        elseif ($stream) { $stream.Dispose() }
+    }
+}
+
+function Get-DevMonitorGates {
+    param([string]$RepoRoot)
+    $path = Join-Path $RepoRoot 'temp/metrics/gate-executions.jsonl'
+    $runs = @{}
+    foreach ($line in @(Read-DevMonitorTailLines -Path $path)) {
+        try { $row = $line | ConvertFrom-Json -ErrorAction Stop } catch { continue }
+        $runId = [string](Get-DevMonitorProp $row 'runId' 'legacy')
+        if (-not $runs.ContainsKey($runId)) { $runs[$runId] = @() }
+        $runs[$runId] += $row
+    }
+    $items = @()
+    foreach ($run in $runs.Values) {
+        $ordered = @($run | Sort-Object { [string](Get-DevMonitorProp $_ 'timestampUtc' '') })
+        $last = $ordered[-1]
+        $bad = @($ordered | Where-Object { [string](Get-DevMonitorProp $_ 'status' '') -ne 'PASS' } |
+            ForEach-Object {
+                [pscustomobject][ordered]@{
+                    gate = [string](Get-DevMonitorProp $_ 'gate' '')
+                    scope = [string](Get-DevMonitorProp $_ 'scope' 'unknown')
+                    count = Get-DevMonitorProp $_ 'findingCount'
+                }
+            })
+        $items += [pscustomobject][ordered]@{
+            runner = [string](Get-DevMonitorProp $last 'runner' '')
+            runId = [string](Get-DevMonitorProp $last 'runId' '')
+            atUtc = [string](Get-DevMonitorProp $last 'timestampUtc' '')
+            status = if ($bad.Count -gt 0) { 'FAIL' } else { 'PASS' }
+            failures = $bad
+        }
+    }
+    return @($items | Sort-Object atUtc -Descending | Select-Object -First 12)
+}
+
+function Get-DevMonitorContextSignals {
+    param([string]$RepoRoot)
+    $dir = Join-Path $RepoRoot 'temp/context-signal'
+    $out = @{}
+    if (-not (Test-Path -LiteralPath $dir)) { return $out }
+    foreach ($file in @(Get-ChildItem -LiteralPath $dir -Filter '*.json' -File -ErrorAction SilentlyContinue)) {
+        $marker = Read-DevMonitorJson -Path $file.FullName
+        if ($null -eq $marker) { continue }
+        $id = $file.BaseName
+        $out[$id] = [pscustomobject][ordered]@{
+            band = if (Get-DevMonitorProp $marker 'signalled' $false) { 'over threshold' }
+                elseif (Get-DevMonitorProp $marker 'commandDriven' $false) { 'pipeline' }
+                else { 'available' }
+            overThreshold = [bool](Get-DevMonitorProp $marker 'signalled' $false)
+        }
+    }
+    return $out
+}
+
+function Get-DevMonitorWatchdogActions {
+    param([string]$RepoRoot)
+    $path = Join-Path $RepoRoot 'temp/scratch/watchdog/watchdog.log'
+    $out = @()
+    foreach ($line in @(Read-DevMonitorTailLines -Path $path -MaxBytes 65536 | Select-Object -Last 30)) {
+        if ($line -notmatch '^(?<at>\S+\s+\S+)\s+(?<action>KILLED|DROPPED|STARTED runner|WOULD KILL|WOULD DROP|WOULD START|FAILED)\s+(?<detail>.+)$') { continue }
+        $out += [pscustomobject][ordered]@{ at = $Matches.at; action = $Matches.action; detail = $Matches.detail }
+    }
+    return @($out | Select-Object -Last 12)
+}
+
 function Get-DevMonitorProp {
     param($Object, [string]$Name, $Default = $null)
     if ($null -eq $Object) { return $Default }
@@ -203,8 +289,7 @@ function Get-DevMonitorInstances {
     $runDir = (Join-Path $RepoRoot (Get-SzaPath 'queueRunsDir' -Relative))
     if (-not (Test-Path -LiteralPath $runDir)) { return $out }
     foreach ($j in @(Get-ChildItem -LiteralPath $runDir -Filter 'runs-*.jsonl' -ErrorAction SilentlyContinue | Sort-Object Name)) {
-        $lines = @()
-        try { $lines = @(Get-Content -LiteralPath $j.FullName -ErrorAction Stop | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) } catch { $lines = @() }
+        $lines = @(Read-DevMonitorTailLines -Path $j.FullName)
         # Counts by regex, rows by parse: parsing three hundred rows to show five costs more than
         # the rest of the snapshot together.
         $moved = @($lines | Where-Object { $_ -match '"moved"\s*:\s*true' }).Count
@@ -228,6 +313,12 @@ function Get-DevMonitorInstances {
             recorded = $lines.Count
             moved    = $moved
             stayed   = ($lines.Count - $moved)
+            idleToday = @($rows | Where-Object { -not $_.moved }).Count
+            idleMinutesToday = [math]::Round((@($rows | Where-Object { -not $_.moved } | Measure-Object -Property minutes -Sum).Sum), 1)
+            timeoutsToday = @($rows | Where-Object { $_.outcome -eq 'timeout' }).Count
+            cheapModelShare = if ($rows.Count -gt 0) {
+                [math]::Round((@($rows | Where-Object { $_.model -and $_.model -notmatch 'opus' }).Count / $rows.Count) * 100, 1)
+            } else { $null }
             rows     = $rows
         }
     }
@@ -305,7 +396,7 @@ function Get-DevMonitorNextUp {
     $inPackage = $false
     $total = 0
     foreach ($line in $lines) {
-        if ($line -match '^(\d+|--)\s+(S\d{4})_(\S+)\s+(\d{4}-\d{2}-\d{2})\s+(\S+)(?:\s+\[taken ([^\]]+)\])?') {
+        if ($line -match '^(\d+|--)\s+(S\d{4})_(\S+)\s+(\d{4}-\d{2}-\d{2})\s+(\S+)(?:\s+\[taken ([^\]]+)\])?(?:\s+\[idle (\d+), ([^\]]+)\])?') {
             if ($Matches[1] -ne $package) { $inPackage = $false; continue }
             $inPackage = $true
             $total++
@@ -321,6 +412,8 @@ function Get-DevMonitorNextUp {
                 taken   = $taken
                 leased  = ($null -ne $taken)
                 blocked = ($Matches[5] -like 'Block*')
+                idleCount = if ($Matches[7]) { [int]$Matches[7] } else { $null }
+                idleOutcome = if ($Matches[8]) { $Matches[8] } else { $null }
             }
             continue
         }
@@ -354,13 +447,25 @@ function Get-DevMonitorSnapshot {
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
     $RepoRoot = (Resolve-Path -LiteralPath $RepoRoot).Path.TrimEnd('\', '/')
 
-    $leases = @(Get-DevMonitorLeaseFiles -RepoRoot $RepoRoot)
-    $locks = @(Get-DevMonitorLocks -RepoRoot $RepoRoot)
-    $instances = @(Get-DevMonitorInstances -RepoRoot $RepoRoot -Tail $Tail)
-    $stop = @(Get-DevMonitorStopFlags -RepoRoot $RepoRoot)
-    $children = @(Get-DevMonitorChildren -RepoRoot $RepoRoot)
+    $timings = [ordered]@{}
+    $measure = {
+        param([string]$Name, [scriptblock]$Read)
+        $part = [System.Diagnostics.Stopwatch]::StartNew()
+        $value = & $Read
+        $part.Stop()
+        $timings[$Name] = [int]$part.ElapsedMilliseconds
+        return $value
+    }
+    $leases = @(& $measure 'leases' { Get-DevMonitorLeaseFiles -RepoRoot $RepoRoot })
+    $locks = @(& $measure 'locks' { Get-DevMonitorLocks -RepoRoot $RepoRoot })
+    $instances = @(& $measure 'runner' { Get-DevMonitorInstances -RepoRoot $RepoRoot -Tail $Tail })
+    $gates = @(& $measure 'gates' { Get-DevMonitorGates -RepoRoot $RepoRoot })
+    $contexts = & $measure 'context' { Get-DevMonitorContextSignals -RepoRoot $RepoRoot }
+    $watchdog = @(& $measure 'watchdog' { Get-DevMonitorWatchdogActions -RepoRoot $RepoRoot })
+    $stop = @(& $measure 'stop' { Get-DevMonitorStopFlags -RepoRoot $RepoRoot })
+    $children = @(& $measure 'children' { Get-DevMonitorChildren -RepoRoot $RepoRoot })
     # Not `$nextUp`: PowerShell names are case-insensitive, so that would be the [int] parameter.
-    $queueRows = Get-DevMonitorNextUp -RepoRoot $RepoRoot -NextUp $NextUp
+    $queueRows = & $measure 'queue' { Get-DevMonitorNextUp -RepoRoot $RepoRoot -NextUp $NextUp }
 
     # Everything that needs the lock library runs inside one scriptblock: its strict mode and its
     # timings stay out of the caller's scope (the pattern the terminal monitor used for the chat).
@@ -467,6 +572,8 @@ function Get-DevMonitorSnapshot {
                     phase           = if ($ph) { [string](Get-AgentChatProp $ph 'phase' '') } else { $null }
                     phaseNote       = if ($ph) { [string](Get-AgentChatProp $ph 'note' '') } else { $null }
                     phaseAgeMinutes = if ($ph) { [double](Get-AgentChatProp $ph 'ageMinutes' 0) } else { $null }
+                    contextBand     = if ($contexts.ContainsKey($id)) { $contexts[$id].band } else { $null }
+                    contextOverThreshold = if ($contexts.ContainsKey($id)) { $contexts[$id].overThreshold } else { $false }
                 }
             }
             $agents = @($agents | Sort-Object ageMinutes)
@@ -555,6 +662,7 @@ function Get-DevMonitorSnapshot {
         host                = $env:COMPUTERNAME
         repoRoot            = $RepoRoot.Replace('\', '/')
         durationMs          = [int]$sw.ElapsedMilliseconds
+        timings             = [pscustomobject]$timings
         chatError           = $chat.Error
         windows             = $chat.Windows
         leases              = $leases
@@ -568,6 +676,8 @@ function Get-DevMonitorSnapshot {
         findingsDead        = [int]$chat.Dead
         findingsDeadReasons = $chat.DeadReasons
         instances           = $instances
+        gates               = $gates
+        watchdog            = $watchdog
         stop                = $stop
         children            = $children
         nextUp              = $queueRows

@@ -232,7 +232,8 @@ function Show-Snapshot {
         foreach ($r in @($Snapshot.agents)) {
             $flag = if ($r.silent) { 'SILENT' } else { 'live' }
             $where = if ($r.lastTicket -and $r.phase -and $r.phaseTicket -eq $r.lastTicket) { "$($r.lastTicket)/$($r.phase)" } elseif ($r.lastTicket) { $r.lastTicket } elseif ($r.phaseTicket) { "$($r.phaseTicket)/$($r.phase)" } else { '-' }
-            Write-Host ('  {0,-6} {1,5} ago  {2,-22} {3}/{4}  {5,-9} {6,-12} {7}' -f $flag, (Format-ChatAge $r.ageMinutes), $r.name, $r.runtime, $r.model, $r.lastKind, $where, $r.lastNote) -ForegroundColor $(if ($r.silent) { 'DarkYellow' } else { 'Gray' })
+            $context = if ($r.contextBand) { $r.contextBand } else { '-' }
+            Write-Host ('  {0,-6} {1,5} ago  {2,-22} {3}/{4}  {5,-13} {6,-9} {7,-12} {8}' -f $flag, (Format-ChatAge $r.ageMinutes), $r.name, $r.runtime, $r.model, $context, $r.lastKind, $where, $r.lastNote) -ForegroundColor $(if ($r.silent -or $r.contextOverThreshold) { 'DarkYellow' } else { 'Gray' })
         }
         Write-Host ('  alive findings: {0}  (`.\a.ps1 chat -Verb Find -Topic "*"` lists them)' -f @($Snapshot.findings).Count) -ForegroundColor DarkGray
         if ($Snapshot.findingsDead -and $Snapshot.findingsDead -gt 0) {
@@ -246,6 +247,37 @@ function Show-Snapshot {
             }
             $breakdown = if ($parts.Count -gt 0) { " (" + ($parts -join ', ') + ")" } else { "" }
             Write-Host ('  dead findings:  {0}{1}' -f $Snapshot.findingsDead, $breakdown) -ForegroundColor DarkGray
+        }
+    }
+
+    Write-Section 'gate health (recent closures and batches)'
+    if (@($Snapshot.gates).Count -eq 0) {
+        Write-Host '  source silent.' -ForegroundColor DarkYellow
+    } else {
+        foreach ($gate in @($Snapshot.gates)) {
+            $bad = @($gate.failures | ForEach-Object {
+                $scope = if ($_.scope -eq 'set-named') { 'named your file' } else { $_.scope }
+                "$($_.gate) [$scope]"
+            }) -join ', '
+            Write-Host ("  {0,-4} {1,-18} {2}" -f $gate.status, $gate.runner, $(if ($bad) { $bad } else { 'clean' })) -ForegroundColor $(if ($gate.status -eq 'PASS') { 'Gray' } else { 'Red' })
+        }
+    }
+
+    Write-Section 'runner health (today)'
+    if (@($Snapshot.instances).Count -eq 0) {
+        Write-Host '  source silent.' -ForegroundColor DarkYellow
+    } else {
+        foreach ($instance in @($Snapshot.instances)) {
+            Write-Host ('  {0}: idle {1} ({2:N1}m), timeouts {3}, cheap model {4}%' -f $instance.instance, $instance.idleToday, $instance.idleMinutesToday, $instance.timeoutsToday, $instance.cheapModelShare) -ForegroundColor Gray
+        }
+    }
+
+    Write-Section 'watchdog actions'
+    if (@($Snapshot.watchdog).Count -eq 0) {
+        Write-Host '  source silent.' -ForegroundColor DarkYellow
+    } else {
+        foreach ($action in @($Snapshot.watchdog)) {
+            Write-Host ('  {0}  {1}  {2}' -f $action.at, $action.action, $action.detail) -ForegroundColor DarkGray
         }
     }
 

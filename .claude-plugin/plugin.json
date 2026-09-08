@@ -1,6 +1,6 @@
 {
   "name": "sza",
-  "version": "2026.908.1",
+  "version": "2026.908.2",
   "description": "The SZA portfolio canon as working skills: release, store/winget publishing, feature-to-site propagation, spec-to-self-audit, and canon adoption. Carries the full rule set in rules/ so any session on any project can reach it without a local path.",
   "author": {
     "name": "Serhii Zhyhunenko",
