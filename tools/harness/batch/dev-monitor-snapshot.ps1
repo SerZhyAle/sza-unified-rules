@@ -20,6 +20,7 @@
                            `phase` message of each agent), the tail of the stream, alive findings;
       - run journals       temp/spec-queue/runs-<instance>.jsonl, tail rows plus counts;
       - stop flags         temp/STOP-SPEC-QUEUE*;
+      - live sessions      ticket-lease owners still judged live, plus fresh session-start records;
       - headless children  claude.exe started with -p, with the age of the newest file its ticket wrote;
       - the release queue  PLAN/RELEASE_QUEUE.md rows of the current package, in file order, with the
                            [taken ..] marker and the Block* statuses the ranker would skip.
@@ -395,25 +396,43 @@ function Get-DevMonitorNextUp {
     $rows = @()
     $inPackage = $false
     $total = 0
+    # S2852: the package lives in a section heading, not in a column on the row, so this parser
+    # tracks the heading the way the file reads. The pre-S2852 shape - a leading package column, a
+    # date with no time - still parses, so a stale copy of the file is read rather than reported
+    # as an empty package.
+    $section = $null
+    $changedPattern = '(\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?|\d{2}-\d{2}-\d{2}(?: \d{2}:\d{2})?)'
+    $markerPattern = '(?:\s+\[taken ([^\]]+)\])?(?:\s+\[idle (\d+), ([^\]]+)\])?'
     foreach ($line in $lines) {
-        if ($line -match '^(\d+|--)\s+(S\d{4})_(\S+)\s+(\d{4}-\d{2}-\d{2})\s+(\S+)(?:\s+\[taken ([^\]]+)\])?(?:\s+\[idle (\d+), ([^\]]+)\])?') {
-            if ($Matches[1] -ne $package) { $inPackage = $false; continue }
+        if ($line -match '^\s*(\d+|--)\s*$') { $section = $Matches[1]; continue }
+        $rel = $null
+        if ($line -match ('^(S(\d{4}))_(\S+)\s+' + $changedPattern + '\s+(\S+)' + $markerPattern)) {
+            $rel = $section
+            $id = $Matches[1]; $slug = $Matches[3]; $changed = $Matches[4]; $status = $Matches[5]
+            $takenRaw = $Matches[6]; $idleCountRaw = $Matches[7]; $idleOutcomeRaw = $Matches[8]
+        } elseif ($line -match ('^(\d+|--)\s+(S\d{4})_(\S+)\s+' + $changedPattern + '\s+(\S+)' + $markerPattern)) {
+            $rel = $Matches[1]
+            $id = $Matches[2]; $slug = $Matches[3]; $changed = $Matches[4]; $status = $Matches[5]
+            $takenRaw = $Matches[6]; $idleCountRaw = $Matches[7]; $idleOutcomeRaw = $Matches[8]
+        }
+        if ($null -ne $rel) {
+            if ($rel -ne $package) { $inPackage = $false; continue }
             $inPackage = $true
             $total++
             if ($rows.Count -ge $NextUp -and $NextUp -gt 0) { continue }
-            $taken = if ($Matches[6]) { $Matches[6] } else { $null }
+            $taken = if ($takenRaw) { $takenRaw } else { $null }
             $rows += [pscustomobject][ordered]@{
                 kind    = 'row'
-                rel     = $Matches[1]
-                id      = $Matches[2]
-                slug    = $Matches[3]
-                changed = $Matches[4]
-                status  = $Matches[5]
+                rel     = $rel
+                id      = $id
+                slug    = $slug
+                changed = $changed
+                status  = $status
                 taken   = $taken
                 leased  = ($null -ne $taken)
-                blocked = ($Matches[5] -like 'Block*')
-                idleCount = if ($Matches[7]) { [int]$Matches[7] } else { $null }
-                idleOutcome = if ($Matches[8]) { $Matches[8] } else { $null }
+                blocked = ($status -like 'Block*')
+                idleCount = if ($idleCountRaw) { [int]$idleCountRaw } else { $null }
+                idleOutcome = if ($idleOutcomeRaw) { $idleOutcomeRaw } else { $null }
             }
             continue
         }
@@ -578,6 +597,45 @@ function Get-DevMonitorSnapshot {
             }
             $agents = @($agents | Sort-Object ageMinutes)
 
+            # `children` below is deliberately process-shaped: it answers whether a `claude -p`
+            # process exists. RUNNING needs the other view as well: the original agent sessions
+            # that own live leases, regardless of runtime, plus a fresh session that has no ticket
+            # yet. Do not infer a root session from a pid-* chat record: hookless runtimes can mint
+            # one such identity per tool call, and presenting those as independent sessions would
+            # recreate the exact monitor confusion this field removes.
+            $sessionsById = [ordered]@{}
+            foreach ($l in $Leases) {
+                if ($l.liveness -ne 'foreign-live' -or [string]::IsNullOrWhiteSpace($l.sessionId)) { continue }
+                # A pid-* identity belongs to one short-lived tool process. Its heartbeat can remain
+                # inside the lease grace window after that process is gone, which says "not stale"
+                # for arbitration but must not say "running" in the monitor. Stable session ids are
+                # still judged by the lease liveness contract above.
+                if ($l.sessionId -match '^pid-' -and -not (Test-AgentIdentityProcessAlive -Id $l.sessionId)) { continue }
+                $agent = @($agents | Where-Object { $_.id -eq $l.sessionId } | Select-Object -First 1)[0]
+                $sessionsById[$l.sessionId] = [pscustomobject][ordered]@{
+                    id         = $l.sessionId
+                    name       = $l.name
+                    runtime    = if ($agent) { $agent.runtime } else { 'unknown' }
+                    ticket     = $l.id
+                    ageMinutes = $l.lastSeenMinutes
+                    source     = 'live lease'
+                }
+            }
+            foreach ($agent in $agents) {
+                if ($agent.silent -or $agent.lastKind -ne 'session' -or $agent.lastNote -match '^session ended') { continue }
+                if ($agent.id -match '^pid-') { continue }
+                if ($sessionsById.Contains($agent.id)) { continue }
+                $sessionsById[$agent.id] = [pscustomobject][ordered]@{
+                    id         = $agent.id
+                    name       = $agent.name
+                    runtime    = $agent.runtime
+                    ticket     = ''
+                    ageMinutes = $agent.ageMinutes
+                    source     = 'session heartbeat'
+                }
+            }
+            $sessions = @($sessionsById.Values | Sort-Object ageMinutes)
+
             $tail = @()
             foreach ($m in @($messages | Select-Object -First $ChatTail)) {
                 $agent = Get-AgentChatProp $m 'agent'
@@ -637,6 +695,7 @@ function Get-DevMonitorSnapshot {
                     ceilingMinutes   = [int]$timings.TicketCeilingMinutes
                 }
                 Agents      = $agents
+                Sessions    = $sessions
                 Stalls      = $stalls
                 Tail        = $tail
                 Findings    = $alive
@@ -646,7 +705,7 @@ function Get-DevMonitorSnapshot {
             }
         } $lockLib $leases $locks $ChatTail
     } catch {
-        $chat = [pscustomobject]@{ Windows = $null; Agents = @(); Stalls = @(); Tail = @(); Findings = @(); Dead = 0; DeadReasons = $null; Error = "$_" }
+        $chat = [pscustomobject]@{ Windows = $null; Agents = @(); Sessions = @(); Stalls = @(); Tail = @(); Findings = @(); Dead = 0; DeadReasons = $null; Error = "$_" }
     }
 
     # The transport fields of a lease are not for display.
@@ -671,6 +730,7 @@ function Get-DevMonitorSnapshot {
         # every reader that does draws the same verdict rather than deriving its own (S2413).
         stalls              = @($chat.Stalls)
         agents              = @($chat.Agents)
+        sessions            = @($chat.Sessions)
         chat                = @($chat.Tail)
         findings            = @($chat.Findings)
         findingsDead        = [int]$chat.Dead

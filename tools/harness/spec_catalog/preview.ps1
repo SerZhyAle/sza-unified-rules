@@ -30,9 +30,13 @@
 #     "last_audit_present": false,
 #     "timber_tags_kt": 0,
 #     "auto_skip": null,                  # or "tier-5-epic" / "owner-gate" / "blocker-not-verified"
-#                                         # / "blocker-unresolvable" (never research-heavy)
+#                                         # / "blocker-unresolvable" (never research-heavy).
+#                                         # "blocker-not-verified" covers TWO shapes since S2834:
+#                                         # a blocker below the release-ready set, and a
+#                                         # release-ready blocker parked mid-plan - the reason
+#                                         # string names its `phases N/M`
 #     "auto_skip_reason": null,           # human-readable reason
-#     "depends_on": [ {"id":"S0241","status":"Verified"}, ... ],
+#     "depends_on": [ {"id":"S0241","status":"Verified","file":"PLAN/S0241_slug.md"}, ... ],
 #                                         # sourced from a **Depends on:** line, else from every
 #                                         # `Blocker:` / `Блокер:` token in section 10 and in the
 #                                         # catalog statusNote. Section 10 prose is NOT scraped (S1482)
@@ -190,13 +194,17 @@ foreach ($dep in $depIds) {
     if ($depJson -and $depJson -ne '[]') {
         $depRec = $depJson | ConvertFrom-Json
         if ($depRec -is [array]) { $depRec = $depRec[0] }
+        # `file` is carried because the release test reads the blocker's own tactical plan, not
+        # only its status (S2834). A record without the property leaves it $null, which the test
+        # reads as "nothing to contradict the status" - the same fail-open as an absent folder.
         $dependsOn += [PSCustomObject]@{
             id     = $dep
             status = $depRec.status
+            file   = $depRec.file
         }
     }
     else {
-        $dependsOn += [PSCustomObject]@{ id = $dep; status = '?' }
+        $dependsOn += [PSCustomObject]@{ id = $dep; status = '?'; file = $null }
     }
 }
 
@@ -229,7 +237,9 @@ foreach ($p in $ownerGatePatterns) {
 $autoSkip = $null
 $autoSkipReason = $null
 $tierVal = if ($frontmatter['Tier']) { $frontmatter['Tier'] } else { '' }
-$unverifiedBlockers = @($dependsOn | Where-Object { -not (Test-BlockerReleasedStatus -Status ([string]$_.status)) })
+$unverifiedBlockers = @($dependsOn | Where-Object {
+        -not (Test-BlockerReleased -Status ([string]$_.status) -Id ([string]$_.id) -File ([string]$_.file))
+    })
 if ($tierVal -match '^\s*5') {
     $autoSkip = 'tier-5-epic'
     $autoSkipReason = 'Tier 5 epic-container, no code under its id'
@@ -247,8 +257,25 @@ elseif ($unverifiedBlockers.Count -gt 0) {
     # _status-sets.ps1. S1775 itself named this predicate an extension point, having measured
     # a ticket waiting on five blockers that were all merely awaiting a device pass. The
     # reason string keeps its name so operators and the skip cache read the same token.
+    #
+    # S2834 widened what this ONE code covers rather than adding a second: a release-ready
+    # blocker parked in the middle of its own tactical plan is also unreleased, and the phase
+    # counter goes into the detail string. A new code would have had to be added to this
+    # enumeration, to its consumers, and to /spec-next step 2's list of skips that must NOT be
+    # persisted - the exception that exists because `blocker-not-verified` depends on another
+    # ticket's state and has to be re-derived every run. The plan test depends on exactly the
+    # same thing, so reusing the code keeps that property true for free; a new one would have
+    # been cached and gone stale the moment the blocker finished a phase.
     $autoSkip = 'blocker-not-verified'
-    $autoSkipReason = 'Depends on ' + (($unverifiedBlockers | ForEach-Object { "$($_.id)($($_.status))" }) -join ', ')
+    $autoSkipReason = 'Depends on ' + (($unverifiedBlockers | ForEach-Object {
+                $detail = "$($_.id)($($_.status)"
+                if ((Test-ReleaseReadyStatus -Status ([string]$_.status)) -and
+                    -not (Test-BlockerPlanComplete -Id ([string]$_.id) -File ([string]$_.file))) {
+                    $phases = Get-TacticalPhaseCounter -File ([string]$_.file)
+                    $detail += if ($phases) { ", phases $phases" } else { ', mid-plan' }
+                }
+                $detail + ')'
+            }) -join ', ')
 }
 elseif ($rec.status -eq 'BlockByOtherTask') {
     # S1073: fail-closed. Status is BlockByOtherTask but no directional blocker was parsed.

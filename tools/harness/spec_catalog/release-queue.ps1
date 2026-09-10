@@ -208,7 +208,9 @@ switch ($PSCmdlet.ParameterSetName) {
         $block.Add($title)
         $block.Add('')
         foreach ($t in $shipping) {
-            $block.Add((Format-ReleaseQueueLine -Release $t.Release -Ticket $t.Ticket -Changed $t.Changed -Status $t.Status))
+            # No package column on the row: the block title above it already names the package
+            # (S2852), and this file is one block per package by construction.
+            $block.Add((Format-ReleaseQueueLine -Ticket $t.Ticket -Changed $t.Changed -Status $t.Status))
         }
         $block.Add('')
 
@@ -263,8 +265,17 @@ switch ($PSCmdlet.ParameterSetName) {
         if ($WithLeases) {
             foreach ($lease in (Get-ActiveTicketLeases)) { $leaseById[[string] $lease.id] = $lease }
         }
+        # S2852: the row no longer carries its package, so the listing prints the heading the file
+        # prints. Without it a multi-package -List is a flat list of tickets whose package is
+        # unknowable, which is the one thing this command is read for.
+        $section = $null
         foreach ($t in $tickets) {
-            $row = Format-ReleaseQueueLine -Release $t.Release -Ticket $t.Ticket -Changed $t.Changed -Status $t.Status
+            $release = Format-ReleaseQueueSection -Release ([string] $t.Release)
+            if ($release -ne $section) {
+                Write-Output $release
+                $section = $release
+            }
+            $row = Format-ReleaseQueueLine -Ticket $t.Ticket -Changed $t.Changed -Status $t.Status
             $ticketId = [string] $t.Id
             if ($leaseById.ContainsKey($ticketId)) {
                 $lease = $leaseById[$ticketId]
@@ -284,7 +295,7 @@ switch ($PSCmdlet.ParameterSetName) {
                 # Pad to a fixed column so the markers line up: the status column is ragged
                 # (4 characters for 'Dead' against 17 for 'BlockNeedUserTest') and an unpadded
                 # marker zig-zags across the block, which is the one thing this row is for.
-                $row = '{0,-98}[taken {1}m, {2}, {3}]' -f $row, $lease.ageMinutes, $reason, $holder
+                $row = '{0}[taken {1}m, {2}, {3}]' -f $row.PadRight($script:ReleaseQueueMarkerColumn), $lease.ageMinutes, $reason, $holder
             }
             Write-Output $row
         }

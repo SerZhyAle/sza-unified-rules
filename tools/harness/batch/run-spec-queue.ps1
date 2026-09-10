@@ -613,6 +613,62 @@ function Add-RunRecord {
     return $record
 }
 
+function Resolve-RunOutcome {
+    <#
+        What a finished child actually was, and whether the ticket moved - decided in one place so
+        the journal, the summary colour and the idle series cannot read the same run differently.
+
+        S2873. The exit code used to be journalled and never read: $outcome started at 'ok' and only
+        three branches ever rewrote it, none of them the ordinary "the child started and failed".
+        Such a run fell through to the elapsed-time guess below and was filed as an idle ticket.
+        Measured over 985 journal rows on 2026-09-10, 68 of them (6.9%) described a failed child
+        under another name - and 10 of those kept 'ok', which IS an idle outcome here, so a run the
+        RUNNER failed pushed the ticket towards being passed over by automatic ranking. S1565 was
+        held as [idle 2, ok] on the strength of one such row that same morning.
+
+        The order of the rules is the point:
+
+        1. An established verdict is never overwritten. 'timeout', 'claim-lost',
+           'claim-lost-before-launch' and 'launch-failed' all observed the child itself, and a killed
+           process's exit code is a consequence of the kill rather than a diagnosis of it.
+        2. A non-zero exit is 'child-failed'.
+        3. Otherwise the pre-existing guess: a child that exited quickly having changed nothing
+           usually lost its claim to a parallel instance.
+
+        Moved is false on a lost claim (the sibling working the ticket wrote the status this run
+        would otherwise report as its own) and also on an EMPTY StatusAfter: two rows in that same
+        journal recorded 'Draft -> "", moved: true' for children killed mid-run, because
+        Get-TicketStatus could not read the catalog and '' differs from every real status. An
+        unreadable status is a missing reading, not a move - and moved outranks the outcome in every
+        consumer, so renaming those rows without this would leave them reading as successes.
+    #>
+    param(
+        [string] $Outcome,
+        $ExitCode,
+        [string] $StatusBefore,
+        [string] $StatusAfter,
+        [int] $ElapsedSeconds
+    )
+
+    $resolved = $Outcome
+    if ($resolved -eq 'ok') {
+        if ($null -ne $ExitCode -and [int]$ExitCode -ne 0) {
+            $resolved = 'child-failed'
+        } elseif ($StatusBefore -eq $StatusAfter -and $ElapsedSeconds -lt 120) {
+            $resolved = 'no-progress-or-claim-lost'
+        }
+    }
+
+    $moved = $true
+    if ($resolved -like 'claim-lost*' -or [string]::IsNullOrWhiteSpace($StatusAfter)) {
+        $moved = $false
+    } else {
+        $moved = ($StatusBefore -ne $StatusAfter)
+    }
+
+    return [pscustomobject]@{ Outcome = $resolved; Moved = $moved }
+}
+
 # ---------------------------------------------------------------------------------------------
 # Build the work list
 # ---------------------------------------------------------------------------------------------
@@ -968,29 +1024,18 @@ while ($true) {
     $elapsedSeconds = [int]((Get-Date) - $started).TotalSeconds
     $elapsed = [int]((Get-Date) - $started).TotalMinutes
 
-    # A child that exits within a couple of minutes having changed nothing almost always lost the
-    # claim to a parallel instance: /spec-all stage 0a.5 reports the holder and stops before any
-    # work. Naming that outcome keeps the summary honest - it is not the same as "nothing to do".
+    # What the run was, and whether the ticket moved. Both answers come from one function so the
+    # journal row, the summary colour and the idle series cannot disagree - see Resolve-RunOutcome
+    # for the rules and the measurements behind each of them (S2873).
     #
-    # It is a guess from elapsed time, and it stays only for the cases the two lease checks above do
-    # not reach. Those checks observed the lease itself, so their verdict outranks this one, and the
-    # `-eq 'ok'` test is what stops this line overwriting an already-established claim-lost: neither
-    # 'claim-lost' nor 'claim-lost-before-launch' is 'ok'.
-    $claimLost = ($outcome -like 'claim-lost*')
-    if ($outcome -eq 'ok' -and $statusBefore -eq $statusAfter -and $elapsedSeconds -lt 120) {
-        $outcome = 'no-progress-or-claim-lost'
-    }
+    # A ticket handed back with the status it started with has no autonomous next step; it stays in
+    # $processed either way, so the re-ranking below never offers it again this run.
+    $verdict = Resolve-RunOutcome -Outcome $outcome -ExitCode $exitCode `
+            -StatusBefore $statusBefore -StatusAfter $statusAfter -ElapsedSeconds $elapsedSeconds
+    $outcome = $verdict.Outcome
+    $moved = $verdict.Moved
     $ranAny = $true
     $processed.Add($id)
-
-    # A ticket handed back with the status it started with has no autonomous next step; it stays in
-    # $processed, so the re-ranking below never offers it again this run.
-    #
-    # A run that lost the claim gets $false regardless of what the two statuses say. statusAfter is
-    # read from the catalog after the child exits, so the sibling working the same ticket writes the
-    # value this run would then report as its own: runs-a.jsonl recorded 'Draft -> Approved,
-    # moved: true, outcome: ok' for a child that changed nothing at all (2026-09-05, S2578).
-    $moved = if ($claimLost) { $false } else { ($statusBefore -ne $statusAfter) }
 
     $runRecord = Add-RunRecord -Id $id -ChildModel $childModel -StatusBefore $statusBefore `
             -StatusAfter $statusAfter -Moved $moved -Outcome $outcome -ExitCode $exitCode `

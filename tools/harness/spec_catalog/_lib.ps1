@@ -92,6 +92,30 @@ function Get-Today {
     return (Get-Date -Format 'yyyy-MM-dd')
 }
 
+function Get-ReleaseChangedStamp {
+    # The release files' `changed` column: minute precision on a two-digit year. A ticket can move
+    # status several times in one working day, and a date-only column cannot order those moves -
+    # which is the whole question the column is read to answer.
+    return (Get-Date -Format 'yy-MM-dd HH:mm')
+}
+
+function ConvertTo-ReleaseChangedStamp {
+    # Normalise whatever a release row or a catalog record carries into the column's own shape.
+    # Three inputs are real: the catalog's `yyyy-MM-dd HH:mm`, a pre-S2852 row's date-only
+    # `yyyy-MM-dd`, and a row already in the new shape. A date with no time keeps its date and
+    # takes 00:00 rather than today's clock, because inventing a minute would read as a status
+    # move that never happened.
+    param([AllowEmptyString()][AllowNull()][string] $Value)
+    $text = "$Value".Trim()
+    if ($text -match '^\d{2}-\d{2}-\d{2} \d{2}:\d{2}$') { return $text }
+    if ($text -match '^(\d{2})(\d{2}-\d{2}-\d{2})(?:[ T](\d{2}:\d{2}))?') {
+        $time = if ($Matches[3]) { $Matches[3] } else { '00:00' }
+        return ('{0} {1}' -f $Matches[2], $time)
+    }
+    if ($text -match '^(\d{2}-\d{2}-\d{2})$') { return ('{0} 00:00' -f $Matches[1]) }
+    return (Get-ReleaseChangedStamp)
+}
+
 function Read-JsonlFile {
     # Parse one JSONL journal file into a sorted-by-id object array.
     # Missing file -> empty array. Parse errors carry the file name + line.
@@ -466,14 +490,31 @@ function Get-ReleaseQueueLeaseMap {
     return $map
 }
 
+# The column the occupancy and idle markers start at. Held in one place because three call sites
+# pad to it - the writer, the -List renderer and the tests - and a marker one space out of line
+# zig-zags down the block, which is the one thing a fixed column is for.
+$script:ReleaseQueueMarkerColumn = 98
+
+function Format-ReleaseQueueSection {
+    # The package heading (S2852): a line holding the package number and nothing else. Everything
+    # below it belongs to that package until the next heading, so re-packaging a ticket is a line
+    # move and nothing else - which is what the owner does to this file by hand.
+    param([Parameter(Mandatory)][AllowEmptyString()][string] $Release)
+    $text = "$Release".Trim()
+    if ($text -eq '') { $text = $script:ReleaseQueueBacklog }
+    return $text
+}
+
 function Format-ReleaseQueueLine {
+    # No package column: the section heading above the row carries it (S2852). A row that repeated
+    # the package could disagree with the section it sits under, and the disagreement would be
+    # invisible and authoritative.
     param(
-        [Parameter(Mandatory)][string] $Release,
         [Parameter(Mandatory)][string] $Ticket,
         [Parameter(Mandatory)][string] $Changed,
         [Parameter(Mandatory)][string] $Status
     )
-    return ('{0,-4} {1,-62} {2,-11} {3}' -f $Release, $Ticket, $Changed, $Status).TrimEnd()
+    return ('{0,-62} {1,-15} {2}' -f $Ticket, (ConvertTo-ReleaseChangedStamp -Value $Changed), $Status).TrimEnd()
 }
 
 function Read-ReleaseQueue { return ,(Read-ReleaseFile -Path $script:ReleaseQueuePath) }
@@ -495,16 +536,44 @@ function Read-ReleaseFile {
     $result = New-Object System.Collections.Generic.List[object]
     if (-not (Test-Path $Path)) { return ,$result }
     $raw = Get-Content -LiteralPath $Path -Encoding UTF8 -ErrorAction Stop
+    # The package a row belongs to is the nearest heading above it (S2852). A file that opens with
+    # rows before any heading is malformed rather than unscheduled, but reading them as backlog is
+    # the only answer that loses nothing: the writer then emits the heading the file was missing.
+    $section = $script:ReleaseQueueBacklog
     foreach ($line in @($raw)) {
-        # A data line is: <release> <Sxxxx_slug> <yyyy-MM-dd> <Status>. Anchoring on the id
-        # shape keeps prose and the column header from ever being mistaken for data.
+        # A data line is: <Sxxxx_slug> <yy-MM-dd HH:mm> <Status>. Anchoring on the id shape keeps
+        # prose and the column header from ever being mistaken for data. The pre-S2852 shape - a
+        # leading package column, a date with no time - still parses, so a half-migrated file or a
+        # stale copy is read rather than silently dropped; the writer emits only the new shape.
         $parsable = Remove-ReleaseQueueLeaseMarker -Line "$line"
-        if ($parsable -match '^\s*(\d+|--)\s+(S\d{4}_\S*)\s+(\d{4}-\d{2}-\d{2})\s+(\S.*?)\s*$') {
+        if ($parsable -match '^\s*(\d+|--)\s*$') {
+            $section = $Matches[1]
+            $result.Add([pscustomobject]@{ Kind = 'verbatim'; Text = "$line" })
+            continue
+        }
+        # RELEASE_QUEUE_DONE.md names its packages in a shipped-block title instead of a bare
+        # heading, and the same reader has to give those rows a package too.
+        if ($parsable -match '^##\s+release\s+(\d+|--)\b') {
+            $section = $Matches[1]
+            $result.Add([pscustomobject]@{ Kind = 'verbatim'; Text = "$line" })
+            continue
+        }
+        $changedPattern = '(\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?|\d{2}-\d{2}-\d{2}(?: \d{2}:\d{2})?)'
+        if ($parsable -match ('^\s*(S\d{4}_\S*)\s+' + $changedPattern + '\s+(\S.*?)\s*$')) {
+            $result.Add([pscustomobject]@{
+                Kind    = 'ticket'
+                Release = $section
+                Ticket  = $Matches[1]
+                Changed = (ConvertTo-ReleaseChangedStamp -Value $Matches[2])
+                Status  = $Matches[3]
+                Id      = $Matches[1].Substring(0, 5)
+            })
+        } elseif ($parsable -match ('^\s*(\d+|--)\s+(S\d{4}_\S*)\s+' + $changedPattern + '\s+(\S.*?)\s*$')) {
             $result.Add([pscustomobject]@{
                 Kind    = 'ticket'
                 Release = $Matches[1]
                 Ticket  = $Matches[2]
-                Changed = $Matches[3]
+                Changed = (ConvertTo-ReleaseChangedStamp -Value $Matches[3])
                 Status  = $Matches[4]
                 Id      = $Matches[2].Substring(0, 5)
             })
@@ -528,24 +597,42 @@ function Write-ReleaseFile {
     $out = New-Object System.Collections.Generic.List[string]
     $leaseMap = Get-ReleaseQueueLeaseMap
     $idleMap = Get-ReleaseQueueIdleMap
+    # S2852: the section heading is what carries the package now, so the writer tracks which one it
+    # is standing under and emits a missing heading rather than letting a row be re-homed by the
+    # section it happens to land in. This is what makes the round trip closed - read, write, read
+    # gives every ticket back the package it had - and it is the only place a heading is created,
+    # so an addition appended past the end of the file grows its own section.
+    $section = $script:ReleaseQueueBacklog
+    $sectionSeen = $false
+    $pad = $script:ReleaseQueueMarkerColumn
     # Iterate the List directly: @(..) around a List[object] of PSCustomObject throws
     # "Argument types do not match" (the array subexpression cannot build the PSObject[] copy).
     foreach ($l in $Lines) {
         if ($l.Kind -eq 'ticket') {
-            $row = Format-ReleaseQueueLine -Release $l.Release -Ticket $l.Ticket -Changed $l.Changed -Status $l.Status
+            $release = Format-ReleaseQueueSection -Release ([string] $l.Release)
+            if (-not $sectionSeen -or $release -ne $section) {
+                $out.Add($release)
+                $section = $release
+                $sectionSeen = $true
+            }
+            $row = Format-ReleaseQueueLine -Ticket $l.Ticket -Changed $l.Changed -Status $l.Status
             $marker = $leaseMap[[string] $l.Id]
             # Padded to a fixed column: the status field is ragged ('Draft' against
             # 'BlockNeedUserTest'), and an unpadded marker zig-zags down the block.
-            if ($marker) { $row = ('{0,-98}{1}' -f $row, $marker) }
+            if ($marker) { $row = ('{0}{1}' -f $row.PadRight($pad), $marker) }
             $idleMarker = $idleMap[[string] $l.Id]
             # The idle marker follows the occupancy one when both apply, and takes the same fixed
             # column when it stands alone, so the two never overlap and the block stays aligned.
             if ($idleMarker) {
-                $row = if ($marker) { '{0} {1}' -f $row, $idleMarker } else { '{0,-98}{1}' -f $row, $idleMarker }
+                $row = if ($marker) { '{0} {1}' -f $row, $idleMarker } else { '{0}{1}' -f $row.PadRight($pad), $idleMarker }
             }
             $out.Add($row)
         } else {
             $out.Add($l.Text)
+            if ($l.Text -match '^\s*(\d+|--)\s*$' -or $l.Text -match '^##\s+release\s+(\d+|--)\b') {
+                $section = $Matches[1]
+                $sectionSeen = $true
+            }
         }
     }
     $payload = [string]::Join("`r`n", $out.ToArray())
@@ -604,23 +691,23 @@ function Sync-ReleaseQueue {
     $byId = @{}
     foreach ($r in $Records) { $byId[$r.id] = $r }
 
-    $today = Get-Today
+    $stamp = Get-ReleaseChangedStamp
     $seen = @{}
     $toReady = New-Object System.Collections.Generic.List[object]
     $toQueue = New-Object System.Collections.Generic.List[object]
 
     # One pass per file: keep what still belongs, collect what crossed the boundary.
     $keptQueue = Select-ReleaseLines -Path $script:ReleaseQueuePath -ById $byId -Seen $seen `
-        -Today $today -WantReady $false -Moved $toReady
+        -Stamp $stamp -WantReady $false -Moved $toReady
     $keptReady = Select-ReleaseLines -Path $script:ReleaseReadyPath -ById $byId -Seen $seen `
-        -Today $today -WantReady $true -Moved $toQueue
+        -Stamp $stamp -WantReady $true -Moved $toQueue
 
     # A brand-new ticket is unfinished by definition, so it lands in the queue only.
     $current = Get-CurrentRelease
     foreach ($r in ($Records | Sort-Object -Property id)) {
         if ($seen.ContainsKey($r.id)) { continue }
         if (Test-ReleaseReadyStatus -Status $r.status) { continue }
-        $changed = if ("$($r.updated)".Length -ge 10) { "$($r.updated)".Substring(0, 10) } else { $today }
+        $changed = ConvertTo-ReleaseChangedStamp -Value "$($r.updated)"
         $toQueue.Add([pscustomobject]@{
             Kind    = 'ticket'
             Release = $current
@@ -647,7 +734,7 @@ function Select-ReleaseLines {
         [Parameter(Mandatory)][string] $Path,
         [Parameter(Mandatory)][hashtable] $ById,
         [Parameter(Mandatory)][hashtable] $Seen,
-        [Parameter(Mandatory)][string] $Today,
+        [Parameter(Mandatory)][string] $Stamp,
         [Parameter(Mandatory)][bool] $WantReady,
         [Parameter(Mandatory)] $Moved
     )
@@ -678,7 +765,7 @@ function Select-ReleaseLines {
 
         $rec = $ById[$line.Id]
         $Seen[$line.Id] = $true
-        $changed = if ($line.Status -ne $rec.status) { $Today } else { $line.Changed }
+        $changed = if ($line.Status -ne $rec.status) { $Stamp } else { $line.Changed }
         $row = [pscustomobject]@{
             Kind    = 'ticket'
             Release = $line.Release                      # the owner's package assignment survives

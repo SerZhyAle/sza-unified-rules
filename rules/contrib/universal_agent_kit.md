@@ -423,3 +423,16 @@ their provenance**.
   third-consumption-model wording still needs the correction noted on 2026-08-05 - it can no longer say
   "never carries a canon pointer".
 - Canon @ ae5f37f (clean); kit repo committed this session, not pushed.
+
+## Canon re-sync 2026-09-11 - canon `2026.09.08.2`
+
+Re-sync entry entered through `SZA-CANON03`: stamp bumped from `2026.09.06.1` to `2026.09.08.2` (`sha256:cdf49be6..`). Baseline gate **0 error(s), 0 warning(s)**, exit 0.
+
+### Verification
+
+| Check | Expected | Actual |
+| --- | --- | --- |
+| `check-compliance.ps1` | exit 0, no errors, no warnings | **0 error(s), 0 warning(s)**, exit **0** (canon 2026.09.08.2). |
+| `.sza-canon.json` re-parses | valid JSON, new version and digest | parsed; `2026.09.08.2` / `sha256:cdf49be6..` / `adoptedOn` 2026-09-11 |
+| Zip vs source | archive rebuilt | **42 entries**, **0 mismatches** |
+
