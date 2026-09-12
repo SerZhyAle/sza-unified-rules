@@ -86,6 +86,10 @@ $pwshExe = if (Test-Path "$env:ProgramFiles\PowerShell\7\pwsh.exe") {
 # selection time cannot disagree about what counts as a blocker.
 . (Join-Path $PSScriptRoot '_blocker-links.ps1')
 
+# S2921: and again for the owner-gate marker, shared with the release-queue writer in `_lib.ps1`,
+# so the row this command refuses to hand out automatically is the row nothing is appended below.
+. (Join-Path $PSScriptRoot '_owner-gate.ps1')
+
 # 1. Resolve catalog record
 $selectPath = Join-Path $PSScriptRoot 'select.ps1'
 $catJson = & $pwshExe -File $selectPath -Id $Id -Format json 2>$null
@@ -221,17 +225,9 @@ $researchOpenCount = $openItems.Count
 # The subset that would REFUSE a close: open, and naming no carrier ticket (S1607).
 $researchUncarriedCount = @($openItems | Where-Object { -not $_.Carrier }).Count
 
-# 10. Owner-gate detection
-$ownerGate = $false
-$ownerGatePatterns = @(
-    'автоматическая\s+передача\s+отключена',
-    'запуск\s+выполняется\s+отдельной\s+командой',
-    'owner\s+directive',
-    'manual\s+handoff\s+required'
-)
-foreach ($p in $ownerGatePatterns) {
-    if ($specText -match $p) { $ownerGate = $true; break }
-}
+# 10. Owner-gate detection (S2921: the pattern set lives in _owner-gate.ps1, read here and by the
+# release-queue writer, so one spec cannot be owner-gated for the picker and ordinary for the plan).
+$ownerGate = Test-OwnerGateText -Text $specText
 
 # 11. Auto-skip verdict
 $autoSkip = $null

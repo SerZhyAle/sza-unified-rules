@@ -1223,3 +1223,57 @@ these changes sit in the checkout and reach no consumer until the owner runs `pw
 which will now raise the pair on its own. One line in `rules/README.md` still tells a maintainer to bump
 `CANON_VERSION` by hand; `rules/` is not a file a project session may edit, so that correction is left to
 a canon session.
+## 2026-09-11 - S2934: the probe invariant is guarded in both directions, and by shape
+
+The consumer's Rule 2 states the debug-probe invariant as an equivalence - a probe exists in source if
+and only if its ticket is in `BlockNeedUserTest` - and the harness guarded exactly half of it.
+
+### What changed
+
+- `spec_catalog/check-probe-absent.ps1` - new. Refuses a transition OUT of `BlockNeedUserTest` while
+  any probe of the ticket is still in source, and prints the project's removal command filled in with
+  the id. A refusal and not a deletion: removing the probes from a catalog mutator would write source
+  outside any code-domain lock and outside the closure that judges a source edit.
+- `spec_catalog/_lib.ps1` - `Assert-ClosingGates` runs that checker before its early return. The
+  return was the hole: the function read `$NewStatus` only, so `BlockNeedUserTest -> In Progress`
+  names no gated status and reached no checker at all. `archive.ps1` never calls this function and is
+  untouched, which is deliberate - it is the path a release sweep takes, and the sweep deletes the
+  probes of everything it archives and proves it with the consumer's tree gate.
+- `spec_catalog/check-probe-present.ps1` - asks a second question of every probe it finds: does it own
+  its physical line. A malformed probe no longer satisfies presence, because split across two checkers
+  presence answers PASS about the very line shape answers FAIL about.
+- `spec_catalog/lib/blockneedusertest-probes.ps1` - `Test-TicketProbeInSource` gains `-All` and a
+  `LineText` field. Default behaviour is unchanged. Separately, `Get-ExcusedProbeTickets` returned the
+  set's ELEMENTS rather than the set: an `object[]` when the baseline had rows, which still answers
+  `.Contains()` and hid the defect, and `$null` when the baseline was empty or absent - crashing the
+  caller with "You cannot call a method on a null-valued expression" and exiting 1, a refusal phrased
+  as a missing probe on a tree where nothing was wrong. Both returns now carry the comma.
+- `_profile.ps1` - two new `probes` keys: `ownLineRegex` (the shape predicate, default
+  `^Timber\.d\(.*\)$`) and `removeCommand` (default empty; the refusal falls back to naming the probe
+  form when a project has no remover).
+
+### Why the shape predicate is a profile key and not a library function
+
+The consuming repository had the predicate inlined in its own tree gate, which is the S1621 split
+this ticket closes. A new library function would have closed it only after a deploy: the consumer's
+gate resolves the harness through the plugin cache, so the function would be undefined in every
+sibling session until the owner deployed, and `.\a.ps1 fg` would go red over a change no session
+running it could ship. `Merge-SzaProfileNode` carries a key unknown to the defaults into the merged
+tree, so the project profile makes the value readable by the already-deployed harness. The consumer
+half therefore landed live and behaviour-identical, proven equivalent on the correct shape and on all
+five shapes the original incident measured.
+
+### Verification performed
+
+Against the checkout with `SZA_HARNESS_ROOT`: the consumer's `check-probe-present.tests` suite reports
+`13 passed, 0 failed`; `assert-closing-gates.tests` reports `11 passed, 0 skipped`, its new cases
+refusing a real parked ticket's exit while its probe stood in source, accepting an excused ticket's,
+and staying silent on an exit from another status. Against the deployed cache the same two suites
+report `11 passed, 0 failed, 2 case(s) skipped` and `8 passed, 3 skipped`, every skip naming S2934 -
+the rule S2577/S2578 established, so no sibling session goes red over a deploy it cannot run.
+
+### What is owed
+
+The deploy. Until it runs, the two gates exist in the checkout and no consumer executes them: the
+exit gate and the shape half are inert, and only the profile key and the consumer's tree gate are
+live. The pile they join is the normal state recorded above, not damage - one deploy clears all of it.

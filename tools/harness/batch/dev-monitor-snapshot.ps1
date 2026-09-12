@@ -94,7 +94,7 @@ function Read-DevMonitorTailLines {
 
 function Get-DevMonitorGates {
     param([string]$RepoRoot)
-    $path = Join-Path $RepoRoot 'temp/metrics/gate-executions.jsonl'
+    $path = Join-Path $RepoRoot (Get-SzaPath 'gateMetrics' -Relative)
     $runs = @{}
     foreach ($line in @(Read-DevMonitorTailLines -Path $path)) {
         try { $row = $line | ConvertFrom-Json -ErrorAction Stop } catch { continue }
@@ -127,7 +127,7 @@ function Get-DevMonitorGates {
 
 function Get-DevMonitorContextSignals {
     param([string]$RepoRoot)
-    $dir = Join-Path $RepoRoot 'temp/context-signal'
+    $dir = Join-Path $RepoRoot (Get-SzaPath 'contextSignalDir' -Relative)
     $out = @{}
     if (-not (Test-Path -LiteralPath $dir)) { return $out }
     foreach ($file in @(Get-ChildItem -LiteralPath $dir -Filter '*.json' -File -ErrorAction SilentlyContinue)) {
@@ -146,7 +146,7 @@ function Get-DevMonitorContextSignals {
 
 function Get-DevMonitorWatchdogActions {
     param([string]$RepoRoot)
-    $path = Join-Path $RepoRoot 'temp/scratch/watchdog/watchdog.log'
+    $path = Join-Path $RepoRoot (Get-SzaPath 'watchdogLog' -Relative)
     $out = @()
     foreach ($line in @(Read-DevMonitorTailLines -Path $path -MaxBytes 65536 | Select-Object -Last 30)) {
         if ($line -notmatch '^(?<at>\S+\s+\S+)\s+(?<action>KILLED|DROPPED|STARTED runner|WOULD KILL|WOULD DROP|WOULD START|FAILED)\s+(?<detail>.+)$') { continue }

@@ -21,6 +21,10 @@ $script:RepoRoot = $repoRoot
 # definition. Re-exported unchanged - Test-ReleaseReadyStatus keeps every caller it had.
 . (Join-Path $libDir '_status-sets.ps1')
 
+# S2921: and the owner-gate marker, so the row preview.ps1 refuses to hand out automatically is
+# the row Add-ReleaseLines never appends below.
+. (Join-Path $libDir '_owner-gate.ps1')
+
 $script:CatalogPath = (Get-SzaPath 'journal')
 # Archived records live in a separate journal so the hot read path scans only
 # active tickets. See PLAN/S0454_spec-catalog-journal-compaction.md.
@@ -56,6 +60,10 @@ $script:ReleaseQueuePath     = (Get-SzaPath 'releaseQueue')
 $script:ReleaseReadyPath     = (Get-SzaPath 'releaseReady')
 $script:ReleaseQueueDonePath = (Get-SzaPath 'releaseQueueDone')
 $script:ReleaseQueueBacklog  = '--'
+# S2921: where a queue row's spec body is read from. A row carries the spec file's base name and
+# nothing else, so placing it above the package's owner-gated boundary row needs the directory the
+# profile declares - never a literal, which assert-portable.ps1 refuses in a shipped script body.
+$script:SpecsDirPath         = (Get-SzaPath 'specsDir')
 # S1698: how many duplicate ticket lines the last Sync-ReleaseQueue collapsed. Reported by
 # release-queue.ps1 -Reconcile, because a silent repair of a line the owner can see is
 # indistinguishable from the reconcile having done nothing - which is what the defect looked like.
@@ -495,6 +503,19 @@ function Get-ReleaseQueueLeaseMap {
 # zig-zags down the block, which is the one thing a fixed column is for.
 $script:ReleaseQueueMarkerColumn = 98
 
+function Get-ReleaseSectionHeading {
+    # The package a line names, or $null when the line is not a heading at all. Both shapes the
+    # release files use: the bare number the two plan files carry (S2852), and the shipped-block
+    # title in the done file. One definition because four call sites ask the same question - the
+    # reader, the writer, the -List renderer and the placement below - and a fifth copy is exactly
+    # how a row ends up filed under a heading nobody meant (S2921).
+    param([Parameter(Mandatory)][AllowEmptyString()][string] $Text)
+    $probe = Remove-ReleaseQueueLeaseMarker -Line $Text
+    if ($probe -match '^\s*(\d+|--)\s*$') { return $Matches[1] }
+    if ($probe -match '^##\s+release\s+(\d+|--)\b') { return $Matches[1] }
+    return $null
+}
+
 function Format-ReleaseQueueSection {
     # The package heading (S2852): a line holding the package number and nothing else. Everything
     # below it belongs to that package until the next heading, so re-packaging a ticket is a line
@@ -546,15 +567,11 @@ function Read-ReleaseFile {
         # leading package column, a date with no time - still parses, so a half-migrated file or a
         # stale copy is read rather than silently dropped; the writer emits only the new shape.
         $parsable = Remove-ReleaseQueueLeaseMarker -Line "$line"
-        if ($parsable -match '^\s*(\d+|--)\s*$') {
-            $section = $Matches[1]
-            $result.Add([pscustomobject]@{ Kind = 'verbatim'; Text = "$line" })
-            continue
-        }
-        # RELEASE_QUEUE_DONE.md names its packages in a shipped-block title instead of a bare
-        # heading, and the same reader has to give those rows a package too.
-        if ($parsable -match '^##\s+release\s+(\d+|--)\b') {
-            $section = $Matches[1]
+        # Both heading shapes answer through one helper: the bare number in the plan files, and
+        # the shipped-block title RELEASE_QUEUE_DONE.md names its packages with.
+        $heading = Get-ReleaseSectionHeading -Text $parsable
+        if ($null -ne $heading) {
+            $section = $heading
             $result.Add([pscustomobject]@{ Kind = 'verbatim'; Text = "$line" })
             continue
         }
@@ -629,8 +646,9 @@ function Write-ReleaseFile {
             $out.Add($row)
         } else {
             $out.Add($l.Text)
-            if ($l.Text -match '^\s*(\d+|--)\s*$' -or $l.Text -match '^##\s+release\s+(\d+|--)\b') {
-                $section = $Matches[1]
+            $heading = Get-ReleaseSectionHeading -Text $l.Text
+            if ($null -ne $heading) {
+                $section = $heading
                 $sectionSeen = $true
             }
         }
@@ -781,9 +799,71 @@ function Select-ReleaseLines {
     return ,$kept
 }
 
+function Test-ReleaseQueueOwnerGatedRow {
+    # A queue row whose spec says the owner starts it by hand. In a hand-sorted plan such a row
+    # terminates the block it stands in - it is the package's release line - so nothing may be
+    # appended below it. The spec is found by the row's own name, which IS the spec file's base
+    # name, so no catalog lookup is needed on this path.
+    param([Parameter(Mandatory)][AllowEmptyString()][string] $Ticket)
+    if ([string]::IsNullOrWhiteSpace($Ticket)) { return $false }
+    return (Test-OwnerGatedSpec -Path (Join-Path $script:SpecsDirPath "$Ticket.md"))
+}
+
+function Find-ReleaseBlockInsertIndex {
+    # Where a row with no anchor belongs: inside its package's own block, above the owner-gated
+    # boundary row that ends it. Returns the index to insert AFTER, or -1 when the file carries no
+    # heading for that package - the caller then appends at the end and the writer creates the
+    # section, which is right for a package the plan has not opened yet.
+    #
+    # S2921: before this the search knew only "the last ticket line of the same package", which
+    # answers both questions wrong. A package that ends with its boundary ticket got every new row
+    # BELOW the release line, where the owner reads it as the next package while every script reads
+    # it as this one; and a package holding a heading but no rows yet was indistinguishable from a
+    # package that does not exist, so the row went to the very end of the file and grew a SECOND
+    # heading with the same number, splitting the owner's plan in two.
+    param(
+        [Parameter(Mandatory)] $Target,
+        [Parameter(Mandatory)][AllowEmptyString()][string] $Release
+    )
+    $wanted = Format-ReleaseQueueSection -Release $Release
+    $blockStart = -1
+    $blockEnd = -1
+    for ($i = 0; $i -lt $Target.Count; $i++) {
+        if ($Target[$i].Kind -eq 'ticket') { continue }
+        $heading = Get-ReleaseSectionHeading -Text ([string] $Target[$i].Text)
+        if ($null -eq $heading) { continue }
+        if ($blockStart -lt 0) {
+            if ($heading -eq $wanted) { $blockStart = $i }
+            continue
+        }
+        # The first heading after ours closes the block, whatever package it names.
+        $blockEnd = $i - 1
+        break
+    }
+    if ($blockStart -lt 0) { return -1 }
+    if ($blockEnd -lt 0) { $blockEnd = $Target.Count - 1 }
+
+    $lastTicket = -1
+    for ($i = $blockStart + 1; $i -le $blockEnd; $i++) {
+        if ($Target[$i].Kind -ne 'ticket') { continue }
+        # Stop at the FIRST gated row rather than scanning to the end: it is the release line, and
+        # stopping is also what keeps the cost down - the spec bodies below it are never read.
+        if (Test-ReleaseQueueOwnerGatedRow -Ticket ([string] $Target[$i].Ticket)) { return $i - 1 }
+        $lastTicket = $i
+    }
+    if ($lastTicket -ge 0) { return $lastTicket }
+
+    # No ticket rows at all: land after the block's last written line - its heading, or the owner's
+    # note under it - rather than under the blank lines that separate it from the next package.
+    $tail = $blockEnd
+    while ($tail -gt $blockStart -and $Target[$tail].Kind -ne 'ticket' -and
+        [string]::IsNullOrWhiteSpace([string] $Target[$tail].Text)) { $tail-- }
+    return $tail
+}
+
 function Add-ReleaseLines {
-    # Append each addition after the last line of its own release block, so blocks stay grouped
-    # and nothing jumps above work the owner already ordered.
+    # Place each addition inside its own release block, so blocks stay grouped and nothing jumps
+    # above work the owner already ordered - or below the boundary row that ends the package.
     param(
         [Parameter(Mandatory)] $Target,
         [Parameter(Mandatory)] $Additions
@@ -813,9 +893,7 @@ function Add-ReleaseLines {
             }
         }
         if ($insertAt -lt 0) {
-            for ($i = 0; $i -lt $Target.Count; $i++) {
-                if ($Target[$i].Kind -eq 'ticket' -and $Target[$i].Release -eq $add.Release) { $insertAt = $i }
-            }
+            $insertAt = Find-ReleaseBlockInsertIndex -Target $Target -Release ([string] $add.Release)
         }
         if ($insertAt -ge 0) { $Target.Insert($insertAt + 1, $add) } else { $Target.Add($add) }
     }
@@ -958,8 +1036,9 @@ function Assert-ClosingGates {
     # all three status-change paths reach (update.ps1, close.ps1, bulk-update.ps1).
     #
     # The name says "Closing" for the statuses it originally guarded; since S2324 the set
-    # also holds BlockNeedUserTest, which closes nothing. Kept rather than renamed because
-    # the name appears in three call sites and in the gate output operators already read.
+    # also holds BlockNeedUserTest, which closes nothing, and since S2934 the function also
+    # judges one transition OUT of a status rather than into one. Kept rather than renamed
+    # because the name appears in three call sites and in the gate output operators already read.
     #
     # Why here and not in update.ps1: the canonical closure path is /spec-check, which
     # runs close-and-log.ps1 -> close.ps1, and close.ps1 invoked no gate at all. A gate
@@ -996,6 +1075,27 @@ function Assert-ClosingGates {
     # standard escape hatch when a placement decision is missing and asking is forbidden. Refusing
     # THAT transition leaves a stuck pipeline with nowhere to park its ticket, which is a worse
     # failure than the duplicate heading it would be refusing over.
+    # S2934 - the OTHER direction, and it has to be asked before the early return below, because
+    # that return is the hole: this function judges $NewStatus only, so BlockNeedUserTest ->
+    # In Progress - a status in neither list - left through it with no checker reached at all.
+    # Rule 2 states the probe invariant as an equivalence ("if and only if") and exactly half of it
+    # was guarded. What the unguarded half costs: the leftover probe is visible to every session and
+    # owned by none - a scoped closure prints it as outside its changed set and passes, the
+    # project-wide run fails for whoever happens to run it - so it was cleaned three times in five
+    # weeks (S2639, S2656, S2929) and refilled each time, because the symptom was what got fixed.
+    #
+    # A refusal, not a deletion: removing the probes from here would make a catalog mutator write
+    # source, outside any code-domain lock and outside the closure that judges a source edit. The
+    # refusal prints probes.removeCommand instead, so the way out is one line.
+    #
+    # archive.ps1 never calls this function and stays as it was. That is the path the release sweep
+    # takes, and it deletes the probes of everything it archives and proves it with the tree gate;
+    # gating the three mutators' Archived writes alone would lock the door nobody uses. A
+    # hand-written update.ps1 -Status Archived does come through here, like any other exit.
+    if ($OldStatus -eq 'BlockNeedUserTest' -and $NewStatus -ne 'BlockNeedUserTest') {
+        Invoke-SpecCheckers -Id $Id -NewStatus $NewStatus -Checkers @('check-probe-absent.ps1')
+    }
+
     $isBlockEntry = $NewStatus -like 'Block*'
     if ($gatedStatuses -notcontains $NewStatus -and -not $isBlockEntry) { return }
 

@@ -38,8 +38,21 @@ param(
 #     hypothetical, because a Timber call may span physical lines and a per-line search
 #     finds a strictly smaller set.
 #
-# Exit codes: 0 = a probe exists, or the ticket is excused in the baseline.
-#             1 = neither - the transition must not proceed.
+#   - S2934 - and the probe must be one this status can be LEFT with. The shape half of Rule 2
+#     ("a probe owns its line, whole") used to be judged only by the consumer's tree gate, after
+#     the fact, so the moment a probe was created was the one moment nothing judged whether it
+#     could ever be removed; the violation then surfaced on a project-wide run belonging to a
+#     session that had not written it. Both questions live in this one checker on purpose: split
+#     across two, presence answers PASS on a line shape answers FAIL about, and an operator with
+#     two verdicts for one line believes the kinder one. The predicate is probes.ownLineRegex,
+#     the same key assert-no-ticket-logs.ps1 reads - the S1621 rule again, one sentence, one
+#     definition.
+#
+# Exit codes: 0 = a probe exists in a shape a bulk delete can drop, or the ticket is excused in
+#                 the baseline.
+#             1 = no probe, or a probe that shares its line with code - the transition must not
+#                 proceed. One code for both because the reaction is the same (fix the source and
+#                 re-run); the refusal text names which half fired.
 #             2 = bad invocation (malformed id, or an id no record carries), or catalog /
 #                 sources unreadable. Kept distinct from 1 because "this ticket does not
 #                 exist" and "this ticket forgot its probe" call for opposite reactions, and
@@ -89,11 +102,45 @@ if ($excused.Contains($Id)) {
     exit 0
 }
 
-$hit = Test-TicketProbeInSource -Id $Id -SourceRoots $sourceRoots
+$hit = Test-TicketProbeInSource -Id $Id -SourceRoots $sourceRoots -All
 if ($hit.Found) {
+    # S2934 - the second question, asked of every hit rather than of the first. Until this, the one
+    # moment a probe appears was the one moment nothing judged whether it could ever be REMOVED, and
+    # the violation surfaced later on a project-wide run belonging to another session. A malformed
+    # probe deliberately does not satisfy presence: two checkers would answer PASS and FAIL about the
+    # same line, and this checker exists to state the sentence whole - the ticket carries a probe
+    # that will survive the bulk delete which ends this status.
+    $ownLineRx = [regex]([string](Get-SzaProfileValue 'probes.ownLineRegex'))
+    $malformed = @($hit.Hits | Where-Object { -not $ownLineRx.IsMatch($_.LineText) })
+    if ($malformed.Count -gt 0) {
+        Write-Output "FAIL $Id"
+        Write-Output ("- {0} probe(s) of this ticket share a line with code, or wrap across lines:" -f $malformed.Count)
+        foreach ($bad in $malformed) {
+            $badRel = $bad.File.Substring($repoRoot.Length).TrimStart('\', '/')
+            Write-Output ("    {0}:{1}  {2}" -f ($badRel -replace '\\', '/'), $bad.Line, $bad.LineText)
+        }
+        Write-Output ""
+        # Plain concatenation, not -f: the forbidden shapes are mostly braces, and a lone '}' in a
+        # .NET format string throws FormatException - so the refusal would crash exactly where it
+        # has something to say.
+        $callName = [string](Get-SzaProfileValue 'probes.callName')
+        Write-Output "A probe owns its line, whole. It is removed in BULK when this ticket leaves"
+        Write-Output "BlockNeedUserTest, and a line-wise delete is only safe when dropping the line drops"
+        Write-Output "exactly the probe and nothing else. Measured shapes where it did not:"
+        Write-Output ("    }.also { " + $callName + "(..) }            - the line is also a block terminator")
+        Write-Output ("    ).also { " + $callName + "(..) }            - the line also closes an argument list")
+        Write-Output ("    if (cond) " + $callName + "(..)             - the line also carries the condition")
+        Write-Output ("    any " + $callName + "( whose arguments continue on the next line")
+        Write-Output "Removing such a line broke the build with 'Unresolved reference' several hundred"
+        Write-Output "lines from anything the sweep aimed at."
+        Write-Output ""
+        Write-Output ("Correct shape:  {0}" -f (Get-SzaProbeCallExample -Id $Id -Message '<what ran>'))
+        Write-Output "one statement, alone on its own line, ending in ')'."
+        exit 1
+    }
     $rel = $hit.File.Substring($repoRoot.Length).TrimStart('\', '/')
     Write-Output "PASS $Id"
-    Write-Output ("Probe present: {0}:{1}" -f $rel, $hit.Line)
+    Write-Output ("Probe present: {0}:{1}  ({2} in all, each alone on its line)" -f $rel, $hit.Line, $hit.Hits.Count)
     exit 0
 }
 

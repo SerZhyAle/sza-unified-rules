@@ -67,6 +67,14 @@ $Script:SzaProfileDefaults = [ordered]@{
         specAllQueueLock = 'temp/spec-all-queue.lock'
         skipCache        = 'temp/spec-next-skip-cache.json'
         migrateDoneDir   = 'temp/done'
+        # Read by batch/dev-monitor-snapshot.ps1, written by the PROJECT - a gate-telemetry lib, a
+        # context hook and a watchdog, none of which the canon ships. Declared here because
+        # Get-SzaProfileValue throws on an unknown key by design (S2705), so a consumer that never
+        # wrote them would meet an exception instead of a path; every reader already treats an
+        # absent file as an empty section, so a project without the producer needs no override.
+        gateMetrics      = 'temp/metrics/gate-executions.jsonl'
+        contextSignalDir = 'temp/context-signal'
+        watchdogLog      = 'temp/scratch/watchdog/watchdog.log'
         changelog        = 'dev/CHANGELOG.md'
         documentRegistry = 'docs/DOCUMENT_REGISTRY.jsonl'
         docsMap          = 'docs/DOCS_MAP.md'
@@ -126,8 +134,20 @@ $Script:SzaProfileDefaults = [ordered]@{
         tagRegex     = 'Timber\.d\("S\d{4}:'
         # Probe with its message captured, for the acceptance-probe contract (`ticket`, `message`).
         templateRegex = '^Timber\.d\(\s*"(?<ticket>S\d{4}):\s*(?<message>(?:\\.|[^"\\])*)"'
+        # S2934: a probe must be ONE statement alone on its physical line, matched against the
+        # trimmed opener line. A probe is deleted in BULK - 176 files in one sweep at the consumer's
+        # 2.60.9021.951 release - and a line-wise delete is only safe when dropping the line drops
+        # exactly the probe: `}.also { Timber.d(..) }` was also the closing brace of a `when`, so
+        # removing it broke the build hundreds of lines away. Judged by the entry gate, so the shape
+        # is refused at the moment the probe appears, and by the consumer's tree gate, which reads
+        # this same key - one definition of the sentence, per S1621.
+        ownLineRegex = '^Timber\.d\(.*\)$'
         callTemplate = 'Timber.d("{Id}: {Message}")'
         callName     = 'Timber.d'
+        # S2934: the command that clears a ticket's probes, printed by the exit gate when a ticket
+        # leaves BlockNeedUserTest still carrying them. Empty = this project has no remover, and the
+        # refusal falls back to naming the probe form. {Id} is replaced with the ticket id.
+        removeCommand = ''
     }
     hooks       = [ordered]@{
         # Each entry: { script, args } - args may carry {Module}. Run after a closing transition

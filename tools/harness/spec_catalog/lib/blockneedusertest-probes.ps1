@@ -108,12 +108,23 @@ function Get-ProbeSourceFile {
 
 function Test-TicketProbeInSource {
     # Does exactly one ticket carry a probe? Returns the first hit as
-    # @{ Found = $true; File = <path>; Line = <n> }, or @{ Found = $false }.
-    # Stops at the first match: the single-ticket caller needs presence, not an inventory.
+    # @{ Found = $true; File = <path>; Line = <n>; LineText = <s>; Hits = @(..) },
+    # or @{ Found = $false; Hits = @() }.
+    #
+    # Stops at the first match by default: the presence caller needs presence, not an inventory.
+    # -All collects every hit instead, which two callers need and presence does not (S2934):
+    # shape is a property of EVERY probe a ticket carries, so an entry gate that judged only the
+    # first would admit a malformed second one, and an exit gate that named only the first would
+    # send the operator back for a second refusal.
+    #
+    # LineText is the trimmed PHYSICAL opener line - not the reconstructed call span - because the
+    # sentence it feeds ("a probe owns its line, whole") is about what a line-wise bulk delete sees.
     param(
         [Parameter(Mandatory)][string] $Id,
-        [Parameter(Mandatory)][string[]] $SourceRoots
+        [Parameter(Mandatory)][string[]] $SourceRoots,
+        [switch] $All
     )
+    $hits = [System.Collections.Generic.List[object]]::new()
     $openerRx = Get-TimberOpenerRegex
     $probeRx = Get-TimberProbeFormRegexForId -Id $Id
     foreach ($file in (Get-ProbeSourceFile -SourceRoots $SourceRoots)) {
@@ -133,10 +144,20 @@ function Test-TicketProbeInSource {
             $trimmed = $lineText.TrimStart()
             if ($trimmed.StartsWith('*') -or $trimmed.StartsWith('/*')) { continue }
             $lineNo = ($content.Substring(0, $m.Index) -split "`n").Count
-            return @{ Found = $true; File = $file.FullName; Line = $lineNo }
+            $lineEnd = $content.IndexOf("`n", $m.Index)
+            if ($lineEnd -lt 0) { $lineEnd = $content.Length }
+            $wholeLine = $content.Substring($lineStart, $lineEnd - $lineStart).TrimEnd("`r").Trim()
+            $hits.Add(@{ File = $file.FullName; Line = $lineNo; LineText = $wholeLine })
+            if (-not $All) {
+                return @{ Found = $true; File = $file.FullName; Line = $lineNo; LineText = $wholeLine; Hits = @($hits) }
+            }
         }
     }
-    return @{ Found = $false }
+    if ($hits.Count -gt 0) {
+        $first = $hits[0]
+        return @{ Found = $true; File = $first.File; Line = $first.Line; LineText = $first.LineText; Hits = @($hits) }
+    }
+    return @{ Found = $false; Hits = @() }
 }
 
 function Get-ExcusedProbeTickets {
@@ -145,13 +166,22 @@ function Get-ExcusedProbeTickets {
     # reason does not count - the reason is the whole point of an allow-list over a counter.
     param([Parameter(Mandatory)][string] $BaselinePath)
     $excused = [System.Collections.Generic.HashSet[string]]::new()
-    if (-not (Test-Path -LiteralPath $BaselinePath)) { return $excused }
+    # Comma for the same reason as the tail return below - and this is the branch that actually
+    # crashed, because a project with no baseline file at all reaches it with the set still empty.
+    if (-not (Test-Path -LiteralPath $BaselinePath)) { return ,$excused }
     foreach ($line in Get-Content -LiteralPath $BaselinePath) {
         $trimmedLine = $line.Trim()
         if ($trimmedLine -eq '' -or $trimmedLine.StartsWith('#')) { continue }
         if ($trimmedLine -match '^(?<id>S\d{4})\s+\S') { [void]$excused.Add($Matches['id']) }
     }
-    return $excused
+    # S2934: the comma is load-bearing. PowerShell unrolls any IEnumerable written to the pipeline,
+    # so a bare `return $excused` hands back the set's ELEMENTS - an object[] when the baseline has
+    # rows, which still answers .Contains() and hid this for two tickets, and $null when it has none
+    # or the file is absent. The caller's next line is `$excused.Contains($Id)`, so an empty baseline
+    # crashed the checker with "You cannot call a method on a null-valued expression" and exit 1 -
+    # a refusal phrased as a missing probe, on a tree where nothing was wrong. Measured 2026-09-11
+    # in a throwaway project root with no baseline file.
+    return ,$excused
 }
 
 function Get-ProbeBaselinePath {
