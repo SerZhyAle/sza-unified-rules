@@ -262,13 +262,51 @@ function Get-AgentLockTimings {
     .DESCRIPTION
         S2109: accepts a concrete domain alongside the bare types; the two lease names, which
         have no lock file and no queue, keep their own records.
+
+        S2697: the accepted concrete domains are the PROFILE's (locks.domains), not this map's
+        keys. A domain the profile declares and the map has no row for inherits the record of its
+        type unchanged - pillar A above already makes every value a property of the type, so a
+        project adding Code.Fixture gets Code's numbers rather than an "unknown resource" throw
+        from the first acquire after Resolve-AgentLockDomains accepted it. A map row for a name the
+        profile does not declare is not a way in: the same closed list would otherwise reappear
+        one level down, answering for domains the project never had.
     #>
     param([Parameter(Mandatory)][string]$Name)
-    if (-not $Script:AgentLockTimings.ContainsKey($Name)) {
-        $accepted = ($Script:AgentLockTimings.Keys | Sort-Object) -join ', '
-        throw "Unknown coordination resource name '$Name'. Accepted values: $accepted."
+    if ($Name -in @('SpecTicket', 'Device', 'Build', 'Code')) { return $Script:AgentLockTimings[$Name] }
+    $entry = Get-AgentLockDomainTable | Where-Object { $_.Domain -eq $Name } | Select-Object -First 1
+    if ($entry) {
+        if ($Script:AgentLockTimings.ContainsKey($entry.Domain)) { return $Script:AgentLockTimings[$entry.Domain] }
+        return $Script:AgentLockTimings[$entry.Type]
     }
-    return $Script:AgentLockTimings[$Name]
+    $accepted = (@(Get-AgentLockDomainNames) + @('SpecTicket', 'Device')) -join ', '
+    throw "Unknown coordination resource name '$Name'. Accepted values: $accepted."
+}
+
+function ConvertTo-AgentLockHandoffPaths {
+    <#
+    .SYNOPSIS
+        The canonical form of a changed file set as a handoff records it: repo-relative, forward
+        slashes, no leading './', deduplicated, sorted ordinally. Never touches the file system.
+    .DESCRIPTION
+        S2697. The paths travel with the ticket so a queue wait can later be grouped by source
+        subtree. They are the set the entry point already holds - nothing is scanned, so a path
+        that does not exist yet (a file about to be created) is recorded exactly like one that
+        does. A comma list bound as one element by `pwsh -File` is split here, as the resolver
+        splits it. A rooted path under the project root is made relative; a rooted path outside it
+        cannot be, and is kept in its normalised absolute form rather than dropped.
+    #>
+    param([string[]]$Path)
+
+    $root = ((Get-SzaProjectRoot) -replace '\\', '/').TrimEnd('/')
+    $set = [System.Collections.Generic.SortedSet[string]]::new([System.StringComparer]::Ordinal)
+    foreach ($raw in @($Path | ForEach-Object { ([string]$_) -split ',' })) {
+        $p = (($raw -replace '\\', '/').Trim() -replace '^\./')
+        if ([string]::IsNullOrWhiteSpace($p)) { continue }
+        if ($p.StartsWith("$root/", [System.StringComparison]::OrdinalIgnoreCase)) { $p = $p.Substring($root.Length + 1) }
+        $p = $p -replace '/{2,}', '/'
+        if ($p) { [void]$set.Add($p) }
+    }
+    return [string[]]@($set)
 }
 
 function Get-AgentLockQueueDir {
@@ -1601,10 +1639,18 @@ function Save-AgentLockTicketHandoff {
         The file is disposable by design: nothing sweeps it, and a stale copy is inert because
         the reader rejects it by age and by "seq still queued" - the worst failure is a fresh
         ticket, which is exactly the pre-S2403 behaviour.
+
+        S2697, schema 2: the file also carries `paths`, the changed set the caller already held,
+        in ConvertTo-AgentLockHandoffPaths form. The field is ALWAYS written - a caller that
+        declared a domain and named no paths writes an empty array, so an empty `paths` means
+        "no path set was given" while an absent one means a schema-1 file written before the
+        field existed. The reader requires neither: Read-AgentLockTicketHandoff checks no schema
+        number and adopts a schema-1 file exactly as before.
     #>
     param(
         [Parameter(Mandatory)][hashtable]$Tickets,
-        [Parameter(Mandatory)][string]$Reason
+        [Parameter(Mandatory)][string]$Reason,
+        [string[]]$Paths
     )
 
     $dir = (Get-SzaPath 'lockHandoffDir')
@@ -1616,12 +1662,17 @@ function Save-AgentLockTicketHandoff {
     $path = Join-Path $dir ("HANDOFF-{0}-{1}-{2}-{3}.json" -f $firstDomain.ToUpper(), [int]$Tickets[$firstDomain].seq, $stamp, $PID)
     $seqMap = [ordered]@{}
     foreach ($domain in @($Tickets.Keys | Sort-Object)) { $seqMap[$domain] = [int]$Tickets[$domain].seq }
+    # Assigned, never returned into an expression: an empty or one-element array must survive as an
+    # array, or ConvertTo-Json writes null or a bare string where the reader expects a list.
+    [string[]]$normalizedPaths = ConvertTo-AgentLockHandoffPaths -Path $Paths
+    if ($null -eq $normalizedPaths) { $normalizedPaths = [string[]]@() }
     $body = [ordered]@{
-        schema    = 1
+        schema    = 2
         reason    = $Reason
         sessionId = (Get-AgentSessionId)
         createdAt = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
         tickets   = $seqMap
+        paths     = $normalizedPaths
     } | ConvertTo-Json -Compress
     # Write-then-rename so a reader never catches a half-written handoff - same discipline as the
     # ticket and marker writers, for the same reason.

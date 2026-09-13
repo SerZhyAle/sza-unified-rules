@@ -87,7 +87,10 @@ function Get-AgentLockDomainTable {
 function Get-AgentLockDomainNames {
     <#
     .SYNOPSIS
-        Every accepted resource name - the five concrete domains plus the two bare types.
+        Every accepted resource name - the profile's concrete domains plus the two bare types.
+    .DESCRIPTION
+        S2697: this list, never a hardcoded one, is what every "Unknown coordination resource
+        name" error quotes; Get-AgentLockTimings adds only the two lease names to it.
     #>
     return @((Get-AgentLockDomainTable | ForEach-Object { $_.Domain }) + @('Build', 'Code'))
 }

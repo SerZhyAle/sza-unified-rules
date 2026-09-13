@@ -210,7 +210,9 @@ $blocked = Get-AgentLockBlockingDomain -Domains $acquireDomains -Turn $turn
 # re-runs below it are all different pwsh processes, strangers to this one whenever no session id
 # is inherited. The handoff file is the carrier; every suggested command names it. Written before
 # the branches because all three of them hand it to the caller.
-$handoffPath = Save-AgentLockTicketHandoff -Tickets $tickets -Reason $Reason
+# S2697: the changed set rides along, so a queue wait can later be grouped by source subtree. A
+# declared -Domain with no -Files writes an empty array (see Save-AgentLockTicketHandoff).
+$handoffPath = Save-AgentLockTicketHandoff -Tickets $tickets -Reason $Reason -Paths $Files
 
 if ($null -eq $blocked) {
     # S2410, the third outcome: the acquire failed, yet no domain of the set carries a live lock
