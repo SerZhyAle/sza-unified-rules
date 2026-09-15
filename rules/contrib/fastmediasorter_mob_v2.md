@@ -1111,11 +1111,11 @@ the same reason those two were.
 
 ### What changed
 
-Six harness scripts now print, on their refusal branch only, the date, the measured quantity and
+Five harness scripts now print, on their refusal branch only, the date, the measured quantity and
 the ticket id behind the rule they enforce: `spec_catalog/check-open-items-carried.ps1` (S1607,
 2026-08-13), `check-audit-recorded.ps1` (S2298 and S2367, two measured populations),
-`check-probe-present.ps1` (S2324), `check-headings-unique.ps1` (S2357),
-`check-audit-current.ps1` (S2367, both FAIL branches), and `locks/enter-code-lock.ps1` (S2342,
+`check-probe-present.ps1` (S2324), `check-headings-unique.ps1` (S2357), and
+`locks/enter-code-lock.ps1` (S2342,
 S2109 and S2419 on the exit-4 branch). Every number already sat in each script's header comment
 and in the consumer's rule pages; none of it reached the operator the script stopped.
 

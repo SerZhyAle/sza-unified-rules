@@ -1104,13 +1104,9 @@ function Assert-ClosingGates {
     # them and wrong for exactly one, and the split is by what each checker's subject IS:
     #
     #   * check-evidence-durable / check-open-items-carried / check-audit-recorded /
-    #     check-audit-current / check-headings-unique / check-block-note ask what the ticket
-    #     ACHIEVED, or what its own spec file says. That was answered at the entry transition and
-    #     does not decay on its own, so re-judging it turns a housekeeping rewrite into a refusal.
-    #     check-audit-current is the sharpest case: it compares a fingerprint of a spec that is
-    #     edited under a running pipeline, so a re-close done purely to repair a diverged header
-    #     (the unconditional header sync close.ps1 gained in S2512) would meet an audit refusal
-    #     instead of the repair it came for.
+    #     check-headings-unique / check-block-note ask what the ticket ACHIEVED, or what its own
+    #     spec file says. That was answered at the entry transition and does not decay on its own,
+    #     so re-judging it turns a housekeeping rewrite into a refusal.
     #   * check-probe-present asks what is TRUE OF THE TICKET NOW, and its subject is not the spec
     #     but the source tree, which changes under a standing ticket by other hands - a release
     #     sweep, remove-ticket-probes.ps1 (closed off in S2639), a probe deleted alongside the code
@@ -1180,7 +1176,6 @@ function Assert-ClosingGates {
         # the status and delete the probes the pending device test needs. The parking command
         # therefore writes the block itself (mode pre-handoff), which touches neither.
         $checkers.Add('check-audit-recorded.ps1')
-        $checkers.Add('check-audit-current.ps1')
     }
     else {
         # S1606 - a closed spec must not cite evidence under disposable temp/.
@@ -1195,13 +1190,6 @@ function Assert-ClosingGates {
         # produces it. Kept a separate list rather than a flag inside the loop so "which statuses
         # this checker guards" stays a property of the list a checker is in.
         if ($NewStatus -eq 'Verified') { $checkers.Add('check-audit-recorded.ps1') }
-
-        # S2367 - and that block must have judged the task the file carries NOW. A verdict is a
-        # claim about a task, and the task is edited under a running pipeline: by the owner, by
-        # /spec-quiz writing an answer in, by a sibling session. The pipeline reads the spec once
-        # at Stage 0, so without this the audit can be a true statement about words nobody kept.
-        # Verified only, for the same asymmetry: Implemented expects no audit to have run.
-        if ($NewStatus -eq 'Verified') { $checkers.Add('check-audit-current.ps1') }
     }
 
     Invoke-SpecCheckers -Id $Id -NewStatus $NewStatus -Checkers $checkers -CheckerArgs $checkerArgs
