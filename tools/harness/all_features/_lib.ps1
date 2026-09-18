@@ -96,6 +96,42 @@ function Get-FlavorMatrixColumns {
     return @()
 }
 
+function Get-FeatureAllowedAreas {
+    <#
+    .SYNOPSIS
+        The allowed functional areas from ALL_FEATURES schema (docs/ALL_FEATURES.schema.json).
+        Falls back to distinct non-empty area values from the data file if the schema is absent.
+    #>
+    param([Parameter(Mandatory)][string]$RepoRoot)
+
+    $schemaRel = [string](Get-SzaProfileValue 'paths.allFeaturesSchema')
+    if (-not [string]::IsNullOrWhiteSpace($schemaRel)) {
+        $schemaPath = Join-Path $RepoRoot $schemaRel
+        if (Test-Path -LiteralPath $schemaPath) {
+            try {
+                $schemaJson = Get-Content -LiteralPath $schemaPath -Raw -Encoding UTF8 | ConvertFrom-Json
+                if ($schemaJson.properties -and $schemaJson.properties.area -and $schemaJson.properties.area.enum) {
+                    $areas = @($schemaJson.properties.area.enum | ForEach-Object { [string]$_ } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+                    if ($areas.Count -gt 0) {
+                        return @($areas | Sort-Object -Unique)
+                    }
+                }
+            } catch { }
+        }
+    }
+
+    $dataFile = Get-FeatureInventoryPath -RepoRoot $RepoRoot
+    if (Test-Path -LiteralPath $dataFile) {
+        $found = @(Get-Content -LiteralPath $dataFile -Encoding UTF8 |
+            Where-Object { $_.Trim().Length -gt 0 } |
+            ForEach-Object { try { ($_ | ConvertFrom-Json).area } catch { } } |
+            Where-Object { $_ } |
+            Sort-Object -Unique)
+        if ($found.Count -gt 0) { return $found }
+    }
+    return @()
+}
+
 function Get-FeatureInventoryPath {
     <#
     .SYNOPSIS

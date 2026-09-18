@@ -24,7 +24,7 @@ $failures = 0
 $cases = 0
 
 foreach ($f in @('guard-bash.ps1', 'guard-fire-and-forget.ps1', 'guard-uncapped-read.ps1',
-                 'on-user-prompt.ps1')) {
+                 'on-user-prompt.ps1', 'session-start.ps1')) {
     if (-not (Test-Path -LiteralPath (Join-Path $hooksDir $f))) {
         Write-Error "smoke-hooks: $f is missing - cannot verify" -ErrorAction Continue
         exit 2
@@ -155,6 +155,71 @@ Invoke-Case 'RU micro-task - nudges'            'on-user-prompt.ps1' '{"prompt":
 Invoke-Case 'micro-task vetoed by real work'    'on-user-prompt.ps1' '{"prompt":"поменяй цвет кнопки, это краш","transcript_path":""}' 0 -MustBeSilent
 Invoke-Case 'long brief - past the ceiling'     'on-user-prompt.ps1' ('{"prompt":"' + ('помен' + 'яй цвет кнопки ' * 20) + '","transcript_path":""}') 0 -MustBeSilent
 Invoke-Case 'explicit slash command - silent'   'on-user-prompt.ps1' '{"prompt":"/quick fix the label","transcript_path":""}' 0 -MustBeSilent
+
+Write-Host '--- session-start: the payload must survive the console code page ---'
+# Read the child's BYTES, not its output as PowerShell strings: capturing strings re-decodes stdout and
+# hides exactly the defect this case exists for. A redirected stdout inherits the console code page, so
+# the section sign and the Cyrillic inside rules/INVARIANTS.md left the hook as cp866 bytes, the reader
+# decoded them as UTF-8, and every injection was discarded as malformed JSON - silently, for a month.
+function Invoke-SessionStartCase {
+    param([string]$name, [string]$cwd, [switch]$MustBeSilent)
+    $script:cases++
+    $psi = [System.Diagnostics.ProcessStartInfo]::new()
+    $psi.FileName = 'pwsh'
+    foreach ($a in @('-NoProfile', '-File', (Join-Path $hooksDir 'session-start.ps1'))) { $psi.ArgumentList.Add($a) }
+    $psi.RedirectStandardInput = $true
+    $psi.RedirectStandardOutput = $true
+    $psi.UseShellExecute = $false
+    $proc = [System.Diagnostics.Process]::Start($psi)
+    $payload = @{ cwd = $cwd; hook_event_name = 'SessionStart'; source = 'startup' } | ConvertTo-Json -Compress
+    $inBytes = (New-Object System.Text.UTF8Encoding $false).GetBytes($payload)
+    $proc.StandardInput.BaseStream.Write($inBytes, 0, $inBytes.Length)
+    $proc.StandardInput.BaseStream.Flush()
+    $proc.StandardInput.Close()
+    $buffer = [System.IO.MemoryStream]::new()
+    $proc.StandardOutput.BaseStream.CopyTo($buffer)
+    $proc.WaitForExit()
+    $raw = $buffer.ToArray()
+
+    $why = $null
+    if ($proc.ExitCode -ne 0) { $why = "exit expected: 0 | actual: $($proc.ExitCode)" }
+    elseif ($MustBeSilent) {
+        if ($raw.Length -gt 0) { $why = "expected no output | actual: $($raw.Length) byte(s)" }
+    }
+    elseif ($raw.Length -eq 0) { $why = 'expected an injection | actual: nothing' }
+    else {
+        try {
+            # Strict UTF-8 plus a JSON parse is the reader's own test: one rejects the stray byte, the
+            # other the control character a code page can produce that IS valid UTF-8.
+            $text = (New-Object System.Text.UTF8Encoding $false, $true).GetString($raw)
+            $parsed = $text | ConvertFrom-Json
+            if (-not $parsed.hookSpecificOutput.additionalContext) { $why = 'parsed, but additionalContext is empty' }
+        }
+        catch { $why = 'output is not UTF-8 JSON the reader can parse: ' + $_.Exception.Message }
+    }
+
+    if (-not $why) { Write-Host ("PASS  {0,-46} exit {1}" -f $name, $proc.ExitCode) }
+    else {
+        Write-Host ("FAIL  {0,-46} {1}" -f $name, $why)
+        $script:failures++
+    }
+}
+
+$adopter = Join-Path ([System.IO.Path]::GetTempPath()) ('sza-session-start-' + [guid]::NewGuid().ToString('N'))
+$stranger = Join-Path ([System.IO.Path]::GetTempPath()) ('sza-session-start-' + [guid]::NewGuid().ToString('N'))
+try {
+    foreach ($d in @($adopter, $stranger)) { New-Item -ItemType Directory -Path $d -Force | Out-Null }
+    [System.IO.File]::WriteAllText((Join-Path $adopter '.sza-canon.json'),
+        '{"canon":{"model":"reference"},"overlay":["B"]}', (New-Object System.Text.UTF8Encoding $false))
+    # The stranger gets a .git marker so the walk stops there instead of climbing into a real adopter
+    # above the temp directory.
+    New-Item -ItemType Directory -Path (Join-Path $stranger '.git') -Force | Out-Null
+    Invoke-SessionStartCase 'adopter - injection parses as UTF-8 JSON' $adopter
+    Invoke-SessionStartCase 'non-adopter - stays silent' $stranger -MustBeSilent
+}
+finally {
+    foreach ($d in @($adopter, $stranger)) { Remove-Item -LiteralPath $d -Recurse -Force -ErrorAction SilentlyContinue }
+}
 
 Write-Host ''
 if ($failures -gt 0) {

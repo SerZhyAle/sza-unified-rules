@@ -78,16 +78,10 @@ $validWearFlavors = if ($secondary) { @($secondary.Values) } else { @() }
 $dataFile = Get-FeatureInventoryPath -RepoRoot $repoRoot -NoLegal:$NoLegal
 $fileName = Split-Path $dataFile -Leaf
 
-# -ListAreas: print the distinct areas already in the inventory and exit. Lets a
-# caller pick an existing area name without a separate exploratory ConvertFrom-Json pass.
+# -ListAreas: print the distinct areas allowed by the schema (or already in the inventory as fallback).
 if ($ListAreas) {
-    if (Test-Path $dataFile) {
-        @(Get-Content -LiteralPath $dataFile -Encoding UTF8 |
-            Where-Object { $_.Trim().Length -gt 0 } |
-            ForEach-Object { try { ($_ | ConvertFrom-Json).area } catch { } } |
-            Where-Object { $_ } |
-            Sort-Object -Unique) | ForEach-Object { Write-Output $_ }
-    }
+    $areas = @(Get-FeatureAllowedAreas -RepoRoot $repoRoot)
+    foreach ($a in $areas) { Write-Output $a }
     exit 0
 }
 
@@ -100,6 +94,10 @@ $areaN = $Area.Trim()
 $nameN = $Name.Trim()
 $descN = ($Description -replace '\s+', ' ').Trim()
 if ([string]::IsNullOrWhiteSpace($areaN)) { Fail "-Area is empty." }
+$allowedAreas = @(Get-FeatureAllowedAreas -RepoRoot $repoRoot)
+if ($allowedAreas.Count -gt 0 -and $allowedAreas -notcontains $areaN) {
+    Fail "Invalid -Area '$areaN'. Allowed: $($allowedAreas -join ', ')."
+}
 if ([string]::IsNullOrWhiteSpace($nameN)) { Fail "-Name is empty." }
 if ([string]::IsNullOrWhiteSpace($descN)) { Fail "-Description is empty." }
 

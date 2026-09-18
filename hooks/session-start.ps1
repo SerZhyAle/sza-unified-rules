@@ -64,7 +64,18 @@ The lines below are the hard invariants; everything else lives in the reference 
             additionalContext = $header + $text
         }
     }
-    $payload | ConvertTo-Json -Depth 5 -Compress
+    $json = $payload | ConvertTo-Json -Depth 5 -Compress
+
+    # Write the BYTES, not the string: a redirected stdout inherits the console code page, and on a
+    # Cyrillic Windows console (866 where this was measured) that maps the canon's own section sign and
+    # Cyrillic letters onto single bytes the reader then decodes as UTF-8. The result is a control
+    # character inside a JSON string, so the whole injection is discarded with a parse error and the
+    # invariants never reach the session - measured 2026-09-18 as 420 discarded injections across 391
+    # sessions, all of them silent except the error banner.
+    $bytes = (New-Object System.Text.UTF8Encoding $false).GetBytes($json + "`n")
+    $stdout = [Console]::OpenStandardOutput()
+    $stdout.Write($bytes, 0, $bytes.Length)
+    $stdout.Flush()
     exit 0
 }
 catch {

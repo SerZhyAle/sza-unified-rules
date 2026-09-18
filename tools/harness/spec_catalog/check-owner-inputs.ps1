@@ -50,7 +50,7 @@ if (-not (Test-Path $specPath)) {
     exit 2
 }
 
-$lines = Get-Content $specPath
+$lines = @(Get-Content $specPath)
 $start = -1
 $end = -1
 for ($i = 0; $i -lt $lines.Count; $i++) {
@@ -110,6 +110,6 @@ if ($blockers.Count -gt 0) {
 }
 
 Write-Output "PASS $Id"
-$count = $found.Count
+$count = $found.Keys.Count
 Write-Output ("All $count Owner Input field(s) in §3.3 are filled. Spec is eligible for Draft -> Approved promotion.")
 exit 0
