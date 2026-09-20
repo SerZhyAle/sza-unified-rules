@@ -46,6 +46,22 @@ Before the release operation, the pre-release verification must pass - see
 scenario works, performance acceptable, explicit PASS/FAIL verdict. A red pre-flight blocks the
 release; do not "release anyway".
 
+**The absence of a verdict is not a pass, and that is the way this gate actually fails.** "A red
+blocks the ship" says nothing about a sweep that never ran, so a project can hold the rule perfectly
+and ship unverified for months - no rule was broken, because nothing ever went red. Close it by
+making the **one-way step itself refuse without a verdict artifact that names the version it
+judged**: the artifact is the input to the ship, not a report filed next to it. Naming the version
+matters as much as producing it, since a verdict from the previous release is exactly what a hurried
+ship reaches for.
+
+**Wire the gate into the command that ships, not into a command beside it.** The reference project
+had the whole apparatus - a standard release gate producing a single PASS / FAIL / WAIVED verdict,
+documented, working - owned by its *pre-release sweep* command while releases were cut by a separate
+runbook that never mentioned it. Grep of the shipping runbook for the gate's own name: **zero
+matches**. Skipping the sweep therefore skipped the gate **silently**, and two consecutive releases
+went out across six flavors with no written verdict at all. Whenever a check and the irreversible act
+it guards live in two different commands, the check is optional in practice however the docs read.
+
 ## 3. Coverage-regression gate (the owner's hard rule)
 
 **Never ship a release that shrinks market/reach.** Compare the candidate against the last shipped
@@ -80,6 +96,24 @@ owner decision, made before the release, never discovered after.
   `[Unreleased]`. That dated section *is* the release note, rendered verbatim into the release body and
   the site "What's new". The public showcase/features text is generated *from* the changelog diff since
   the last release, never hand-authored per change.
+- **Nothing a release generates may be committed after the one-way step. Generate, commit, then
+  tag.** Anything the release itself produces - listing text, store changelogs, release notes, a
+  cleanup of markers the version retires - is part of the version, so it belongs in history *before*
+  the act that freezes it. Put it after, and it becomes work with no deadline behind it: the ship has
+  already happened, the operator has moved on, and nothing is red. Measured in the reference project:
+  the commit the tag points at landed at **17:33**, the store changelogs at **17:45** - and that one
+  late commit was carrying the orphaned listing text of **three earlier releases** nobody had
+  noticed. Two structural amplifiers, both worth checking for by name. The cleanup ran **in a
+  separate release worktree**, whose `git status` no one reads because the operator works in another
+  one; and the runbook cut the **next development branch from the trunk before that cleanup**, so the
+  two diverged by construction at every release and paid for it later in merge conflicts over commits
+  that were byte-identical on both sides.
+- **A fix-release is where the ship-together rules break, so check them there first.** The hurry that
+  justifies a fix-release is exactly the pressure that splits one surface set across two commits. In
+  the reference project the English release notes and all three READMEs went in one commit and the
+  other two locales followed **eight minutes later** - the "every surface and every authored locale in
+  one edit" invariant broken not by disagreement but by haste. Evidence that the rule wants a gate on
+  the release path rather than another paragraph.
 
 ## 5. Distribute per channel *(overlay)*
 

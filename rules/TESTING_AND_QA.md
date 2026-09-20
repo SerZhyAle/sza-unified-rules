@@ -19,6 +19,22 @@ a single one of them hold the closing status back; only the human pass converts 
 project this was not a formality: a ticket was declared done carrying one unticked device line, and an
 hour on real hardware showed one of its five acceptance criteria failing outright.
 
+**A check has four answers, and folding the last two together is how it starts lying.** Pass and
+found-a-defect are obvious; *could not verify* is the third the exit-code invariant already demands
+([AI_USAGE.md](AI_USAGE.md) §2). The fourth is **not applicable in this configuration**, and a check
+that has no way to say it will report one of the other three instead. Two rules follow, both measured
+on one release sweep in the reference project:
+
+- **Validate the instrument before trusting its reading.** A reading that is physically impossible
+  means the instrument is broken, not that the subject failed. A clip check took an impossible
+  geometry at face value and called **5 of 5** screens off-glass; a walk over a navigation tree
+  reported **18 of 28** rows unreachable. A checker in that state does not merely miss defects, it
+  **manufactures release blockers that do not exist** - and the cost lands twice, once on the people
+  chasing them and once on the credibility of every later red from the same check.
+- **A false finding is as expensive as a miss, and louder.** "A real defect would be one row among
+  eighteen false ones" is the failure stated exactly: the check kept running, kept reporting, and had
+  become unreadable. Precision is not a nicety on a check whose output a human must triage.
+
 ## 2. Evidence ladder - cheapest rung that matches the risk
 
 Don't over-test a typo or under-test a migration. Pick the rung the change actually needs:
@@ -70,6 +86,22 @@ sweep and produce an explicit **PASS/FAIL verdict**:
 5. **Performance** - startup, memory, jank within budget on a representative device.
 6. **Verdict** - PASS or FAIL, in writing. FAIL blocks the release.
 
+**A waiver covers a known gap, never a "could not verify" the same run just produced.** A sweep that
+cannot reach its subject has measured nothing, and signing that off converts an unknown into a
+recorded pass - the one conversion the whole sweep exists to prevent. In the reference project the
+device smoke returned `VERDICT FAIL .. smoke=no-device/infra`, the gate mapped it to a
+waiver-eligible coverage gap, and the waiver was signed. The category was right and the motion was
+wrong: **an unreachable interpreter and a genuinely absent device produced the same bucket**, so the
+signature covered a tooling defect while appearing to accept a known limitation. Separate them at the
+source - an infrastructure fault is not a coverage gap - and make a fresh could-not-verify block the
+ship exactly as a FAIL does, since neither one proves the thing.
+
+**A gate that has not run since the last release is itself unverified.** The smoke above had rotted:
+three independent defects sat in it at once because nothing had invoked it in months, and they were
+found by the release that needed it rather than before. Anything the release depends on runs on a
+cadence that does not wait for the release - in CI, in the periodic sweep, or on a schedule - or its
+first run in months happens at the worst possible moment.
+
 ## 6. Persona QA (the product compass, as a test)
 
 Test as the real users, not as the author (see [AUTHOR.md](AUTHOR.md) product compass):
@@ -95,6 +127,16 @@ listeners / observers; DB schema or migration; player / media / caching / networ
 scope; build/minification. In a multi-phase task, audit the just-finished phase before starting the
 next ([DEVELOPMENT.md](DEVELOPMENT.md) §11).
 
+**A point fix on a shared contract is half a fix - sweep every site of that contract in the same
+ticket.** When the defect is not "this code is wrong" but "this code did not pay what the platform,
+the API or the wire format demands", the same debt is almost certainly unpaid elsewhere, written by
+the same hand on the same day. The sweep is cheap because the contract names its own call sites; the
+alternative is discovering them one production crash at a time. Measured in the reference project:
+the identical service-lifecycle contract had already been paid **twice** in one subsystem, each time
+as a point fix, and a third service in the same repo was never looked at - it crashed in the field,
+was reported by remote diagnostics **three hours after the release shipped**, and cost a same-day
+fix-release. Two paid fixes were, between them, the map of every place to look.
+
 ## 8. Gate cost - keep the machinery cheap without weakening it
 
 A mature project accumulates mechanical gates, and they start costing real waiting time. The instinct
@@ -108,6 +150,26 @@ worth carrying everywhere.
   quiet gates removes insurance and buys a rounding error. Optimise the head.
 - **A gate that never fires is not evidence that it is useless.** It may be the reason the failure
   stopped happening. Retire one only on a stated argument about the risk, never on its own silence.
+- **The argument that does carry weight is demonstrated redundancy, not silence.** Silence says a
+  gate found nothing; redundancy says a *cheaper check already standing in front of it* found
+  everything it would have. Measure the pair, not the gate alone. In the reference project an
+  expensive static-analysis step ran in **291 closures, and in 291 of 291 the cheap lexical pass had
+  already come back clean** - the expensive one never ran on a tree the cheap one had objected to -
+  while **real findings the cheap pass missed, over the whole corpus, came to 0**. It cost **21.4% of
+  the summed gate wall**, and a closure that ran it took **67.1 s against 26.6 s** for one that did
+  not. That is a retirement argument; "we have not seen it go red" is not. One trap inside it:
+  **count findings, not non-passes.** That gate's only two non-PASS verdicts were *could not verify*,
+  which is not yield - reading them as "it caught two things" is how a redundant gate survives its
+  own audit.
+- **Every number a gate rests on ships with its date and the one command that regenerates it.** A
+  threshold is a measurement, and a measurement decays. In the reference project a concurrency bound
+  of **14.1 s**, measured on one date, was still refusing work seven weeks later when the real median
+  over 157 runs was **56.0 s** - about **4x drift**, with the documented figure quoted all the while
+  as if it were current. The second-order failure is worse than the first: **a standing refusal
+  blinds the audit that would have caught it**, because the range it forbids produces no runs, so the
+  data that would show the bound is wrong can never be collected. Date every threshold, name its
+  regenerating command beside it, and treat a bound that has never been re-measured as an assumption
+  rather than a limit.
 - **Cache a clean verdict against a fingerprint of every input the verdict can depend on** - the
   analysed sources, the tool's config, its baselines, the build files and the gate script itself. In
   the reference repo 56% of the expensive gate's runs analysed a tree in which nothing it reads had

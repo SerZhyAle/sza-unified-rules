@@ -73,6 +73,11 @@ $Script:SzaProfileDefaults = [ordered]@{
         # wrote them would meet an exception instead of a path; every reader already treats an
         # absent file as an empty section, so a project without the producer needs no override.
         gateMetrics      = 'temp/metrics/gate-executions.jsonl'
+        # Read by lib/tool-failure-journal.ps1 and by whatever the project points at it: one row
+        # per refusing invocation, so "what did that command actually say" stays answerable after
+        # the tool result has scrolled away. Project-relative for the same reason as every key
+        # here - the harness copy is shared by every project on the machine.
+        toolFailures     = 'temp/metrics/tool-failures.jsonl'
         contextSignalDir = 'temp/context-signal'
         watchdogLog      = 'temp/scratch/watchdog/watchdog.log'
         changelog        = 'dev/CHANGELOG.md'

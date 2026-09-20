@@ -25,6 +25,11 @@ $script:RepoRoot = $repoRoot
 # the row Add-ReleaseLines never appends below.
 . (Join-Path $libDir '_owner-gate.ps1')
 
+# The refusal journal, so a status gate that blocks a transition leaves a row a reader can find
+# after the tool output has scrolled away. Shared with every other harness cluster rather than
+# owned here: one journal is what makes one reader able to answer for all of them.
+. (Join-Path $libDir '..' 'lib' 'tool-failure-journal.ps1')
+
 $script:CatalogPath = (Get-SzaPath 'journal')
 # Archived records live in a separate journal so the hot read path scans only
 # active tickets. See PLAN/S0454_spec-catalog-journal-compaction.md.
@@ -1022,11 +1027,21 @@ function Invoke-SpecCheckers {
         $output = & $checker -Id $Id @extra 2>&1
         # Exit 2 fails too: "could not look" is not "found nothing".
         if ($LASTEXITCODE -ne 0) {
+            $checkerExit = $LASTEXITCODE
             Write-Host ""
             Write-Host ("Status gate blocked {0} -> {1} ({2}):" -f $Id, $NewStatus, $name) -ForegroundColor Yellow
             $output | ForEach-Object { Write-Host $_ }
             Write-Host ""
-            throw ("Cannot set '{0}' to '{1}': {2} reported exit {3}. Fix what it names, then re-run." -f $Id, $NewStatus, $name, $LASTEXITCODE)
+            # The refusal is journalled with the text the checker printed, not merely its code: a
+            # mutator's refusal scrolls out of an agent's reach within a turn, and the reason is
+            # the half that decides what to do about it. Best-effort by construction - the writer
+            # swallows its own IO, so a journal problem cannot displace the refusal below.
+            Write-SzaToolFailureRecord `
+                -Tool 'spec_catalog' `
+                -Command ("spec_catalog status gate -Id {0} -Status '{1}' :: {2}" -f $Id, $NewStatus, $name) `
+                -ExitCode $checkerExit `
+                -OutputTail (($output | ForEach-Object { [string]$_ }) -join [Environment]::NewLine)
+            throw ("Cannot set '{0}' to '{1}': {2} reported exit {3}. Fix what it names, then re-run." -f $Id, $NewStatus, $name, $checkerExit)
         }
     }
 }

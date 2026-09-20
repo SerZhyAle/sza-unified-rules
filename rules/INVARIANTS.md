@@ -17,8 +17,9 @@ Ordered by cost of violation. The pointer after each line is the doc that expand
    repo or the store re-signs. ([REPOSITORY_LAYOUT](REPOSITORY_LAYOUT.md), [SECURITY_AND_PRIVACY](SECURITY_AND_PRIVACY.md) §1)
 4. Treat every release as **one-way** and never trigger one - a `v*` tag push, a store upload, a marketplace
    publish - unless the owner asked for that exact release. ([RELEASE_AND_DISTRIBUTION](RELEASE_AND_DISTRIBUTION.md) §1)
-5. **Block the release on a red pre-flight**: the sweep ends in a written PASS/FAIL and a FAIL stops the ship.
-   ([TESTING_AND_QA](TESTING_AND_QA.md) §5)
+5. **Block the release on a red - or missing - pre-flight**: the ship step takes a written PASS/FAIL naming
+   the version it judged as its input, and a FAIL or no verdict at all stops it.
+   ([TESTING_AND_QA](TESTING_AND_QA.md) §5, [RELEASE_AND_DISTRIBUTION](RELEASE_AND_DISTRIBUTION.md) §2)
 6. Prove every package/store release by **updating a real prior install**, not only by a fresh install.
    ([RELEASE_AND_DISTRIBUTION](RELEASE_AND_DISTRIBUTION.md) §6)
 7. Claim nothing **done, fixed, or passing** without a fresh command run, its exit code, and its output cited.

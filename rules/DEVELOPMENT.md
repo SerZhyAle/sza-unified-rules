@@ -318,6 +318,19 @@ The machinery that makes the hygiene rules (§9) and the parity gates (§12) run
   ungated rule. In the reference project nothing in the facade linked resources, and the compile-only check
   compiles code without linking any - so a broken layout closed **green** and its ticket reached "install
   this and test it" without the thing to be installed ever having been built.
+- **A project override that NARROWS a shipped default disables the mechanism, silently.** Where a
+  shared layer merges a project's config over its own defaults, the two directions are not
+  symmetrical: widening a list adds cases the mechanism then handles, while **narrowing one removes
+  cases it was counting on** - and the mechanism cannot tell a deliberate exclusion from an
+  out-of-date copy of the list. Nothing goes red, because a shorter list is a perfectly valid list.
+  Measured in the reference project: a profile declared two of the six outcomes the shared library
+  counts as "this run made no progress", and **52 of 54** stalled runs carried one of the four it had
+  left out - so the idle counter never advanced, the loop-breaker never tripped, and the queue
+  re-issued the same ticket **five times in a row**, another four times, and eight more tickets three
+  times each. The remedy is cheap and belongs to the shipped side: enumerate the values the default
+  carries, and have the merge **say what an override dropped** rather than accept it in silence. On
+  the consuming side, a narrowing override carries a recorded reason or it is a bug waiting for a
+  quiet week.
 - **Reachable exit codes (PowerShell).** Under `$ErrorActionPreference = 'Stop'` a bare `Write-Error`
   throws, so any `exit N` after it never runs and the process reports 1 while the message still prints
   (which is why it survives review). Write `Write-Error $msg -ErrorAction Continue` before `exit N`, and

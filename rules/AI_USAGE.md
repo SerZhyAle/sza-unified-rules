@@ -204,8 +204,21 @@ shares. Reconciled against the portfolio; per-project records in `contrib/`.
   decided the moment the owner types**: match the prompt against a short, high-precision micro-task
   pattern list, veto on a real-work list, drop anything past a length ceiling, and emit
   `additionalContext` naming the cheap tiers. Keep it advisory and **always exit 0** - a false fire
-  that refuses a prompt costs more than the miss it prevents. Measured is the failure and the shape;
-  no saving is claimed, because the first such hook went live with no post-change window behind it.
+  that refuses a prompt costs more than the miss it prevents.
+- **That hook's own post-change window closed, and its reach was zero - count the population an event
+  sees before wiring anything to it.** The bullet above shipped with "no saving is claimed"; the
+  measurement is now in, and it is the correction, not the confirmation. Over one window in the
+  reference project, **not one of the owner's 17 free-text prompts** matched the hook's own pattern
+  lists, because the owner enters a pipeline by typing `/`, and the hook skips slash prompts by
+  design - and **69% of pipeline entries (64 of 93) were headless processes**, where
+  `UserPromptSubmit` does not exist at all. The event was right about *when the decision is made* and
+  wrong about *who makes it*: the population that still types free text is not the population doing
+  the work. So the two questions are separate, and both are load-bearing - **is this event where the
+  decision happens**, and **how many of the occurrences I care about actually pass through it**. A
+  hook answering only the first is not advisory-but-weak, it is inert, and an inert hook reads in
+  every audit exactly like a rule nobody needed. Where a queue or a driver enters the pipeline, the
+  routing decision belongs at **that** entry point - the driver picks the tier as it picks the item -
+  and the prompt-submit nudge covers only what a human still types by hand.
 - **Same event, opposite verdict - write down which question you are asking.** A *context-pricing*
   hook on that same `UserPromptSubmit` was killed as timing-blind: it reads accumulated context, and
   that tax accrues inside autonomous blocks where no prompt is ever submitted, so the event misses

@@ -1277,3 +1277,195 @@ the rule S2577/S2578 established, so no sibling session goes red over a deploy i
 The deploy. Until it runs, the two gates exist in the checkout and no consumer executes them: the
 exit gate and the shape half are inert, and only the profile key and the consumer's tree gate are
 live. The pile they join is the normal state recorded above, not damage - one deploy clears all of it.
+
+---
+
+## 2026-09-19 - S3288: a harness refusal leaves a row, so it can be read after it scrolls away
+
+The consumer measured the gap that raised this ticket: one cross-script journal existed, carried
+189 116 rows and 187 red verdicts over two days, was written by exactly three gate runners and read
+by nobody - while every harness CLI left no trace at all when it refused. A refusal nobody can look
+at a minute later is a refusal that gets walked past, which was the owner's original complaint.
+
+### What changed
+
+- `lib/tool-failure-journal.ps1` - new. One row per refusing invocation, in the row shape the
+  consumer's hook already writes: `timestampUtc`, `sessionId`, `tool`, `command`, `exitCode`,
+  `outputTail`, `cwd`. Two properties are deliberate and both are about not becoming the problem -
+  every IO operation is swallowed, because a journal that throws turns a mutator's refusal into a
+  second unrelated failure inside the recorder and buries the reason the operator has to read; and
+  the file is trimmed to its last 500 rows on every write, because the journal it sits beside
+  reached 30 MB unattended and a record nobody prunes is a cost rather than an answer.
+- `spec_catalog/_lib.ps1` - `Invoke-SpecCheckers` writes that row at the point where it refuses a
+  transition, carrying the checker's own printed output and not merely its exit code. The reason is
+  the half that decides what to do about the refusal. The library is dot-sourced beside the other
+  leaf libraries; the call is best-effort by construction, so nothing it does can displace the
+  refusal itself.
+- `_profile.ps1` - one new `paths` key, `toolFailures`, defaulting to
+  `temp/metrics/tool-failures.jsonl`. Resolved through `Get-SzaPath`, so the journal lands under the
+  CONSUMING project's root. A journal beside the harness would mix every project on the machine into
+  one file and lose them all at the next plugin update, because the harness copy lives in a
+  versioned plugin cache.
+
+### Why the journal is shared rather than owned by each cluster
+
+The reader is what makes a record worth writing, and the consumer's reader answers one question -
+"what did that command just say, and has it said it before in this session". One journal means one
+reader answers for a hook-observed script exit and a harness-issued refusal alike. A per-cluster
+journal would need the reader to know every cluster's file before it could answer, which is how the
+gate journal ended up unread: there was no one place to look.
+
+### Verification performed
+
+Against the checkout with `SZA_HARNESS_ROOT`: `assert-portable.ps1` reports `PASS - 77 script(s)
+carry no product literal`, and a real refused transition (`update.ps1 -Id S3288 -Status Verified`,
+refused by `check-evidence-durable.ps1` with exit 1) took the journal from 41 rows to 42, the new row
+carrying the checker's full refusal text, the gate name, the id and the target status.
+
+### What is owed
+
+The deploy, and it is the owner's step. Until it runs, no consuming project journals a harness
+refusal: the consumer's own hook keeps recording script exits as before, and `assert-harness-drift`
+reports `_lib.ps1`, `_profile.ps1` and the new library as `canon is newer`. The consumer's
+`explain-last-failure.tests` suite skips its harness-written cases while the resolved copy lacks the
+writer and says so on its summary line, so no unrelated ticket goes red over an undeployed change.
+
+---
+
+## Spread-back applied 2026-09-20 - verification verdicts, an unwired release gate, gate economics, and a hook event with no audience
+
+The owner asked for an import of the recent experience. The window is everything since the entry above
+(S3288, 2026-09-19): tickets up to **S3359**, the repo's agent-rules surface against the canon's, and the
+three September releases. Executed **from a canon session**, so the guardrail did not have to bend; this
+file is the only thing in `rules/contrib/` the pass touched.
+
+The window's character is worth stating, because it decided what was raised. The repository's *product*
+work in it is ordinary Android bugfixing and travels nowhere. What travels is a cluster of **rulings** -
+tickets whose entire output is a measurement and a decision about the process itself (S3327, S3328, S3329,
+S3340) - plus what three releases in five days exposed. Seven items, all universal, none Android-specific.
+
+### Raised
+
+- **A check has four answers, and folding the last two together is how it starts lying** ->
+  [TESTING_AND_QA](../TESTING_AND_QA.md) §1. *Not applicable in this configuration* is a fourth outcome
+  beside pass, found-a-defect and could-not-verify, and a check with no way to say it reports one of the
+  other three. With the two rules that follow: validate the instrument before trusting its reading (an
+  impossible measurement is a broken instrument, not a failing subject), and a false finding is as
+  expensive as a miss and louder. Evidence: S3357, a clip check trusting impossible geometry, **5 of 5**
+  screens wrongly off-glass; S3358, **18 of 28** walked rows wrongly unreachable, "a real defect would be
+  one row among eighteen false ones".
+- **A waiver covers a known gap, never a "could not verify" the same run just produced** -> §5. S3336: the
+  device smoke returned `VERDICT FAIL .. smoke=no-device/infra`, the gate mapped it to a waiver-eligible
+  coverage gap, and the waiver was signed - so a signature covering a tooling defect looked like accepting
+  a known limitation. An unreachable interpreter and a genuinely absent device produced the same bucket.
+- **A gate that has not run since the last release is itself unverified** -> §5. The same smoke carried
+  **three independent defects at once** because nothing had invoked it in months, and the release that
+  needed it is what found them.
+- **The argument for retiring a gate is demonstrated redundancy, not silence** -> §8, refining rather than
+  contradicting the existing "never retire on its own silence". S3327: the gradle static-analysis step ran
+  in **291 closures, in 291 of 291 the cheap lexical pass was already clean**, real findings the cheap pass
+  missed over the whole corpus **0**, cost **21.4%** of summed gate wall, closure **67.1 s against 26.6 s**.
+  Carries the trap that decides such audits: **count findings, not non-passes** - that gate's only two
+  non-PASS verdicts were *could not verify*, which is not yield.
+- **Every number a gate rests on ships with its date and the command that regenerates it** -> §8. S3329: a
+  concurrency bound of **14.1 s** measured 2026-08-01 still refusing work seven weeks later against a real
+  median of **56.0 s over 157 runs**. The second-order half is the reason it earns canon text rather than a
+  ticket - **a standing refusal blinds the audit that would have caught it**, since the range it forbids
+  produces no runs.
+- **A point fix on a shared contract is half a fix** -> §7. S3332: the identical service-lifecycle contract
+  had already been paid **twice** in one subsystem, each time as a point fix; a third service was never
+  swept, crashed in the field, was reported by remote diagnostics **three hours after the release shipped**,
+  and cost a same-day fix-release. The two paid fixes were, between them, the map of every place to look.
+- **A project override that NARROWS a shipped default disables the mechanism silently** ->
+  [DEVELOPMENT](../DEVELOPMENT.md) §15. S3340: a profile declared two of the six outcomes the shared library
+  counts as "no progress", **52 of 54** stalled runs carried one of the four left out, so the loop-breaker
+  never tripped and the queue re-issued one ticket **five times in a row**. This one is about the canon's
+  own delivery to eleven repos: the profile seam ships defaults, and narrowing is the dangerous direction.
+
+Two entries land on the release path and are the pass's most valuable finding, so they are stated apart:
+
+- **The absence of a verdict is not a pass** -> [RELEASE_AND_DISTRIBUTION](../RELEASE_AND_DISTRIBUTION.md)
+  §2, and [INVARIANTS](../INVARIANTS.md) line 5 tightened to match. This repo holds a standard release gate
+  producing a single PASS / FAIL / WAIVED verdict - documented, working - owned by the *pre-release sweep*
+  command, while releases are cut by a runbook that never names it. Grep of `.claude/commands/` and
+  `CLAUDE.md` for `standard-release-gate`: **zero matches**; it appears only in `docs/` and an archived
+  S0553 ticket. Two consecutive releases went out across six flavors with no written verdict, and **no rule
+  was broken**, because "a red blocks the ship" is silent about a sweep that never ran. Invariant 5 could be
+  held perfectly by a project shipping entirely unverified. That is why the invariant changed, and why the
+  ship step now takes the verdict as an input rather than expecting one to exist nearby.
+- **Nothing a release generates may be committed after the one-way step** -> §4. The commit the tag points
+  at landed **17:33**; the store changelogs **17:45** - and that late commit carried the orphaned listing
+  text of **three earlier releases**. Both amplifiers are named in the canon text because both are
+  reproducible elsewhere: the cleanup runs in a **separate release worktree** whose `git status` nobody
+  reads, and the next development branch is cut from the trunk **before** that cleanup, so the two diverge
+  by construction at every release. The fix-release the same day also split its locales across two commits
+  eight minutes apart, which is recorded as evidence that invariant 17 wants a gate on the release path.
+
+### Deliberately NOT raised
+
+- **S3350** (detekt baseline red by 608 findings above baseline). Mostly already canon. Its one increment -
+  a baseline freezes *the files that existed*, so **84.9%** of those findings sat in files created after
+  the freeze while the diff-scoped gate stayed green - is a clause, not a rule, and §15 already carries the
+  ratchet. Left here.
+- **S3348** (a ticket in the probe-bound status with no probe). Verified and narrower than its title: every
+  scripted path was already gated and the hole was a hand edit, which a diff-scoped gate cannot be fatal
+  about. Its own remedy was a reading rule. S2934 already shipped the gated half.
+- **S3341** (a 4.99 h journal row, half the week's gate wall, from a timeout that fired and then blocked
+  inside its own cleanup, whose poisoned sum nearly got the gate deleted). Strong, and it sits just below
+  the line because the transferable part - a corrupted measurement almost retiring a healthy gate - is
+  already covered by §8's "quoting the wrong figure is how a useful gate gets deleted". Revisit if it
+  recurs.
+- **Every product ticket in the window**: S3333, S3334, S3335, S3339, S3342-S3347, S3349, S3351-S3356,
+  S3359 - bitmap lifecycle, dimen shadowing, StrictMode, SAF grants, siren waveform, feedback guards.
+  Android-specific, correctly staying here. S3334/S3335/S3353 carry a real idea (a device-fleet constraint
+  no agent can drive) but no measurement behind it yet.
+- **The probe cleanup at the release boundary** (196 specs archived at once) looked like a finding and
+  dissolved on inspection: minification strips the probe calls, a closure gate fails while one survives,
+  and the commit landed on the development branch. Healthy machinery, ordinary batch size. Recorded so the
+  next survey does not re-open it.
+
+### Owed, and it is the largest item this pass found
+
+**Six hooks born in this repo since the 2026-08-08 import protect one repository on one machine**, and
+three of them gate scripts **the canon itself now ships**: `observe-plan-tick-batching` (over
+`spec_catalog/plan-tick.ps1`), `sweep-agent-lock-queues` (calls `locks/agent-lock.ps1`, and
+[DEVELOPMENT](../DEVELOPMENT.md) §10 states when a lock ticket is stale but never who sweeps it), and
+`guard-release-freeze` (matches `ticket-lease.ps1 -Verb Claim` and the spec preamble). Two more are
+strong: `guard-manual-task-wait`, which refuses a shell wait on a background task's output file - one such
+wait ran **9 min 19 s of a 28 min ticket and returned nothing** - and `observe-empty-grep`, which
+[`hooks/README.md`](../../hooks/README.md) already calls "the reference instance" of the observe shape
+while shipping no such hook. And `refuse-unexplained-red-verdict` is a second `Stop` refuser paired with
+no autonomous loop, which makes the README's stated reason for not shipping that shape ("the live instance
+is project surface") **false for the shape as of this pass**.
+
+None of that was imported here, deliberately: shipping a hook means generalizing the script off this
+repo's command names, adding its row to the inventory table that `SZA-HOOK01` enforces, and extending
+`hooks/tests/smoke-hooks.ps1` - real work that deserves its own ticket and its own verification rather
+than a tail on a rules pass. The 2026-08-08 discipline ("a hook living in one repo protects one repo")
+has not been applied since the import that wrote it down, and this is the record of that.
+
+### Provenance of the numbers
+
+Re-verified in this session against the live tree, per the canon's own rule that a delegated report is not
+evidence: S3328's audience figures (**0 of 17** free-text prompts, **64 of 93** pipeline entries headless),
+S3327's economics (**291 of 291**, **0** missed findings, **21.4%**, **67.1 s against 26.6 s**), the
+`standard-release-gate` grep returning **zero** matches in `.claude/commands/` and `CLAUDE.md`, and the
+post-tag commit ordering by `git log` timestamps (**17:33:41** tag commit, **17:45:01** changelogs,
+**19:14:18** probe cleanup). Taken as written from the ticket text and not independently reproduced:
+S3329's 14.1 / 56.0 / 157, S3357's 5 of 5, S3358's 18 of 28, S3336's verdict string and its three defects,
+S3340's 52 of 54 and the re-issue counts. Anything in the second list is quoted in the canon as the
+reference project's measurement, which is what it is.
+
+### Verification performed
+
+`tools/check-rules.ps1` - expected 0, actual **0**, `check-rules: OK (19 core docs, 11 contrib docs)`. Five
+`rules/*.md` files touched (`AI_USAGE`, `TESTING_AND_QA`, `RELEASE_AND_DISTRIBUTION`, `DEVELOPMENT`,
+`INVARIANTS`), so the core digest moves and **every adopting repo is marked stale for reconciliation** -
+intended, and larger than usual because `INVARIANTS.md` is the always-loaded page.
+
+### What is owed
+
+The deploy, and it is the owner's step. This pass raised no version pair by hand - `deploy.ps1` owns that
+and was not run. Until it does, the eleven stamped repos keep reading `2026.09.06.1` and none of the text
+above reaches a session. The S3288 entry, `lib/tool-failure-journal.ps1`, `_profile.ps1` and
+`spec_catalog/_lib.ps1` from 2026-09-19 are still uncommitted in this checkout and ship in the same motion.
