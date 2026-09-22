@@ -43,7 +43,8 @@ docs/
   specifications/      SPECIFICATION_*.md still being built
   specifications/done/ SPECIFICATION_*.md that shipped (archive - do not churn)
   roadmaps/            ROADMAP_*.md
-  contracts/           CONTRACT_*.md - frozen wire/interface contracts shared with other products
+  contracts/           CONTRACT_*.md - POINTERS (id, version, home, role) into the shared contracts
+                       catalog; never a copy of the contract itself (see CONTRACTS.md)
   assets/  images/     doc/site images
   dev-notes/           throwaway diagnostics, captures, scratch (not authoritative)
 ```

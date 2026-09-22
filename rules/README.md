@@ -34,6 +34,7 @@ that sequences every doc below into one runbook.
 | [REPOSITORY_LAYOUT.md](REPOSITORY_LAYOUT.md) | where every kind of file lives; secrets; binaries; versioning principle |
 | [DOCUMENTATION_CONCEPT.md](DOCUMENTATION_CONCEPT.md) | single-source-of-truth model; changelog; discoverability; site pages; tone |
 | [PLATFORM_OVERLAYS.md](PLATFORM_OVERLAYS.md) | the concrete shape for Android / Windows desktop / Go CLI, plus cross-project contracts |
+| [CONTRACTS.md](CONTRACTS.md) | what binds across products: the shared contracts catalog, pointers not copies, comply-or-amend, versioning and backward compatibility, the release gate |
 | [RELEASE_AND_DISTRIBUTION.md](RELEASE_AND_DISTRIBUTION.md) | the shipping runbook: build/release boundary, coverage-regression gate, per-channel distribute, post-release checks, the release package plan |
 | [CHANNEL_MATRIX.md](CHANNEL_MATRIX.md) | the per-channel publishing reference: trigger/cost/auth/signer/listing/anchor/verify for GitHub, winget, MS Store, Chrome, Edge, Play |
 | [WINDOWS_PACKAGING.md](WINDOWS_PACKAGING.md) | the Windows delivery-shape decision guide: portable zip vs Inno vs WiX (+ MSIX), anchor set per shape, map of the packaging traps |
@@ -64,7 +65,7 @@ that sequences every doc below into one runbook.
 
 Read order for a new project: **NEW_PROJECT_CHECKLIST → AUTHOR → AI_USAGE → REPOSITORY_LAYOUT →
 DOCUMENTATION_CONCEPT → DEVELOPMENT → TESTING_AND_QA → GITHUB_INTERACTION → RELEASE_AND_DISTRIBUTION →
-CHANNEL_MATRIX → the one platform overlay → (as applicable) WINDOWS_PACKAGING / LOCALIZATION /
+CHANNEL_MATRIX → the one platform overlay → (as applicable) CONTRACTS / WINDOWS_PACKAGING / LOCALIZATION /
 SECURITY_AND_PRIVACY / SUPPORT_AND_FEEDBACK / SITE_CONFIGURATION.**
 
 > **Status: shipped as a plugin.** Extracted from the portfolio's most mature repo, reconciled against the
@@ -142,6 +143,16 @@ One name per concept, so every project and every agent means the same thing:
 - **Companion editor extension** - a thin, in-repo, code-independent helper published to an editor
   marketplace on its own version clock, coupled to the app by a one-way on-disk file contract. See
   PLATFORM_OVERLAYS "Companion editor / IDE extension".
+- **Shared contract** - a durable functional solution that outlives one repository: a format, an algorithm
+  with its constants, a behaviour at a boundary, a user experience at a shared moment. Lives in the
+  contracts catalog at `P:\Contracts`, organized by *function*, never by product; a repo keeps a pointer.
+  Distinct from the canon, which is *how we build* rather than *what the software does*. See
+  [CONTRACTS.md](CONTRACTS.md).
+- **Comply or amend** - the only two legal answers to a contract a product disagrees with: amend it in the
+  catalog with a version bump, or record a dated exception. A silent local deviation is a violation.
+- **Producer-frozen / consumer-forward-tolerant** - the compatibility law: a producer never changes the
+  shape it shipped within a MAJOR; a consumer matches by name, accepts a higher MINOR, refuses a higher
+  MAJOR cleanly, and never lets absence delete a user's own data.
 - **Frozen anchor** - an identifier that ties an *update* to an *install* (package id, app identity,
   signing key, module path). Reserve once; changing it orphans every installed copy.
 - **Build vs release** - a *build* is local and free and ships nothing; a *release* is the one-way

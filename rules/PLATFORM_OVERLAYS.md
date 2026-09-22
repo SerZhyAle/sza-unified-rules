@@ -205,8 +205,9 @@ tree that must stay behaviourally in sync with its sibling.
 - **In-repo vs cross-repo editions use different parity mechanisms.** Editions in one repo (independent
   source trees side by side) sync through `docs/PARITY.md` + a drift gate. Editions that live in
   **separate repos** (e.g. an Android app, a desktop app, and a CLI companion of the same product) sync
-  through a **frozen wire contract** instead - a `docs/contracts/CONTRACT_*.md` with a byte-identical test
-  vector both ends validate against (see "Cross-project contracts" below). Same goal, different home.
+  through a **frozen wire contract** instead - one page in the shared contracts catalog with a
+  byte-identical test vector both ends validate against, and a pointer file in each repo (see
+  "Cross-project contracts" below and [CONTRACTS.md](CONTRACTS.md)). Same goal, different home.
 
 ---
 
@@ -260,15 +261,18 @@ When two products - or two editions of one product living in separate repos - sh
 on-disk file, that format is a **frozen contract**, owned by one repo and consumed byte-identically by
 the others.
 
-- **Home:** `docs/contracts/CONTRACT_<name>.md` in the *producing* repo (universal taxonomy), with a
-  canonical test vector both ends validate against.
-- **Example:** the `.fmscfg` / config format is defined in `fms_companion/docs/CONFIG_FORMAT.md` and
-  consumed by the Android importer - a byte-identical canonical vector on both ends. The Go repo is the
-  reference implementation even though the companion is discontinued as a shipped product.
-- **Rule:** a contract changes only with a version bump inside the file (`schemaVersion`), never a
-  silent reshape. Producers stay frozen at the shipped shape; consumers stay forward-tolerant (accept
-  a higher `schemaVersion` they can still parse). Reorganizing folders is safe; changing the wire shape
-  breaks every counterpart that shipped against it.
+- **Home:** the shared contracts catalog at `P:\Contracts`, in the folder named after the *function*, with
+  its conformance vectors beside it. The producing repo keeps a **pointer** at
+  `docs/contracts/CONTRACT_<name>.md` - id, version, home, role - and never a copy. The full law is
+  [CONTRACTS.md](CONTRACTS.md); this section only places it among the other coupling shapes.
+- **Example:** the `.fmscfg` / config format lives in the catalog's `config-interchange/` and is consumed by
+  the Android importer - a byte-identical canonical vector on both ends. The Go repo is the reference
+  implementation even though the companion is discontinued as a shipped product.
+- **Rule:** a contract changes only in the catalog, with a version bump carried by the wire field
+  (`schemaVersion` or its equivalent), never a silent reshape. Producers stay frozen at the shipped shape;
+  consumers stay forward-tolerant (accept a higher `schemaVersion` they can still parse, refuse a higher
+  MAJOR cleanly). Reorganizing folders is safe; changing the wire shape breaks every counterpart that
+  shipped against it.
 
 **A consumed *release artifact* is a third coupling shape** - distinct from an edition (kept in sync by a
 parity doc) and from a wire contract owned in-repo. A product may depend at runtime on **another product's
@@ -282,7 +286,8 @@ the same **producer-frozen / consumer-forward-tolerant** rule applies, plus two 
 - **The fetch stays explicit.** No silent background download of the external artifact; the user (or an
   obvious action) triggers each refresh.
 
-Optionally mirror the consumed shape as a **read-only** `docs/contracts/CONTRACT_*.md` even though you do
-not own it, so a breaking upstream change is caught against a local vector. Reference: `StreamsPlayer`
+Record the consumed shape in the catalog even though you do not own it - a consumer row in the registry and
+a **read-only** pointer at `docs/contracts/CONTRACT_*.md` - plus a local vector, so a breaking upstream
+change is caught by a test rather than by a user. Reference: `StreamsPlayer`
 consuming the `FastMediaSorter` stream-bank ZIP (a `streams.csv` that must be the **first** ZIP entry or the
 bank is rejected; a URL-keyed merge that only touches catalog-origin rows).

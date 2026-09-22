@@ -17,6 +17,12 @@ does not apply here; this is where fixes land. It applies everywhere else.
 
 - **Gate before committing anything under `rules/`:** `pwsh -File tools/check-rules.ps1` (exit 0 required).
   It validates internal links, section numbering, `§` references and the house text style.
+- **Touching the contracts catalog?** `pwsh -File tools/check-contracts.ps1` (exit 0 required) validates
+  `P:\Contracts` itself: the governance pages, every domain's header block, the registry agreeing with it,
+  expired exceptions, and links. The catalog is outside git, so nothing else can catch a broken edit there -
+  the deploy runs this advisory, never as a blocker, because a machine without the `P:` drive must still be
+  able to ship a rule fix. The catalog's own law is `P:\Contracts\_meta\RULES.md`; the canon side is
+  [rules/CONTRACTS.md](rules/CONTRACTS.md).
 - **Changing a rule doc changes the digest**, which marks every adopting repo stale. That is intended: the
   version raised alongside it lets the staleness ladder tell a minor reconciliation from a hard re-adoption.
 - **The version pair is written by `deploy.ps1`, not by hand.** It calls

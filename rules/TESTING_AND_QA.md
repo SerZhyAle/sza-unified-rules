@@ -55,6 +55,9 @@ Don't over-test a typo or under-test a migration. Pick the rung the change actua
   migration/schema break).
 - **Release-variant proof** - the minified/packaged build for any change that reflection/DI/keep-rules
   could break.
+- **Contract conformance** - for anything a second product reads or writes: the vectors from the shared
+  contracts catalog, at the version this product's registry row names ([CONTRACTS.md](CONTRACTS.md) §6).
+  A vector copied into the repo and edited locally proves nothing; run against the catalog's copy.
 - Track known-broken tests explicitly so a pre-existing red doesn't mask a new regression - a green you
   can't trust is worse than a red you can.
 

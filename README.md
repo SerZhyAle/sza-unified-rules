@@ -73,6 +73,7 @@ compliance gate read instead of guessing.
 | [`feature-to-site`](skills/feature-to-site/SKILL.md) | the ship-together fan-out: in-app strings, ledger, READMEs, the product site, support pages, listing sources, the hub - every locale in one edit |
 | [`spec-to-audit`](skills/spec-to-audit/SKILL.md) | the task lifecycle from triage through spec, plan, implementation, evidence, self-audit, documentation and commit, with a refusing gate at each boundary |
 | [`adopt-canon`](skills/adopt-canon/SKILL.md) | adopting or re-syncing the canon in a repository, and writing its stamp |
+| [`contract-sync`](skills/contract-sync/SKILL.md) | aligning a repo with the shared contracts catalog: inventory, migrate by function, pointers instead of copies, registry rows, the seven-point compatibility audit |
 | [`agent-cost`](skills/agent-cost/SKILL.md) | measuring what a session actually costs, with the five corrections without which every token figure is inflated roughly threefold - and the subagent model tier, the largest single lever that measurement reaches |
 | [`caveman`](skills/caveman/SKILL.md) | terse mode - prose compressed, every exact string and every gate reason left intact; plus the commit and review shapes |
 

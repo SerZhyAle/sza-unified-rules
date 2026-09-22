@@ -35,6 +35,10 @@ apply (a CLI tool has no site, a single-locale app skips localization).
 - Stand up the single sources of truth ([DOCUMENTATION_CONCEPT.md](DOCUMENTATION_CONCEPT.md) §1) - most
   start as empty files.
 - Adopt the version + `CHANGELOG [Unreleased]` flow (§2) with the overlay's version shape.
+- **Declare the shared contracts** this product will produce or consume ([CONTRACTS.md](CONTRACTS.md)):
+  add a registry row in the catalog, put a pointer file under `docs/contracts/`, and name the catalog in
+  the agent-rules file exactly once. A format invented here that a second product will read belongs in the
+  catalog from the first commit, not after the second implementation exists.
 
 ## 4. Engineering discipline
 

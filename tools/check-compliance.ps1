@@ -11,6 +11,7 @@ Groups:
   RULES  the agent-rules file: canon pointer, no restatement, no self-declared fork
   HOOK   the enforcement layer: every registered hook is in the inventory table
   LAY    layout and ledger
+  CTR    shared contracts: pointers not copies, and the catalog named in exactly one file
   SEC    secrets and committed artifacts
   VER    version shape and channel manifests
   SURF   product surfaces: privacy page, SEO block, sitemap/robots
@@ -664,6 +665,55 @@ try {
         -not (Test-RepoPath 'docs/README.md')) {
         Add-Finding -Id 'SZA-LAY03' -Severity 'warn' -Path 'docs/README.md' `
             -Message 'docs/ holds 3+ markdown files but has no index' -Fix 'Add docs/README.md - the index of this tree.'
+    }
+
+    # --------------------------------------------------------- group CTR
+    # Shared contracts live in one catalog outside every repo (CONTRACTS.md). A repo holds pointers and
+    # implementations, never copies, and names the catalog in exactly one file. Both are mechanical.
+
+    $contractsDir = Join-RepoPath 'docs/contracts'
+    $contractDocs = @()
+    if (Test-Path -LiteralPath $contractsDir) {
+        $contractDocs = @(Get-ChildItem -Path $contractsDir -Filter *.md -File -ErrorAction SilentlyContinue |
+            Where-Object { -not $isGit -or $tracked -contains "docs/contracts/$($_.Name)" })
+    }
+
+    foreach ($doc in $contractDocs) {
+        if ($doc.Name -eq 'README.md') { continue }
+        $lines = @(Get-Content -LiteralPath $doc.FullName)
+        # A pointer names the contract it points at. Length alone is not the test - a short note with no
+        # id is still a note - but a long file with no id is a copy of something that belongs elsewhere.
+        $hasId = ($lines -join "`n") -match '(?im)^\s*(\|\s*)?(contract|id)\s*[:|]\s*`?[A-Z][A-Z0-9-]{2,}'
+        if (-not $hasId -and $lines.Count -gt 40) {
+            Add-Finding -Id 'SZA-CTR01' -Severity 'warn' -Path "docs/contracts/$($doc.Name)" `
+                -Message "$($lines.Count) lines and no contract id - reads like a copy, not a pointer into the shared catalog" `
+                -Fix 'Move the contract into the catalog under its function, and leave id/version/home/role here. Run the contract-sync skill.'
+        }
+    }
+
+    if ($isGit -and $contractDocs.Count -gt 0) {
+        $namesCatalog = @($agentFiles | Where-Object {
+            (Get-Content -LiteralPath (Join-RepoPath $_) -Raw) -match '(?i)P:[\\/]Contracts|contracts catalog'
+        })
+        if ($namesCatalog.Count -eq 0) {
+            Add-Finding -Id 'SZA-CTR03' -Severity 'warn' -Path ($agentFiles | Select-Object -First 1) `
+                -Message 'docs/contracts/ exists but no agent-rules file says where the shared contracts catalog is' `
+                -Fix 'Name the catalog once, in the agent-rules file, and nowhere else (CONTRACTS.md section 3).'
+        }
+    }
+
+    # The canon home is the one repo that must name the catalog: its rule docs, its skill and its own
+    # gate are where that path is documented. Everywhere else the path is drift waiting to happen.
+    if ($isGit -and $stamp.role -ne 'canon-home') {
+        $allowed = @('CLAUDE.md', 'AGENTS.md', 'GEMINI.md', '.sza-canon.json')
+        $hits = @(& git -C $RepoRoot grep -l -I -F -e 'P:\Contracts' -e 'P:/Contracts' -- . 2>$null)
+        if ($LASTEXITCODE -gt 1) { $hits = @() }
+        foreach ($hit in $hits) {
+            if ($allowed -contains $hit) { continue }
+            Add-Finding -Id 'SZA-CTR02' -Severity 'warn' -Path $hit `
+                -Message 'names the contracts catalog by path - whoever clones this repo has no P: drive' `
+                -Fix 'Cite the contract by id and section instead. Exactly one file - the agent-rules file - says where the catalog is.'
+        }
     }
 
     # --------------------------------------------------------- group SEC

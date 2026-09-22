@@ -28,8 +28,10 @@ Ordered by cost of violation. The pointer after each line is the doc that expand
    pin the release build to the tag. ([RELEASE_AND_DISTRIBUTION](RELEASE_AND_DISTRIBUTION.md) §4)
 9. Let a `--force`/`-y` flag skip the **prompt** but never the **safety checks** on a destructive path.
    ([TESTING_AND_QA](TESTING_AND_QA.md) §6)
-10. Preserve **user-authored data** on every ingest of an external artifact, and change a shared contract only
-    by a `schemaVersion` bump. ([PLATFORM_OVERLAYS](PLATFORM_OVERLAYS.md) "Cross-project contracts")
+10. Preserve **user-authored data** on every ingest of an external artifact, and change a **shared contract**
+    only in the catalog first - a version bump, never a silent reshape, and a reader kept for every version
+    that ever wrote user data. Comply or amend; a deviation exists only as a dated exception.
+    ([CONTRACTS](CONTRACTS.md), [PLATFORM_OVERLAYS](PLATFORM_OVERLAYS.md) "Cross-project contracts")
 11. Ship any **listening-port or elevation** feature OFF, enabled only by an explicit, gated, auditable opt-in.
     ([SECURITY_AND_PRIVACY](SECURITY_AND_PRIVACY.md) §3)
 12. Ship **`THIRD-PARTY-NOTICES.txt` inside every distributed package** when the artifact bundles third-party

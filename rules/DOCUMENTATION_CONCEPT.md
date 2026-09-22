@@ -19,7 +19,7 @@ drift.
 | Publication mechanics | `docs/guides/BUILD_AND_RELEASE.md` (+ store guide) | the release checklist / skill |
 | Channel listing text | the overlay's listing file(s) | the store console / package PR |
 | Privacy | `docs/privacy.html` (or the hosted policy URL) | store/Play listing URL, site footer |
-| Frozen wire contracts | `docs/contracts/CONTRACT_*.md` | the other product that shares the contract |
+| Shared contracts (format, algorithm, boundary behaviour, shared UX) | the contracts catalog at `P:\Contracts`, in the folder named after the **function** | `docs/contracts/CONTRACT_*.md` as a pointer in each repo; the other product that implements it ([CONTRACTS.md](CONTRACTS.md)) |
 
 If a fact appears in two places, one is a render target and must be regenerated, not hand-edited.
 Store/Play listing copy, for example, is trimmed to each field's character cap *from* the CHANGELOG

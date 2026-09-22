@@ -62,6 +62,21 @@ matches**. Skipping the sweep therefore skipped the gate **silently**, and two c
 went out across six flavors with no written verdict at all. Whenever a check and the irreversible act
 it guards live in two different commands, the check is optional in practice however the docs read.
 
+### Contract gate (the same shape, for what binds other products)
+
+A release also carries the product's **shared contracts**, and they fail the same way a verdict does -
+silently, because nothing went red. Before the one-way step ([CONTRACTS.md](CONTRACTS.md) §6):
+
+- every contract this product produces or consumes has a **current registry row** in the catalog, with a
+  verification date not older than the last release;
+- the product ships against the **current version** where possible; behind is allowed with a dated reason
+  in that row, absent is not. One MAJOR behind is a warning, two is a blocker for new work at that
+  boundary;
+- anything this release changes **at a contract boundary** is already in the catalog - the contract commit
+  comes first, never after;
+- the **conformance vectors ran in this product's own suite**, against the catalog's vectors at the
+  version the registry names, and the run is cited like any other evidence.
+
 ## 3. Coverage-regression gate (the owner's hard rule)
 
 **Never ship a release that shrinks market/reach.** Compare the candidate against the last shipped

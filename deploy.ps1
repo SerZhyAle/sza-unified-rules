@@ -85,6 +85,19 @@ $gateCode = $LASTEXITCODE
 if ($gateCode -eq 2) { Fail "the gate could not verify the canon (exit 2) - fix that before deploying" 2 }
 if ($gateCode -ne 0) { Fail "the gate found violations (exit $gateCode) - nothing was staged" 1 }
 
+# The contracts catalog lives outside git and outside this repo, so its state cannot block a canon
+# deploy - a machine without P:\Contracts would never be able to ship a rule fix. It is still worth
+# saying out loud when the catalog the rules point at is broken.
+$ctrGate = Join-Path $root 'tools\check-contracts.ps1'
+$ctrRoot = if ($env:SZA_CONTRACTS_ROOT) { $env:SZA_CONTRACTS_ROOT } else { 'P:\Contracts' }
+if ((Test-Path -LiteralPath $ctrGate) -and (Test-Path -LiteralPath $ctrRoot)) {
+    Write-Host 'deploy: checking the contracts catalog (advisory)' -ForegroundColor Cyan
+    & pwsh -NoProfile -File $ctrGate -CatalogRoot $ctrRoot | Select-Object -Last 3
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host 'deploy: the contracts catalog has errors - not a blocker here, but fix it' -ForegroundColor Yellow
+    }
+}
+
 # --- 2. Look at what would go in, without touching the index yet. ---------------------------------
 # `git status --porcelain` already honours .gitignore and lists untracked files, so the preview and
 # the -DryRun path never have to stage anything to find out what they would stage.
