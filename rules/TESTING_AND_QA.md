@@ -62,6 +62,12 @@ Don't over-test a typo or under-test a migration. Pick the rung the change actua
 
 For anything a user sees or touches, drive it on real hardware or an emulator, not just unit tests.
 
+- **Inclusive interaction and adaptable layout are part of the feature contract.** For every input mode
+  the product declares - touch, keyboard, pointer, controller, or assistive technology - an interactive
+  control is reachable, has a predictable focus/order model where relevant, and exposes its purpose and
+  action semantically. Required viewport, orientation, and form-factor classes keep operable content clear
+  of mandatory system UI. Exercise the declared modes and layout classes, or record a configuration as not
+  applicable; a successful touch-only flow does not prove a keyboard, controller, or accessible flow.
 - Android reference: on-device UI drive + logcat harvest (`spec-test-device`), batch sweeps over pending
   tickets (`spec-sweep`), quick ad-hoc device chores via the adb wrapper. Beware emulator quirks
   (unindexed media store, untappable bottom-sheet items, touch wedges) - they cause false FAILs.

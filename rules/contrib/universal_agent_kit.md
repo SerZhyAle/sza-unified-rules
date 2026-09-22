@@ -436,3 +436,107 @@ Re-sync entry entered through `SZA-CANON03`: stamp bumped from `2026.09.06.1` to
 | `.sza-canon.json` re-parses | valid JSON, new version and digest | parsed; `2026.09.08.2` / `sha256:cdf49be6..` / `adoptedOn` 2026-09-11 |
 | Zip vs source | archive rebuilt | **42 entries**, **0 mismatches** |
 
+## Product change 2026-09-21 - the kit stops assuming its projects are codebases
+
+A product pass on `kit/`, its two READMEs, `merge-prompt.txt`, the article and the zip. Driven by
+[EXPERIENCE_MAP.md](../../EXPERIENCE_MAP.md) section 7's **audience gap** and its section 10 question,
+both of which the owner settled this session: widen fully, keep the numbers with their dates, and
+scrub the product name out of `kit/`. Not a canon re-sync - the stamp was deliberately left alone
+(see "What is owed").
+
+### 1. Audience: widened, in two tiers rather than by vagueness
+
+The gap was real: the README promised "a portable method for AI-assisted development" while the
+owner's stated goal is any specialist who runs "projects" with agents. Widening by deleting the word
+"code" would have produced a vaguer kit, so the method is instead stated as **five assumptions** - a
+workspace with history, artifacts, work items, checks, an agent that reads and writes the files -
+none of which is a compiler, and every generic noun is given a concrete instantiation per domain.
+
+- **New doc `kit/docs/PROJECT_SHAPES.md`** (the widening's load-bearing file): the five assumptions;
+  the method's vocabulary across five kinds of project (software, data, writing, legal, operations);
+  "we have no checks is almost always false" with the five shapes a check takes in work that never
+  compiles; what transfers unchanged, what needs a local equivalent, **what to delete outright**;
+  and three stated limits.
+- **Placeholders re-tiered.** Tier 1, ten, for any project; tier 2, six, the code layer, to be
+  deleted rather than filled when the project does not build. Renamed `<SRC_ROOT>` -> `<WORK_ROOT>`
+  and `<MAX_LOC>` -> `<SIZE_BUDGET>`; **added `<CHECK_CMD>`**, the generic proof step the four build
+  tokens are now specializations of. `REPLACES.md` / `REPLACES_RU.md` rewritten with non-code
+  columns and a migration table for anyone holding an earlier copy.
+- Code-only rules are now **labelled** `(code layer)` in place - `CLAUDE.md` sections 6 and 7,
+  `CODE_QUALITY.md`, `rd-lead`'s architecture block, `review`'s third dimension - instead of being
+  silently universal.
+
+### 2. Canon 2026-09-20 propagated into the kit
+
+Eight measured items from `bde2b01`, plus the four the experience map listed as "no match" in the
+kit. Each carries its number and its date in the kit's prose:
+
+| Lesson | Landed in |
+| --- | --- |
+| Count the population an event sees before wiring a hook to it (0 of 17 prompts; 69% headless) | `HOOKS.md` (new first section), `CLAUDE.md` section 4, `settings.json` |
+| A check has four answers; validate the instrument (5 of 5, 18 of 28 false) | `VALIDATION.md`, `CLAUDE.md` section 10, `/review` |
+| The absence of a verdict is not a pass; wire the gate into the shipping command (0 grep matches) | `VALIDATION.md` (new section), `CLAUDE.md` section 10 |
+| Retire a gate on demonstrated redundancy, not silence (291 of 291, 21.4%, 67.1 s vs 26.6 s) | `VALIDATION.md` |
+| Date every threshold and name its regenerating command (14.1 s vs 56.0 s, ~4x drift) | `VALIDATION.md` |
+| A point fix on a shared contract is half a fix (paid twice, third crashed 3 h after the release) | `CODE_QUALITY.md`, `CLAUDE.md` section 9, `implementer` |
+| A narrowing override disables the mechanism silently (52 of 54; one ticket re-issued 5x) | `CLAUDE.md` section 8 |
+| The prose ceiling is 22% | `AUTHORING.md`, both READMEs, the article |
+| Context is replayed, not read once (median 215k against a 28.7k floor; 29% past 300k) | `COST.md` |
+| Never fire-and-forget, never poll (~1,300 polling turns, 81 min of sleep in a month) | `COST.md` (new section), `CLAUDE.md` section 12, `rd-lead` |
+| Latency tracks output, not context (+0.681 vs +0.065; 76.5% hidden reasoning) | `COST.md`, `CLAUDE.md` section 12 |
+
+**The one correction worth naming.** The kit *recommended* a prompt-submit routing nudge, on the
+strength of the 434-invocations measurement. That hook's own window has now closed with a measured
+reach of **zero**, so the recommendation is withdrawn and the example is re-shipped as a worked
+case of the question nobody asks. Both READMEs and the article say so in the owner's own voice -
+keeping a refuted recommendation would have cost more than the rule ever bought.
+
+### 3. Scrub - reversing the 2026-08-18 exception
+
+The provenance credit naming the source product in `kit/README.md`, recorded on 2026-08-18 as
+"present once, deliberately", is **removed**: the owner chose to scrub `kit/` and keep the name
+outside it. `kit/` now reads "a real, mature mobile application"; the repo README, the article body
+and the site footer still name and link the product, which is where a reader who wants provenance
+looks anyway. `kit/` is now consistent with its own rule in the repo's `CLAUDE.md`.
+
+### 4. Render targets
+
+Both surfaces were regenerated in the same change, per the repo's own rule that a `kit/` change not
+reaching the zip and the page ships a kit whose download disagrees with its documentation.
+
+- **The article**: a new section **02 "What kind of project is yours"** in all three locales
+  (five project cards, the "we have no checks" note, what to delete, the honest limits); sections
+  02-12 renumbered to 03-13; hero lead, the "who it's for" list, a new "why there are numbers in
+  here" note, and the validation section's four-answers and irreversible-step paragraphs, all
+  authored in RU, EN and UK; six paste-prompts updated; meta, OG, Twitter and JSON-LD descriptions
+  widened.
+- **A factual defect fixed while there**: all seven copies of the unpack instruction said the
+  archive "extracts to a `universal-agent-kit/` folder **beside** a `merge-prompt.txt`". It does
+  not - `merge-prompt.txt` is *inside* that folder, and has been all along. Corrected, and the
+  prompts now reference `universal-agent-kit/merge-prompt.txt` by its real path.
+
+### Verification
+
+| Check | Expected | Actual |
+| --- | --- | --- |
+| `check-compliance.ps1` | exit 0, no errors, no warnings | **0 error(s), 0 warning(s)**, exit **0** (gate read the installed plugin, 2026.09.13.1) |
+| Zip vs source | every entry byte-identical to `kit/` + `merge-prompt.txt` | **45 entries**, **0 mismatches** by per-entry SHA-256 (was 42: +`PROJECT_SHAPES.md`, +one memory example, and the file count rose with them) |
+| Scrub | no product name, no canon name, no portfolio path, no canon doc name under `kit/` | grep for `fastmediasorter\|FMS\|sza\|unified.rules\|p:\\\|serzhyale` over `kit/` - **empty** |
+| Doc references | every `docs/*.md` named in the kit exists | 12 referenced, 12 present; the extra names are examples of a *reader's* own files |
+| Article structure | three locales, equal section counts, balanced tags | **42** sections (14 per locale), secnums `00..13` three times, `<details>` 48 open / 48 close |
+| House style | no em-dash, en-dash or three-dot ellipsis in the new prose | empty across `kit/`, both READMEs, `merge-prompt.txt`, `index.html`; the only `...` are inside `go build ./...` code spans |
+| Placeholder rename | no `<SRC_ROOT>` or `<MAX_LOC>` left behind | both replaced everywhere they occurred (8 files) |
+
+### What is owed
+
+- **The stamp was not bumped, on purpose.** This session propagated canon *content* into the kit
+  product; it did not run `adopt-canon` to reconcile this repo's own development rules against the
+  canon's 19 docs. Bumping `canon.version` to `2026.09.20.1` would have claimed a re-sync nobody
+  performed - and the installed plugin on this machine is still `2026.913.1`, two deploys behind the
+  canon head. A real re-sync is a separate session.
+- `.sza-canon.json` carries a **pre-existing uncommitted edit** from an earlier session
+  (`2026.09.06.1` -> `2026.09.08.2`, `adoptedOn` 2026-09-11) that this session did not author and
+  deliberately left untouched.
+- Nothing is owed to a canon session: no canon rule changed here. This entry is the record of a
+  product change, not a spread-back.
+
