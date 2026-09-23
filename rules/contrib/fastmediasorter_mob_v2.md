@@ -1469,3 +1469,206 @@ The deploy, and it is the owner's step. This pass raised no version pair by hand
 and was not run. Until it does, the eleven stamped repos keep reading `2026.09.06.1` and none of the text
 above reaches a session. The S3288 entry, `lib/tool-failure-journal.ps1`, `_profile.ps1` and
 `spec_catalog/_lib.ps1` from 2026-09-19 are still uncommitted in this checkout and ship in the same motion.
+
+## The document registry lifted into the canon 2026-09-22 (source ticket S3379)
+
+The owner's brief that day: "From this repo we can set the common contract about the project
+documentation and its mirroring on the internet pages". The canon already carried the **principle** (one
+source of truth per fact, many renders, §1) and the contrib entry of 2026-07-23 already carried the **fact**
+that this repository has a machine-queried registry. What neither carried was the **mechanism** another
+project could stand up: the shape of a record, the split between a page declaring its address and a record
+deciding publication, the reverse-coverage half, and the minimum a project with no site still owes.
+
+**What changed upstream:** a new [DOCUMENTATION_CONCEPT.md](../DOCUMENTATION_CONCEPT.md) §6, "The
+documentation registry", with the former "Applying to a new project" renumbered §7 and given a sixth step.
+No other section moved, and no document outside this one cited §6, so no `§` reference needed repair.
+`rules/README.md` names the new subject in the document's index row.
+
+**The three decisions the source spec left open were closed by reading the canon rather than by asking**,
+each one already determined by a mechanism the canon runs:
+
+- **The mandatory minimum.** Two-level profile, and the level is not a free choice: items 1-5 are mandatory
+  everywhere, items 6-8 exist only where a public site does. §4 already conditions its page set the same
+  way ("for any product with a public site") and `.sza-canon.json` already carries `site` as a nullable
+  member, so the threshold was expressible before it was written down. Reverse coverage sits in the
+  mandatory half deliberately: without it the registry can only confirm what it was already told.
+- **The record shape.** Accepted as it stands here, carried as a **numbered shape** in the adoption stamp,
+  exactly as `ledgerShape` already numbers the four accepted ledger forms in §2. That precedent is the whole
+  argument - the canon's way of admitting a form it did not invent is to number it and name a reference
+  project, not to migrate the reference or to force its fields on everyone. A field a project cannot fill is
+  omitted; none is faked.
+- **The rollout order.** By touch, one repository per session, because that is the only order the mechanism
+  supports: [SPREAD_BACK_PROMPT.md](../SPREAD_BACK_PROMPT.md) retired the hand-maintained adoption table in
+  favour of the per-repo stamp precisely because the table was wrong for six of nine repos. A portfolio-wide
+  wave would rebuild the artefact that failed. Non-adoption is visible in the absent or stale stamp and
+  needs no separate ledger.
+
+**Deviations of the reference from the contract as written** - recorded here so §6 is not read as a
+description of this repository:
+
+- The site is the repository itself (GitHub Pages, publishable surface defined by the `exclude:` list in
+  `_config.yml`), so "the publishable area" is an exclusion list rather than a directory. §6 item 4 is
+  written to accept either.
+- Reverse coverage runs in the **release scope**, not per ticket (`assert-document-registry-coverage.ps1`,
+  step 0.4 of the pre-release sweep), because the subject it judges is the whole tree. §6 does not fix when
+  the check runs, only that it exists.
+- The registry carries facets this project needs and another may not (flavor-bound documents, the Wear
+  module's own pages). §6 item 2 contracts the existence of the two facets, never their vocabulary.
+- The shape number is declared here; the canon-side defaults do not yet enumerate shapes, because there is
+  exactly one and enumerating one form would be inventing a choice nobody has made.
+
+**Process note - the guardrail, again.** [CLAUDE.md](../../CLAUDE.md) reserves edits under `rules/` to a
+canon session and allows a project session to touch only its own contrib record. This pass was authored from
+a FastMediaSorter session on the owner's instruction to set the contract from this repository, which is the
+same deviation recorded for 2026-08-02 and 2026-07-23. It is named here, again, so no reader infers the
+guardrail lapsed.
+
+### Verification performed
+
+`tools/check-rules.ps1` - expected 0, actual **0**, `check-rules: OK (20 core docs, 11 contrib docs)`.
+
+### What is owed
+
+The deploy, and it is the owner's step. One `rules/*.md` file changed, so the core digest moves and every
+adopting repo is marked stale for reconciliation. Until `deploy.ps1` runs, the stamped repos keep reading the
+cached version and §6 reaches no session - including this one, which is why the source ticket parks as
+blocked on an external step rather than claiming the contract is live.
+
+## The security posture inventories lifted into the canon 2026-09-22 (source ticket S3380)
+
+The owner's brief that day: "From this repo we can set the common contract about the vision on security to
+propagate to other my projects". The canon already carried the **principles** - declare only what is used,
+justify each permission in one sentence, ship a listening port off, keep the page, the permission list and the
+data-safety form consistent, claim "no telemetry" only if true. What it did not carry was a **form** in which any
+of that is checkable: no project was obliged to hold a list of its permissions with their consumers, or a list of
+the things it can send, so consistency rested on the author's attention and a mismatch was found by a store
+review.
+
+**What changed upstream:** a new [SECURITY_AND_PRIVACY.md](../SECURITY_AND_PRIVACY.md) §7, "The security posture
+inventory", with the former "Applying to a new project" renumbered §8 and given an eighth step. §3's
+listening-port bullet now points at §7 for the portable form of the same rule. No document outside this one cited
+§7, so the renumbering repaired no cross-reference; `rules/README.md` names the new subject in the index row.
+
+**The three decisions the source spec left open were closed by reading mechanisms rather than by asking:**
+
+- **Where the inventory lives.** An authored document of the product, registered in its documentation registry,
+  whose **completeness** a gate counts. A fully derived artefact is impossible and the reference proves it: the
+  variant binding and the justification sentence are derivable from the manifests and the strings, but the set of
+  features consuming a permission is written nowhere machine-readable, and the one-permission-one-consumer
+  assumption was already tried and reverted here (S2013, three consumers of one location permission). The
+  "human writes, machine counts coverage" shape was not invented for this: the documentation registry's reverse
+  coverage and the mutation-producer registry are both built that way.
+- **How hard the consistency check is.** Blocking, and in the release scope. The portfolio invariants already
+  stop a ship on a red pre-flight and already demand the three forms agree, so an advisory would contradict both;
+  the scope follows from the gate-placement test, whose subject here is the whole tree against one document.
+- **The threshold for a small project.** Both inventories always, empty ones carrying a date and a sentence. The
+  canon already treats "no telemetry" as an asset only once stated; an empty inventory is that statement, and its
+  date is what lets it go stale and be caught. A two-level profile was rejected deliberately: the sibling
+  contract's levels turn on an external fact (a public site exists), while "I have no network" is the project's
+  own claim about itself, which is precisely the thing that must be written down.
+
+**Deviations of the reference from the contract as written** - recorded so §7 is not read as a description of
+this repository:
+
+- The inventory here is one document, `docs/SECURITY_POSTURE.md`, holding both tables. §7 contracts two
+  inventories, never two files.
+- The permission rows name build variants of one codebase (seven flavors plus two watch variants). A product
+  with one variant leaves that column trivial; §7 asks for it because a product whose variants differ has no
+  single true list.
+- The gate (`scripts/quality/assert-security-posture.ps1`) checks coverage, key resolution, the telemetry claim
+  and the document's date. It does not compare the *wording* of the three public forms against each other - that
+  remains an authored consistency, and §7 says only that the divergence must be detectable, not how deep the
+  comparison goes.
+- The inventory ships with its gaps listed: six permissions are requested with no in-app justification string,
+  explained today only by the public page. §7 makes that visible rather than compliant, which is the point - the
+  first run of a new inventory is expected to find exactly this kind of debt.
+
+**Process note - the guardrail, again.** [CLAUDE.md](../../CLAUDE.md) reserves edits under `rules/` to a canon
+session and allows a project session to touch only its own contrib record. This pass was authored from a
+FastMediaSorter session on the owner's instruction to set the contract from this repository, the same deviation
+recorded for 2026-09-22 (S3379), 2026-08-02 and 2026-07-23. It is named here so no reader infers the guardrail
+lapsed.
+
+### Verification performed
+
+- `tools/check-rules.ps1` - expected 0, actual **0**, `check-rules: OK (20 core docs, 11 contrib docs)`.
+- `scripts/quality/assert-security-posture.ps1` in the source repo - expected 0, actual **0**, 45 declared
+  permissions and 45 inventory rows, plus a negative run on a scratch tree that produced findings in both
+  directions and on an unresolvable string key.
+
+### What is owed
+
+The deploy, and it is the owner's step, shared with S3379 which changed the documentation chapter in the same
+working tree. Two `rules/*.md` files now differ from the published plugin, so until `deploy.ps1` runs and the
+plugin is updated, §7 reaches no session - including this one. The source ticket therefore parks as blocked on
+that external step rather than claiming the contract is live.
+
+## The usage-signal boundary lifted into the canon 2026-09-22 (source ticket S3381)
+
+The third brief of the same day: "we can set the common contract about the vision on FEEDBACK and back
+messaging from users, analytic about users, some statistical". [SUPPORT_AND_FEEDBACK.md](../SUPPORT_AND_FEEDBACK.md)
+already described how a user reaches help, how a diagnostic bundle is taken in, and how a report becomes a
+ticket. What it had no sentence about was the third tier - **what a product may count about the people using
+it** - so "no telemetry" and a statistics screen could coexist in a product with nothing in the canon to
+reconcile them. The decisions that do reconcile them existed, but only in Russian, inside one archived ticket of
+one product (S0473), which is the definition of a rule the next project inherits nothing from.
+
+**What changed upstream:** a new §7, "What a product may count about its users", with the former "Applying to a
+new project" renumbered §8 and given a fifth step. §7 carries four parts: the boundary (an always-on basis and
+nothing more, consent for the rest, withdrawal deletes, no identifier linking two runs, on-device and cheap,
+egress only by gesture, a surface that exists only while collection is on), the rule that the privacy promise
+states both halves, the separation of describing-what-exists from introducing-what-does-not, and one declared
+support channel per product. No document cited §7 of this file, so the renumbering repaired no cross-reference;
+`rules/README.md` names the new subject in the index row.
+
+**The three decisions the source spec left open were closed by reading mechanisms rather than by asking:**
+
+- **Whether an anonymous aggregate may leave the device.** Only by a user gesture. The source spec's own ADR-1
+  had already fixed it, and the portfolio invariant that a no-telemetry claim must be true leaves no second
+  reading. The third option on the table - writing the ban in as a portfolio norm - was rejected: it would close
+  a door the owner may want to open deliberately, so the voluntary aggregate is recorded as an absent capability
+  with its own decision rather than as a prohibition.
+- **One portfolio address or one per product.** One per product, with the checkable half kept: the address exists
+  once, as a single declared constant, and the subject names the product and version. A shared portfolio mailbox
+  is a change of mailbox ownership, which a rules document cannot assign.
+- **Whether replying to public reviews is an obligation with a deadline.** No - it stays the posture §6 already
+  describes. An obligation needs a place where the deadline is visible and a breach is noticed, and the portfolio
+  has none; a declared deadline nobody observes is worse than no deadline.
+
+**Deviations of the reference from the contract as written** - recorded so §7 is not read as a description of
+this repository:
+
+- §7.4 asks for one declared address; this product declares three, in two different mailboxes - the problem
+  report, the crash mail and the statistics report. The divergence was found while writing the contract and is
+  parked as its own ticket (S3392) rather than fixed here, because which mailbox wins is the owner's decision.
+- The counting tier here predates the contract by a long way: its seven decisions were taken in S0473 and §7 is
+  their product-independent rewriting, not a rule the product was then made to satisfy. The one place the
+  product did not already satisfy it was §7.2 - the privacy page claimed "no analytics or usage tracking" and
+  said nothing about the statistics screen, which is true and incomplete, exactly the reading §7.2 exists to
+  stop.
+- §7 obliges no mechanical gate, and none was added. The dependency half of the claim is already checked by the
+  sibling contract's `assert-security-posture.ps1`; what is left - whether a new counter was written down - is
+  authored, and a gate that counted `StatsKey` entries against a document would measure the wrong thing.
+- The watch module has no tier of its own. A watch report travels out inside the phone's log archive, so the
+  contract's §3 is satisfied for both surfaces by one mechanism.
+
+**Process note - the guardrail, again.** [CLAUDE.md](../../CLAUDE.md) reserves edits under `rules/` to a canon
+session and allows a project session to touch only its own contrib record. This pass was authored from a
+FastMediaSorter session on the owner's instruction to set the contract from this repository, the same deviation
+recorded for 2026-09-22 (S3379, S3380), 2026-08-02 and 2026-07-23.
+
+### Verification performed
+
+- `tools/check-rules.ps1` - expected 0, actual **0**, `check-rules: OK (20 core docs, 11 contrib docs)`.
+- `scripts/document_registry/validate.ps1` in the source repo - expected 0, actual **0**, 48 records, the new
+  `feedback-and-usage-signals` record among them and returned by a trigger query.
+- The product inventory `docs/FEEDBACK_AND_USAGE_SIGNALS.md` was written from the tree, not from the archived
+  ticket: the two stores, the sink's disabled-path early return, the wipe on withdrawal and the settings row
+  bound to the toggle were each read in source.
+
+### What is owed
+
+The deploy, and it is the owner's step, now shared by three tickets that changed three `rules/*.md` files in the
+same working tree (S3379, S3380, S3381). Until `deploy.ps1` runs and the plugin is updated, §7 reaches no
+session - including this one. The source ticket parks as blocked on that external step rather than claiming the
+contract is live.

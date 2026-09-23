@@ -43,16 +43,19 @@ docs/
   specifications/      SPECIFICATION_*.md still being built
   specifications/done/ SPECIFICATION_*.md that shipped (archive - do not churn)
   roadmaps/            ROADMAP_*.md
-  contracts/           CONTRACT_*.md - POINTERS (id, version, home, role) into the shared contracts
-                       catalog; never a copy of the contract itself (see CONTRACTS.md)
+  contracts/           <ID>.md - POINTERS (id, version, home, role) into the shared contracts
+                       catalog, named by contract id, indexed by README.md; never a copy of the
+                       contract itself (see CONTRACTS.md)
   assets/  images/     doc/site images
   dev-notes/           throwaway diagnostics, captures, scratch (not authoritative)
 ```
 
-**Filename prefixes** (uppercase `SNAKE_CASE`, type first): `SPECIFICATION_`, `ROADMAP_`, `CONTRACT_`,
-`PROGRESS_`, `RESEARCH_`, `PLAN_`. A new doc takes the prefix of its type and lands in the matching
-folder. The prefix is what makes `grep`/glob and the index reliable; the folder can change without
-renaming the file.
+**Filename prefixes** (uppercase `SNAKE_CASE`, type first): `SPECIFICATION_`, `ROADMAP_`, `PROGRESS_`,
+`RESEARCH_`, `PLAN_`. A new doc takes the prefix of its type and lands in the matching folder. The prefix
+is what makes `grep`/glob and the index reliable; the folder can change without renaming the file.
+Contract pointers are the one exception: a pointer is named after the contract id it points at
+(`STREAM-BANK.md`), because the id is what a reader looks it up by. The older `CONTRACT_<ID>.md`
+spelling is still read.
 
 > **Archive is frozen.** Files under `specifications/done/` may predate this convention (mixed-case,
 > suffix-instead-of-prefix, cross-linked by exact filename). They are historical records - leave them.

@@ -11,7 +11,7 @@ specifics marked *(overlay)*.
   store/Play listing - to the audiences you actually have. `README_<lang>` is optional when the site and a
   localized docs page set already carry the translation; an EN-only README is fine then, not a gap.
 - **Keep English (canonical technical ledgers)**: `CHANGELOG.md` (published verbatim as the release
-  body and site "What's new"), `docs/contracts/CONTRACT_*.md`, code, and technical/tactical specs.
+  body and site "What's new"), the `docs/contracts/` pointers, code, and technical/tactical specs.
 - Shipped locales for this portfolio: **EN, RU, UK.** Add a locale only when there are users for it -
   a half-translated surface reads worse than an honest English one.
 - **Locale coverage is per surface, not one uniform set.** "EN/RU/UK" is the portfolio ceiling, not an

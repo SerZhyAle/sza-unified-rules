@@ -14,7 +14,7 @@ say so and stop - see [release](../release/SKILL.md).
 
 Canon: [DEVELOPMENT.md](../../rules/DEVELOPMENT.md), [TESTING_AND_QA.md](../../rules/TESTING_AND_QA.md),
 [AI_USAGE.md](../../rules/AI_USAGE.md), [AUTHOR.md](../../rules/AUTHOR.md),
-[INVARIANTS.md](../../rules/INVARIANTS.md).
+[CONTRACTS.md](../../rules/CONTRACTS.md), [INVARIANTS.md](../../rules/INVARIANTS.md).
 
 **The flagship rule, before anything else:** *no completion claim without fresh evidence.* Before saying done,
 fixed, or passing - run the command that proves it, read its exit code **and** its output, and cite both.
@@ -71,7 +71,13 @@ chosen downward to avoid ceremony.
 Problem, goals, constraints, open questions. Deliberately **no** class names, file paths, or signatures - this
 is the contract the audit later checks the build against.
 
-**Gate - all three:**
+**Gate - all four:**
+- The spec says whether the change touches a **shared-contract boundary** - a format, a wire shape, an
+  algorithm constant, or a behaviour that another product reads or reproduces. The repo's
+  `docs/contracts/` pointers name the contracts it holds; a serializer, importer or exporter with no pointer
+  is still a boundary. If it does, the catalog amendment - version bump, dated document-log row, registry
+  rows - already exists or is the plan's first phase, and no boundary code is written before it
+  ([CONTRACTS.md](../../rules/CONTRACTS.md) §4). The `contract-sync` skill does the catalog side.
 - Every *required* research item is closed. An open required item **stops the pipeline** - this is an encoded
   stop, not a judgement call.
 - Every user-facing placement, visibility, or fallback decision is resolved. Surface UI ambiguity before
@@ -305,7 +311,10 @@ Each question has a mechanical answer.
     only the prompt, never the safety checks.
 15. **Coverage and reach** - does anything here reduce supported platforms, countries, age rating, minimum OS,
     or device coverage? **Hard stop.**
-16. **Claim audit** - re-read my own final message and delete every "should / probably / seems / looks fixed".
+16. **Contract boundary** - if the diff changes what another product reads, writes or reproduces, the
+    catalog amendment exists with its version bump, and the conformance vectors ran against the catalog's
+    copy at that version. Code ahead of its contract is FAIL, whatever the tests say.
+17. **Claim audit** - re-read my own final message and delete every "should / probably / seems / looks fixed".
     Each is either replaced with a cited result or the claim is withdrawn.
 
 ## Composition with the repo's own skills

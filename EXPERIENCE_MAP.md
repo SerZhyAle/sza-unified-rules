@@ -79,7 +79,7 @@ the other stamped repos         universal-agent-kit (public, for the community)
 | Retained sessions | 1,880 in 2026-08-20..2026-09-20, about 59 a day (derived), 2.6 GB of transcripts |
 | Volume in its own audits | 347 main + 869 nested subagent transcripts (1.7 GB), 2026-06-30..2026-07-31. 497 sessions in 954 files, 31,776 unique requests, 38,699 tool calls, 2026-08-05..2026-08-11. 520 sessions, 346.7 active hours, 2026-08-14..2026-08-28. Definitions differ, so do not divide one row by another |
 | Not all hand-driven | the batch runner starts headless `claude -p` children ([run-spec-queue.ps1](tools/harness/batch/run-spec-queue.ps1), [monitor-spec-queue.ps1](tools/harness/batch/monitor-spec-queue.ps1)) |
-| Product | overlay B; modules `:app_v2`, `:wear`, `:lint-rules`, `:benchmark`; 6 flavors over Google Play (standard, lite, photos, legacy), sideload (noLegal), Meta Horizon Store (vr) and a GitHub Pages site; sibling editions FastMediaSorter_Lite (Windows) and fms_companion (Go), tied by the frozen `.fmscfg` wire contract (as recorded 2026-07-23) |
+| Product | overlay B; modules `:app_v2`, `:wear`, `:lint-rules`, `:benchmark`; 6 flavors over Google Play (standard, lite, photos, legacy), sideload (noLegal), Meta Horizon Store (vr) and a GitHub Pages site; sibling editions FastMediaSorter_Lite (Windows) and fms_companion (Go), tied by the frozen wire contract `FMSCFG` (the `.fmscfg` file, as recorded 2026-07-23) |
 
 ### Five agent runtimes named in the repo's own rule files
 

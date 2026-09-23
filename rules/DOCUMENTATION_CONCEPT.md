@@ -19,7 +19,7 @@ drift.
 | Publication mechanics | `docs/guides/BUILD_AND_RELEASE.md` (+ store guide) | the release checklist / skill |
 | Channel listing text | the overlay's listing file(s) | the store console / package PR |
 | Privacy | `docs/privacy.html` (or the hosted policy URL) | store/Play listing URL, site footer |
-| Shared contracts (format, algorithm, boundary behaviour, shared UX) | the contracts catalog at `P:\Contracts`, in the folder named after the **function** | `docs/contracts/CONTRACT_*.md` as a pointer in each repo; the other product that implements it ([CONTRACTS.md](CONTRACTS.md)) |
+| Shared contracts (format, algorithm, boundary behaviour, shared UX) | the shared contracts catalog, in the folder named after the **function** | `docs/contracts/<ID>.md` as a pointer in each repo; the other product that implements it ([CONTRACTS.md](CONTRACTS.md)) |
 
 If a fact appears in two places, one is a render target and must be regenerated, not hand-edited.
 Store/Play listing copy, for example, is trimmed to each field's character cap *from* the CHANGELOG
@@ -144,10 +144,64 @@ scope elsewhere renders from it:
   project-wide sweep. A gate may carry a scoped allowlist for a legitimate exception
   ([DEVELOPMENT.md](DEVELOPMENT.md) §9).
 
-## 6. Applying to a new project
+## 6. The documentation registry - what a project declares about its own docs
+
+§1 says every fact has one authoritative home. That is of no use to a reader who cannot find the home, and
+invisible to a check that cannot enumerate it. The registry is the machine-readable answer to three
+questions: which documents the project maintains, which of them are published, and which are deliberately
+not announced and why. It is a declaration the project keeps, not a prose index a reader has to trust.
+
+**The mandatory half - every project, site or no site:**
+
+1. **One record per maintained document.** A record carries the path, what the document is about, a
+   **product area**, one or more **change triggers**, the document's role in the source-of-truth chain
+   (`source` or `render`), whether it is published, and room for the reason a publishable file is
+   deliberately not announced. The `render` role is a promise: that document is regenerated and never
+   hand-edited (§1).
+2. **Two query facets.** "What must I read before touching this" is answered by product area plus change
+   trigger, in every project, in the same shape. The vocabulary of both is the project's own; only the
+   existence of the two facets is the contract.
+3. **Validation from the registry to the tree.** Every record points at a file that exists, and a record
+   claiming a published page must have an address to publish.
+4. **Reverse coverage, from the tree to the registry.** A file sitting in the publishable area that
+   declares no address and is named in no exclusion fails the check. Without this half a registry describes
+   only what it already knows about, and a new file joins the site in silence.
+5. **A versioned record shape.** The shape carries a number, declared in the project's adoption stamp
+   beside the ledger shape, so a later change to it stays readable for a project that adopted an earlier
+   one. A field a project cannot fill is omitted, never faked.
+
+**The site half - only where a public site exists:**
+
+6. **The page declares its own address; the record decides publication.** The address lives in the page (a
+   `permalink` or the equivalent), the publish and index decisions live in the record, and the record
+   covers a group of pages rather than a single file. A file then cannot change its public status on its
+   own, and no page has to be listed twice.
+7. **The site map is generated** from the records that declare an address, never hand-maintained, and every
+   listed page carries the SEO block of §3.
+8. **Search engines are notified after publication**, once per release, never per edit.
+
+A project with no public site runs items 1-5 and is compliant. That is a permanent, declared state, not a
+stage on the way to the full set.
+
+Two ordering rules make the registry true rather than aspirational: a document is registered **before**
+anything links to it, and on adoption the registry is built from the tree **as it actually is**, exclusions
+and reasons included, rather than from the tree somebody meant to have.
+
+Adoption is per repository, in a session started in that repository ([adopt-canon](../skills/adopt-canon/SKILL.md)),
+and the stamp is the only tracker. A project that has not adopted shows it in its own stamp; there is no
+portfolio-wide list to keep, because that list is what went stale last time.
+
+> **Reference implementation:** `FastMediaSorter_mob_v2` - a JSONL registry with a query / validate /
+> generate CLI, the reverse-coverage half wired into the release-scope gate, and the site served out of the
+> repository itself. Every way it differs from this section is recorded in its contrib file, so the
+> reference cannot quietly become the definition.
+
+## 7. Applying to a new project
 
 1. Stand up the sources of truth (§1) - most are empty files to start.
 2. Adopt the version + CHANGELOG `[Unreleased]` flow (§2), with the version shape from your overlay.
 3. Fill the store/package search + feature fields functionally (§3); add the SEO block to every page.
 4. If site-hosted, ship the mandatory pages (§4) with durable-URL CTAs.
 5. Write the README/listing in the task-first friendly voice (§5) and localize the user-facing surfaces.
+6. Build the registry from the tree you have (§6) and wire both its checks; without a site, the mandatory
+   half is the whole of it.

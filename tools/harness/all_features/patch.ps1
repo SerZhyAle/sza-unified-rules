@@ -20,6 +20,10 @@
     the flag's row, which is the one thing the gate exists to do. Pass -Gate "" to clear it
     deliberately; that is the only way the key is dropped.
 
+    S3403: every other key the record carries survives too, in its own position - the rebuild
+    names only the fields it can patch, and before this it dropped `wearFlavors` the same way it
+    once dropped `gate`.
+
     -NoLegal targets docs/ALL_FEATURES_noLegal.jsonl.
 
 .EXAMPLE
@@ -128,9 +132,30 @@ try {
         $writeId = if ($NewId) { $NewId.Trim() } else { $idN }
         if ($writeId -notmatch '^[a-z0-9]+(?:[-_][a-z0-9]+)*\.[a-z0-9]+(?:[-_][a-z0-9]+)*$') { Fail "Invalid new id '$writeId'." }
 
-        $rec = [ordered]@{ id = $writeId; area = $area; name = $name; description = $desc; flavors = $flavors; spec = $specVal; status = $status }
+        $rec = [ordered]@{ id = $writeId; area = $area; name = $name; description = $desc }
+        # Read by the profile's name two dozen lines up, so written by it too - a literal here renamed
+        # the dimension key of every patched record in a project whose dimension is not `flavors`.
+        $rec[$dimensionName] = $flavors
+        $rec['spec'] = $specVal
+        $rec['status'] = $status
         # Same slot add.ps1 uses, so a patched record is byte-comparable with an added one.
         if ($gateVal) { $rec.Insert(5, 'gate', $gateVal) }
+        # S3403: a key this rebuild does not name - the secondary dimension (`wearFlavors`) today, the
+        # next schema field tomorrow - keeps its value and its place after the nearest known key that
+        # precedes it in the record. Enumerating only known keys dropped `wearFlavors` from every
+        # patched record, and validate.ps1 cannot notice: an absent key is the legal assertion "every
+        # build of that dimension". Position, not add.ps1's slot, because a project-side writer may put
+        # the key before `gate`, and a description patch must not reorder a record.
+        $known = @('id', 'area', 'name', 'description', $dimensionName, 'gate', 'spec', 'status')
+        $anchor = 'id'
+        foreach ($p in $o.PSObject.Properties) {
+            if ($known -ccontains $p.Name) {
+                if ($rec.Contains($p.Name)) { $anchor = $p.Name }
+                continue
+            }
+            $rec.Insert([array]::IndexOf(@($rec.Keys), $anchor) + 1, $p.Name, $p.Value)
+            $anchor = $p.Name
+        }
         $out.Add(($rec | ConvertTo-Json -Compress -Depth 5))
     }
 

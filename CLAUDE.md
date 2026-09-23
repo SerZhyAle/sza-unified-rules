@@ -17,12 +17,25 @@ does not apply here; this is where fixes land. It applies everywhere else.
 
 - **Gate before committing anything under `rules/`:** `pwsh -File tools/check-rules.ps1` (exit 0 required).
   It validates internal links, section numbering, `§` references and the house text style.
-- **Touching the contracts catalog?** `pwsh -File tools/check-contracts.ps1` (exit 0 required) validates
-  `P:\Contracts` itself: the governance pages, every domain's header block, the registry agreeing with it,
-  expired exceptions, and links. The catalog is outside git, so nothing else can catch a broken edit there -
-  the deploy runs this advisory, never as a blocker, because a machine without the `P:` drive must still be
-  able to ship a rule fix. The catalog's own law is `P:\Contracts\_meta\RULES.md`; the canon side is
-  [rules/CONTRACTS.md](rules/CONTRACTS.md).
+- **The shared contracts catalog is at `P:\Contracts`** - the one place in this repo's prose that gives the
+  path, besides [rules/CONTRACTS.md](rules/CONTRACTS.md) and the `contract-sync` skill, which teach the rule
+  itself, and the three scripts that need a default to fall back on when `SZA_CONTRACTS_ROOT` is unset.
+  Everywhere else a contract is cited by
+  **id and section** (`FDSEC-FORMAT.md section 8`, `OCR-OVERLAY rule 4`) and never linked, because whoever
+  clones a repo has no `P:` drive; `check-compliance.ps1` enforces that in every repo whose stamp role is
+  not `canon-home`. The catalog's own law is its `_meta/RULES.md`; the canon side is the rule doc above,
+  and the per-repo alignment run is the skill.
+- **This repo owns four contracts, and they are the only ones it has.** `REPO-STAMP`, `HARNESS-PROFILE`,
+  `REPO-LAYOUT` and `RULE-DELIVERY`, in the catalog's `rule-adoption/` domain, bind the machine-readable
+  interface between the canon and a repository - the stamp, the harness profile, the names tools address,
+  the version pair that decides whether a rule change arrives. The rules' own text is **not** a contract
+  and never becomes one. Pointers are in [docs/contracts/](docs/contracts/); changing `.sza-canon.json`,
+  `.sza-profile.json`, the three agent-rules filenames or the digest's coverage is a contract change, so
+  the catalog moves first and the code follows.
+- **Touching the catalog?** `pwsh -File tools/check-contracts.ps1` (exit 0 required) validates it: the
+  governance pages, every domain's header block, the registry agreeing with it, expired exceptions, and
+  links. The catalog is outside git, so nothing else can catch a broken edit there - the deploy runs this
+  advisory, never as a blocker, because a machine without the drive must still be able to ship a rule fix.
 - **Changing a rule doc changes the digest**, which marks every adopting repo stale. That is intended: the
   version raised alongside it lets the staleness ladder tell a minor reconciliation from a hard re-adoption.
 - **The version pair is written by `deploy.ps1`, not by hand.** It calls

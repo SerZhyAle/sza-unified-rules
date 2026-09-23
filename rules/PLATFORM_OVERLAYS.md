@@ -261,13 +261,13 @@ When two products - or two editions of one product living in separate repos - sh
 on-disk file, that format is a **frozen contract**, owned by one repo and consumed byte-identically by
 the others.
 
-- **Home:** the shared contracts catalog at `P:\Contracts`, in the folder named after the *function*, with
-  its conformance vectors beside it. The producing repo keeps a **pointer** at
-  `docs/contracts/CONTRACT_<name>.md` - id, version, home, role - and never a copy. The full law is
-  [CONTRACTS.md](CONTRACTS.md); this section only places it among the other coupling shapes.
-- **Example:** the `.fmscfg` / config format lives in the catalog's `config-interchange/` and is consumed by
-  the Android importer - a byte-identical canonical vector on both ends. The Go repo is the reference
-  implementation even though the companion is discontinued as a shipped product.
+- **Home:** the shared contracts catalog, in the folder named after the *function*, with its conformance
+  vectors beside it. The producing repo keeps a **pointer** at `docs/contracts/<ID>.md` - id,
+  version, home, role - and never a copy. The full law, and the one rule doc that gives the catalog's
+  path, is [CONTRACTS.md](CONTRACTS.md); this section only places it among the other coupling shapes.
+- **Example:** `FMSCFG`, the `.fmscfg` config format, produced by the companion and consumed by the Android
+  importer - a byte-identical canonical vector on both ends. The Go repo is the reference implementation
+  even though the companion is discontinued as a shipped product.
 - **Rule:** a contract changes only in the catalog, with a version bump carried by the wire field
   (`schemaVersion` or its equivalent), never a silent reshape. Producers stay frozen at the shipped shape;
   consumers stay forward-tolerant (accept a higher `schemaVersion` they can still parse, refuse a higher
@@ -287,7 +287,7 @@ the same **producer-frozen / consumer-forward-tolerant** rule applies, plus two 
   obvious action) triggers each refresh.
 
 Record the consumed shape in the catalog even though you do not own it - a consumer row in the registry and
-a **read-only** pointer at `docs/contracts/CONTRACT_*.md` - plus a local vector, so a breaking upstream
-change is caught by a test rather than by a user. Reference: `StreamsPlayer`
-consuming the `FastMediaSorter` stream-bank ZIP (a `streams.csv` that must be the **first** ZIP entry or the
-bank is rejected; a URL-keyed merge that only touches catalog-origin rows).
+a **read-only** pointer at `docs/contracts/<ID>.md` - plus a local vector, so a breaking upstream
+change is caught by a test rather than by a user. Reference: `STREAM-BANK`, the stream bank FastMediaSorter
+publishes and StreamsPlayer consumes. What the archive must look like and what a merge may touch are that
+contract's rules to state - restating them here would fork them.

@@ -14,6 +14,7 @@ The canon is **read-only** from this session, with exactly one exception: the re
 Canon: [README.md](../../rules/README.md) (consumption model),
 [NEW_PROJECT_CHECKLIST.md](../../rules/NEW_PROJECT_CHECKLIST.md) (the new-repo front door),
 [PLATFORM_OVERLAYS.md](../../rules/PLATFORM_OVERLAYS.md) (pick exactly one overlay),
+[CONTRACTS.md](../../rules/CONTRACTS.md) (what binds across products),
 [INVARIANTS.md](../../rules/INVARIANTS.md).
 
 ---
@@ -119,6 +120,17 @@ record it as a DIVERGE delta.** Never silently ignore a divergence; that is how 
 If a canon rule looks wrong for this repo, push back once with evidence, then execute the decision. Collect
 needed **canon fixes** in your report - do not edit the canon from this session.
 
+**Shared contracts - decide, then hand off.** Hold the repo against the definition in
+[CONTRACTS.md](../../rules/CONTRACTS.md) §1: does it write or read something another product
+also reads or writes - a file format, a wire payload, a published catalog, an event stream, an import that
+could overwrite user data - or carry an algorithm or user-facing moment another product reproduces? Also
+count the rows the shared registry already holds for this product, and any `docs/contracts/` folder. If any
+of these is non-empty, run the **`contract-sync`** skill on this repo before step 8 - it owns the
+inventory, the pointers, the registry rows and the compatibility audit, and this skill does not restate
+them. If all are empty, write one line in the record saying the repo holds no shared contract, so the next
+run does not re-ask. Either way, the agent-rules file names the catalog in exactly one place whenever the
+repo has a contract.
+
 ## Step 6 - Release package plan (only if the repo ships in packages)
 
 The canon's release-planning convention
@@ -171,6 +183,9 @@ The staleness ladder, from the compliance gate:
 - Digest differs with a version gap of 2 or more, or `adoptedOn` older than 180 days -> **error**. Re-run this
   skill in full.
 
+When `CONTRACTS.md` is among the changed docs, the re-sync includes a `contract-sync` run - a change
+there changes what the repo owes the catalog, and reading it is not the same as doing it.
+
 Note the digest deliberately covers the **rule docs only** - not `README.md`, not the spread prompt, not
 `contrib/`. A change to one project's own record must never mark all eight repos stale.
 
@@ -195,6 +210,7 @@ Re-run the compliance gate and show the before/after counts.
 - [ ] The agent-rules file points at the canon and restates nothing that has a canon home.
 - [ ] Every divergence is either fixed or recorded as a DIVERGE delta with its reason.
 - [ ] Every open question from the contrib record is closed or explicitly carried forward with an owner.
+- [ ] Shared contracts: `contract-sync` ran on this repo, or the record says in one line that it holds none.
 - [ ] The release package plan is either standing up with all six decisions recorded and its reconcile on the
       ticket store's single write path, or skipped with a one-line reason.
 - [ ] The repo's own gates pass, with exit codes cited.

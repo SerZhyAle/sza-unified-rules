@@ -31,6 +31,15 @@ ticket lifecycle, agent workflow: that is this canon, and it never moves into th
 separates them - *does it describe what the software does, or how we build it?* Only the first kind is a
 contract.
 
+**One carve-out, since 2026-09-22.** This prose is not a contract; the **machine-readable interface**
+between it and a repository is. The files a repo keeps so a program can read what it is - the adoption
+stamp, the harness profile - the names tools address it by, and the handshake through which a rule set
+arrives and is judged stale are a format on disk and a behaviour at a boundary, read by implementations
+that never read a rule. They live in the catalog's `rule-adoption/` domain as `REPO-STAMP`,
+`HARNESS-PROFILE`, `REPO-LAYOUT` and `RULE-DELIVERY`, owned by this repository. The test does not move:
+the rule saying which layout to keep is canon; the file in which a repo declares the layout it kept is a
+contract. A change to what a rule *says* still changes no contract.
+
 A contract with exactly one implementation is still a contract. It is marked `solo` in the registry, and it
 earns its place because a second implementation is possible, not because writing it there felt tidier.
 
@@ -51,8 +60,9 @@ beside it are the detail and the history.
 
 - **One line, one file.** Exactly one file per repository - the agent-rules file - says where the catalog
   is. Moving it then costs one edit per project rather than one edit per comment.
-- **`docs/contracts/CONTRACT_<name>.md` is a pointer**: the contract id, its version, its home, this
-  product's role (producer / consumer / both), and what this repo must do to stay conformant. A pointer
+- **`docs/contracts/<ID>.md` is a pointer**, named after the contract id (`STREAM-BANK.md`; a family
+  implemented as one unit may share a file that names every id, like `FDSEC.md`) and listed in
+  `docs/contracts/README.md`. It holds the contract id, its version, its home, this product's role (producer / consumer / both), and what this repo must do to stay conformant. A pointer
   that grows a second page has become a copy, and a copy drifts.
 - **Cite by id, never link.** A source comment says `FDSEC-FORMAT.md section 8` or `OCR-OVERLAY rule 4`.
   No `P:\` path in a tracked file: whoever clones the repo does not have that drive.
@@ -74,9 +84,20 @@ every other product until the day their data disagrees, which is the failure the
 Finding a defect creates an obligation, not a licence: whoever finds it writes the amendment, even when the
 defect belongs to another product's contract. Silence about a known defect is itself a violation.
 
+**Who writes what.** A product edits the contracts it owns and its own registry rows. For anything else -
+another product's contract, another product's row - the amendment is written as a **proposal**: a dated
+`PROPOSAL-<date>-<topic>.md` beside the contract in its domain folder, stating the finding, the evidence and
+the change it asks for. The owner accepts it by folding it into the contract as a dated amendment, or
+rejects it in writing, and the proposal stays as the record either way. A proposal is how the obligation
+above is met without one product rewriting another's decision.
+
 **The contract changes before the code does.** Agree it in the catalog, bump the version, regenerate the
 conformance artifacts, update the registry, tell the consumers, and only then let the implementations
 follow. Code that ships ahead of its contract is how two projects stop being able to read each other's data.
+
+**Telling the consumers is the changing product's job.** A MAJOR is announced in each consuming product's
+own record - its `rules/contrib/` file in this canon, or a ticket in its store - before the producer ships
+it, not discovered by the consumer afterwards. The registry names who they are.
 
 ## 5. Versioning and backward compatibility
 
@@ -118,7 +139,10 @@ the removing MAJOR named, `removed` - and nothing is removed in the version that
 
 ## 6. What a release owes
 
-Read as a gate. The `release` skill enforces it alongside the pre-flight verdict.
+Read as a gate. The `release` skill runs it as its contract gate, ending in PASS, WARN or FAIL beside the
+pre-flight verdict; an unreachable catalog makes it UNVERIFIED, never PASS. Before release time the same
+rule is caught earlier: `spec-to-audit` asks whether a change touches a contract boundary, and
+`adopt-canon` hands a repo that holds a contract to `contract-sync`.
 
 1. Every contract this product produces or consumes has a **current registry row** - version plus a
    verification date not older than the last release.

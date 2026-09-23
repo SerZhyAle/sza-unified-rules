@@ -52,7 +52,55 @@ When a user hits something you can't reproduce, a diagnostic bundle is the bridg
   fix or a date.
 - Public feedback that names a real defect becomes a ticket like any other report.
 
-## 7. Applying to a new project
+## 7. What a product may count about its users
+
+§§1-6 describe the loop back from users as three tiers: **contact** (§1), **diagnostics** (§3), and
+**counting** - the numbers the product keeps about its own use. The first two are a human act every
+time. The third runs without one, which is why it needs a boundary written down rather than left to
+whoever adds the next counter.
+
+### 7.1 The boundary
+
+- **A minimal always-on basis, and nothing more.** Only what is needed to place the install in time -
+  first-run timestamp, run count, the version first installed. It exists whatever the user chose,
+  because a product that cannot tell a first run from a thousandth cannot read its own crash reports.
+- **Everything else is off until the user turns it on**, in a control that says what it turns on.
+- **Withdrawal deletes.** Turning detailed collection off erases the detailed data and keeps the
+  basis. A consent that only stops future writes is a consent in name.
+- **No identifier that links two runs.** No user, device, install or session id, no fingerprint
+  assembled from properties that are individually harmless. This is the line that separates counting
+  from tracking, and it is the one a useful-sounding feature erodes first.
+- **The count lives on the device**, cheap enough to be invisible on weak hardware - in memory, flushed
+  in batches, never a write per event.
+- **Data leaves only by a user gesture** - a button the user presses, with the content visible to them
+  before it goes. A product that ships anything on its own initiative has telemetry, whatever it calls
+  it.
+- **A surface that exists only while collection is on.** A statistics screen offered to a user who
+  turned collection off shows either nothing or a lie.
+
+### 7.2 The promise says both halves
+
+A product claiming no telemetry names its local counting **in the same promise**
+([SECURITY_AND_PRIVACY.md](SECURITY_AND_PRIVACY.md) §4-5). "No analytics or usage tracking" beside an
+undisclosed statistics screen is true and incomplete, and a reader who finds the screen has no way to
+tell which it is. State the claim, then state what the device counts and that it stays there.
+
+### 7.3 Describing what exists is not introducing what does not
+
+The diagnostic channel of §3 is **pull and manual**: the user captures the bundle and sends it, the
+developer ingests it. That is the portfolio norm and it is what keeps the privacy promise unconditional.
+App-initiated intake - a server that receives, a background upload, a voluntary aggregate the product
+transmits - is a **new capability with its own decision**, never a wider reading of this section. So is
+splitting counts by period, or any aggregate leaving the device without a gesture.
+
+### 7.4 One declared channel per product
+
+Each product holds its own support address; the portfolio does not share a mailbox. What the contract
+requires is that the address exist **once**, as a single declared constant, and that the subject line
+name the product and its version - so a second address cannot appear beside the first without someone
+noticing.
+
+## 8. Applying to a new project
 
 1. Wire the issue tracker + contact email into footer, listing, and About; state a response
    expectation.
@@ -60,3 +108,5 @@ When a user hits something you can't reproduce, a diagnostic bundle is the bridg
 3. Add an in-app "send diagnostics" path and a repeatable intake+analysis procedure (§3).
 4. Route reports through the ticket lifecycle with symptom-dedup (§4); feed recurring questions into
    the docs (§5).
+5. Fix the counting boundary before the first counter ships (§7): name the always-on basis, put the
+   rest behind consent, and make the privacy promise say both halves.

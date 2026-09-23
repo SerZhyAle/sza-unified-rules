@@ -45,7 +45,8 @@ leak globs; a real build secret goes in the CI secrets store, referenced by name
   port) behind one enablement check that is true only when the user deliberately turned it on - an
   elevated-installer machine marker file, a deferred per-user flag set after **one** scoped UAC prompt, or
   a packaged manifest capability. The privileged step is the narrowest possible (a program-scoped inbound
-  firewall allow for that one exe), taken once, visible to the user - never a background elevation.
+  firewall allow for that one exe), taken once, visible to the user - never a background elevation. The
+  portable form of this rule, and the inventory row such a feature owes, are §7.
 
 ## 4. Data handling & the privacy promise
 
@@ -94,7 +95,53 @@ leak globs; a real build secret goes in the CI secrets store, referenced by name
   package - and never strip it from the packaging. Reference: `StreamsPlayer` bundling LibVLC/VLC
   (LGPL + GPL plugins) under an MIT app.
 
-## 7. Applying to a new project
+## 7. The security posture inventory - what a product declares it can touch and send
+
+§3-§5 say what to promise and how to keep the promise honest. This section says in what **form** the
+promise is held, so that keeping it consistent is a check somebody runs rather than something the author
+remembers. Two inventories, both mandatory, both part of the product's registered documentation
+(DOCUMENTATION_CONCEPT §6).
+
+1. **The permission inventory.** One row per declared permission: what is declared, **where** it is
+   declared (which manifest, which build variant / edition / source set - a product whose variants differ
+   has no single true list), **which features consume it**, the **one sentence of user-visible
+   justification** (§3), and whether that sentence is actually shown at the moment the permission is
+   requested. A permission whose consumer cannot be named is removed, not explained.
+2. **Several consumers per permission is the normal case, not a defect.** The justification covers all of
+   them honestly. Never narrow a manifest to make the inventory tidy: the narrowing breaks a consumer the
+   row did not mention, and the correct repair is the wording of the disclosure (reference:
+   `FastMediaSorter_mob_v2`, where splitting a location permission per flavor was reverted after it broke
+   three independent consumers of it).
+3. **The network-surface inventory.** One row per surface that opens a listening port, initiates an
+   outbound connection, or hands a file outward, each answering the same four questions: **on by default or
+   off**, **what turns it on**, **how long it lives**, and **what leaves, to where**. This inventory - not
+   the privacy page's prose - is the material for the "no telemetry" claim and for answering a user asking
+   what the product can send.
+4. **Born off, dies with its session.** A new listening surface, or a feature needing elevation, ships
+   disabled, is enabled by a deliberate user action, stops when the user-visible session that created it
+   stops, and never advertises a local address as an external one. §3's desktop form is one instance of
+   this; it applies to a phone's on-device server, a watch's transport and a browser extension's native
+   host alike. A wire-level norm for one *protocol* belongs in the cross-project contract catalog
+   (CONTRACTS.md), not here - this rule is about defaults, not framing.
+5. **The three public forms are renders of the inventory, not three texts.** The hosted privacy page, the
+   in-app justification strings, and the store-form source files (§5) all derive from these rows. Kept as
+   three independently authored texts they diverge silently, and the divergence is found by a store
+   rejection; as renders, divergence is a state a check can see.
+6. **The consistency check blocks the submission, and it runs over the whole tree.** Place it in the
+   pre-release sweep, not per change: its subject is the product as a whole, and a red pre-flight stops the
+   ship (INVARIANTS 5). It compares the declared permissions against the inventory in both directions, the
+   inventory's justifications against the strings actually shown, and the "no telemetry" claim against the
+   **build's dependency set** - the claim is proven by what is linked in, never by the page saying so.
+7. **Nothing to list is itself a declaration.** A product with no permissions and no network keeps both
+   inventories, empty, each carrying the date it was last reconciled and one sentence saying why it is
+   empty. An absent inventory is not compliance: an unstated claim never ages and can never be checked,
+   and "no telemetry" is only a trust asset once stated (§4).
+8. **A platform with no permission manifest still has rows.** Where the OS declares nothing, the row
+   describes the *capability* the product takes - the directory it writes, the hook it installs, the device
+   it opens - in the same five fields. The inventory is about what the product can do, not about what a
+   manifest happens to name.
+
+## 8. Applying to a new project
 
 1. Confirm no secret is tracked; set the `.gitignore` globs (§1).
 2. Reserve and record the signing/identity frozen anchors (§2).
@@ -103,3 +150,6 @@ leak globs; a real build secret goes in the CI secrets store, referenced by name
 5. Re-check permission-vs-behaviour traps on the target platform before shipping.
 6. Confirm the age rating fits the app's content profile, not a copied portfolio id (§5).
 7. If the app bundles third-party binaries, ship the `THIRD-PARTY-NOTICES.txt` in every package (§6).
+8. Stand up both inventories - permissions and network surfaces - register them, and wire the consistency
+   check into the pre-release sweep; an empty inventory with a date is the compliant answer for a product
+   with nothing to list (§7).

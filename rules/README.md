@@ -32,7 +32,7 @@ that sequences every doc below into one runbook.
 | File | Read it for |
 | --- | --- |
 | [REPOSITORY_LAYOUT.md](REPOSITORY_LAYOUT.md) | where every kind of file lives; secrets; binaries; versioning principle |
-| [DOCUMENTATION_CONCEPT.md](DOCUMENTATION_CONCEPT.md) | single-source-of-truth model; changelog; discoverability; site pages; tone |
+| [DOCUMENTATION_CONCEPT.md](DOCUMENTATION_CONCEPT.md) | single-source-of-truth model; changelog; discoverability; site pages; tone; the document registry |
 | [PLATFORM_OVERLAYS.md](PLATFORM_OVERLAYS.md) | the concrete shape for Android / Windows desktop / Go CLI, plus cross-project contracts |
 | [CONTRACTS.md](CONTRACTS.md) | what binds across products: the shared contracts catalog, pointers not copies, comply-or-amend, versioning and backward compatibility, the release gate |
 | [RELEASE_AND_DISTRIBUTION.md](RELEASE_AND_DISTRIBUTION.md) | the shipping runbook: build/release boundary, coverage-regression gate, per-channel distribute, post-release checks, the release package plan |
@@ -59,8 +59,8 @@ that sequences every doc below into one runbook.
 | File | Read it for |
 | --- | --- |
 | [LOCALIZATION.md](LOCALIZATION.md) | which surfaces translate, parity-enforced string workflow, shipped locales, text style |
-| [SECURITY_AND_PRIVACY.md](SECURITY_AND_PRIVACY.md) | secrets, signing/identity anchors, minimal permissions, the privacy promise, store declarations |
-| [SUPPORT_AND_FEEDBACK.md](SUPPORT_AND_FEEDBACK.md) | support path, diagnostic-log intake, feedback-to-ticket loop, answer-once-in-the-listing |
+| [SECURITY_AND_PRIVACY.md](SECURITY_AND_PRIVACY.md) | secrets, signing/identity anchors, minimal permissions, the privacy promise, store declarations, the permission and network-surface inventories |
+| [SUPPORT_AND_FEEDBACK.md](SUPPORT_AND_FEEDBACK.md) | support path, diagnostic-log intake, feedback-to-ticket loop, answer-once-in-the-listing, the usage-counting boundary |
 | [SITE_CONFIGURATION.md](SITE_CONFIGURATION.md) | hosting, custom domain, redirects, deploy flow (visual style lives in `kit/SZA-WEB-STYLE-GUIDE.md`) |
 
 Read order for a new project: **NEW_PROJECT_CHECKLIST → AUTHOR → AI_USAGE → REPOSITORY_LAYOUT →
@@ -144,8 +144,8 @@ One name per concept, so every project and every agent means the same thing:
   marketplace on its own version clock, coupled to the app by a one-way on-disk file contract. See
   PLATFORM_OVERLAYS "Companion editor / IDE extension".
 - **Shared contract** - a durable functional solution that outlives one repository: a format, an algorithm
-  with its constants, a behaviour at a boundary, a user experience at a shared moment. Lives in the
-  contracts catalog at `P:\Contracts`, organized by *function*, never by product; a repo keeps a pointer.
+  with its constants, a behaviour at a boundary, a user experience at a shared moment. Lives in the shared
+  contracts catalog, organized by *function*, never by product; a repo keeps a pointer.
   Distinct from the canon, which is *how we build* rather than *what the software does*. See
   [CONTRACTS.md](CONTRACTS.md).
 - **Comply or amend** - the only two legal answers to a contract a product disagrees with: amend it in the

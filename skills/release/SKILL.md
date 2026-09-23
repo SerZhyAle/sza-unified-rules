@@ -15,6 +15,7 @@ repo's build flow.
 Canon behind this skill: [RELEASE_AND_DISTRIBUTION.md](../../rules/RELEASE_AND_DISTRIBUTION.md) (the runbook),
 [CHANNEL_MATRIX.md](../../rules/CHANNEL_MATRIX.md) (per-channel facts),
 [PLATFORM_OVERLAYS.md](../../rules/PLATFORM_OVERLAYS.md) (project shapes),
+[CONTRACTS.md](../../rules/CONTRACTS.md) §6 (what a release owes the shared contracts),
 [INVARIANTS.md](../../rules/INVARIANTS.md) (the lines that must not break).
 Per-channel publishing detail lives in the **`store-publish`** skill - load it at Phase 7, not before.
 
@@ -70,8 +71,8 @@ commit log as before; do not stand one up mid-release.
 
 Before acting, print one screen: project shape - version stamp shape and the computed candidate - the tag -
 the release script and its exact dry-run invocation - the ordered channel list with `[PAID]`/`[PUBLIC]` on each
-- the listing files that will be edited - the frozen anchors that will **not** change - and the single
-irreversible command. Where there is a release package plan, add its two counts: what the package ships,
+- the listing files that will be edited - the frozen anchors that will **not** change - the contract gate's
+verdict (Phase 3) - and the single irreversible command. Where there is a release package plan, add its two counts: what the package ships,
 and the unfinished lines that will **not** ship and stay for the owner to re-sort. Where the repo has a dry-run mode, run it first and use its output as the plan.
 
 ---
@@ -127,6 +128,32 @@ A coverage regression is a release-blocker needing an explicit owner decision **
 discovered after. Windows instance of the same rule: winget `MinimumOSVersion`/`Architecture` describe the
 *installer*, not the narrowest exe inside it - a high floor on a setup.exe that also drops a 32-bit fallback
 hides the package from exactly the machines that fallback exists for.
+
+### Contract gate - what this release owes the shared contracts
+
+A release that breaks another product's ability to read this one's data is a reach regression of its own
+kind, and it is just as one-way. The rule is [CONTRACTS.md](../../rules/CONTRACTS.md) §6; this is how it
+runs. The contracts in scope are the ones this product produces or consumes: its `docs/contracts/`
+pointers, plus every row the shared registry holds for it. The catalog is wherever the repo's agent-rules
+file says it is.
+
+1. **Every contract in scope has a registry row** with a verification date no older than the last release
+   tag. A missing row is a **blocker**; a stale one is a blocker until it is re-verified against the code -
+   and only this product's own row is touched to do it.
+2. **Behind the current version** is allowed with a dated reason in the row. **One MAJOR behind** is a
+   warning in the plan; **two** blocks the release if it touches that boundary.
+3. **An exception past its `until` date** in the registry is a violation, not a formality - a blocker until
+   it is renewed with a reason or closed.
+4. **The diff since the last tag touches a contract boundary** - a file a pointer names as the
+   implementation, a serializer, importer or exporter, a wire field - **blocks until the catalog change is
+   in**: the version bump and the dated document-log row exist before the tag does.
+5. **The conformance vectors** ran in this product's own suite against the catalog's vectors, at the version
+   the registry names - command, exit code, output. A green suite against a stale vector is not a pass.
+
+The gate ends in a written PASS, WARN or FAIL, and FAIL blocks the tag exactly as a red pre-flight does.
+**If the catalog cannot be reached from this machine the gate is UNVERIFIED, never PASS** - say so in the
+run plan and let the owner decide. A repo with no pointer, no registry row and no boundary code says so in
+one line and the gate is `n/a`.
 
 ## Phase 4 - Version cut
 
@@ -235,6 +262,8 @@ A release is not done until it is proven live.
 - [ ] The operation was named a release, and the repo's autonomy policy was read and obeyed.
 - [ ] Pre-flight green **before** any billable or irreversible step, with a written PASS/FAIL sweep verdict.
 - [ ] Coverage gate: no regression, or an explicit owner decision recorded.
+- [ ] Contract gate: PASS, WARN with its warnings named, `n/a` with its reason, or UNVERIFIED with the owner's
+      decision recorded - never a FAIL shipped.
 - [ ] Version computed mechanically, shape-validated **and** date-parsed, unused locally and on origin,
       monotonic, and pinned into the build.
 - [ ] "What's new" identical across **all N** listing surfaces - name them in the report - committed and

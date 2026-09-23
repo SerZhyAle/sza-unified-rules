@@ -60,8 +60,9 @@ makes sense under the product's name, it is probably a private decision rather t
 
 - The agent-rules file names the catalog in **exactly one place**, with the rule that contracts are cited
   by id and never linked.
-- Each `docs/contracts/CONTRACT_*.md` is a pointer: **id, version, home, role** (producer / consumer /
-  both), and what this repo must do to stay conformant. Nothing more - a pointer that grows a second page
+- Each `docs/contracts/<ID>.md` is a pointer, named after the contract id and listed in
+  `docs/contracts/README.md`: **id, version, home, role** (producer / consumer / both), and what this repo
+  must do to stay conformant. Nothing more - a pointer that grows a second page
   has become a copy.
 - Source comments cite `<DOCUMENT>.md section N` or `<ID> rule N`. No `P:\` path in a tracked file:
   whoever clones the repo does not have that drive.
