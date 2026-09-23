@@ -1,4 +1,4 @@
-# CONTRACT_RULE-DELIVERY - pointer
+# RULE-DELIVERY - pointer
 
 | Field | Value |
 | --- | --- |

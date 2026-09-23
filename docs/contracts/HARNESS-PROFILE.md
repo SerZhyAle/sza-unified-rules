@@ -1,4 +1,4 @@
-# CONTRACT_HARNESS-PROFILE - pointer
+# HARNESS-PROFILE - pointer
 
 | Field | Value |
 | --- | --- |

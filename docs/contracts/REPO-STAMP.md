@@ -1,4 +1,4 @@
-# CONTRACT_REPO-STAMP - pointer
+# REPO-STAMP - pointer
 
 | Field | Value |
 | --- | --- |
@@ -16,5 +16,5 @@
   A key may be added; none may be removed, renamed or given a new meaning.
 - A new optional key arrives with its **absence meaning written into the contract** (rule 4), not decided
   in the reader.
-- Three deviations are recorded in the catalog registry with an `until` date: the missing version carrier,
-  an unknown `role` never being reported, and this repository's own stamp standing stale.
+- Two deviations are recorded in the catalog registry with an `until` date: the missing version carrier
+  and an unknown `role` never being reported.
