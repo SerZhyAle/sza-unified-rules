@@ -498,12 +498,20 @@ try {
             # parse-the-structure-not-the-prose rule the inventory side obeys: hooks.json carries a
             # `description` field that legitimately names other scripts, and a text scan turned every one
             # of them into a phantom registration on the first run of this check.
+            #
+            # Two sets. $registered (tracked files only) is what HOOK01 judges: a violation must be
+            # visible in a clone. $registeredOnDisk (every readable file, local and untracked included)
+            # is what the HOOK03 orphan advisory judges: a repo that gitignores its whole .claude/ keeps
+            # the hook scripts AND their registration untracked side by side, and judging one against
+            # the other's absence reported every live hook as dead weight (14 false warnings on
+            # FastMediaSorter_mob_v2, S3485).
             $registered = @{}
+            $registeredOnDisk = @{}
             foreach ($rf in $regFiles) {
                 # settings.local.json is per-user scratch by convention; judging it would report a
                 # violation nobody can see in a clone.
-                if ($rf -like '*settings.local.json') { continue }
-                if ($isGit -and $tracked.Count -gt 0 -and $tracked -notcontains $rf) { continue }
+                $judged = -not ($rf -like '*settings.local.json') -and
+                    -not ($isGit -and $tracked.Count -gt 0 -and $tracked -notcontains $rf)
                 $doc = $null
                 try { $doc = Get-Content -LiteralPath (Join-RepoPath $rf) -Raw | ConvertFrom-Json } catch { continue }
                 if ($null -eq $doc.hooks) { continue }
@@ -513,7 +521,9 @@ try {
                             $cmdText = [string]$h.command
                             if ([string]::IsNullOrWhiteSpace($cmdText)) { continue }
                             foreach ($m in [regex]::Matches($cmdText, '(?i)[\w.\-]+\.(ps1|sh|py|js|cmd|bat)(?![\w])')) {
-                                $registered[[System.IO.Path]::GetFileName($m.Value)] = $rf
+                                $name = [System.IO.Path]::GetFileName($m.Value)
+                                $registeredOnDisk[$name] = $rf
+                                if ($judged) { $registered[$name] = $rf }
                             }
                         }
                     }
@@ -546,7 +556,11 @@ try {
                 return $names
             }
 
-            if ($registered.Count -gt 0) {
+            # The inventory is read whenever there is anything to judge, not only when a tracked
+            # registration exists: the HOOK03 advisory below needs it too, and gating it on $registered
+            # left it $null in a repo whose registration is untracked (S3485).
+            $invDoc = $null; $inventory = $null
+            if ($registeredOnDisk.Count -gt 0 -or $hookHomes.Count -gt 0) {
                 # Bounded search: markdown directly under the hook homes, docs/ and the repo root. The
                 # heading is the anchor, not the filename - see the note above.
                 $candidates = New-Object System.Collections.Generic.List[string]
@@ -559,16 +573,18 @@ try {
                     }
                 }
 
-                $invDoc = $null; $inventory = $null; $best = -1
+                $best = -1
                 foreach ($rel in $candidates) {
                     $names = Read-HookInventory (Join-RepoPath $rel)
                     if ($null -eq $names) { continue }
                     # Several documents may carry an "Inventory" table; the hook one is whichever names
                     # the most registered scripts. A tie on zero keeps the first, which still reports.
-                    $hits = @($registered.Keys | Where-Object { $names.ContainsKey($_) }).Count
+                    $hits = @($registeredOnDisk.Keys | Where-Object { $names.ContainsKey($_) }).Count
                     if ($hits -gt $best) { $best = $hits; $invDoc = $rel; $inventory = $names }
                 }
+            }
 
+            if ($registered.Count -gt 0) {
                 if ($null -eq $inventory) {
                     Add-Finding -Id 'SZA-HOOK01' -Severity 'error' -Path 'hooks/README.md' `
                         -Message "$($registered.Count) hook(s) are registered but the repo carries no hook inventory table" `
@@ -585,14 +601,14 @@ try {
             }
 
             # Orphan scripts: on disk, registered in no readable file AND named in no inventory row.
-            # Both conditions, because a script registered machine-locally is correctly listed in the
-            # inventory and this gate never reads that registration - one condition alone would report
-            # every global hook as dead weight. Advisory by design either way.
+            # Both conditions, because a script registered in a machine-global settings file is
+            # correctly listed in the inventory and this gate never reads that file - one condition
+            # alone would report every global hook as dead weight. Advisory by design either way.
             foreach ($hookHome in $hookHomes) {
                 $dir = Join-RepoPath $hookHome
                 foreach ($f in (Get-ChildItem -Path $dir -File -ErrorAction SilentlyContinue |
                                 Where-Object { $_.Extension -in @('.ps1', '.sh', '.py') })) {
-                    if ($registered.ContainsKey($f.Name)) { continue }
+                    if ($registeredOnDisk.ContainsKey($f.Name)) { continue }
                     if ($inventory -and $inventory.ContainsKey($f.Name)) { continue }
                     Add-Finding -Id 'SZA-HOOK03' -Severity 'warn' -Path "$hookHome/$($f.Name)" `
                         -Message 'hook script on disk, registered nowhere and in no inventory row' `

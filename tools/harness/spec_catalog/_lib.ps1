@@ -1193,6 +1193,13 @@ function Assert-ClosingGates {
         $checkers.Add('check-audit-recorded.ps1')
     }
     else {
+        # S3515 - before the evidence gate reads the spec, copy every cited scratch file it could
+        # move by itself into the spec's attachments/ and rewrite the citation. What is left - an
+        # oversized, missing or directory citation - is a human choice, and the gate still refuses it.
+        # Advisory by construction: its exit code is not read, the gate below decides.
+        $relocator = Join-Path $PSScriptRoot 'relocate-temp-evidence.ps1'
+        if (Test-Path -LiteralPath $relocator) { & $relocator -Id $Id 2>&1 | ForEach-Object { Write-Host $_ } }
+
         # S1606 - a closed spec must not cite evidence under disposable temp/.
         # S1607 - a closed spec must not strand an open question nobody owns.
         $checkers.Add('check-evidence-durable.ps1')

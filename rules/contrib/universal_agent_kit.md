@@ -540,3 +540,41 @@ reaching the zip and the page ships a kit whose download disagrees with its docu
 - Nothing is owed to a canon session: no canon rule changed here. This entry is the record of a
   product change, not a spread-back.
 
+
+## Canon re-sync 2026-09-23 - canon `2026.09.22.2`
+
+Re-sync entered through `SZA-CANON03` (stamp `2026.09.08.2` / `sha256:cdf49be6..`) together with the
+repository's shared-contracts alignment. Baseline gate (plugin `2026.922.2`): **1 error(s), 1 warning(s)**,
+exit 1 - the warning the staleness, the error `SZA-RULES02 AGENTS.md: no canon pointer` on a root
+`AGENTS.md` added that day as a companion to `CLAUDE.md`.
+
+Eleven rule docs moved since the stamp (`AI_USAGE`, `CONTRACTS` new, `DEVELOPMENT`,
+`DOCUMENTATION_CONCEPT`, `INVARIANTS`, `NEW_PROJECT_CHECKLIST`, `PLATFORM_OVERLAYS`, `README`,
+`RELEASE_AND_DISTRIBUTION`, `REPOSITORY_LAYOUT`, `TESTING_AND_QA`), diffed against the cached `2026.906.1`
+plugin. The transferable method (hook population reach, narrowing overrides, the four check answers,
+instrument validation, waivers, gate rot, point-fix sweeps, retirement by redundancy, dated thresholds,
+generate-commit-ship, fix-release haste) had already reached `kit/` in the 2026-09-21 product change, so
+`kit/` did not move. `CONTRACTS` is portfolio law and does not travel into `kit/`.
+
+### What changed, per target
+
+| Target | Change |
+| --- | --- |
+| `.sza-canon.json` | `2026.09.22.2` / `sha256:13abcb8a..`, `adoptedOn` 2026-09-23, from `-PrintDigest`. Nothing else moved. The canon checkout's head was already `2026.09.23.1`; the stamp follows the installed plugin. |
+| `AGENTS.md` (root) | Canon pointer added; names `CLAUDE.md` as authoritative, stricter wins. |
+| `CLAUDE.md` | "Shared contracts" rewritten to list every consumed and produced contract by id, catalog still named once; the root `AGENTS.md` acknowledged; gate command resolves the plugin root from the install record. |
+| `docs/contracts/` | Pointers for `PAGE-CONTENT`, `REPO-STAMP`, `REPO-LAYOUT`, `RULE-DELIVERY` added beside the page and icon ones; index rewritten. |
+| Catalog | Own registry rows for `REPO-STAMP`, `REPO-LAYOUT`, `RULE-DELIVERY`; `INSTALL-TRUST` note corrected; proposal `rule-adoption/PROPOSAL-2026-09-23-universal-agent-kit-adoption.md`. |
+
+### Verification
+
+| Check | Expected | Actual |
+| --- | --- | --- |
+| `check-compliance.ps1` | exit 0, no errors, no warnings | **0 error(s), 0 warning(s)**, exit **0** (canon 2026.09.22.2) |
+| `.sza-canon.json` re-parses | valid JSON | parsed |
+| Scrub | no canon or catalog name under `kit/` | grep over `kit/` - **empty** |
+
+### Candidate canon fixes (for a canon session)
+
+- The gate prints `overlay ?` for `role: portfolio` with an empty overlay; `overlay none` is the truth.
+- `REPO-LAYOUT` rule 1 is silent on payload rules files below the root and on two names at one root.

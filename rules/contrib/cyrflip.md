@@ -481,3 +481,39 @@ rewriting them would make the docs quote a button that does not exist.
 
 **Commit discipline.** The working tree carried unrelated in-flight work under `msix/` (the store-listing CSVs,
 its build script, a new screenshot). Only `.sza-canon.json` was staged; `git add -A` was never run.
+
+## Canon re-sync 2026-09-24 - contracts law arrives; stamp caught up, edition prefix dropped
+
+Run from `P:\WINDOWS\CyrFlip` against the installed plugin 2026.922.2 (published `origin/main` =
+`2026.09.22.2`; the locally committed 2026.09.23.1 was not yet published, so it was not reconciled against).
+
+**What had to be re-read.** Stamp `2026.09.06.1` / `cdf49be6..` (the 913.1-era digest). Changed rule docs:
+AI_USAGE, CONTRACTS (new), DEVELOPMENT, DOCUMENTATION_CONCEPT, INVARIANTS, NEW_PROJECT_CHECKLIST,
+PLATFORM_OVERLAYS, README, RELEASE_AND_DISTRIBUTION, REPOSITORY_LAYOUT, TESTING_AND_QA.
+
+**Reconciled.**
+- CONTRACTS / PLATFORM_OVERLAYS / REPOSITORY_LAYOUT / DOCUMENTATION_CONCEPT: CyrFlip keeps pointers only
+  (`docs/contracts/<ID>.md` + README index; the catalog location is named once, in `CLAUDE.md`). This run added
+  pointers for ICON-*, PAGE-*, SITE-FAMILY-MAP, CHECK-*, BUILD-EVIDENCE and rewrote REPO-STAMP, APP-BEHAVIOUR,
+  APP-STYLE and INSTALL-TRUST to state only what holds. The filename is `<ID>.md`, not `CONTRACT_<ID>.md` - the
+  gate reports nothing; the 2026.09.23.1 canon names `<ID>.md`.
+- INVARIANTS 5 / RELEASE_AND_DISTRIBUTION section 2: `release.ps1 -Push` runs the preflight in the same command
+  that tags, so the verdict is the ship's input. New this run: `release.yml` fails unless the exe's
+  FileVersion is the tag and its ProductVersion is `<version>+<commit>` (BUILD-EVIDENCE rule 2).
+- Contract gate (registry rows current, vectors from the catalog): **open** - the new domains have no CyrFlip
+  registry rows yet, and the SCENARIO-FILE vectors are local fixtures. Carried in the repo's contract sync plan.
+- TESTING_AND_QA "four answers": **open** - scripts exit only 0/1 today (CHECK-VERDICT plan).
+- DEVELOPMENT (narrowing overrides), AI_USAGE (hook reach): no surface here - no harness profile, no hooks of
+  its own.
+
+**Stamp.** `canon.version` 2026.09.22.2, `coreDigest` `13abcb8a..` (= `-PrintDigest`),
+`versionShape.editionTagPrefixes` `[]` (there is no `ext-*` tag clock: `git tag -l 'ext*'` is empty and the
+extension is published by hand), `site.pages` gains `trust.html` (the new INSTALL-TRUST page). Every other key
+byte-identical. `CLAUDE.md` gained one sentence: the stamp is written only by this run.
+
+**Evidence.** Gate before `0 error(s), 6 warning(s)`, after `0 error(s), 5 warning(s)`, exit 0 - SZA-CANON03
+cleared; the remaining five are the size note and the recorded SZA-STYLE02 DIVERGE. `dotnet test CyrFlip.sln`
+(Debug): 678 passed, 0 failed.
+
+**Canon fixes suggested.** `adoptedOn` doubles as the reconcile date for the 180-day rung (a
+`reconciledOn` key would separate them); `REPO-LAYOUT` rule 3's type-first `PLAN/` prefix is used by no repo.

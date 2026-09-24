@@ -538,3 +538,57 @@ relaxation (INVARIANT 17), which only widens what is allowed - the five READMEs 
 
 **Evidence.** `check-compliance.ps1 -RepoRoot P:/WINDOWS/FileDo` before -> `0 error(s), 1 warning(s)`, after ->
 **`0 error(s), 0 warning(s)`**, exit 0 (overlay C). The cleared warning was SZA-CANON03.
+
+## Canon re-sync 2026-09-24 - rule-adoption contracts, and the 2026-09-06 move accounted for
+
+Run from the FileDO session (its spec SP-0018 T1) against the installed plugin `2026.922.2`, resolved from
+`installed_plugins.json`. The canon home's `2026.09.23.1` sits on an unpublished branch;
+`claude plugin update` reported `2026.922.2` as the latest, so that is what was reconciled.
+
+**The 2026-09-06 move, which had no record.** FileDO commit `822e133` moved `canon.version` from
+`2026.09.03.3` to `2026.09.06.1` and left `coreDigest` at `cdf49be6..`. That was correct: the canon change
+of that day was hooks-only (the fire-and-forget guard's fast targets), and the cached `2026.906.1` rules
+digest to `cdf49be6..` - recomputed, not assumed. It was a version-only catch-up, and this line is its
+record.
+
+**What had to be re-read** (`2026.906.1` -> `2026.922.2`): AI_USAGE, DEVELOPMENT, DOCUMENTATION_CONCEPT,
+INVARIANTS, NEW_PROJECT_CHECKLIST, PLATFORM_OVERLAYS, RELEASE_AND_DISTRIBUTION, REPOSITORY_LAYOUT,
+TESTING_AND_QA, and the new CONTRACTS.
+
+**Reconciled, already held:** CONTRACTS sections 2-3 and INVARIANT 10 - FileDO names the catalog in one
+place (`AGENTS.md`, "External contracts"), holds pointers and never copies under `docs/contracts/`, cites
+by id. Pointers are spelled `<ID>.md`, which the catalog's 2026-09-23 correction to `REPO-LAYOUT` made
+authoritative over the canon prose's `CONTRACT_*.md` (canon fix 1 below). This run added the missing
+pointers `REPO-STAMP.md`, `REPO-LAYOUT.md`, `RULE-DELIVERY.md`, and FileDO's own registry rows for them.
+The AI_USAGE, DEVELOPMENT and TESTING_AND_QA additions are measured lessons about machinery FileDO does
+not run (prompt-submit routing hooks, profile overrides, device sweeps) - no change owed.
+
+**Carried forward, open - owner: FileDO, next `/release` change:**
+- INVARIANT 5 as reworded and RELEASE_AND_DISTRIBUTION section 2: the ship step must take a written
+  PASS/FAIL verdict naming the version it judged as its input. FileDO's `release.ps1` already runs its
+  gate inside the ship command (`build.ps1 -Test`, step 2, before the tag), so the gate cannot be skipped;
+  what is missing is the written verdict artifact that names the version - today the input is an exit code.
+- CONTRACTS section 6 / RELEASE_AND_DISTRIBUTION "Contract gate": nothing in the FileDO release path yet
+  checks registry-row freshness or runs the catalog's vectors from the catalog's copy.
+
+**Stamp.** `canon.version` `2026.09.22.2`, `coreDigest`
+`sha256:13abcb8a7c2f0a354328bdd03c12e75ea361b6f8208134dc1ba3d1bd884e567d` (from `-PrintDigest`),
+`adoptedOn` moved to `2026-09-24` as the 2026-08-18 re-sync did - this run re-read every changed
+document. Which run should move `adoptedOn` is asked in the catalog proposal
+`rule-adoption/PROPOSAL-2026-09-23-adoption-date.md`. Every other key, `$comment` included, unchanged.
+Carried by a FileDO commit not yet made on this date - the next reconcile section should cite its hash.
+
+**Evidence.** `check-compliance.ps1` at the FileDO root: before -> `0 error(s), 2 warning(s)`
+(`SZA-CANON03`, `SZA-RULES05`); after -> **`0 error(s), 1 warning(s)`**, exit 0 (overlay C, canon
+2026.09.22.2). The remaining warning is `SZA-RULES05`, `AGENTS.md` size only.
+
+**Canon fixes needed - NOT applied from this session:**
+
+1. CONTRACTS section 3, DOCUMENTATION_CONCEPT section 1, PLATFORM_OVERLAYS and REPOSITORY_LAYOUT still
+   spell the pointer `docs/contracts/CONTRACT_<name>.md`; the catalog's `REPO-LAYOUT` rule 2 (corrected
+   2026-09-23) says `<ID>.md`, which is what every repository holding pointers uses.
+2. `check-compliance.ps1` `SZA-CTR01`: the id pattern does not match the house pointer header
+   `| **Id** | ..` because of the bold markers, so pointers are recognised by length alone and one over
+   40 lines would be reported as a copy.
+3. Three contract questions filed in the catalog, not here: `PROPOSAL-2026-09-23-stamp-defaults.md`,
+   `-adoption-date.md`, `-own-spec-scheme.md` under `rule-adoption/`.
