@@ -12,6 +12,23 @@ the portfolio; per-project records in `contrib/`.
   git history to reconstruct WIP.
 - Use git history **only** on an explicit request or inside a release/commit flow - never as a default
   research step.
+- **Tree state is not the agent's concern.** The owner works alone, with no feature branches and no
+  merges; git exists to cut and publish releases. So outside a release/commit flow an agent does not:
+  - mention, warn about, or summarize uncommitted, modified, untracked, or staged files - not at the
+    start, not in the final report;
+  - run `git status` / `git diff` to "check the state" before or after its work, or read the session's
+    git-status snapshot as a task;
+  - suggest or perform a commit, stash, reset, checkout, clean, or branch to "get a clean base";
+  - ask whose a change is, or pause because a file changed while it worked.
+- **Changes the agent did not make are the current code, not someone else's problem.** Another session,
+  another agent, or the owner may have edited any file; the file as it is on disk now is what the task
+  works against. Build on it, never revert it, never "restore" it from `HEAD`, and never narrow or refuse
+  the task because of it. When such a change actually breaks the task - a red check outside the agent's
+  own edit, a conflicting half-finished edit in the same function - say that in one line, naming the file,
+  and carry on with what is in scope.
+- **The one place tree state matters is a release or commit flow**, and it is that flow's own gate, run
+  by its script or skill (the `release` skill, a site publish, a `deploy` script) - not a check an agent
+  adds on its own.
 
 ## 2. When to commit
 

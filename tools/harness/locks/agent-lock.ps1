@@ -519,8 +519,10 @@ function Get-AgentTicketLiveness {
         S1448 - liveness signal precedence, strongest first, with S2408 adding the first entry:
           0. the owner's own process, when the id names one (host- or pid-). One-directional:
              it may only answer 'foreign-live', never 'foreign-stale';
-          1. the ticket's own lastSeenAt heartbeat, written by the polling waiter that owns it;
-          2. the owning session's transcript write time, counting the subagent subtree;
+          1. the newer of the ticket's own lastSeenAt heartbeat, written by the polling waiter
+             that owns it, and the owning session's transcript write time, counting the
+             subagent subtree - either one alone may keep the owner live;
+          2. the owner's newest chat line, when neither of those is readable;
           3. the ticket's enqueuedAt, when none of the above is readable.
         The heartbeat leads the clock-based signals because a session that waits by the contract -
         background waiter plus lock-free work - produces no transcript writes, and was therefore
@@ -563,8 +565,18 @@ function Get-AgentTicketLiveness {
     $transcript = [string]$Ticket.transcriptPath
     # S2408: the subagent subtree counts as the session writing. See
     # Get-AgentSessionTranscriptLastWrite.
-    if ($null -eq $lastSeen -and -not [string]::IsNullOrWhiteSpace($transcript)) {
-        $lastSeen = Get-AgentSessionTranscriptLastWrite -TranscriptPath $transcript
+    # The NEWER of heartbeat and transcript wins, never the heartbeat alone. A lease writes
+    # lastSeenAt at claim and refreshes it only when its owner runs a lease verb again, so a
+    # heartbeat-first reading made every lease look dead 45 minutes after its last touch while
+    # the transcript was seconds old. Measured 2026-09-26: a sibling runner's sweep dropped a
+    # headless /spec-all's lease on S3741 with its transcript written 49 s earlier, and a second
+    # child then worked the same ticket in parallel. Clean already took the newest mark
+    # (Get-LeaseQuietMinutes), so Claim/Status/Release and Clean disagreed about one lease.
+    if (-not [string]::IsNullOrWhiteSpace($transcript)) {
+        $transcriptSeen = Get-AgentSessionTranscriptLastWrite -TranscriptPath $transcript
+        if ($null -ne $transcriptSeen -and ($null -eq $lastSeen -or $transcriptSeen -gt $lastSeen)) {
+            $lastSeen = $transcriptSeen
+        }
     }
     # S2372 ADR-7: the owner's newest chat message is the fourth signal - after the heartbeat and
     # the transcript, before the enqueue time - so a runtime with no transcript is judged by what

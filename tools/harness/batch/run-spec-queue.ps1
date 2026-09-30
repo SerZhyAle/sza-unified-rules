@@ -690,6 +690,7 @@ Write-Host ("  permission     : {0}" -f $PermissionMode)
 Write-Host ("  model policy   : {0}" -f $(
     switch ($ModelPolicy) {
         'tiered'  { "tiered ($StrongModel, $CheapModel for Implemented and tier 1-2)" }
+        'shape'   { "shape ($CheapModel for tier 1-2 and Implemented, $StrongModel otherwise)" }
         'fixed'   { "fixed ($Model)" }
         'default' { 'CLI default' }
     }))

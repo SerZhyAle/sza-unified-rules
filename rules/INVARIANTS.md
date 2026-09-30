@@ -56,6 +56,18 @@ Ordered by cost of violation. The pointer after each line is the doc that expand
 20. Apply the **house text style** to prose and UI only - `..` never `...`, plain hyphen, Russian `ё` - never in
     code, specs, commands, logs, or chat. ([DOCUMENTATION_CONCEPT](DOCUMENTATION_CONCEPT.md) §5)
 
+## Working stance - not an invariant, but carried every session
+
+- **Work on the files as they are on disk; the git tree state is not your concern.** The owner works alone,
+  without branches or merges, and uses git only to cut releases. Do not mention, warn about or list a
+  dirty tree, uncommitted or untracked files, or changes you did not make; do not run `git status` to check
+  the state, and never commit, stash, reset or revert to get a clean base. A change someone else made is
+  the current code - build on it. Tree state is checked only by a release or commit flow's own gate.
+  ([GITHUB_INTERACTION](GITHUB_INTERACTION.md) §1)
+
+This sits here rather than in the list because it costs nothing irreversible - it costs every session a
+turn and the owner's attention, and a reference doc never reaches the session to stop it.
+
 ## What is deliberately not here
 
 Layering and naming rules, the evidence ladder's rungs, the test tiers, repository layout, the SEO block, every

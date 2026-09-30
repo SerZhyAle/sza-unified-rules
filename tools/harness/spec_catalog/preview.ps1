@@ -193,11 +193,31 @@ finally {
 # and two counters of one thing is the divergence `_research-items.ps1` was extracted to end (S1621).
 $dependsOn = @()
 $depIds = @(Get-BlockerLinks -SpecText $specText -StatusNote ([string]$rec.statusNote) -SelfId $Id)
+# One catalog read for every blocker instead of one child process each. A campaign parent listing
+# 137 slices cost 70 s here per ranking (measured 2026-09-26, 0.5 s per spawn), and the queue runner
+# ranks before every ticket, so the parent at the head of the queue taxed every run.
+$depIndex = @{}
+if ($depIds.Count -gt 1) {
+    $allJson = & $pwshExe -NoProfile -File $selectPath -IncludeArchived -Format json 2>$null
+    if ($allJson) {
+        try {
+            foreach ($r in @($allJson | ConvertFrom-Json)) { $depIndex[[string]$r.id] = $r }
+        } catch {
+            # An unreadable listing falls back to the per-blocker lookup below, which is slower but exact.
+            $depIndex = @{}
+        }
+    }
+}
 foreach ($dep in $depIds) {
-    $depJson = & $pwshExe -File $selectPath -Id $dep -Format json 2>$null
-    if ($depJson -and $depJson -ne '[]') {
-        $depRec = $depJson | ConvertFrom-Json
-        if ($depRec -is [array]) { $depRec = $depRec[0] }
+    $depRec = $depIndex[$dep]
+    if (-not $depRec) {
+        $depJson = & $pwshExe -NoProfile -File $selectPath -Id $dep -Format json 2>$null
+        if ($depJson -and $depJson -ne '[]') {
+            $depRec = $depJson | ConvertFrom-Json
+            if ($depRec -is [array]) { $depRec = $depRec[0] }
+        }
+    }
+    if ($depRec) {
         # `file` is carried because the release test reads the blocker's own tactical plan, not
         # only its status (S2834). A record without the property leaves it $null, which the test
         # reads as "nothing to contradict the status" - the same fail-open as an absent folder.

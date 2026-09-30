@@ -517,3 +517,48 @@ cleared; the remaining five are the size note and the recorded SZA-STYLE02 DIVER
 
 **Canon fixes suggested.** `adoptedOn` doubles as the reconcile date for the 180-day rung (a
 `reconciledOn` key would separate them); `REPO-LAYOUT` rule 3's type-first `PLAN/` prefix is used by no repo.
+
+## Canon re-sync 2026-09-25 - 2026.09.24.1 reconciled; three new obligations carried forward
+
+Run from `P:\WINDOWS\CyrFlip` against the installed plugin 2026.924.1 (= published `origin/main`
+`2026.09.24.1`), for CyrFlip ticket S0002.
+
+**What had to be re-read.** Stamp `2026.09.22.2` / `13abcb8a..` from the 2026-09-24 run. Changed rule docs:
+CONTRACTS, DOCUMENTATION_CONCEPT, LOCALIZATION, PLATFORM_OVERLAYS, REPOSITORY_LAYOUT, SECURITY_AND_PRIVACY,
+SUPPORT_AND_FEEDBACK (plus README, which the digest excludes).
+
+**Reconciled - held.**
+- CONTRACTS (rule-adoption carve-out, proposals, telling consumers): CyrFlip's rule-adoption role is now
+  declared in the catalog - registry rows for `REPO-STAMP`/`REPO-LAYOUT` (P), `RULE-DELIVERY` (C),
+  `HARNESS-PROFILE` (not bound), one `REPO-LAYOUT` rule 3 exception to 2026-12-31, and
+  `rule-adoption/PROPOSAL-2026-09-25-cyrflip-rule-adoption.md`, which seconds FileDO's three proposals and
+  adds two findings (a harness default contradicting the stamp's ledger; the version-only re-stamp).
+  CyrFlip owns no contract with a MAJOR pending, so nothing is owed to consumers.
+- LOCALIZATION, PLATFORM_OVERLAYS, REPOSITORY_LAYOUT: pointers already `docs/contracts/<ID>.md` with an
+  index; the catalog path is named once, in `CLAUDE.md`.
+
+**Reconciled - new gaps, carried forward (owner decisions, not fixed in this run).**
+- DOCUMENTATION_CONCEPT section 6: CyrFlip has **no documentation registry** (the mandatory half, items
+  1-5). The site half applies too (`docs/` is served by Pages; `docs/sitemap.xml` is hand-maintained today,
+  against item 7).
+- SECURITY_AND_PRIVACY section 7: **no permission or network-surface inventory**. The facts exist in prose
+  (`CLAUDE.md`, `docs/privacy.html`): the capability rows (item 8) would be the keyboard and mouse hooks,
+  `SetSystemCursor`, the clipboard listener, the per-user files; the network rows the opt-in Ollama client
+  and installer download, the named pipe, the mail hand-off. Nothing derives the privacy page from them.
+- SUPPORT_AND_FEEDBACK section 7: CyrFlip keeps four **always-on per-feature usage counters**
+  (`FlipCount`, `CaseFlipCount`, `TranslateCount`, `QuickNoteCount` in `HKCU\Software\CyrFlip`) - more
+  than the minimal basis of 7.1 and not behind consent - and the privacy page's "no telemetry" does not
+  name them (7.2). They leave only by a user gesture (the support bundle's `report.txt`, shown in the
+  consent dialog), so 7.1's "data leaves only by a gesture" holds.
+
+**Stamp.** `canon.version` 2026.09.24.1, `coreDigest` `79ee3333..` (= `-PrintDigest`). Every other key
+unchanged; `adoptedOn` stays 2026-08-18 as the skill directs (see the adoption-date proposal).
+
+**Evidence.** Gate before `0 error(s), 6 warning(s)` (with `SZA-CANON03`), after `0 error(s), 5 warning(s)`,
+exit 0. `check-contracts.ps1 -CatalogRoot P:\Contracts`: 2 errors, 1 warning, exit 1 - both errors
+pre-existing (`CTR-KEY`: `app-activation` and `clipboard-guard` declare version `0.9.1`, not MAJOR.MINOR),
+none from this run's rows.
+
+**Canon fixes suggested.** The rule-adoption proposals above; `adopt-canon` step 7 could name the three new
+section-level obligations (doc registry, posture inventories, counting boundary) as "new duty" rather than
+leaving a re-sync to find them in a diff.

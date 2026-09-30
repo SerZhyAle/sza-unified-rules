@@ -435,3 +435,122 @@ it was meeting rather than asking for new work.
 **Evidence.** `check-compliance.ps1 -RepoRoot P:/WINDOWS/EPUB_2_HTML` before -> `0 error(s), 1 warning(s)`,
 after -> **`0 error(s), 0 warning(s)`**, exit 0. The single warning was SZA-CANON03 and the stamp bump cleared
 it; nothing else in the repo was touched.
+
+## Canon re-sync 2026-09-25 - 2026.09.24.1 reconciled; four obligations carried forward
+
+Run from `P:\WINDOWS\EPUB_2_HTML` against the installed plugin `2026.924.1` (= the canon repo's
+`CANON_VERSION` `2026.09.24.1`), for the repo's ticket 22 (`contract-rule-adoption-sync`).
+
+**What had to be re-read.** Stamp `2026.09.06.1` / `cdf49be6..`, set on 2026-09-06 by a version-only hand
+re-stamp (`e3f4301`) - thirteen versions behind. Changed rule docs: AI_USAGE, DEVELOPMENT,
+DOCUMENTATION_CONCEPT, INVARIANTS, LOCALIZATION, NEW_PROJECT_CHECKLIST, PLATFORM_OVERLAYS,
+RELEASE_AND_DISTRIBUTION, REPOSITORY_LAYOUT, SECURITY_AND_PRIVACY, SUPPORT_AND_FEEDBACK, TESTING_AND_QA, the
+new CONTRACTS (plus README, which the digest excludes). The gate called it a warning and step 7 of this
+skill an error ("version gap of 2 or more"); the run followed the contract (`RULE-DELIVERY` rule 5) and
+reconciled rather than re-adopting - the divergence is already the canon's own registry exception.
+
+**Reconciled - held.**
+- CONTRACTS, INVARIANTS 10, PLATFORM_OVERLAYS, REPOSITORY_LAYOUT, LOCALIZATION, NEW_PROJECT_CHECKLIST: 20
+  pointers at `docs/contracts/<ID>.md` with an index, tracked since `0c67c4e`; the catalog path named once,
+  in `AGENTS.md`; registry rows for every adopted contract. The rule-adoption rows were corrected this run
+  (the 2026-09-24 row claimed a `.sza-profile.json`, overlay "A/C" and a `HARNESS-PROFILE` role) and one
+  `REPO-LAYOUT` rule 3 exception added; `rule-adoption/PROPOSAL-2026-09-25-doc-html-translate-rule-adoption.md`
+  seconds FileDO's three proposals and CyrFlip's item 3 and adds two findings (a repo that never runs the
+  harness; the gate under Windows PowerShell 5.1).
+- INVARIANTS 5 / TESTING_AND_QA §5: `scripts/release.ps1` reports BLOCKED unless the last `check.ps1` run
+  exited 0 or 3 on the tree HEAD holds with a clean working tree - a missing verdict and a could-not-verify
+  both stop the tag.
+- SUPPORT_AND_FEEDBACK §7: no usage counter; the GUI's report mail uses one constant address and names the
+  product and version in its subject.
+- AI_USAGE, DEVELOPMENT: address a prompt-submit hook and a profile merge; this repo has neither.
+
+**Reconciled - new gaps, carried forward** to the repo's ticket 31 (`canon-resync-new-duties`), owner
+decisions first:
+- DOCUMENTATION_CONCEPT §6: no documentation registry; the site half applies (Pages from the repo root, a
+  tracked `sitemap.xml` nothing generates).
+- SECURITY_AND_PRIVACY §7: no permission or network-surface inventory; the facts live in three privacy
+  texts. Rows found: the extension's five permissions plus `<all_urls>`; capability rows for the Explorer
+  registration; Google Translation (opt-in key), Ollama (localhost), the tessdata download, the GUI's
+  loopback HTTP server, the extension's language-data fetch.
+- RELEASE_AND_DISTRIBUTION §2 "Contract gate": the repo's `/release` flow and `DEV/RELEASE.md` never read
+  the registry.
+- `REPO-LAYOUT` rule 3, research half: notes under `DEV/research/` follow no declared scheme.
+
+**Stamp.** `canon.version` `2026.09.24.1`, `coreDigest` `79ee3333..` (from `-PrintDigest`); a third
+`SZA-SEC04` exemption for `internal/translator/translator_test.go`, whose made-up key-shaped fixture
+arrived the same morning and was the baseline's one error. `adoptedOn` stays `2026-08-18` as this skill
+directs.
+
+**Evidence.** Gate before `1 error(s), 1 warning(s)` (SZA-SEC04, SZA-CANON03), after **`0 error(s),
+0 warning(s)`**, exit 0. Under Windows PowerShell 5.1 on the same tree: `7 error(s), 3 warning(s)`, exit 1,
+all from BOM-less UTF-8 read in the ANSI code page. `check-contracts.ps1 -CatalogRoot P:\Contracts`:
+`2 error(s), 1 warning(s)`, both errors pre-existing and another product's (`CTR-KEY` on `app-activation`
+and `clipboard-guard`), none from this run's rows.
+
+**Canon fixes suggested.**
+1. `check-compliance.ps1`: check the host first and exit `2` ("could not verify") under Windows PowerShell
+   5.1 - `#requires -Version 7` alone exits 1, which a caller reads as FAIL.
+2. `adopt-canon` step 7: drop the version-count rung (or implement it in the gate) - the open
+   `RULE-DELIVERY` rule 5 exception.
+3. `adopt-canon` step 7: name the section-level duties a re-sync can surface (doc registry, posture
+   inventories, counting boundary, contract gate), as CyrFlip suggested the same day.
+
+## Canon duties 2026-09-25 - the four obligations of the re-sync, built
+
+Run from `P:\WINDOWS\EPUB_2_HTML` against plugin `2026.924.1` (digest unchanged, `79ee3333..`), for the
+repo's ticket 31 (`canon-resync-new-duties`), on the owner's instruction to implement it - build now, all
+four items.
+
+**Built.**
+- DOCUMENTATION_CONCEPT §6: `docs/DOCUMENT_REGISTRY.jsonl`, 39 records in the reference's record shape 1,
+  built from the tree as it is. `scripts/doc-registry.ps1` runs in the repo's gate (`scripts/check.ps1`):
+  items 1-5 both ways over every `.md` and `.html` git would commit, plus the site half - every `.html` Pages
+  serves is announced by its own `<link rel="canonical">` or excluded with a reason, every announced page
+  carries the §3 SEO block, and `sitemap.xml` equals its render (`-Generate`; the first render was
+  byte-identical to the hand-kept file). `scripts/doc-query.ps1` answers the two facets. Item 8 is a
+  once-per-release step in the release checklist.
+- SECURITY_AND_PRIVACY §7: `docs/security-posture.json`, 13 permission rows (six extension declarations,
+  MSIX `runFullTrust`, six app capability rows under item 8) and 9 network surfaces; the three privacy
+  texts, the extension's permission justifications and the MSIX runFullTrust justification are marked blocks
+  rendered from the rows. `scripts/security-posture.ps1` runs in the gate (item 6): declarations both ways,
+  consumer and shown-string citations, reverse coverage of network call sites, the telemetry claim against
+  `go.sum` and `package-lock.json`, every render. First reconciliation fixed five divergences, among them
+  two declared extension permissions no privacy text named and store justifications citing menu labels the
+  extension does not show.
+- RELEASE_AND_DISTRIBUTION §2 "Contract gate" / CONTRACTS §6: `scripts/contract-gate.ps1`, run by
+  `scripts/release.ps1` before the tag step; FAIL and UNVERIFIED block, and the checklist now exits 1 while
+  blocked. First live run: WARN, five rows owned by other open tickets.
+- `REPO-LAYOUT` rule 3, research half: `RESEARCH_<topic-slug>_<YYYY-MM-DD>.md`, declared in `CLAUDE.md`,
+  enforced by `tests/research_naming_test.go`; the catalog exception row narrowed to the ticket half.
+
+**Deviations of this repo from the text** - recorded so the sections are not read as a description of it:
+- A page's address is its `<link rel="canonical">` plus its `hreflang` cluster, not a `permalink:` line:
+  the site is static HTML without front matter. The canon harness's `validate.ps1` would therefore not
+  accept this registry's page records; the repo's own check does.
+- A glob in a record may match nothing (the `RESEARCH_` pattern before its first note); an explicit path
+  must exist, and each record must resolve at least one file. The reference requires every pattern to match.
+- The two inventories are one JSON source with a generated Markdown render (`docs/SECURITY_POSTURE.md`),
+  not an authored document: the public texts are marked blocks rendered from it, so item 5 is held by
+  construction rather than by a wording comparison.
+- The contract gate lives in a `release` placement class the repo added, not in the gate: its input, the
+  catalog, exists only on the owner's machine, and a clone reports UNVERIFIED.
+
+**Stamp.** Two keys added beside the ledger shape, additive under `REPO-STAMP` rule 7:
+`docRegistryShape: 1`, `docRegistryFile: docs/DOCUMENT_REGISTRY.jsonl`. A fourth `SZA-SEC04` exemption, for
+the archived ticket 22 that quotes the translator test's fixture key in the frozen archive.
+
+**Evidence.** Compliance before `1 error(s), 1 warning(s)` (SZA-SEC04 on the archived ticket 22,
+SZA-CTR01), after `0 error(s), 1 warning(s)` (SZA-CTR01, the repo's ticket 23), exit 0. In the repo's gate:
+`doc-registry: PASS (39 record(s), 204 document file(s) covered, 18 page(s) announced)`,
+`security-posture: PASS (13 permission row(s), 9 network surface(s), 7 declaration(s), 57 dependencies,
+9 render(s))`, and the Go `tests` package ok with the new tests driving all three scripts to every outcome.
+The gate's aggregate was FAIL on test, lint and typos from files this run did not touch.
+
+**Canon fixes suggested.**
+1. `templates/.sza-canon.json` and `check-compliance.ps1`: §6 item 5 asks for the record-shape number in
+   the stamp, but the template has no key and the gate reads none. This repo used `docRegistryShape` /
+   `docRegistryFile`, after `ledgerShape` / `ledgerFile`; name it in the template and check it.
+2. `tools/harness/document_registry/validate.ps1`: accept `<link rel="canonical">` as a page's declared
+   address - "a permalink or the equivalent" in §6 item 6 - so a static-HTML site can use the harness.
+3. SECURITY_AND_PRIVACY §7 item 6: name the store forms' 1000-character justification limit as part of the
+   consistency check; it is the cheapest failure to catch and the one a paste hides.
