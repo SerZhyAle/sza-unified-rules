@@ -99,9 +99,9 @@ switch ($PSCmdlet.ParameterSetName) {
 
     'Reconcile' {
         $records = Read-Catalog
-        $before = (Get-QueueTickets -Lines (Read-ReleaseQueue)).Count
+        $before = @(Get-QueueTickets -Lines (Read-ReleaseQueue)).Count
         Sync-ReleaseQueue -Records $records
-        $after = (Get-QueueTickets -Lines (Read-ReleaseQueue)).Count
+        $after = @(Get-QueueTickets -Lines (Read-ReleaseQueue)).Count
         Write-Output ("release-queue: reconciled - {0} ticket(s) before, {1} after" -f $before, $after)
         # The counts above cover the QUEUE file only, so a duplicate collapsed in the READY file
         # moves neither number - reporting it separately is the only proof the repair happened.
@@ -253,7 +253,9 @@ switch ($PSCmdlet.ParameterSetName) {
 
     default {
         $source = if ($Ready) { Read-ReleaseReady } else { Read-ReleaseQueue }
-        $tickets = Get-QueueTickets -Lines $source
+        # An empty result unrolls to $null at the call site, and `.Count` on $null throws under
+        # StrictMode - the array is rebuilt here, not left to the -Release branch below.
+        $tickets = @(Get-QueueTickets -Lines $source)
         if ($Release) { $tickets = @($tickets | Where-Object { $_.Release -eq $Release }) }
         # Read the leases once and use them twice. The inline marker answers "is anyone on this
         # right now" in the same scan as the plan itself - a lease lives minutes, so it can never
