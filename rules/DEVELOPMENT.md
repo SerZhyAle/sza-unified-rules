@@ -67,8 +67,8 @@ compile-only -> targeted tests -> minified release variant -> device) lives in
 
 - Every non-trivial change is a ticket with an explicit lifecycle (Android reference: `Sxxxx` specs,
   `Draft -> Approved -> Tactical -> In Progress -> Implemented -> Verified`, managed only through the
-  `scripts/spec_catalog/` CLI - never hand-edit the journal). A desktop/Go project uses
-  `docs/specifications/SPECIFICATION_*.md` instead; the discipline is the same: one authoritative
+  `scripts/spec_catalog/` CLI - never hand-edit the journal). A project without that CLI keeps
+  `PLAN/SPECIFICATION_*.md` instead; the discipline is the same: one authoritative
   ticket record, mutated through its tool, status synced into the file.
 - **Out-of-scope findings are parked, not fixed inline** when they are unrelated, non-trivial, and need
   their own research: dedup by symptom first, capture the symptom/evidence in a fresh draft ticket,

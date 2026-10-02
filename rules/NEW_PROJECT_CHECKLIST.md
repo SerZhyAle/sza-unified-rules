@@ -18,10 +18,12 @@ apply (a CLI tool has no site, a single-locale app skips localization).
 
 ## 1. Skeleton
 
-- Create the universal top-level shape ([REPOSITORY_LAYOUT.md](REPOSITORY_LAYOUT.md)): root files
-  (`README`, `CHANGELOG`, `LICENSE`, agent-rules file), source root, `tests/`,
-  `docs/{guides,specifications,roadmaps,contracts}/`, the overlay's release-mechanics folder, `tools/`.
-- Point `.gitignore` at the platform's build-output dirs + the secret globs.
+- Create the role map ([REPOSITORY_LAYOUT.md](REPOSITORY_LAYOUT.md)): root files (`README`, `LICENSE`,
+  agent-rules file, the `a.ps1` launcher), the source root and tests, `scripts/`, `dev/`,
+  `docs/` with `docs/contracts/`, and the overlay's channel folders.
+- Point `.gitignore` at every **no** row of the role map (`PLAN/`, `temp/`, `logs/`, `DOWNLOADS/`,
+  `.secrets/`, `test_media/`), the platform's build-output dirs and the secret globs; prove each with
+  `git check-ignore -v`.
 
 ## 2. Agent operating setup
 
@@ -50,7 +52,7 @@ apply (a CLI tool has no site, a single-locale app skips localization).
 
 - Set the layering, naming, size ceiling, comment/logging rules ([DEVELOPMENT.md](DEVELOPMENT.md)).
 - Add the machine-generated-smell gate and any recurring-defect gates the platform needs.
-- Define the ticket/spec lifecycle for the project (Sxxxx catalog, or `docs/specifications/`).
+- Define the ticket/spec lifecycle for the project (Sxxxx catalog in `PLAN/`, or `PLAN/SPECIFICATION_*.md`).
 - Wire the gate & closure mechanics ([DEVELOPMENT.md](DEVELOPMENT.md) §15): ratchet baselines, a batched
   fast-gates runner, a one-call closure facade, and (for PowerShell) the reachable-exit-code contract.
 
