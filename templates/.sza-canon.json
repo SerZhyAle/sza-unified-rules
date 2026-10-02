@@ -5,6 +5,7 @@
     "version": "2026.08.05",
     "coreDigest": "sha256:REPLACE - run check-compliance.ps1 -PrintDigest",
     "adoptedOn": "YYYY-MM-DD",
+    "reconciledOn": "YYYY-MM-DD",
     "model": "reference",
     "contribRecord": "contrib/<project>.md"
   },

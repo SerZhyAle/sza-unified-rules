@@ -82,6 +82,8 @@ live tree. This one file is what every other skill and the compliance gate read.
 - `canon.coreDigest` - recompute it; do not copy one from another repo.
   `pwsh -NoProfile -File "<plugin root>/tools/check-compliance.ps1" -PrintDigest`, with the plugin root
   resolved in step 1.
+- `canon.adoptedOn` - the date of first adoption; a re-sync never moves it. `canon.reconciledOn` - the date
+  of the last reconciliation, written together with `version` and `coreDigest` on every re-sync.
 - `canon.model` - `reference` or `mirror`.
 - `overlay` - exactly one, unless the repo has editions, in which case declare them too.
 - `versionShape.tagRegex` - **take it from the release script's own validation regex or from CI**, never from
@@ -191,9 +193,10 @@ The staleness ladder, from the compliance gate:
 - Digest equal -> nothing to do, the stamp included: a version moved without a digest change is not written
   by hand (REPO-STAMP rule 8).
 - Digest differs, version within one minor -> **warn**, with the list of rule docs whose per-file digest
-  changed. Re-read exactly those, reconcile, then update `canon.version` and `canon.coreDigest`.
-- Digest differs with a version gap of 2 or more, or `adoptedOn` older than 180 days -> **error**. Re-run this
-  skill in full.
+  changed. Re-read exactly those, reconcile, then update `canon.version`, `canon.coreDigest` and
+  `canon.reconciledOn`.
+- Digest differs with a version gap of 2 or more, or the last reconciliation (`reconciledOn`, else
+  `adoptedOn`) older than 180 days -> **error**. Re-run this skill in full.
 
 When `CONTRACTS.md` is among the changed docs, the re-sync includes a `contract-sync` run - a change
 there changes what the repo owes the catalog, and reading it is not the same as doing it.

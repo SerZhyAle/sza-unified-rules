@@ -196,12 +196,15 @@ try {
             # where the digest still matches.
             $adopted = [datetime]::MinValue
             $parsed = $false
-            if ($stamp.canon.adoptedOn) { $parsed = [datetime]::TryParse($stamp.canon.adoptedOn, [ref]$adopted) }
+            # Age runs from the last reconciliation when the stamp records one, else from first adoption
+            # (REPO-STAMP rule 4): a repo reconciled last month is not "old" because it was adopted in March.
+            $ageFrom = if ($stamp.canon.reconciledOn) { $stamp.canon.reconciledOn } else { $stamp.canon.adoptedOn }
+            if ($ageFrom) { $parsed = [datetime]::TryParse($ageFrom, [ref]$adopted) }
             $ageDays = if ($parsed) { ((Get-Date) - $adopted).Days } else { 0 }
             $sev = if ($ageDays -gt 180) { 'error' } else { 'warn' }
             Add-Finding -Id 'SZA-CANON03' -Severity $sev -Path '.sza-canon.json' `
-                -Message "adoption is stale: stamp digest $($stamp.canon.coreDigest) vs canon $canonDigest (canon $canonVersion, adopted $($stamp.canon.adoptedOn))" `
-                -Fix 'Re-read the changed rule docs, reconcile, then update canon.version and canon.coreDigest.'
+                -Message "adoption is stale: stamp digest $($stamp.canon.coreDigest) vs canon $canonDigest (canon $canonVersion, adopted $($stamp.canon.adoptedOn), reconciled $($stamp.canon.reconciledOn))" `
+                -Fix 'Re-read the changed rule docs, reconcile, then update canon.version, canon.coreDigest and canon.reconciledOn.'
         }
 
         # SZA-CANON07 - the stamp names a canon version NEWER than the canon's own. That is not

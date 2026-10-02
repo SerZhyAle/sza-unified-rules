@@ -84,6 +84,14 @@ every other product until the day their data disagrees, which is the failure the
 Finding a defect creates an obligation, not a licence: whoever finds it writes the amendment, even when the
 defect belongs to another product's contract. Silence about a known defect is itself a violation.
 
+**Settled law.** Since the 2026-10-02 consolidation the contracts in the catalog and the rules in this canon
+are settled: a product synchronises to them and does not re-open them for taste, convenience or a schedule.
+They can still change, and the two routes above are still the only ones, but the bar is a **weighty reason**:
+a defect that harms a user or loses data, a hard constraint of the platform, the law or a store, a security
+or privacy exposure, or evidence from two or more products that the rule does not hold. The reason is written
+down where the change is made (the amendment, the proposal or the exception row). "We prefer it this way" is
+not a reason; neither is a deadline. Until a change is accepted, the settled text binds.
+
 **Who writes what.** A product edits the contracts it owns and its own registry rows. For anything else -
 another product's contract, another product's row - the amendment is written as a **proposal**: a dated
 `PROPOSAL-<date>-<topic>.md` beside the contract in its domain folder, stating the finding, the evidence and

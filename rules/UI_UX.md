@@ -38,7 +38,8 @@ vocabulary). Every other product listens to it:
 - **Space is spent through a closed set of named tokens**, not literals: spacing 4 / 8 / 12 / 16 / 24 / 32,
   corner radii 8 / 12 / 16, icon tiers 16 / 20 / 24 / 32 / 40 / 48, a short list of elevations, a type scale
   by role (title, subtitle, detail, badge). A value outside the set needs a decision, written down.
-- **Touch target floor: 48 dp on touch platforms, 44 px with a pointer** (`ICON-RENDER` section 3.5).
+- **Hit-target floor: 48 dp on Android; on Windows 28 px under a mouse or pen and 44 px under touch input**
+  (`ICON-RENDER` rule 5). The glyph tiers do not change; only the clickable area does.
 - **Reflow, do not fork.** One layout parametrised by width; a second layout only where the *structure*
   differs, not the size.
 - **No dead ends.** An empty state is a glyph, one sentence giving the reason, and an invitation to act. A
@@ -105,6 +106,8 @@ kit has none.
 - **Icons: one meaning, one glyph, one name** (`ICON-SET`). Take the glyph from the vocabulary; never redraw
   it, never substitute an emoji, never pick a second glyph for a meaning that has one. A control that is only
   a glyph carries an accessible name containing the meaning's name.
+- **A language is named in its own language, never by a flag** (`ICON-EXTERNAL`): "Русский", "Українська",
+  "English". A flag denotes a country, not a language.
 - **Buttons are chosen by role, not by look:** primary (at most one per surface), tonal, outlined, text,
   icon, destructive. The same role looks the same in every product.
 - **Destructive confirms:** the acting button is the red one; Escape is the one no-action way out; the safe
