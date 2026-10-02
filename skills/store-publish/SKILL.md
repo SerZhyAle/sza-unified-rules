@@ -77,6 +77,9 @@ The authoritative asset host and the precondition for winget.
   `total_count: 0` runs and the release looks pushed while nothing built. Recovery is three steps: delete the
   dead workflow, re-enable Actions **in the browser** (no API on a free account), and **re-cut the tag** -
   pushes that fire before Actions is enabled are never retried.
+- The tag workflow builds only the named tag's tree, refuses a tag whose commit carries no gate stamp, never
+  rebuilds a tag whose Release already carries its asset, and holds `contents: write` on the publish job alone
+  ([RELEASE_AND_DISTRIBUTION.md](../../rules/RELEASE_AND_DISTRIBUTION.md) §1 "CI safety levers", §4).
 - Watch the run (`gh run watch`) and confirm green before moving on.
 - Verify the asset set: expected names and count, each with a `.sha256`.
 - **Re-hash the uploaded asset yourself.** A `.sha256` sidecar can go stale after a rebuild.
@@ -87,7 +90,8 @@ The authoritative asset host and the precondition for winget.
 
 **Load [references/winget.md](references/winget.md)** for the full payload: the manifest set and the fields
 that change per release, the `update`-vs-`submit` branch, the pre-submit verification ladder, the CRLF gate,
-the error-code table, PR-body discipline, and how to read the real error out of the validation logs.
+the error-code table, PR-body discipline, and how to read the real error out of the validation logs. It also
+holds the Inno upgrade traps (`AppMutex`, `UsePreviousGroup`) and the `WinGet\Links` symlink trap.
 
 The three rules that decide most outcomes:
 
@@ -104,8 +108,8 @@ The three rules that decide most outcomes:
 ## Leg 3 - Microsoft Store (MSIX)
 
 **Load [references/msix-store.md](references/msix-store.md)** for the full payload: identity resolution, the
-version remap rules, the container-virtualization pre-checks, the Partner Center click path, and the
-export-then-merge listing CSV flow with its eight measured rules.
+version remap rules, the container-virtualization pre-checks, the WACK pre-submission procedure, the Partner
+Center click path, and the export-then-merge listing CSV flow with its eight measured rules.
 
 The three rules that decide most outcomes:
 

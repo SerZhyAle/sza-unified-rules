@@ -562,3 +562,123 @@ none from this run's rows.
 **Canon fixes suggested.** The rule-adoption proposals above; `adopt-canon` step 7 could name the three new
 section-level obligations (doc registry, posture inventories, counting boundary) as "new duty" rather than
 leaving a re-sync to find them in a diff.
+
+## Mined 2026-10-02 (window 2026-09-20 .. 10-01) - one error, a stamp two readings behind, candidates delivered
+
+Mined read-only from a canon session; the facts below would be written into the repo by a re-sync run
+(`adopt-canon`) in CyrFlip, not from here. 11 commits in the window; releases **v26.10.1.0346** and
+**v26.10.1.0354** (the second fixes the PrintScreen chord, `0248907`). `gh` was not installed on the mining
+machine, so no CI run history was read, and `PLAN/` is gitignored, so ticket bodies (S0038, S0042) were read only
+through their commits and scripts.
+
+**Compliance now: 1 error, 6 warnings** (re-measured 2026-10-02, canon `2026.09.30.1`).
+
+- **The one error is `SZA-STYLE01` at `tools/uitest/README.md` lines 37-40: four U+2014 separators.** Commit
+  `1602c19` (2026-10-01, S0042) added a "Contract Conformance (`CHECK-VERDICT`, `BUILD-EVIDENCE`)" section whose
+  four exit-code bullets (`0` PASS, `1` FAIL, `2` NOT VERIFIED, `3` PASS WITH ADVISORIES) use the long dash as
+  separator. The same commit cleaned the dashes out of the `.claude/skills/*` pages and missed this file;
+  `DocumentationQualityTests` does not gate house style (the `DOC-QUALITY.md` pointer says internal rule 5 is
+  "held by the cleanup and by reading, not gated"), so nothing caught it. **Fix, not applied from here:** replace
+  the four long-dash separators (U+2014, each between two spaces) with a plain hyphen on lines 37-40, keeping the
+  LF endings; a
+  simulated run on a copy gave 4 dash lines before and 0 after, and no other tracked prose file is affected
+  (`msix/store-listings.md` is a render target and the check skips it).
+- **`SZA-CTR01` x3 is gone: fixed in the canon tool on 2026-10-02.** The three pointers
+  (`DOC-QUALITY.md` with the plural `**Ids**` header, `LAYOUT-SIGNAL.md`, `SCENARIO-FILE.md`) were judged on
+  length alone because the old pattern did not read the bold header; the new pattern accepts `Id` and `Ids`.
+  No repo edit was needed.
+- **`SZA-STYLE02` x11 remain**: `CLAUDE.md` lines 143, 179, 280, 324, 567 and the README trio (two lines each).
+  Every one is an ellipsis immediately followed by a closing quote or bold mark, a quoted real UI string
+  (`"Diagnose caret position.."`-style items, `**Settings...**`) or the Win32 trailing ellipsis, the recorded
+  DIVERGE. A canon-side change that skips an ellipsis whose next character is `"`, a guillemet, a curly quote or
+  `*` would clear all 11 and leave bare-prose ellipses flagged; **proposed, not applied**, and to be verified
+  against the real repos before shipping.
+- **Other warnings:** `SZA-CANON03` (stamp `2026.09.24.1`; the reading owed is only [GITHUB_INTERACTION](../GITHUB_INTERACTION.md)
+  §1 and the INVARIANTS "Working stance" of 2026-09-30, which needs no repo change) and `SZA-RULES05`
+  (`CLAUDE.md` 1332 lines, 487 added in the window, almost all module and feature architecture, so the check's
+  "size alone is not a violation" applies).
+
+**Closed since the 2026-09-25 record.** The documentation registry (S0028): `docs/DOCUMENT_REGISTRY.jsonl`,
+91 documents, sitemap and `search-index.json` held against 40 indexable pages; catalog registry rows 379-380 and
+the exception rows 587-588 closed. **Still open:** the permission and network-surface inventory
+([SECURITY_AND_PRIVACY](../SECURITY_AND_PRIVACY.md) §7; no inventory file in `git ls-files`) and the usage-counter
+disclosure ([SUPPORT_AND_FEEDBACK](../SUPPORT_AND_FEEDBACK.md) §7): the counter set grew by `ScreenshotCount`
+(`CLAUDE.md` config table), so the privacy wording needs a fifth name.
+
+**Overlay facts and release engineering.** Release hardening S0038 RP-1..6 is in `release.yml`: a published tag
+is never rebuilt, the tag must parse as a real `YY.M.D.HHmm` and be newer than every other `v*` tag, an exe
+FileVersion/ProductVersion gate, `THIRD-PARTY-NOTICES.md` must exist, TRX test-count floor 1000
+(`Assert-TestRun.ps1`). `release.ps1` pre-flight builds and tests a detached worktree of HEAD (lines 128-160); its
+could-not-verify branch was misspelled until `eee529b` (`$preflightUnverified` collected, `$preflightNotVerified`
+read by all three consumers, so the exit-2 branch had never run).
+
+**Contract work (S0043, `eee529b`).** `CAPTURE-OUTPUT` pointer plus a PNG `tIME` proposal; APP-SETTINGS,
+state-roles and tray-window proposals filed; `APP-ACTIVATION` 0.10 and `INPUT-CHORD` 0.3 owner amendments.
+**Owed by CyrFlip:** registry row 227 (`LAYOUT-SIGNAL`) still reads `1.0 | 1.0 | 2026-09-22` although the contract
+is at 1.2 and the row's own text says "re-verified 2026-10-01 .. all twelve rules held"; the sentence in
+`docs/contracts/LAYOUT-SIGNAL.md` that the shipped app "still carries 1.0 until the next release" is now false for
+the app (the extension 0.1.5 is published by hand, so its state needs the owner); and the dates of the
+`LAYOUT-PALETTE`, `SCENARIO-FILE` and `DIAGNOSTIC-REPORT` rows (2026-09-26) if the 10-01 release touched them
+([CONTRACTS](../CONTRACTS.md) §6 item 1: the verification date is not older than the last release).
+
+**Language, an owner call.** `RELEASE.md` is mostly Russian (74 of about 110 lines carry Cyrillic prose) and
+`STORE_PUBLISHING.md` has 21 such lines, while INVARIANT 19 and [AUTHOR](../AUTHOR.md) "Language" say repo docs
+are English. The gate does not check it. Either an owner-reading exception is recorded here, or the files are
+translated.
+
+**Candidates delivered from this record - proposed 2026-10-02, none applied** (the Streams record carries the
+ones both repos found; each is defined once):
+
+- *A suite is proven on a clean checkout; byte-exact files say so in `.gitattributes`* (also Streams `803579c`) -
+  [TESTING_AND_QA](../TESTING_AND_QA.md) §3, one sentence in [REPOSITORY_LAYOUT](../REPOSITORY_LAYOUT.md). Here
+  `79370e5` and `70751e8` (2026-10-01): contract vectors forced to `eol=lf` (a file-versus-parser test failed on
+  a CRLF checkout), a page digest computed over the LF form, links into the gitignored `PLAN/` skipped when it is
+  absent, and the Store CSV drift check comparing content instead of bytes. The CLAUDE.md test strategy chooses
+  every `KeyboardLayoutConverter` case to hold on both the live layout lookup and the fallback, "so a clean CI
+  runner proves the same thing this machine does".
+- *Pre-flight judges the committed tree in a detached worktree; `[skip ci]` makes the release the first
+  clean-room run* - [RELEASE_AND_DISTRIBUTION](../RELEASE_AND_DISTRIBUTION.md) §1 (a caveat under the `[skip ci]`
+  bullet) and §2. Seven of the 11 window commits carry `[skip ci]`, so CI never saw them and the clean-checkout
+  failures were found by hand just before the release; `release.yml`'s Test step is, by its own comment, "a safety
+  re-test of the exact tagged commit".
+- *A published tag is never rebuilt; a tag that failed before publishing is retired, not re-pushed* (also Streams)
+  - [RELEASE_AND_DISTRIBUTION](../RELEASE_AND_DISTRIBUTION.md) §4 and `skills/release` Phase 6 item 4. The release
+  workflow throws when the release already carries `CyrFlip-*.zip` and publishes with `overwrite_files: false`,
+  because `Compress-Archive` stamps fresh file times and a rebuilt ZIP "breaks the hash in every winget manifest
+  already merged" (`1602c19`, S0038 RP-1 and RP-6). **A conflict to fix in the canon text:** `skills/release`
+  Phase 6 item 4 offers "re-dispatch the workflow for the same tag" as the first rollback with no proviso.
+- *A gate ships fixture tests that drive every exit code, including could-not-verify* -
+  [TESTING_AND_QA](../TESTING_AND_QA.md) §5 after "A gate that has not run since the last release is itself
+  unverified". Fixtures that now exist: `tools/checks/Test-CheckVerdict.ps1 -Outcome pass|fail|notverified|advisory`,
+  `tools/audit/Test-AuditCoverage.ps1` (four cases, exit codes asserted), and `Test-HookThreadBlocking.ps1
+  -ExePath <older build>`, which runs the same probe against a pre-fix exe so the test is shown to fail.
+- *A desktop check that borrows the owner's real state restores it, and refuses to start without the way back* -
+  [TESTING_AND_QA](../TESTING_AND_QA.md) §4 (the desktop/CLI bullet) and a clause in
+  [DEVELOPMENT](../DEVELOPMENT.md) §10. `Test-ClipboardFlip.ps1` backs up the real clipboard with the app's own
+  backup, refuses to start when it cannot and resolves the way back before the first scene ("the first draft lost
+  a clipboard exactly that way"); `Test-QuickNotes.ps1` never writes a canary into the real notes file;
+  `Test-HookThreadBlocking.ps1` restores registry values and restarts the app only if it was running;
+  `Test-DarkTheme.ps1` flips `AppsUseLightTheme` and restores it in `finally`.
+- *Windows low-level hooks fail silently* - split: the PrintScreen rule (it reaches `WH_KEYBOARD_LL` as a key-up
+  only, so a chord on it fires on the lone release and must not own the trigger afterwards, `0248907`) is an
+  `INPUT-CHORD` amendment in the catalog, which this repo owns; the hook-timeout method (a callback that waits
+  past `LowLevelHooksTimeout`, about 300 ms, is silently dropped; prove it with a UI-thread ping every 50 ms
+  against an unroutable share, with a local-path baseline phase first, `Test-HookThreadBlocking.ps1`; injected
+  events are skipped by design, so only a human chord proves the hook alive) would be a short "Windows global
+  hooks" section in [DEVELOPMENT](../DEVELOPMENT.md). Placement in the canon rather than in this record is the
+  **owner's call** (low-medium generality).
+- *A site that deploys on push needs a CI gate between the push and the deploy* - [SITE_CONFIGURATION](../SITE_CONFIGURATION.md)
+  §4. This repo is the **gap**, Streams the gate: `ci.yml` `paths` excludes `**.md` and `docs/**`, so a docs-only
+  push deploys Pages with no CI run, relying on `build.ps1` and the release pre-flight (`TrustPageTests`).
+- *`check-compliance.ps1`: SZA-CTR01 misses the house pointer header; SZA-STYLE02 flags quoted UI strings* -
+  CTR01 **fixed 2026-10-02**; STYLE02 open, see above.
+- *An unlisted note:* xUnit runs test classes in parallel, and `SharedGdiCollection` exists because a
+  process-wide icon/bitmap cache gave three unrelated flakes (GDI+ "object in use elsewhere", a corrupted
+  `Dictionary`, a half-built settings window), 5 of 8 full runs failing before and 0 of 15 after; added
+  2026-08-19, so it predates the window. Home would be [TESTING_AND_QA](../TESTING_AND_QA.md) §3.
+
+**Dropped as already covered** (where): the `dotnet test` exit-0-on-nothing TRX floor (catalog proposal
+`PROPOSAL-2026-09-26-cyrflip-second-reader.md`, filed by this repo), exit codes 0/1/2/3 and the last-line verdict
+(`CHECK-VERDICT`), "the stamp is written only by adopt-canon" (`REPO-STAMP` rule 8), a check only a human can run
+([TESTING_AND_QA](../TESTING_AND_QA.md) §1), check placement records (`CHECK-PLACEMENT`), PNG `tIME` and
+account-name redaction (catalog `CAPTURE-OUTPUT` proposal of 2026-10-01 and `DIAGNOSTIC-REPORT`).

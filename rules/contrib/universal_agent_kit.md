@@ -578,3 +578,71 @@ generate-commit-ship, fix-release haste) had already reached `kit/` in the 2026-
 
 - The gate prints `overlay ?` for `role: portfolio` with an empty overlay; `overlay none` is the truth.
 - `REPO-LAYOUT` rule 1 is silent on payload rules files below the root and on two names at one root.
+
+## Re-sync owed 2026-10-02, and eight places the kit still addresses a programmer
+
+Read-only pass over `P:\WEB\universal-agent-kit` (clean tree). Re-measured 2026-10-02: `0 error(s), 1
+warning(s)`, the warning being `SZA-CANON03` (stamp `2026.09.22.2`, `adoptedOn` 2026-09-23). Six commits since
+2026-09-20, four of them titled "1" (contract pointers, `AGENTS.md`, `build-kit.ps1`, `verify.md` /
+`VALIDATION.md` deltas). This record is current to 2026-09-23, and that entry already recorded the `AGENTS.md`
+`SZA-RULES02` error and its fix. **The kit repo itself was not edited by this entry.**
+
+### Does the kit still match the canon's measured findings? Yes
+
+Every figure in `kit/` that has a canon home matches it: 99% against 1-8% and 22% (AI_USAGE); 434, 0 of 17 and
+64 of 93 (AI_USAGE); 52 of 54 (DEVELOPMENT); 5 of 5 and 18 of 28, 291 of 291, 21.4%, 67.1 s against 26.6 s,
+14.1 s against 56.0 s and the crash three hours after release (TESTING_AND_QA); the 215k median, 28.7k floor and
+29% (AI_USAGE). The COST figures (about 1,300 polling turns, 81 minutes of sleep, +0.681 against +0.065, 76.5% and
+5.6%) trace to the FastMediaSorter record (2026-08-28 entry) and not to a rule doc, which is fine because the kit
+dates them. The kit already carries the waiver rule (`VALIDATION.md:79-83`), the rotted-gate rule
+(`VALIDATION.md:194`) and the four verdicts (`verify.md`).
+
+### What the re-sync owes
+
+Only the 2026-09-23 and 2026-09-30 changes (DOCUMENTATION_CONCEPT §6, SECURITY_AND_PRIVACY §7, SUPPORT_AND_FEEDBACK
+§7, the tree-state stance): a stamp bump and a record line. One transferable item is not yet in the kit:
+DOCUMENTATION_CONCEPT §6 **reverse coverage** (a file sitting in the maintained area with no registry record fails
+the check) belongs in `kit/docs/RESEARCH_INDEX.md`, because for non-code projects the documents are the artifacts.
+**Not transferable**, as the 2026-09-23 entry already says (portfolio law): CONTRACTS, SECURITY §7, SUPPORT §7 and
+the GITHUB_INTERACTION tree stance (the owner's solo-git policy); the kit's `/git` command and "working tree is
+authority" line do not conflict with it. **Safe to commit: nothing pending.** A proposal to hold in mind
+(2026-10-02): the standard delegating `AGENTS.md` stub is wanted by the kit too, since its Codex-style
+`AGENTS.md` triggered the same `SZA-RULES02` error as FastMediaSorter_Lite's.
+
+### Owed to the kit - eight wording gaps for non-programmers
+
+The kit is already two-tier and `PROJECT_SHAPES.md` is good (the 2026-09-21 product change, see above). These are
+the lines that still address a programmer; the owner's model is that the kit also serves non-programmers
+(a lawyer, a translator, an analyst). Cap of eight; line numbers are from the reading of 2026-10-02 and will move:
+
+1. **Forced English artifacts.** `kit/CLAUDE.md:15` ("Artifacts - files, code, docs, logs, commits: English"),
+   `kit/README.md:141-142` and `kit/docs/REPLACES.md:23,46`. A lawyer, translator or analyst delivers in the
+   document's own language. Make it an `<ARTIFACT_LANGUAGE>` placeholder with English as the default for code
+   projects only.
+2. **Tone.** `kit/CLAUDE.md:17` "Tone: dry, concise, technical." - say "plain and concise"; "technical" tells a
+   non-technical user the agent will answer in jargon.
+3. **No path for "a folder of documents and no repository".** The import steps in `kit/README.md:90-102` say
+   "copy into your repo's `.claude/commands/`" and "merge into your repo root"; `kit/CLAUDE.md:58-61` talks about
+   `git log`, `blame` and `diff`; `PROJECT_SHAPES.md:18` assumes Git. Beyond one line ("copy the folder before a
+   big change") there is none.
+4. **Only git skills for version control.** `kit/CLAUDE.md:80` and `kit/.claude/commands/git.md` (the whole file:
+   branch model, staging, commit grouping) and `caveman-commit.md` ("Conventional Commit"); there is no "save a
+   restore point" or "what changed since last time" equivalent. `kit/.claude/settings.json` grants `Bash(git *)`
+   and lists npm / pnpm / make / gradlew / cargo / go as examples (`kit/README.md:213-218`).
+5. **Code items under a heading the intro calls generic.** `kit/CLAUDE.md:161-172`, section 9 "Anti-slop":
+   `Empty catch {}`, lifecycle-unsafe async collection, `print` / `console.log` / `System.out`,
+   `TODO()` / `NotImplementedError` are not labelled "(code layer)" like sections 6-7. Also `kit/CLAUDE.md:210-213`
+   ("modules, wired contracts, a passing compile") and `kit/CLAUDE.md:116-121`, where `BlockNeedUserTest` appears
+   undefined.
+6. **A default agent introduced as a software engineer.** `kit/.claude/agents/rd-lead.md:3` ("Default senior
+   engineer / orchestrator .. feature work, refactors, architecture questions .. code review"), `kit/README.md:52`
+   and `settings.json` `"agent": "rd-lead"`: a legal or writing project's default agent is introduced as a
+   developer. The same register in `rd-lead.md:83` and `solution-researcher.md:68` ("the codebase").
+7. **"Developer" as the reader.** `kit/.claude/commands/spec-tech.md:131` ("tactical, English, developer
+   handoff"), `:198` and `:213` ("Prompt for developer:"), `spec-dev.md:8`. The reader is an agent or whoever
+   executes; "developer" is the wrong noun for most audiences.
+8. **Git vocabulary in the template body and examples.** `kit/memory/MEMORY.md:14` and
+   `kit/memory/examples/feedback_pr_granularity.md` ("one bundled PR for a cohesive refactor"),
+   `kit/docs/AGENT_MEMORY.md:40,77` ("bundled PR"), `kit/docs/PARALLEL.md:64` and `kit/CLAUDE.md:263-267` (stash,
+   checkout, reset, a shared git directory - in the template body, not marked code layer). The example set has
+   one non-code entry (`feedback_figures_carry_source.md`) against four code-flavoured ones.

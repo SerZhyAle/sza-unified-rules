@@ -136,6 +136,13 @@ compile-only -> targeted tests -> minified release variant -> device) lives in
   per-session temp dir can push a working file past `MAX_PATH` (260 chars) and **silently** break a
   path-sensitive subprocess (OCR, a packager) - which then looks like a quality bug, not a path bug. Prefer
   the repo's short `temp/` over a deep system temp path for anything a child process reads.
+- **A non-ASCII user profile breaks native helpers that use the ANSI APIs** (an OCR engine, a packager).
+  Stage their inputs under a root that has an ASCII form (a short temp, `%PUBLIC%`, `%ProgramData%`, the
+  exe's own directory), or skip the step and name the folders that did not qualify.
+- **Concurrent starts, and a rename over a file another instance is reading, fail with "Access is denied"
+  on Windows.** Retry a bounded number of times or serialise; do not assume the rename is atomic.
+- **`./...`-style tool globs walk the gitignored `temp/`** and fail on snapshots other sessions left there
+  while a clean checkout is green. Exclude `temp/` from every tool glob.
 - **Serialize expensive shared operations** when several agents may run at once: an advisory build lock
   so two builds never overlap, a code lock before a multi-file edit *(Android reference:
   `temp/BUILD.LOCK` / `temp/CODE.LOCK`)*. The rest of this section is what that lock grows into once
@@ -210,6 +217,9 @@ compile-only -> targeted tests -> minified release variant -> device) lives in
   rework; catching it at the end costs every intervening phase. Tag findings by severity
   (crash/data-loss -> race/main-thread-IO -> hot-path waste -> style) and fix the serious ones with
   matching evidence, not opinion.
+- **A tree too large for one pass is audited as a campaign**, not a long session - sliced by risk, coverage
+  proven by a script, defect classes swept tree-wide, changed files re-audited. The method is the
+  `spec-to-audit` skill's `references/audit-campaign.md`.
 
 ## 12. Multi-edition parity (a product shipped in more than one codebase)
 
@@ -226,6 +236,10 @@ extension - logic is hand-ported and drifts silently. Guard it:
 - **Update the parity doc in the same change** that alters a shared invariant. Touching it is the escape
   hatch that tells the drift gate "parity was considered" - which is exactly what an intentional divergence
   needs anyway.
+- **When an installer and the program must write the same registration, make the first a test fixture of
+  the second:** parse the installer source, run the real writer into a scratch location, and compare both
+  directions (key, value name, type, data). Mark what you write and remove only what carries your mark -
+  never recognise your own entries by their content.
 
 ## 13. Single-source multi-target (the compiler is the parity gate)
 
@@ -269,7 +283,17 @@ The machinery that makes the hygiene rules (§9) and the parity gates (§12) run
 
 - **Ratchet baselines - fail on net-new only.** A gate records the current count of a finding and fails
   the build only when a change *adds* to it, so existing debt is frozen and paid down monotonically without
-  a big-bang cleanup. A hand-edited baseline is ignored; regenerate it through the gate.
+  a big-bang cleanup. A hand-edited baseline is ignored; regenerate it through the gate. **A baseline
+  shrinks in both directions:** an entry whose finding is gone also fails until its line is deleted, so a
+  fix is never left uncounted.
+- **A gate's reach is a claim, so prove it against the tree.** A gate declares the source roots it reads and
+  a check proves that list equals the project's real source roots - every variant, flavor and module -
+  because a gate that reads `main` only is silent about the rest while its registry says "held" (measured:
+  460 files outside `main` audited by hand and read by no gate). A new matcher ships with a fixture for each
+  code shape it claims to read, in both directions. A ratchet freezes what it counted and cures nothing, so
+  a periodic whole-tree read is the only thing that looks at baselined debt. A check or lint category
+  switched off for a whole module carries a dated reason beside the switch (one such switch hid 24 real
+  errors for months).
 - **Batch the fast gates into one process.** Running each `assert-*` check as its own script spawn is slow;
   a single batch runner (reference: a `fast-gates` command) executes the cheap gates
   (smells + deprecated-API + listener-symmetry + flavor-isolation + log-hygiene) in one pass.
@@ -312,6 +336,10 @@ The machinery that makes the hygiene rules (§9) and the parity gates (§12) run
 - **One closure facade, not N rituals.** Mechanical closure (dev-log + index/catalog sync + gates) runs as
   a single command (reference: a `post-change` facade), so "I changed a file, now what" has one answer and
   no step is forgotten.
+- **A closure that prints a fix command and then fails is a ritual.** When the repair is deterministic and
+  local (regenerate a derived file, register a new file) the closure performs it and says `REPAIRED`, while
+  staying a pure check on the release path. A cached verdict's fingerprint covers everything the gate loads,
+  including the libraries it dot-sources - else an edit to a library replays a stale PASS.
 - **The closure RUNS the ladder's rung; it does not merely ask for it.** When a change set carries an
   artifact class whose only proof is a link, render or compile step that nothing else performs, the facade
   must run that step, selected by artifact class. Otherwise the rung in §6 is a request, and a request is an
@@ -335,7 +363,11 @@ The machinery that makes the hygiene rules (§9) and the parity gates (§12) run
   throws, so any `exit N` after it never runs and the process reports 1 while the message still prints
   (which is why it survives review). Write `Write-Error $msg -ErrorAction Continue` before `exit N`, and
   list the codes a script returns in its header. Gate it (an `assert-exit-contract` check) since the whole
-  portfolio is PowerShell-driven.
+  portfolio is PowerShell-driven. A script that needs PowerShell 7 declares it and exits 2 under 5.1.
+- **Code that runs only after the one-way trigger cannot be rehearsed, so parse-check it in the
+  pre-flight** - a release workflow's `run:` blocks above all: extract each `pwsh` step and run the language
+  parser over it. In PowerShell write `${name}:` whenever a variable is followed by a colon in a string; a
+  bare `$name:` reads as a scope qualifier and failed a tagged release run.
 
 ## 16. Native-binary release hardening (Go / desktop reference)
 
@@ -348,6 +380,15 @@ Portable gotchas for *shipping* a compiled native binary to end users, not just 
 - **Stamp identity into the binary, not only the asset name.** Embed the version + an app manifest (Go
   reference: `goversioninfo` writing a PE `VS_VERSIONINFO` + `resource.syso`; the manifest sets
   `requestedExecutionLevel` - `asInvoker` unless a command genuinely needs elevation - and `longPathAware`).
+- **Pin the tools, and pin the architecture.** A tool another repo may also install is invoked by pinned
+  version (`go run module@vX.Y.Z`), never from the shared PATH copy, and arch-sensitive flags are passed
+  explicitly rather than inherited from `GOARCH`. Gate tools - linter, spell-checker - are pinned too, or a
+  verdict depends on the day they were installed. A 32-bit toolchain's 2 GB address space turns a large test
+  into a flaky out-of-memory; pin the arch the test runs under.
+- **A build step that can silently fall back succeeds with the wrong artifact** - a missing localization
+  file, an unpinned extension, a flag the script forgot. The gate inspects the artifact itself: the MSI
+  tables, the binary's embedded build info and version resource, the package payload. Delete the previous
+  output first, so a missing result reads as "not verified", never as the last run's.
 - **Multi-module repo cache key.** When a repo has several `go.mod`, list *every* `go.sum` in the CI
   cache-dependency path, or the key falls back to the root module and silently misses on every run.
 

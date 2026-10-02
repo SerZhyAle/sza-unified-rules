@@ -23,6 +23,9 @@
   "ledgerShape": 1,
   "ledgerFile": null,
 
+  "docRegistryShape": null,
+  "docRegistryFile": null,
+
   "channels": [],
 
   "site": {

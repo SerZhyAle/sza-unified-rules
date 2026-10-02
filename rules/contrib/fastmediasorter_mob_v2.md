@@ -1672,3 +1672,281 @@ The deploy, and it is the owner's step, now shared by three tickets that changed
 same working tree (S3379, S3380, S3381). Until `deploy.ps1` runs and the plugin is updated, §7 reaches no
 session - including this one. The source ticket parks as blocked on that external step rather than claiming the
 contract is live.
+
+## Window survey 2026-10-02 - fifteen candidates, a campaign, and four contracts the canon never names
+
+The window is 2026-09-22 .. 2026-10-02, mined read-only from a canon session: nothing under `rules/` other
+than this file was touched by this entry, and every "landing" below is a **proposal**, not an applied edit.
+The repo shipped three releases in it (v2.60.9240.148 on 09-24, v2.60.9301.724 on 09-30, v2.61.0010.405 on
+10-01) and cut 33 commits, all but about eight of them auto-named timestamp commits of 200-1200 files, so
+`git log --stat` carries no signal; the evidence lives in `PLAN/RELEASE_QUEUE_DONE.md` (release 41 lists about
+600 tickets), `PLAN/archive/Sxxxx_*.md`, the gitignored agent memory and the catalog. The window's dominant
+activity was a whole-tree code audit (S3556, opened 09-25), a documentation-portal programme (S2945..S2979,
+S3533..S3552) and contract alignment (S3420..S3457, S4031..S4038).
+
+The structural finding that ranks above any single candidate: the repo's most valuable output of the window is
+**four catalog contracts the canon prose never names** (`CHECK-VERDICT`, `CHECK-BASELINE`, `CHECK-PLACEMENT`,
+`BUILD-EVIDENCE`, plus the two documentation-quality ones; the table is further down). A grep for
+`automated-checks|CHECK-VERDICT|BUILD-EVIDENCE|DOC-INTERNAL` over `rules/*.md`, `skills` and `tools` matched
+nothing outside `contrib/`: a repo that reads only the canon cannot learn that the check-reporting interface
+exists.
+
+### Raised
+
+Numbers are the reference project's own measurement, quoted from ticket text; "Provenance" below says which
+were re-run.
+
+1. **A tree too large for one pass is audited as a campaign** - proposed 2026-10-02, landing in
+   `skills/spec-to-audit/references/audit-campaign.md` with a driver paragraph in
+   [`skills/spec-to-audit/SKILL.md`](../../skills/spec-to-audit/SKILL.md) next to "Sweep mode" and a one-line
+   pointer in [DEVELOPMENT](../DEVELOPMENT.md) §11; deliberately not a new rules doc. A script partitions the
+   shipped files so every file is in exactly one slice (0 uncovered, 0 duplicated is a checked fact); slices
+   are generated children of one template, fixed by regenerating; one live defect-class registry, where the
+   second slice meeting a kind opens a tree-wide sweep ticket; a finding whose action names a sweep is not
+   closed until the roll-up confirms the sweep touched that site. Evidence: S3556, S3782, S3789 (756 findings
+   in the first 64 slices), S3994 (six "unlanded assignments" found only at roll-up; S3787 went `Verified`
+   without ever naming the site it had been assigned); 110 un-started slices carried a gate list dated 09-25;
+   a slice over a 1623-line file reported zero findings.
+2. **A gate's input roots and matcher shapes are claims; verify them against the tree** - proposed
+   2026-10-02, landing in [DEVELOPMENT](../DEVELOPMENT.md) §15 (new bullet after "Ratchet baselines") and a
+   clause in §9 ("recurring finding -> gate"). Evidence: S3789 section 2.1, five classes registered as "held
+   by a gate" read only `app_v2/src/main` while 460 `.kt` files of the flavor source sets were read by no gate
+   (103 swallowed-cancellation sites measured there); S3915, a matcher that skipped the equal-indent `fun`
+   line of an expression-body function; S3891, lint `NewApi` disabled for a whole module with no recorded
+   reason, re-enabling found 24 errors in 17 files (real `NoSuchMethodError` on API 26-32).
+3. **Baselines shrink in both directions, and a degraded path announces itself** - proposed 2026-10-02,
+   landing in [DEVELOPMENT](../DEVELOPMENT.md) §15 (extend the ratchet bullet) and one sentence under the
+   closure-facade invariants in [AI_USAGE](../AI_USAGE.md) §2. Evidence: S3423, `verdict-line-baseline.txt`
+   "may only shrink" (64 of 147 `assert-*.ps1` had no verdict literal); S3872, a snapshot that silently fell
+   back to `git rev-parse HEAD` and printed the same line as a real one, charging every sibling session's
+   uncommitted line to one ticket.
+4. **The check-reporting contracts exist in the catalog; the canon must name them** - proposed 2026-10-02,
+   landing in [DEVELOPMENT](../DEVELOPMENT.md) §15 (intro paragraph), [TESTING_AND_QA](../TESTING_AND_QA.md)
+   §1 (after "A check has four answers"), [DOCUMENTATION_CONCEPT](../DOCUMENTATION_CONCEPT.md) §6
+   (`DOC-INTERNAL-QUALITY`, `DOC-EXTERNAL-QUALITY`) and the inventory hints of
+   [`skills/contract-sync/SKILL.md`](../../skills/contract-sync/SKILL.md). Cited by id and section, never by
+   path. Pure pointer: the content is already agreed in the catalog.
+5. **A verdict is evidence only about the subject it inspected, and the check prints that subject** -
+   proposed 2026-10-02, landing in [TESTING_AND_QA](../TESTING_AND_QA.md) §1 with an echo in the `spec-to-audit`
+   "Green integrity" item 4. Evidence: S3440 `assert-check-subject.ps1`; five incidents across S1710, S1730,
+   S1781 and S1807 quoted `fk` (the phone module) as proof about the watch module it never compiled.
+6. **No test is re-run to green; known flakes go to a quarantine ledger** - proposed 2026-10-02, landing in
+   [TESTING_AND_QA](../TESTING_AND_QA.md) §3 (replace the second half of the last bullet). Evidence: catalog
+   `BUILD-EVIDENCE` rule 3; `assert-no-test-retry.ps1`; `docs/test-flaky-quarantine.jsonl`. Prose only: a
+   mechanical check across frameworks is **needs verification** (false-positive risk), not shipped blind.
+7. **A produced artifact must carry its own build version** - proposed 2026-10-02, landing in
+   [RELEASE_AND_DISTRIBUTION](../RELEASE_AND_DISTRIBUTION.md) §4 (after "pin the release build to the tag") and
+   [TESTING_AND_QA](../TESTING_AND_QA.md) §4 (device rung: confirm the device runs the new build before
+   diagnosing). Evidence: `BUILD-EVIDENCE` rule 2, a watch debug package built 2026-08-21 that reported an old
+   version and **downgraded the watch it was installed on**; `assert-artifact-version-fresh.ps1`.
+8. **Content-aware docs gates, and a corpus on the development branch is not live until the trunk merge** -
+   proposed 2026-10-02, landing in [LOCALIZATION](../LOCALIZATION.md) §2/§3,
+   [SITE_CONFIGURATION](../SITE_CONFIGURATION.md) §4 and [TESTING_AND_QA](../TESTING_AND_QA.md) §1. Evidence:
+   S3540, a parity gate printed "PASS - 105 recipes in 1:1 parity" while 105 of 105 RU recipes were English
+   text, and a link gate resolved against disk paths while 227 references to 5 addresses 404 on the live site;
+   S3542, Pages deploys only on pushes to `main` and the corpus sat on `DEBUG-v041`.
+9. **Trunk-direct commits are merged back into the development branch before the next release** - proposed
+   2026-10-02, landing in [RELEASE_AND_DISTRIBUTION](../RELEASE_AND_DISTRIBUTION.md) §4 (extend the "Nothing a
+   release generates .." bullet) and [`skills/release/SKILL.md`](../../skills/release/SKILL.md) Phase 1.
+   Evidence: `b15de552d` (2026-09-30) lists **533 conflicted paths**; three commits (`997391d54`, `cad7adea6`,
+   `24288945c`) had landed on `main` after the 09-24 release and were never merged back; the next release
+   `a1fd0ef6f` (10-01) had **0** conflicts. The pre-check is one command: `git rev-list --count <dev>..<trunk>`.
+10. **A store-quality criterion is proven on the store flavor, on the target form factor** - proposed
+    2026-10-02, landing in [PLATFORM_OVERLAYS](../PLATFORM_OVERLAYS.md) overlay B ("Play-specific gates worth
+    carrying"), the Play row of [CHANNEL_MATRIX](../CHANNEL_MATRIX.md) and one sentence in
+    [TESTING_AND_QA](../TESTING_AND_QA.md) §2. Evidence: S3529 was `Verified` on unit tests, then Play rejected
+    the watch artifact (versionCode 260924236, "Missing ongoing activity"): the store flavor's manifest removes
+    `POST_NOTIFICATIONS`, and an ongoing-activity notification without the grant fails silently on Wear OS 4+.
+    Third Wear-only rejection in four weeks.
+11. **A sibling product's alignment request is answered by a dated static read; the answerer audits itself** -
+    proposed 2026-10-02, landing in [CONTRACTS](../CONTRACTS.md) §4 (after the proposal paragraph) and a short
+    "answering a request" section of `skills/contract-sync/SKILL.md`. Evidence: the Lite request (42 questions)
+    and this repo's 281-line RESPONSE of 2026-10-01 surfaced **eight defects in the answerer** (S4031..S4038,
+    among them a cross-resource move that deletes the source without verifying the copy).
+12. **Fan-out writer agents: name each agent's files inline, re-run the shared checker yourself** - proposed
+    2026-10-02, landing in [AI_USAGE](../AI_USAGE.md) §3 (after the subagent-tier bullet). Evidence: S3553,
+    2 of 10 translator agents read a 0-indexed batch line as 1-indexed, two overwrote each other and two
+    batches went untouched, every agent reported "clean".
+13. **A closure that can name the fix performs it; pass-cache fingerprints include dot-sourced libraries** -
+    proposed 2026-10-02, landing in [DEVELOPMENT](../DEVELOPMENT.md) §15 (extend "One closure facade" and
+    "Cache the expensive gate's CLEAN verdict"). Evidence: S3515, in 4 of 5 measured sessions the agent re-ran
+    the closure only to run the command it had printed, about 12 of 41 minutes of five tickets (28%); the
+    cached fingerprint covered the suite but not a library the subject dot-sources.
+14. **Windows tool traps not in the canon** - proposed 2026-10-02, landing in
+    [GITHUB_INTERACTION](../GITHUB_INTERACTION.md) §6 (three bullets) and `hooks/guard-bash.ps1` (extend the
+    slash-argument check to `/sdcard` and `/data/local/tmp` in `adb` commands, with a `hooks/tests` case).
+    Evidence: an `adb push /sdcard/..` from Git Bash becomes `C:/Program Files/Git/sdcard/..` even through
+    `adb.ps1`; the 0-byte Store `python3.exe` stub opens a modal picker when probed by running it (S3342);
+    `Tee-Object | Select-Object -First 3` around a still-running writer returned in 7 s with the child orphaned
+    (99 then 141 catalog records).
+15. **Do not park at the owner-device status what a build or a unit test proves** - proposed 2026-10-02,
+    landing in [TESTING_AND_QA](../TESTING_AND_QA.md) §4 (last bullet) and [DEVELOPMENT](../DEVELOPMENT.md) §8.
+    Evidence: S3511, an emulator run for a one-line `domain/` change with a green unit test, about 11 minutes
+    saved on a 3-4 minute task; S3782, **17 tickets** waited for the owner on hardware though a build proves a
+    static finding. Owner decision 2026-09-29: device tests of the spawned tickets (43 at that date) happen
+    once, after the campaign ends.
+
+### Deliberately NOT raised
+
+So a later pass does not re-propose them:
+
+- **Orphan checks look like coverage (S3422)** - covered by [DEVELOPMENT](../DEVELOPMENT.md) §15 "a new gate
+  names its scope class at birth" plus `CHECK-PLACEMENT`; only the pointer (candidate 4) is missing.
+- **HOOK03 false positive on a gitignored `.claude/` (S3485)** - already fixed in the canon
+  (`tools/check-compliance.ps1` `$registeredOnDisk`, `fa3ce27`, 2026-09-24); recorded below as a canon fix made
+  from an FMS session.
+- **Closing-evidence relocation (`relocate-temp-evidence.ps1`, S3515 item 5)** - shipped in the canon harness
+  `tools/harness/spec_catalog/` (`fa3ce27`); nothing to raise.
+- **Lint once per ticket end, not per fixed finding (S3891: 5 runs, about 35 minutes, holds `Build.Phone`)** -
+  an owner rule born of Android toolchain cost; kept in this record only.
+- **detekt baseline signature resurface (7 shapes)** - detekt-specific; the one transferable clause (a baseline
+  keyed on a signature string re-reports debt on any edit) is already §15 plus the 2026-09-20 S3350 note.
+- **Security findings P1 (a credential published through an exported MediaSession, S3890; `SecretMasker`
+  misses `Bearer`, S3729)** - real, but Android IPC detail; the transferable part ("diagnostic redaction needs a
+  test per auth scheme") is too thin. Candidate for [SECURITY_AND_PRIVACY](../SECURITY_AND_PRIVACY.md) §7 only
+  if a second repo repeats it.
+- **Play quality thresholds from February 2027 (memory/bitmap/DEX) and the nightly leak watch (S2100, S3371)** -
+  overlay B facts dated before the window (2026-08-27 .. 09-03) except the nightly loop. Possible one line in
+  overlay B ("the watch is out of scope for the memory metrics; judge DEX over 10 MB at 25% optimization"); low
+  priority.
+- **Move/undo data safety (S4035 verify the copy length before deleting the source; S4034 do not offer an Undo
+  that cannot work; S4038)** - strong but file-manager specific (FMS, Lite, FileDO). If wanted: one bullet in
+  [TESTING_AND_QA](../TESTING_AND_QA.md) §6, "move = copy, verify length or hash, then delete; never trust the
+  transport's success; do not offer an action that cannot be performed". Promote if FileDO repeats it.
+- **Meta `ovr-platform-util upload-quest-build --validate` caught four things the in-house gate missed
+  (`MANAGE_MEDIA` / `EXPAND_STATUS_BAR`, `glEsVersion`, `focusaware`, `LEANBACK_LAUNCHER`); the first upload
+  freezes the package name** - belongs in the VR-store row of [CHANNEL_MATRIX](../CHANNEL_MATRIX.md) as one line
+  ("run the store's own validator before every upload; the listing is web-only"); fold it into the next edit of
+  that row instead of a standalone item.
+- **Draft contracts (below 1.0) are not final law** - the owner ruling is in the catalog's
+  `_meta/VERSIONING.md`; [CONTRACTS](../CONTRACTS.md) §5 could take one sentence, trivial.
+
+### Owed
+
+- **The six project hooks that protect one repository** (`observe-plan-tick-batching`,
+  `sweep-agent-lock-queues`, `guard-release-freeze`, `guard-manual-task-wait`, `observe-empty-grep`,
+  `refuse-unexplained-red-verdict`) are still not in `hooks/` (`hooks/` held `guard-bash`,
+  `guard-fire-and-forget`, `guard-uncapped-read`, `on-user-prompt` and `session-start` on 2026-10-02). The
+  2026-09-20 entry owes them; this is the status, not a new finding.
+- **`.claude/` is gitignored whole in this repo** (agent memory `project_claude_tree_is_gitignored_entirely`),
+  which is why a tracked-only canon reader misjudged it (HOOK03, fixed). Any canon reader of a project's
+  `.claude/` must treat disk presence as the source.
+- **The 2026-09-30 canon update took `agent-lock.ps1`, `preview.ps1` and `run-spec-queue.ps1` changes** whose
+  origin was not checked against FMS tickets; this record does not claim them.
+- **The deploy owed since 2026-09-22 did happen** - closed in its own entry below.
+
+### Provenance of the numbers
+
+Re-verified in this survey: 533 conflicted paths in `b15de552d` (534 lines of the commit message minus the
+header); `git merge-base --is-ancestor 24288945c DEBUG-v041` is false; `a1fd0ef6f` carries no conflict list;
+canon coverage of every candidate was grepped in `rules/` and `skills/`. Quoted from ticket text and **not
+independently re-run**: S3789's 756 findings and 103 sites, S3515's 28% and 2.2 of 2.9 minutes, S3891's 24
+errors and about 130, S3540's 227 and 444, S3553's 2 of 10. Treated as the reference project's measurement.
+
+## Overlay facts that went stale 2026-10-02
+
+The "Overlay facts" block at the top of this record was written on 2026-07-23 and is **not rewritten** (history
+is appended, not edited); where it disagrees with this entry, this entry is current.
+
+- **Flavors: eight, not six.** `foss` is the seventh and `xr` the eighth; Wear has its own `standard` / `noLegal`
+  flavors and its own cadence (evidence: the flavor-list diff of `CLAUDE.md` / `AGENTS.md` in the window).
+- **Version shape.** The stamp reads `2.60.9301.724`; phone `versionCode` `261001040`, watch `261001046`. The
+  watch publishes on its own track, `wear:production`.
+- **Meta Horizon.** The first build was uploaded to ALPHA on **2026-10-01**, so the `vr` package name is now
+  frozen (the store binds the listing identity to it).
+- **Three Wear-only Play rejections in four weeks:** 2026-08-31 (All Files Access), 2026-09-08 (scrollbar,
+  shape, large font), 2026-09-25 (missing ongoing activity, versionCode 260924236). All three are recorded in
+  `docs/PLAY_PUBLISHING_STATE.md`.
+
+## Canon edits made from an FMS session in the window 2026-10-02
+
+Recorded in the habit of the earlier "process note" paragraphs, so no reader infers the guardrail in
+[CLAUDE.md](../../CLAUDE.md) lapsed. Both edits shipped in canon commit `fa3ce27` (2026-09-24):
+
+- `tools/check-compliance.ps1` - the **HOOK03 reader** now treats a hook registered on disk as registered
+  (`$registeredOnDisk`), because this repo gitignores `.claude/` whole and a tracked-only reader reported its
+  hooks unregistered (source ticket S3485).
+- `tools/harness/spec_catalog/relocate-temp-evidence.ps1` plus its call in `_lib.ps1` - closing evidence is
+  relocated by a script with an exit code instead of a line of prose (source ticket S3515, item 5).
+
+The 2026-09-30 canon update (`adcd706`) also changed `agent-lock.ps1`, `preview.ps1` and `run-spec-queue.ps1`;
+whether any of that originated here is **unverified** and deliberately unclaimed.
+
+## Catalog contracts this repository owns 2026-10-02
+
+The record so far shows one contract, `FMSCFG`. This is the ledger of what the repo gave the portfolio, taken
+from the catalog's automated-checks and documentation-quality domains and `_meta/REGISTRY.md`. Versions are the
+catalog's on 2026-10-02; all are drafts below 1.0.
+
+| Contract | Version | Domain | Adopters (registry) | Repo-side enforcement |
+| --- | --- | --- | --- | --- |
+| `CHECK-VERDICT` | 0.10 | `automated-checks/` | FastMediaSorter_Lite (2026-09-25), CyrFlip (2026-09-26), doc-html-translate (2026-09-24) | S3437 verdict-line gate, `verdict-line-baseline.txt` (shrink-only) |
+| `CHECK-BASELINE` | 0.9 | `automated-checks/` | same three | S3423, S3540 baselines that may only shrink |
+| `CHECK-PLACEMENT` | 0.10 | `automated-checks/` | same three | S3422, `assert-gate-placement.ps1` (refuses a seeded record whose owner ticket closed) |
+| `BUILD-EVIDENCE` | 0.9 | `automated-checks/` | same three | S3440 `assert-check-subject.ps1`, `assert-artifact-version-fresh.ps1`, `assert-no-test-retry.ps1` |
+| `DOC-INTERNAL-QUALITY` | 0.9 | `documentation-quality/` | CyrFlip (verified 2026-10-01) | documentation gates of S2945..S2979 and S3533..S3552 |
+| `DOC-EXTERNAL-QUALITY` | 0.9 | `documentation-quality/` | CyrFlip (verified 2026-10-01) | same |
+| `ICON-SET` 0.16, `ICON-RENDER` 0.13, `ICON-EXTERNAL` 0.10 | as listed | `iconography/` | consumed by the desktop products (FileDO, StreamsPlayer among them) | `scripts/docs/export-icon-contract.ps1`, `assert-icon-*.ps1` |
+| `CAPTURE-OUTPUT` and the input-control family | 0.2 for `CAPTURE-OUTPUT` | `capture-output/` and neighbours (S3420..S3457) | StreamsPlayer is a producer of `CAPTURE-OUTPUT` | per ticket |
+| `FMSCFG` | per the earlier entries | wire contract | Lite, `fms_companion` | the byte-identical canonical vector |
+
+The adopter column is a pointer to the registry, not a restatement of it: the registry rows were not re-read
+id by id for this table. The table is also the data candidate 4 above needs.
+
+## Audit campaign S3556 2026-10-02 - recorded as in progress, not as complete
+
+The reference implementation of candidate 1. Status at the last reading, **2026-09-30**: 147 generated slice
+tickets (S3561..S3701 plus tails), 144 closed with 3 residuals cured, about 300 bug and sweep tickets
+(S3715..S4016) spawned; the defect-class registry (`research/05__defect-classes.md`) runs rows C01..C43; S3789's
+post-check of the first 64 slices found 756 findings. **The roll-up was still blocked
+(`BlockByOtherTask`) on 2026-09-30 and this record does not claim completion.** The closing numbers belong here
+when `summarize-audit-slices.ps1` exits 0, and not before. The owner decision of 2026-09-29 stands: device tests
+of the spawned tickets happen once, after the campaign ends (candidate 15).
+
+## The deploy owed since 2026-09-22 - closed 2026-10-02
+
+The entries for S3379, S3380 and S3381 each end "What is owed: the deploy". It happened: canon commit `c42e1e0`
+("Canon update 2026-09-23") carries `DOCUMENTATION_CONCEPT.md` §6, `SECURITY_AND_PRIVACY.md` §7,
+`SUPPORT_AND_FEEDBACK.md` §7 and the CONTRACTS changes, with `CANON_VERSION` and the plugin version raised in
+the same commit, and `CANON_VERSION` reads `2026.09.30.1` after `adcd706`. Those three sections reach sessions
+now. The earlier "owed" paragraphs are left as written, as history.
+
+## UI/UX reference role 2026-10-02
+
+The portfolio now has [UI_UX.md](../UI_UX.md), and its §1 names **this repository as the reference**: where FMS
+Android has an answer the other products take it, and a product that disagrees complies or amends. This entry
+records what that role rests on, from a read-only inventory of the tree on 2026-10-02.
+
+**Which documents hold the standard** (cite them; do not restate them in the canon):
+
+- `docs/ui/PHONE_UI_COMPONENT_PATTERNS.md` - tokens, dialogs, toolbars, lists, insets, landscape, with the
+  gates that hold them and the list of planned ratchets.
+- `docs/COMMUNICATION_POLICY.md` - the tone, per message type (toast, error, error dialog, empty state,
+  progress, success, destructive confirm, network), and the dead-end help-routing table.
+- The button taxonomy in `docs/ARCHITECTURE.md` ("Button Taxonomy"): one named style per role, at most one
+  filled primary per surface.
+- The icon vocabulary: `docs/icons/README.md` and the catalog's `ICON-SET` / `ICON-RENDER` / `ICON-EXTERNAL`,
+  which this repo owns.
+
+**What it does not rest on.** `:lint-rules` enforces **no UI rule** (its seven detectors are architecture,
+threading and leaks); all UI enforcement is PowerShell ratchet gates in `scripts/quality/assert-*.ps1`. The
+reference is therefore the documents plus the gates, not the code.
+
+**Drift the inventory found - items FMS owes itself**, because the canon tells other products to take the intent
+and the gate, not the raw counts:
+
+- "Compact elements" is documented default-on (`docs/ARCHITECTURE.md`) but the code default is `false`
+  (`AppSettings.kt`, `SettingsRepositoryImpl.kt`).
+- `dialog_action_button_min_height_compact` is 28 dp, below the 48 dp touch floor, and unreferenced anywhere
+  (a dead token); the architecture doc says the dialog pair is exempt from compaction.
+- **133** literal `android:textSize` in layouts against a documented rule of none, and 8 hex colours in layouts.
+- **515** `Toast.makeText` against **45** `Snackbar.make`, where the policy implies a snackbar for errors.
+- Empty and error strings that are joke-only or carry no next step (`no_files_found`,
+  `error_connection_*`, `error_network_connection_lost`), against the policy's own "reason plus invitation";
+  the Browse empty state has no action button.
+
+Counts are from a grep on 2026-10-02. **Open decisions that are the owner's, not FMS's to settle** (they bind
+the catalog, not this record): whether colour *values* are shared across platforms or only roles and semantic
+hues; the humour level (policy "light irony" against the web guide's "3/5, dry"); the contrast target a gate can
+enforce (`state.warning` day tone is 2.70:1 against white in `palette.json`, below 3:1); whether a destructive
+dialog's default focus is the safe answer (desktop) or the confirm (FMS: Enter confirms).

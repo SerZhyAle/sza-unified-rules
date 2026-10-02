@@ -52,7 +52,15 @@ metadata forward, so to change description/tags you must edit `winget/` and `win
 a day after merge before `winget search` sees it. Discoverability: `Tags` / `Moniker` / `ShortDescription`.
 winget-pkgs rejects LF/mixed line endings (`Validation-Line-Endings-Error`) - edit manifests CRLF-preserving,
 never with `sed`. Read the real failure from the build's `InstallationVerificationLogs` artifact, not the
-generic bot comments.
+generic bot comments. **Re-stamp every manifest file of every locale before the local install test**
+(`PackageVersion` in all, `InstallerUrl` + `InstallerSha256` in the installer file, `ReleaseNotesUrl` in the
+default locale), or the test re-verifies the previous release. The folder passed to `--manifest` must stay
+flat - an archive of past submissions beside the files breaks the gate - so `wingetcreate update --out` never
+targets `winget/`. The manifest that embeds the asset hash is the one generated file that may follow the tag:
+a single scripted commit right after the publish, checked against the published `.sha256` (see
+[RELEASE_AND_DISTRIBUTION.md](RELEASE_AND_DISTRIBUTION.md) §4). A portable package is launched through a
+symlink in `%LOCALAPPDATA%\Microsoft\WinGet\Links`, so the program resolves `os.Executable()` (or its
+equivalent) through symlinks before it looks for files beside the exe.
 
 *winget failure modes (each a real validation abort, learned the hard way - reference:
 `FastMediaSorter_Lite`):* point winget at the installer **directly** (`InstallerType: inno`, or
@@ -63,7 +71,11 @@ it); **don't add `Scope: user`** - it forces `--scope user` and aborts `0x8A1500
 installer"); **never point winget at a self-extracting single-file bootstrap zip** - Defender ML flags it
 `Program:Script/Wacapew.A!ml` (persistent false positive); a **heavy portable payload zip** can pass the
 scan then abort `0x80004004` (E_ABORT) mid-extract. The "Missing `NestedInstallerType`" note is a **cosmetic**
-`Validation-Guide`, not a failure.
+`Validation-Guide`, not a failure. On the **upgrade** path an Inno installer needs no `AppMutex` for a
+tray-resident or logon-started app: Inno checks it before `PrepareToInstall`, and winget's `/SUPPRESSMSGBOXES`
+answers the close-the-program prompt with Cancel, so every upgrade exits 1 without touching a file. Stop the
+program, the service and the worker in `PrepareToInstall`, in dependency order, instead; and set
+`UsePreviousGroup=no` when the group page is hidden, or Inno keeps reusing the old Start-menu folder.
 
 *Two anchor traps:* winget's **`PackageName` must equal the installed ARP DisplayName** - that string is how
 `winget upgrade` correlates, so if you rebrand the product keep `PackageName` (and the installer's
@@ -95,6 +107,10 @@ paths; detect packaging at runtime via `GetCurrentPackageFullName`.
   individual developer account** ("Error while retrieving Organization" - there is no Azure AD org behind a
   personal MSA); automation needs a service-principal (`--tenantId/--clientId/--clientSecret`), so for
   individual accounts the **Partner Center web submission is the reliable path**.
+- **WACK before every upload.** Run the Windows App Certification Kit elevated against the package and read
+  the verdict from the XML report (`OVERALL_RESULT`), never from `appcert`'s exit code, which is 0 even when
+  tests failed. Required tests block; Desktop Bridge advisories are recorded; an empty or malformed report is
+  not a pass (procedure: the `store-publish` skill's `references/msix-store.md`).
 - **Listing CSV import is export-then-merge, not upload-your-own.** A direct upload of a hand-authored
   listing CSV is rejected ("the ID column contains incorrect entries") because Partner Center's `ID` values
   are account-specific and undocumented. Working flow: **Export listing** from Partner Center, then fill the
@@ -119,7 +135,11 @@ separate review, and by default a **separate item id** each. Never pin a private
 force an id; keep the CRX/CWS signing key (`cws-key*.json`, `*.pem`) git-ignored. The MV3 permission list
 must map to real use - an unused permission is a common review rejection. Listing + "What's new" come from
 `extension/store/LISTING.md`; UI strings from `_locales/<lang>/messages.json` (keys at parity across shipped
-languages). Edge review is typically slower than Chrome; treat each as its own release.
+languages). Edge review is typically slower than Chrome; treat each as its own release. The Edge Add-ons API
+key lasts about 72 days and an expired one first shows as HTTP 401 at the publish step, after the tag: record
+its rotation date in the release state file and check it in the pre-flight
+([RELEASE_AND_DISTRIBUTION.md](RELEASE_AND_DISTRIBUTION.md) §6). A store that keeps the previous revision
+published while the new one is in review (Chrome `PENDING_REVIEW`) is `submitted`, not `live`.
 
 **VS Code Marketplace** - a **companion editor extension** (see [PLATFORM_OVERLAYS.md](PLATFORM_OVERLAYS.md)
 "Companion editor / IDE extension"), **not** a browser extension: different store, different auth. Published
@@ -132,13 +152,17 @@ changing publisher or name orphans installs. Reference: `CyrFlip`'s `SerZhyAle.c
 
 **Google Play (Android)** - AAB to the right track (internal -> closed -> production), staged rollout where
 appropriate. Play has no keyword field, so the description carries the functional phrasing. Foreground-service
-and permission declarations must match runtime use or Play rejects. `versionCode` must strictly increase.
+and permission declarations must match runtime use or Play rejects. `versionCode` must strictly increase. A secondary form-factor artifact (Wear, TV, Auto, XR) has its own store
+guidelines and its own rejections, and its criteria are proven on the store flavor, not by unit tests (see
+[PLATFORM_OVERLAYS.md](PLATFORM_OVERLAYS.md) Overlay B).
 
 **Sideload / direct APK** - the escape hatch for a flavor carrying capabilities a store would reject (broad
 overlay / accessibility / capture permissions): self-hosted APK off the site or GitHub, self-signed, its own
 (often gitignored) feature inventory. No review, so *you* own the safety and the honest-limitations copy.
 **VR store (Meta Horizon / Quest)** - a VR flavor to the VR store; the store binds the listing identity to
-`applicationId`, and review is its own track, decoupled from the Play flavors' cadence.
+`applicationId`, and review is its own track, decoupled from the Play flavors' cadence. Run the store's own
+validator (Meta: `ovr-platform-util upload-quest-build --validate`) before every upload - it caught four
+manifest defects an in-house gate missed - and note that the first upload freezes the package name.
 
 ## Cross-channel invariants (hold for every row)
 

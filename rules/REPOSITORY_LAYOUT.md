@@ -64,6 +64,8 @@ spelling is still read.
 > **Platforms with their own spec system keep it.** An Android project drives specs through its
 > `PLAN/Sxxxx_*.md` catalog rather than `docs/specifications/`. That is the Android overlay's spec
 > home; the taxonomy above still governs `guides/`, `roadmaps/`, and `contracts/`. Don't duplicate.
+> The same holds for any project that declares its own spec-id scheme in its agent-rules file: the declared
+> scheme stands wherever those files live, and the type-prefix rule above is not applied to them.
 
 > **A `DEV/` umbrella is an accepted variant.** Some repos keep the *internal* working docs under a single
 > `DEV/` tree (`DEV/CHANGELOG.md` as the engineering ledger, `DEV/plan/<YYYY-MM-DD>_<slug>.md` for tickets
@@ -97,6 +99,11 @@ If a project genuinely needs a build secret, it goes in the CI secrets store and
 name in the workflow - never written to a tracked file. `.gitignore` should pre-empt the common leaks
 (`*.pfx`, `*.snk`, `*.jks`, `*.keystore`, `.env`, `*token*`, `*secret*`).
 
+**A name-based glob also swallows legitimate files, silently** - neither `git add -A` nor a clean-tree check
+says a word. After adding one, check the candidates with `git check-ignore -v <path>`, and make the
+pre-flight list the files that are on disk, ignored and of a build-input kind. A build that passes only
+because an ignored file exists locally proves nothing about the tagged checkout.
+
 ## Built binaries & artifacts - retention policy (universal)
 
 Binaries are **build output, not source** - the repo never stores a compiled release.
@@ -118,6 +125,10 @@ Binaries are **build output, not source** - the repo never stores a compiled rel
   a drift to fix. (A repo may likewise deliberately track its *own* build output as a dev-distribution
   convenience under the same narrow-negation-with-a-why-comment rule; the authoritative release is still
   the release-host asset, never the committed copy.)
+- **A bundled third-party binary is tracked, pinned and verified.** Track it (every ignore-rule negation
+  carries a why-comment - a bare `*.exe` rule with a re-include for its DLLs once shipped packages without
+  the executable), pin it in a hash table, and have the release workflow verify every row of that table
+  before it builds.
 - **Version is a frozen-shape decision per platform** - see the overlay. The universal rule: the
   version is *derived mechanically*, not hand-bumped, and one authoritative form is stamped into the
   build and remapped where a channel demands a different shape. Keep the in-file stamp consistent with

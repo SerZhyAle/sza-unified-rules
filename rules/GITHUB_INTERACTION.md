@@ -117,6 +117,19 @@ versioned op that may cost money or become public) has one home:
   the exit code stays 0 and the mangled text lands in exactly the files where that value was the only
   record of who was doing what. Three accepted forms: double the leading slash (`//spec-dev ..`), prefix
   the call with `MSYS2_ARG_CONV_EXCL='*'`, or issue it from the PowerShell tool.
+- **Three more silent Windows traps, none of them caught by a shipped hook.** A device path (`/sdcard/..`,
+  `/data/local/tmp/..`) passed to `adb` becomes `C:/Program Files/Git/sdcard/..` even through a wrapper
+  script, because MSYS rewrites the wrapper's arguments before it runs - same two ways out as above, the
+  PowerShell tool or `MSYS2_ARG_CONV_EXCL='*'`. **Never probe an interpreter by running it**: a zero-length
+  `WindowsApps\python3.exe` stub opens a modal "Select an app" picker on the owner's desktop instead of
+  failing, so filter such stubs by file stat. **Never pipe a still-running writer through
+  `Select-Object -First N`**: the pipeline closes early, the call returns in seconds with
+  `$LASTEXITCODE` empty and the child carries on orphaned (a 141-insert catalog mutator was cut off this
+  way); capture to a variable or a file first, then filter.
+- **PowerShell reads the typographic quotes U+2018-U+201B as single quotes and U+201C-U+201E as double
+  quotes**, so a Ukrainian word with the real apostrophe (`прев’ю`) inside a quoted string is a parse
+  error: keep such text in a data file or build it with `[char]0x2019`. A negative `-split` limit splits
+  from the end; use `[regex]::Split`.
 - Prefer the project's own wrapper scripts over hand-rolled git/gh invocations with fragile nested
   quoting.
 - **This whole family ships as hooks with the `sza` plugin**, in [`hooks/`](../hooks/README.md) - the

@@ -247,3 +247,44 @@ of stamp-fiction the skill forbids. Both blocks were parsed with `ConvertFrom-Js
 
 **Evidence.** `check-compliance.ps1 -RepoRoot P:/WINDOWS/OneClickRunner` before -> `0 error(s), 3
 warning(s)`; after -> **`0 error(s), 0 warning(s)`**, exit 0.
+
+## Re-sync owed 2026-10-02 - stamp 2026.09.06.1 against canon 2026.09.30.1; one real finding
+
+Read-only pass over `P:\WINDOWS\OneClickRunner` (overlay A, 0 commits since 2026-09-06) with
+`check-compliance.ps1` on the working tree. Re-measured 2026-10-02: `0 error(s), 1 warning(s)`, the warning being
+`SZA-CANON03`. The stamp (`2026.09.06.1`, `adoptedOn` 2026-08-18) is **committed**; `git diff -- .sza-canon.json`
+is empty, so there is no uncommitted bump. This record's last entry is 2026-09-03 (the 09-06 version move was a
+re-stamp only). **No re-sync was run; nothing in the repo was edited.**
+
+### The dirty tree and the verdict
+
+Two entries, docs-only: `CLAUDE.md` (+3 / -1: the line "Cross-project contracts live outside this repository .."
+naming the catalog, and the scenario-storage bullet tagged `SCENARIO-FILE`) and the untracked `docs/contracts/`
+(a README, the `SCENARIO-FILE` pointer with its declared owner and three open debts, and an `INSTALL-TRUST`
+pointer with its gap declared). It is an **unfinished contract-sync run of 2026-09-23**: the README's "Bound, not
+yet aligned" table still owes `APP-BEHAVIOUR` / `APP-STYLE`, `PAGE-CONTENT` / `PAGE-STYLE` / `SITE-FAMILY-MAP` and
+`REPO-STAMP`.
+
+**Safe to commit: yes**, as one docs-only commit after `check-compliance` (0 errors with it), and best done
+together with the re-sync so the record exists. Per the canon, committing is on the owner's request.
+
+### What a re-sync must reconcile
+
+- **The real finding: an INVARIANT 4/5 gap.** `release.ps1` tags, pushes and runs `gh release create` by default
+  (`-DryRun` is opt-in), with no preflight verdict, no tests and no version-naming PASS. There is no test suite
+  (`PLAN/INDEX.md`: 23 tickets `Implemented`, only T0024 `Verified`). Under the reworded INVARIANT 5 a missing
+  verdict must stop the ship step; FastMediaSorter_Lite's `Release.ps1` (dry-run default, `-Push`, a bare-PASS
+  gate) is the pattern to follow.
+- **Contracts:** finish the alignment above and add the catalog registry rows; the `INSTALL-TRUST` exception is
+  dated but its ticket is "proposed, not yet opened".
+- **DOCUMENTATION_CONCEPT §6:** the site is `docs/` (index, guide, privacy), so both the mandatory half and the site
+  half apply (the page declares its address, the sitemap is generated).
+- **SECURITY_AND_PRIVACY §7:** the permission row is the per-scenario "Run as Administrator" elevation (nothing
+  elevates on its own); the network inventory is empty with a date and a reason, but the privacy page's "no network
+  calls of its own" must stay true while scenarios can launch yt-dlp (`SPECIAL_YTDLP`), and the row must say so.
+- **SUPPORT_AND_FEEDBACK §7:** `activity.log` is local-only and counts nothing.
+- **Stale kit copies:** `doc/` holds hand copies of kit documents - `VALIDATION` 132 lines against the kit's 331
+  (211 differing lines), `COST` 83 against 294, and no four-answers text. **Proposed 2026-10-02:** a repo that
+  copies kit documents stamps each copy with the kit date or version so the re-sync can compare it (medium-low
+  confidence; `SZA-CANON05` looks only at canon document names).
+- **Stamp:** refresh `adoptedOn`.

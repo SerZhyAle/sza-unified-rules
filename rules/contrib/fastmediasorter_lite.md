@@ -577,3 +577,138 @@ change, never that they may not.
   seam guide and the module map, exactly what the gate's own fix line says to check for) and SZA-STYLE02 on
   `CHANGELOG.md:352,354` - both hits are the `- ...` placeholder lines inside the **HTML-commented release
   template**, a fill-in marker rather than prose. Rewriting them to `..` would make the template read as text.
+
+## Re-sync owed 2026-10-02 - stamp 2026.09.06.1 against canon 2026.09.30.1, three errors, a dirty tree
+
+Read-only pass over `P:\WINDOWS\FastMediaSorter_Lite` (branch `main`) with `check-compliance.ps1` on the working
+tree as it is on disk. **No re-sync was run and nothing in the repo was edited.** Re-measured 2026-10-02:
+`3 error(s), 3 warning(s)` (overlay A, canon `2026.09.30.1`); the six `SZA-CTR01` warnings counted on the first
+pass are gone, **fixed in the canon tool on 2026-10-02** (every pointer carries the `| **Id** | .. |` header table
+and the old pattern did not read the bold markers; the pointers were never to be shortened).
+
+### The three errors, and why
+
+1. and 2. **`SZA-CANON05` on `docs/guides/DOCUMENTATION_CONCEPT.md` and `docs/guides/REPOSITORY_LAYOUT.md`,
+   "copy of a canon doc without a sync banner".** Caused by the **uncommitted tree, not HEAD**: HEAD still has valid
+   mirror banners (`Mirrored from Unified_Rules @ 2026.08.18.1 digest:961c9c8a8358 ..`), while the working-tree
+   files are 4-line "canonical pointer" stubs written under `DOC-INTERNAL-QUALITY` rule 4 (adopted 2026-09-26: "the
+   former canon mirrors are pointers"). The check wants `mirror` and `unified[ _]rules` in the first three lines;
+   a stub says neither (and `sza-unified-rules` has a hyphen, so the regex misses it). Repo-side fix, smallest and
+   honest: delete both stubs, repoint `docs/README.md` lines 5, 29 and 31 (and any `DOCUMENT_REGISTRY.jsonl` rows)
+   at the GitHub canon URLs, re-run `Test-DocRegistry.ps1` - the check's own printed fix. **Canon-side, better:**
+   CANON05 should accept a short pointer stub, because the catalog contract asks for exactly the shape the check
+   rejects (proposed 2026-10-02, `tools/check-compliance.ps1` lines 246-264 and a line in
+   [REPOSITORY_LAYOUT](../REPOSITORY_LAYOUT.md); a stub of at most about 12 lines that links the canon doc is
+   neither a mirror nor a copy).
+3. **`SZA-RULES02` on `AGENTS.md`, "no canon pointer".** A committed file (added in `658dff3`, a Codex
+   `/init`-style "Repository Guidelines" file of 35 lines that duplicates build/style/test text `CLAUDE.md` owns).
+   The fix that clears the error is a delegating block at the top that says `CLAUDE.md` is the authoritative agent
+   contract, carries the canon pointer (the `sza` plugin, start at `rules/INVARIANTS.md`, consumption model
+   reference, overlay A, this record), and that the stricter file wins; the delegation regex also accepts the
+   shorter "CLAUDE.md is the authoritative agent contract" form. The same edit should drop the `SZA-RULES03`
+   warning (line 35 restates RL1 from [REPOSITORY_LAYOUT](../REPOSITORY_LAYOUT.md)). The same Codex-style
+   `AGENTS.md` with no pointer appeared in the kit (the same error on 2026-09-23), the hub (patched 09-23) and
+   OneClickRunner already uses a 3-line delegate; **proposed 2026-10-02** as a standard delegation stub in
+   [NEW_PROJECT_CHECKLIST](../NEW_PROJECT_CHECKLIST.md) step 2, the `adopt-canon` skill and [AI_USAGE](../AI_USAGE.md)
+   §5, with the GitHub URL for INVARIANTS.md because the plugin is not loaded in a non-Claude agent.
+
+Warnings: `SZA-CANON03` (stamp `2026.09.06.1`, `adoptedOn` 2026-08-18, never refreshed) and `SZA-RULES05`
+(`CLAUDE.md` 491 lines, informational; the bulk is the seam guide and module map, as recorded 2026-09-03).
+
+### What a re-sync must reconcile
+
+The stamp is behind five canon changes: 2026-09-20 (AI_USAGE hook-reach correction, DEVELOPMENT narrowing
+overrides, INVARIANT 5 reworded, RELEASE 2 and 4, TESTING_AND_QA 1/5/7/8), 2026-09-22 (the contract-conformance
+rung; CONTRACTS.md new, INVARIANT 10, the contract declaration in NEW_PROJECT_CHECKLIST, the RELEASE contract gate,
+the `<ID>.md` pointers), 2026-09-23 (DOCUMENTATION_CONCEPT §6 registry, SECURITY_AND_PRIVACY §7 inventories,
+SUPPORT_AND_FEEDBACK §7 counting boundary) and 2026-09-30 (the tree-state stance).
+
+**Already satisfied - cite as evidence, do not rework:**
+
+- INVARIANT 5 / RELEASE §2: `tools/Release.ps1` ends in `Release-Preflight: <WORD> (v<ver>; ..)`, only a bare PASS
+  lets `-Push` through, a skipped step makes it COULD NOT VERIFY, and dry run is the default; CHECK-VERDICT exit
+  0/1/2 with skipped-is-not-pass in `docs/contracts/AUTOMATED-CHECKS.md`.
+- CONTRACTS / INVARIANT 10: 26 pointers named by id, README index, "last full alignment 2026-09-24", the catalog
+  named once (`CLAUDE.md` line 1), `<ID>.md` naming.
+- DOCUMENTATION_CONCEPT §6 registry: built in the dirty tree (`docs/DOCUMENT_REGISTRY.jsonl`, 92 records,
+  `document-registry-policy.json`, `tools/Test-DocRegistry.ps1`, a planted-defect harness
+  `tests/Integration/DocRegistry.ps1`).
+- SUPPORT §7: `privacy.html` already states "local-only connection counters (not telemetry, never leave your PC)";
+  send-logs is manual and pull (7.3).
+- The AI_USAGE hook-reach and DEVELOPMENT narrowing-override changes are inert here (no hooks, no shared profile
+  layer).
+
+**Genuinely owed:**
+
+- **The stamp.** Add the registry record-shape declaration beside `ledgerShape` (DOCUMENTATION_CONCEPT §6 item 5),
+  refresh `adoptedOn`, and settle the open DIVERGE from 2026-08-18: `"editions": []` while the Server edition has
+  its own winget package, AppId, ARP name and asset (`SerZhyAle.FastMediaSorter.Server`).
+- **SECURITY_AND_PRIVACY §7 inventories: absent.** A permission inventory (elevation prompts, the firewall rule,
+  the service install) and a network-surface inventory (the Share SFTP listener, router port mapping, the
+  check-host.net reachability probe, OCR/VLC/FFmpeg/Ollama downloads, LibreTranslate/Ollama calls, send-logs
+  mail), each row stating on or off by default, what turns it on, how long it lives and what leaves.
+- **SECURITY §7.4 "dies with its session" against the Server edition:** the Windows service starts at boot and
+  outlives any user-visible session; this needs a recorded reason (a deliberate scoped exception), not silence.
+- **RELEASE §4 "generate, commit, tag" against winget:** tag `v26.9.20.1206` at 12:11:48, then `28db299 winget:
+  both editions to 26.9.20.1206` at 12:24:56 - the manifest carries the published asset's hash, so it can only
+  follow the tag. Record it as a DIVERGE until the canon names the exception. **Proposed 2026-10-02:** a manifest
+  that embeds the SHA-256 of a published asset is the one generated file that may legitimately follow the tag,
+  as a single scripted commit verified against the published `.sha256` (`Store-Prepublish-Checks.ps1` already
+  does the comparison), landing in [RELEASE_AND_DISTRIBUTION](../RELEASE_AND_DISTRIBUTION.md) §4 and the winget
+  paragraph of [CHANNEL_MATRIX](../CHANNEL_MATRIX.md).
+- **TESTING_AND_QA §5, "a gate not run since the last release is unverified":** record the cadence for the
+  hand-run classes (`-OcrScenes`, `-Integration`, `Audit-Status.ps1`).
+- **GITHUB_INTERACTION / the working stance:** `CLAUDE.md` "Git & PR Workflow" (line 461) is silent, nothing to
+  reconcile; the Codex `AGENTS.md` should not instruct "check git status".
+- **This record:** its last entry is 2026-09-03; the work of 2026-09-20 .. 09-29 (contracts alignment 09-24,
+  DOC-QUALITY adoption 09-26, the registry, the 13-locale site gate, installer fixes) is unrecorded.
+
+### What the dirty tree is - and the verdict
+
+283 entries (201 modified, 82 untracked; +11,749 / -4,780 over tracked files), a multi-ticket Codex-driven work
+stream on `main` with the stamp untouched. By area: `src/` 110 modified and 32 new files (batch file operations -
+BatchPlan/Runner/Report/Selection - close-drain, settings import and persistence, the thumbnail cache and panel
+rows split into Grid/Details/Modern, share activation and the secure clipboard in the Share Manager, a probe
+scheduler, shell thumbnails, backdrop); `tests/` 21 modified and 36 new test files; `lang/` 24 files plus the
+root pages (index, trust, server, topics, glossary, `search-index.json`, sitemap) = site regeneration through
+`tools/Build-SitePages.ps1`; `docs/` 22 modified plus the registry files, the two stub guides and contract pointer
+edits; `tools/` 6 modified and 5 new (Test-DocRegistry, Test-SiteQuality, Capture-GuideScreens, termbase,
+translation fingerprints); `publishing/` 3; `CLAUDE.md` and `CHANGELOG.md` edited (the `CLAUDE.md` diff is +30/-30,
+mostly "(local specification)" link annotations). Two stray session logs, `.codex-085-build.log` and
+`.codex-085-tests.log`. HEAD has 10 commits since 2026-09-20; the two newest (`658dff3`, `857e5cf`) are owner
+snapshot commits titled "1".
+
+**Safe to commit: NO, as a whole.** It mixes five independent features, regenerated site output and unverified code
+with no recorded Run-AllTests or build result; the registry gate and `Build-SitePages -Check` should be re-run
+first. The only safe standalone commit is the `AGENTS.md` pointer edit (a clean committed file). The two logs
+should be deleted or gitignored, never committed. Per the canon, committing is on the owner's request.
+
+### Other candidates this repo's evidence supports - proposed 2026-10-02, none applied
+
+- *Inno installer: no `AppMutex` for a tray-resident app; `UsePreviousGroup=no`; stop the program in
+  `PrepareToInstall`* - `skills/store-publish/references/winget.md`, [CHANNEL_MATRIX](../CHANNEL_MATRIX.md) winget
+  failure modes, [WINDOWS_PACKAGING](../WINDOWS_PACKAGING.md) §3. Inno checks the mutex before `PrepareToInstall`
+  and under `/SUPPRESSMSGBOXES` (winget, scripted reinstall) the close-the-program prompt is answered Cancel, so
+  every upgrade exits 1 without touching a file (`a458cc4`, `c5106da`; no `AppMutex` / `UsePreviousGroup` hit in
+  `rules/` or `skills/`).
+- *Fix the document registry's file name, record fields and ship a minimal validator* - [DOCUMENTATION_CONCEPT](../DOCUMENTATION_CONCEPT.md)
+  §6, `adopt-canon`, a `docRegistryShape` stamp key (catalog `REPO-STAMP` first) and a possible `SZA-DOC01` check.
+  Lite and FastMediaSorter independently chose `docs/DOCUMENT_REGISTRY.jsonl` with `path`, `topic`, `area`,
+  `triggers[]`, `role` (`source|render`) and exclusions in `docs/document-registry-policy.json`; four more repos owe
+  the mandatory half. Medium-high confidence.
+- *A pre-release full-code-audit campaign as a deterministic, coverage-checked process* - the same landing as the
+  FastMediaSorter candidate (`skills/spec-to-audit/references/audit-campaign.md`). Here: `tools/Audit-Partition.ps1`,
+  `Audit-FanOut.ps1`, `Audit-Status.ps1`, `tools/lib/AuditCampaign.ps1`, `tools/audit-slice-template.md`,
+  `tests/Integration/AuditCampaign.ps1`; the `CHANGELOG` records long-run defects it found (the thumbnail panel, a
+  stack overflow on a dropped network drive, an unbounded log). The status check is red by design until the last
+  slice closes, so it is declared hand-run, never part of the test run. Medium confidence.
+- *Latest-wins async requests need a per-request identity, not a shared display counter* - [DEVELOPMENT](../DEVELOPMENT.md)
+  hygiene, after checking the catalog's `APP-BEHAVIOUR` first (the `CHANGELOG` fix "two files opened in quick
+  succession from a slow share"; `OpenCoordination.vb` and its tests are untracked). Medium-low confidence.
+
+**Dropped as already covered:** "never cache a failure" ([DEVELOPMENT](../DEVELOPMENT.md), the translation-cache
+fix is the same lesson); imported settings values bounded like stored ones ([CONTRACTS](../CONTRACTS.md) §5 item 6);
+links from tracked docs to gitignored specs (`DOC-INTERNAL-QUALITY`); the preflight naming the version with a dry-run
+default (INVARIANT 4 and 5 verbatim); the CANON03 version-gap rung (already filed in the 2026-08-18 and kit records);
+product-level items (a viewer handing a file to "the registered default player" that is itself, secure-clipboard
+history exclusion, access code against enforced setting).

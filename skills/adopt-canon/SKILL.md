@@ -67,6 +67,8 @@ say which root you used in the report.
 <!-- Mirrored from Unified_Rules @ <canonVersion> digest:<first12> on <YYYY-MM-DD>. Edit the canonical copy, not this. -->
 ```
 
+A repo that also copies kit documents stamps each copy with the kit date or version; the re-sync compares it.
+
 **A self-contained restatement is a fork, not a mirror.** If the repo declares that it deliberately duplicates
 the canon so it "stays self-contained", that is the thing to fix - either delete the restated rules and keep
 the pointer, or convert them into marked mirrors and re-sync. Record the choice as a DIVERGE delta.
@@ -101,6 +103,15 @@ live tree. This one file is what every other skill and the compliance gate read.
   gitignored-versus-committed mismatches, a documented remap that the script does not actually perform.
 - A rule that genuinely is a repo-specific delta but reads like a restatement gets an inline
   `<!-- canon-ok: <reason> -->` so the gate stops flagging it.
+- **`AGENTS.md` is a delegating stub** - a Codex-style `/init` creates one with no canon pointer, which the
+  compliance gate reports as an error. Replace its body with exactly this, and nothing else (never a second
+  copy of commands or style):
+
+  ```
+  Read CLAUDE.md in full; it is the authoritative agent contract and carries the canon pointer; the
+  stricter file wins. If you are not Claude Code, the canon plugin is not loaded: read
+  rules/INVARIANTS.md at https://github.com/SerZhyAle/sza-unified-rules first.
+  ```
 
 **What "restated" means in practice**: size is not the signal. A 500-line rules file that is all module
 architecture is clean; a 130-line file that re-authors the language policy, the house style and the
@@ -177,7 +188,8 @@ moving, then run `validate` and cite its exit code.
 
 The staleness ladder, from the compliance gate:
 
-- Digest equal -> nothing to do.
+- Digest equal -> nothing to do, the stamp included: a version moved without a digest change is not written
+  by hand (REPO-STAMP rule 8).
 - Digest differs, version within one minor -> **warn**, with the list of rule docs whose per-file digest
   changed. Re-read exactly those, reconcile, then update `canon.version` and `canon.coreDigest`.
 - Digest differs with a version gap of 2 or more, or `adoptedOn` older than 180 days -> **error**. Re-run this

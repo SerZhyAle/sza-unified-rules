@@ -518,3 +518,140 @@ error about the `workflow` scope - which the check's own fix line names as legit
 
 **Commit discipline.** The working tree carried in-flight work across the three READMEs and twelve
 `Localization.*.xaml` files. Only `.sza-canon.json` was staged; `git add -A` was never run.
+
+## Mined 2026-10-02 (window 2026-09-20 .. 10-01) - record last dated 2026-09-03
+
+Mined read-only from a canon session. 13 commits in the window; releases **26.0924.1704** (09-24; the first
+attempt `26.0924.1655` was retired) and **26.1001.0140** (10-01). `gh` was not installed on the mining machine, so
+no CI run history was read, and `PLAN/` is gitignored, so ticket bodies (SP-0156, SP-0180, SP-0184) were read only
+through their commits and scripts.
+
+### Overlay facts that changed since the record (07-23, 07-26)
+
+- **The "no-installer variant" statement is false.** An Inno installer channel has existed since 2026-08-21
+  (SP-0092, `installer/StreamsPlayer.iss`) and the release assets now include
+  `StreamsPlayer-<ver>-windows-x64-setup.exe`. The **frozen-anchor list gains the Inno `AppId`
+  `{15F4F08C-E78B-41B7-9039-6A3332D7D080}`**, plus `DefaultDirName` `{autopf}\StreamsPlayer`,
+  `OutputBaseFilename` and `AppName` "STREAMS Player". `AGENTS.md` line 147 already says "installer variant"; the
+  record and the stamp do not.
+- **`.sza-canon.json` `site.pages` lists only `index.html` and `privacy.html`**; `docs/trust.html` exists
+  (INSTALL-TRUST adopted 2026-09-24).
+- **Contracts:** the repo now owns four (`APP-BEHAVIOUR`, `APP-STYLE`, `USER-PLAYLIST`, `DIAGNOSTIC-REPORT`) and is
+  a producer of `INSTALL-TRUST` and `CAPTURE-OUTPUT`; the record predates all of it.
+- **Version stamp clock.** Stamps at or below `26.0806.2131` were UTC and read one to two hours early; the shape is
+  now the author's local time (Europe/Malta). `5cea4cc` (10-01): `build.ps1` reads one local instant per
+  invocation and passes `-p:Version/AssemblyVersion/FileVersion/InformationalVersion` to every dotnet call without
+  ever writing `Directory.Build.props`, which stays the release sentinel. `scripts/assert-release-version.ps1`
+  compares against every `v*` tag plus an off-tag list (`26.0806.2225`, a stamp the Microsoft Store shipped that
+  GitHub and winget never carried).
+
+### Compliance now: 0 errors, 3 warnings (re-measured 2026-10-02, canon `2026.09.30.1`)
+
+- **`SZA-CANON03`:** stamp `2026.09.06.1`; 15 rule docs changed since, including the new CONTRACTS, so a full
+  `adopt-canon` re-sync is owed.
+- **`SZA-CTR01` x3 is gone: fixed in the canon tool on 2026-10-02.** The three pointers (`APP-BEHAVIOUR.md` 53
+  lines, `APP-STYLE.md` 48, `CAPTURE-OUTPUT.md` 45) carry the house `| **Id** |` header and were judged on length
+  alone. **No drift** in any of the three: versions and roles equal the registry (`APP-BEHAVIOUR` 0.10 draft,
+  `APP-STYLE` 0.10 draft, `CAPTURE-OUTPUT` 0.2 draft with this repo a producer of `video_frame`, `stream_video`
+  and `stream_audio`). About a third of the first two files is a history of closed deviations
+  (2026-09-22 .. 09-24) that the registry's closed rows already hold; trimming is optional now.
+- **`SZA-CTR02` x2 remain** (`git grep -F` for the catalog path finds `CLAUDE.md:3`, which is the one allowed
+  place, plus two more). Exact replacements:
+  1. `docs/contracts/README.md`, lines 3-4: say the contract store is "located by the first line of `CLAUDE.md`"
+     instead of naming its path; the next paragraph already says the location is named in exactly one file.
+  2. `tools/Sync-IconGlyphs.ps1`, the `.EXAMPLE` lines 35-36: drop the literal catalog path. The `-CatalogRoot`
+     parameter already defaults to `$env:SZA_CONTRACTS_ROOT`, so the first example needs no path at all and the
+     `-Check` example takes `<catalog root, see CLAUDE.md line 3>`; the script's own comment already says "never
+     a literal path". Re-run the compliance tool afterwards; both lines should clear. Not applied from here.
+
+### Release engineering added in the window
+
+`26.0924.1655` was retired and `26.0924.1704` released after the CRLF failure below (`803579c`, re-stamp
+`36dd448`); `26.1001.0140` was released with committed smoke and code-audit verdicts, green-CI and pinned-natives
+gates in `release.yml`, no replaced asset, and the Pages deploy behind a `ci-gate` job (`cfb659a`, SP-0156).
+
+### Audit result, with a caveat
+
+`release-verdicts/26.1001.0140.audit.json` holds 293 file rows and **62 findings** (High 0, Medium 12, Low 50):
+11 fixed in `abab3a6`, 5 Medium exceptions (installer `InstallDelete` of `{app}`, the smoke-verdict commit not
+compared to the tagged commit, natives comparison limited to two DLLs, native Stop/Dispose on the UI thread for
+the broadcast leg, `RemoveDownloaded` deleting pinned rows) tracked in SP-0183, 46 Lows in SP-0184. **The caveat:**
+`scripts/Assert-AuditVerdict.ps1` tests only "non-empty", and the file shows it is satisfied by boilerplate - all 11
+`fixed` findings carry one identical evidence string ("expected: the defect no longer reproduces and the
+build/test gates stay green | actual: fixed in commit abab3a6; scripts/check.ps1 PASS .."), all 5 `exception`
+findings one identical `ownerDecision` sentence, and all 46 `ticketed` Lows point at one ticket with 6 summaries
+literally `TICKET`. Whether the owner said what the exceptions quote cannot be read from the file.
+
+### Hygiene
+
+`memory/MEMORY.md` is **1274 lines, 114,783 bytes** (roughly 25-30k tokens) against its own header ("add one link
+per entry; keep entry bodies in separate files") and the `CLAUDE.md` line calling it "the always-loaded index"; the
+other indexes in the portfolio run 11-90 lines. Four of the 13 window commits (`95fa72b`, `40f1076`, `6cdf6ae`,
+`cfb659a`) have the message `1`, and `cfb659a` touches 165 files including the release and Pages workflows -
+[GITHUB_INTERACTION](../GITHUB_INTERACTION.md) §3 asks for an imperative subject, and the release machinery changed
+under an unnamed commit (CyrFlip has two such commits, `a928ace` and `e619590`).
+
+### Candidates delivered from this record - proposed 2026-10-02, none applied
+
+- *A suite is proven on a clean checkout; byte-exact files say so in `.gitattributes`* (also CyrFlip) -
+  [TESTING_AND_QA](../TESTING_AND_QA.md) §3, one sentence in [REPOSITORY_LAYOUT](../REPOSITORY_LAYOUT.md); the
+  `store-publish` MSIX reference already holds the CSV-only version (`-text`). Evidence: `803579c`, the release
+  job of `26.0924.1655` failed because the runner's `core.autocrlf=true` plus `text=auto` turned the LF vendored
+  ICON-SET SVGs into CRLF and every SHA-256 in `assets/glyphs/PROVENANCE.txt` stopped matching; the re-stamped
+  release commit cites "CRLF checkout (core.autocrlf=true worktree): 1119/1119 tests passed" as its proof.
+  Streams memory (09-23, 09-30): line endings are a fact about the checkout, not the file; count CRLF, LF and lone
+  CR in PowerShell before a scripted insert, `grep -c $'\r'` is unreliable.
+- *A published tag is never rebuilt; a tag that failed before publishing is retired* (also CyrFlip) -
+  [RELEASE_AND_DISTRIBUTION](../RELEASE_AND_DISTRIBUTION.md) §4 and `skills/release` Phase 6 item 4. SP-0156: "an
+  already published asset is never replaced with different bytes"; `36dd448` re-stamps because the first tag
+  "failed its release job and published nothing, so the number is retired rather than reused".
+- *The ship step's verdict travels as a committed file that the tag workflow checks* -
+  [RELEASE_AND_DISTRIBUTION](../RELEASE_AND_DISTRIBUTION.md) §2 (a paragraph after "Wire the gate into the command
+  that ships") and `skills/release` Phase 3. `release-verdicts/26.1001.0140.json` (smoke) and `.audit.json`;
+  `release.yml` requires a completed green CI run for the tagged commit, the smoke verdict,
+  `Assert-AuditVerdict.ps1`, the pinned natives and no replaced asset. The smoke can only run on the owner's
+  machine (real audio and video), so its PASS must travel as a file inside the tagged tree; the writers refuse a
+  dirty tree and write nothing on red; the checker requires gate, result and version to match, the audited commit
+  to be HEAD or an ancestor, and nothing outside `release-verdicts/` changed since. Fixture tests:
+  `tools/audit/Test-AuditVerdictGate.ps1`. The canon's INVARIANT 5 and RELEASE §2 say to name the version and wire
+  the gate into the shipping command, but not where it is enforced for a tag-triggered workflow, nor the freshness
+  rule.
+- *A verdict gate that checks shape is satisfied by boilerplate* - [TESTING_AND_QA](../TESTING_AND_QA.md) §5 after
+  the waiver paragraph, the same family as "validate the instrument" (§1): reject duplicated evidence and
+  placeholder summaries, require a fixed finding's evidence to cite its own command and exit code, record an
+  owner exception in the owner's own words with date and place. Evidence is the audit file above; the facts are
+  exact, the intent is inferred (confidence medium-high).
+- *A pre-release audit of code that did not change, sliced, with a coverage manifest and a closing exit code*
+  (CyrFlip converged independently: `PLAN/S0027_full-code-audit-pre-release` with 18 phases, `Get-AuditCoverage.ps1`
+  / `Test-AuditCoverage.ps1`, exit 0 all closed, 1 one open, 2 a file missing or listed twice) -
+  `skills/spec-to-audit/references/audit-campaign.md` and [TESTING_AND_QA](../TESTING_AND_QA.md) §7. Streams:
+  `docs/agent/CODE_AUDIT.md` and `tools/audit/` (1370 lines: slicer, fan-out, summary, fixture tests; class A
+  always, class B behind a switch; markup and code-behind never split; 16 read-only slice auditors; High and Medium
+  block, Low is ticketable). Read together with the boilerplate caveat above.
+- *A site that deploys on push needs a CI gate between the push and the deploy* -
+  [SITE_CONFIGURATION](../SITE_CONFIGURATION.md) §4. `pages.yml` (`cfb659a`): a `ci-gate` job polls
+  `gh run list -w ci.yml -c <sha>` for up to 25 minutes and requires success before `deploy`; CI runs
+  `scripts/check-docs.ps1` and `tools/site/build-site.ps1 -Check`. Streams memory of 2026-08-21 records why: the
+  generated site once published a download tile before the release that held the file.
+- *The version stamp names its clock; "newer than every published version" is checked against every channel's
+  list, including a stamp that shipped on one channel and never got a tag* - one bullet in
+  [RELEASE_AND_DISTRIBUTION](../RELEASE_AND_DISTRIBUTION.md) §4 and the catalog `PACKAGE-VERSIONING` (this repo is a
+  declared consumer; FileDO filed `PROPOSAL-2026-09-30-filedo-desktop-stamps.md`). The local-clock and in-build
+  rules are already catalog rules 1 and 6, so only the clock choice and the off-tag clause are new.
+- *PowerShell source traps that hit Ukrainian and Russian text* - [DEVELOPMENT](../DEVELOPMENT.md) §15 beside
+  "Reachable exit codes (PowerShell)". Memory 2026-09-23 (SP-0109) and again 2026-09-30 (SP-0160): PowerShell reads
+  U+2018 .. U+201B as single quotes and U+201C .. U+201E as double quotes, so a single-quoted table with the
+  Ukrainian word that uses the real apostrophe fails to parse (build such text with `[char]0x2019` or read it from a
+  data file); a negative `-split` limit splits from the end (use `[regex]::Split`); in the Bash tool `$'\r'`
+  inside `$( )` inside double quotes is a parse error for the whole call. The first recurred within a week; no
+  canon text mentions any of them.
+- *The always-loaded memory index has no size gate* - a warn-only check (proposed name `SZA-MEM01`: a committed
+  `memory/MEMORY.md` or `.claude/agent-memory/**/MEMORY.md` over 200 lines) and the measured portfolio numbers in
+  [AI_USAGE](../AI_USAGE.md) §4; [AI_USAGE](../AI_USAGE.md) §4 already says to give the index a target and a ratchet
+  that refuses growth, nothing enforces it. Near-zero false positives on today's portfolio: this one repo trips it.
+  **Needs verification** against the real repos before it ships as a check.
+
+**Dropped as already covered:** parallel readers safe and parallel writers not (kit `docs/PARALLEL.md`, `COST.md`);
+`[skip ci]`, the `paths` filter and the tag-only trigger ([RELEASE_AND_DISTRIBUTION](../RELEASE_AND_DISTRIBUTION.md)
+§1); tag regex and build pinned to the tag (§4, `BUILD-EVIDENCE` rule 2); source-scanning conformance tests
+([DEVELOPMENT](../DEVELOPMENT.md) §9); check-placement records (`CHECK-PLACEMENT`).

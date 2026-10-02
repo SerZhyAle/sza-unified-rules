@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Contract | `REPO-LAYOUT` |
-| Version | 0.9, draft |
+| Version | 0.10, draft |
 | Home | the shared contracts catalog, domain `rule-adoption/` (the path is in [CLAUDE.md](../../CLAUDE.md)) |
 | Role | **producer and consumer**: this repo states the shape in [rules/REPOSITORY_LAYOUT.md](../../rules/REPOSITORY_LAYOUT.md) and its gate is what addresses the names |
 

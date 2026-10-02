@@ -63,6 +63,23 @@ Local-verify pitfalls, all hit in practice:
   `explorer.exe "shell:AppsFolder\<PFN>!<AppId>"`.
 - A path-independent single-instance mutex makes the packaged copy exit silently if a dev copy is running.
 
+## Pre-submission: the Windows App Certification Kit (WACK)
+
+Run it against the (self-signed, local) package before every Partner Center upload. The facts that matter:
+
+- **`appcert.exe` lives in its own kit directory**, not in the SDK `bin\<ver>\x64`, and refuses even `/?`
+  unless the shell is **elevated**.
+- **Its exit code is not the verdict.** It returns 0 for a session that ran and found failures, and rolls an
+  optional test's FAIL into `OVERALL_RESULT=WARNING`. Read the verdict from the XML report's `OVERALL_RESULT`.
+- **Judge required tests separately from the optional Desktop Bridge advisories** (Application count, Blocked
+  executables). Required rows block the upload. Advisories are recorded with the run and
+  kept visible, not rewritten away.
+- **An empty, malformed or advisory-only report is not a pass** - fail closed, and delete the previous report
+  first so a missing one reads as not verified. Give the verdict parser regression checks for exactly these
+  cases.
+- WACK can force manifest changes (for example `PerMonitorV2` DPI awareness in every exe's embedded manifest);
+  a fix belongs in the product's build, then WACK is re-run.
+
 ## Container virtualization - static pre-checks before packaging
 
 MSIX runs the desktop app in a light container with file and registry virtualization. The same exe ships

@@ -27,6 +27,12 @@ apply (a CLI tool has no site, a single-locale app skips localization).
 
 - Author the repo's agent-rules file ([AI_USAGE.md](AI_USAGE.md)): reference `CLAUDE.md` (+ `AGENTS.md`),
   the skill/command routing, and a memory folder.
+- **`AGENTS.md` is a delegating stub, never a second rules file.** Its body is: "Read CLAUDE.md in full; it
+  is the authoritative agent contract and carries the canon pointer; the stricter file wins." plus, for
+  non-Claude agents, where the plugin is not loaded, the GitHub URL of the always-in-context page
+  (`https://github.com/SerZhyAle/sza-unified-rules`, `rules/INVARIANTS.md`). No second copy of commands or
+  style. A Codex-style `/init` writes an `AGENTS.md` with no pointer, which trips the compliance check - replace
+  it with the stub.
 - Load the owner profile ([AUTHOR.md](AUTHOR.md)) so tone, language, and the product compass are set
   from commit one.
 
@@ -70,6 +76,8 @@ apply (a CLI tool has no site, a single-locale app skips localization).
 
 ## 7. Product surfaces (as applicable)
 
+- **Has a user interface?** Build it against the family look and voice ([UI_UX.md](UI_UX.md)): the
+  compact layout, no advertising, the message formulas, and the shared palette, glyphs and button roles.
 - **Multi-language?** Adopt the localization workflow ([LOCALIZATION.md](LOCALIZATION.md)): which
   surfaces localize, the parity-enforced string tool, the shipped locales.
 - **Store submission?** Fill the privacy/permissions posture

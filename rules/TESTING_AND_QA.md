@@ -19,6 +19,12 @@ a single one of them hold the closing status back; only the human pass converts 
 project this was not a formality: a ticket was declared done carrying one unticked device line, and an
 hour on real hardware showed one of its five acceptance criteria failing outright.
 
+**A verdict is evidence only about the subject the check inspected, so the check prints that subject.** A
+check names what it covered - module, variant, target, file set - where a reader cannot miss it, and a
+completion claim quotes that line together with the exit code. A green about the other module is not a
+green about this one: in the reference project a phone-module check was quoted as proof about a watch
+module it never compiled, five times across three tickets, and it exits 0 on a watch-only change.
+
 **A check has four answers, and folding the last two together is how it starts lying.** Pass and
 found-a-defect are obvious; *could not verify* is the third the exit-code invariant already demands
 ([AI_USAGE.md](AI_USAGE.md) §2). The fourth is **not applicable in this configuration**, and a check
@@ -30,10 +36,19 @@ on one release sweep in the reference project:
   geometry at face value and called **5 of 5** screens off-glass; a walk over a navigation tree
   reported **18 of 28** rows unreachable. A checker in that state does not merely miss defects, it
   **manufactures release blockers that do not exist** - and the cost lands twice, once on the people
-  chasing them and once on the credibility of every later red from the same check.
+  chasing them and once on the credibility of every later red from the same check. The same holds for a
+  stated runtime budget: **a gate with a budget is timed on a synthetic input of the promised size**, not
+  on the tree it happens to run on today - a docs gate took 1.2 s on the near-empty live tree and 32.7 s on
+  a synthetic full-size corpus.
 - **A false finding is as expensive as a miss, and louder.** "A real defect would be one row among
   eighteen false ones" is the failure stated exactly: the check kept running, kept reporting, and had
   become unreadable. Precision is not a nicety on a check whose output a human must triage.
+
+**The machine-readable interface of a check is already specified - a new gate adopts it.** The exit-code
+vocabulary and the one verdict line are `CHECK-VERDICT`, the baseline file shape is `CHECK-BASELINE`, the
+placement record is `CHECK-PLACEMENT`, and the artifact and subject evidence is `BUILD-EVIDENCE`, all in the
+shared catalog's automated-checks domain ([CONTRACTS.md](CONTRACTS.md)). Cite them by id; do not invent a
+private vocabulary beside them.
 
 ## 2. Evidence ladder - cheapest rung that matches the risk
 
@@ -58,8 +73,20 @@ Don't over-test a typo or under-test a migration. Pick the rung the change actua
 - **Contract conformance** - for anything a second product reads or writes: the vectors from the shared
   contracts catalog, at the version this product's registry row names ([CONTRACTS.md](CONTRACTS.md) §6).
   A vector copied into the repo and edited locally proves nothing; run against the catalog's copy.
-- Track known-broken tests explicitly so a pre-existing red doesn't mask a new regression - a green you
-  can't trust is worse than a red you can.
+- **A suite is proven once from a fresh checkout, not only in the author's working tree** - under the
+  runner's line-ending setting (`core.autocrlf=true`) and on a machine without the author's installed
+  state. A file that must stay byte-exact - a contract vector, a hash-pinned vendored copy, a golden
+  stream, a Partner Center CSV - is marked `-text` or `eol=lf` in `.gitattributes` with a why-comment
+  (in the reference project a release job failed because `text=auto` turned vendored LF artwork into CRLF
+  and every pinned SHA-256 stopped matching); a comparison of content normalises line endings first. A
+  test that reads a gitignored or machine-specific path skips explicitly when it is absent.
+- A GUI-subsystem exe has no exit code in PowerShell unless it is started with
+  `Start-Process -Wait -PassThru`; a bare call leaves `$LASTEXITCODE` empty and a self-test tier reads
+  nothing.
+- **Never retry a failing test until it passes.** A retry removes the report of the flake, not the flake -
+  a one-in-five failure passes better than 99% of the time behind three retries. A known flake or a
+  known-broken test gets a ledger row with a ticket and an owner and stays visible in every report, so a
+  pre-existing red does not mask a new regression - a green you can't trust is worse than a red you can.
 
 ## 4. Device / emulator verification *(overlay)*
 
@@ -74,7 +101,15 @@ For anything a user sees or touches, drive it on real hardware or an emulator, n
 - Android reference: on-device UI drive + logcat harvest (`spec-test-device`), batch sweeps over pending
   tickets (`spec-sweep`), quick ad-hoc device chores via the adb wrapper. Beware emulator quirks
   (unindexed media store, untappable bottom-sheet items, touch wedges) - they cause false FAILs.
+- **Before diagnosing "the fix does not work" on a device, confirm the device runs the new build.** Read
+  the installed version back from the device; a same-version debug build can silently keep the old code,
+  and the old behaviour then looks like a failed fix.
 - Desktop/CLI: run the built artifact on a clean machine/VM; verify install, first-run, and uninstall.
+  **A check that drives the real app on the owner's machine works on a copy where it can** (a sandboxed
+  data folder). Where it cannot, it backs up the real state first, refuses to start if the backup fails,
+  resolves the way back before the first scene, and restores in `finally`; it never writes a canary into a
+  file that holds the user's data. With several sessions on one machine, claim the GUI slot first and
+  address the app by PID.
 - **A repeatable UI-flow harness sits above ad-hoc device drive.** Scripted flows (reference: Maestro) run
   the core journeys the same way every time, in CI. Triage a red at the harness level first: a flaky harness
   (a device that wipes config between runs, a timing wedge) fails for its own reasons - confirm the app
@@ -82,6 +117,11 @@ For anything a user sees or touches, drive it on real hardware or an emulator, n
 - **Bind "needs device test" to the ticket lifecycle.** A change only a human can confirm on hardware parks
   in an explicit test-blocked status (with a status-gated probe, see [DEVELOPMENT.md](DEVELOPMENT.md) §8)
   until the owner verifies on a real device - a structured hand-off, not an informal "please test".
+  **That status is for effects only hardware shows.** A ticket states its proof level up front - edit,
+  build, unit or device - and a change a build proves (a static finding) or a green targeted unit test
+  proves in a layer with no UI closes without a device pass; in the reference project 17 static-audit
+  tickets waited on hardware that a build had already settled. A human-gated batch is drained once, after
+  the campaign that spawned it, not ticket by ticket.
 
 ## 5. Pre-release sweep (gates the release)
 
@@ -105,11 +145,24 @@ signature covered a tooling defect while appearing to accept a known limitation.
 source - an infrastructure fault is not a coverage gap - and make a fresh could-not-verify block the
 ship exactly as a FAIL does, since neither one proves the thing.
 
+**A verdict gate that checks only shape is satisfied by boilerplate.** A field that must be non-empty gets
+the same sentence eleven times: in the reference project all 11 fixed findings carried one identical
+evidence string, all 5 exceptions one identical owner sentence, and 6 summaries were literally `TICKET`,
+and every one passed. The gate rejects duplicated evidence and placeholder summaries; a fixed finding's
+evidence cites its own command and exit code; an owner exception is recorded in the owner's own words with
+the date and where they were said, never as text the agent composed on the owner's behalf.
+
 **A gate that has not run since the last release is itself unverified.** The smoke above had rotted:
 three independent defects sat in it at once because nothing had invoked it in months, and they were
 found by the release that needed it rather than before. Anything the release depends on runs on a
 cadence that does not wait for the release - in CI, in the periodic sweep, or on a schedule - or its
 first run in months happens at the worst possible moment.
+
+**A gate's failure branches are the code that runs least and matters most.** Every gate ships a fixture
+test that forces each of its exit codes - pass, defect, could-not-verify, advisory - against a throwaway
+repo or synthetic input, plus a positive control that shows it going red on a known-bad input (the pre-fix
+build, a dropped row). One misspelled variable in a could-not-verify branch of a release script survived
+until a contract pass happened to read it; that exit code had never once run.
 
 ## 6. Persona QA (the product compass, as a test)
 
@@ -128,6 +181,12 @@ Test as the real users, not as the author (see [AUTHOR.md](AUTHOR.md) product co
   (drive/share roots, reparse points/junctions, the system drive or TEMP). A `--force`/`-y` flag skips the
   *prompt*, never the *safety checks*. A silent data-loss path that "passed" a friction-free test is the
   defect.
+- **A tool that writes into a directory and may later empty it proves it created that directory** with a
+  token only it writes - a prose match on content is not proof (a saved page that happened to contain the
+  generator's name was emptied as "our old output"). A folder it cannot prove is treated as foreign even
+  under `--force`, and the run goes to a suffixed sibling instead. A reuse shortcut ("output exists, skip")
+  is valid only against a completion record written as the run's last step that names the source identity
+  and every option that changes the result.
 
 ## 7. Audit triggers (test more when these change)
 

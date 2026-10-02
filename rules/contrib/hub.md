@@ -185,3 +185,51 @@ exit 0, and identical under `-Strict`; before the session it was 0 errors and 1 
 branches with the tail of the script stubbed out, so nothing was committed or pushed: gate clean -> falls
 through, exit 0; `SZA_SKIP_GATE` set -> warns and falls through, exit 0; stamp moved aside -> `FAIL
 SZA-CANON01`, the refusal banner, exit 1 with nothing staged.
+
+## Re-sync owed 2026-10-02 - stamp 2026.09.22.2 behind canon 2026.09.30.1; AdSense added with no privacy text
+
+Read-only pass over the hub (`P:\WEB\sites.google.comsiteszaodua`, clean tree) with `check-compliance.ps1`.
+Re-measured 2026-10-02: `0 error(s), 1 warning(s)`, the warning being `SZA-CANON03` (stamp `2026.09.22.2`). **No
+re-sync was run; nothing in the repo was edited.**
+
+**State oddities.** The stamp reads `2026.09.22.2` but `adoptedOn` is still 2026-09-03, and this record stops at
+the 2026-09-03 entry: the 2026-09-23 re-sync and contract alignment have no record. There are four commits since
+2026-09-20, all `Auto-publish portfolio: ..` (`deploy.bat`, the named INVARIANT 18 exception):
+
+- 2026-09-23 22:59 `286f79b`: the stamp bump to `2026.09.22.2`, `AGENTS.md` (26 lines, delegating to `CLAUDE.md`),
+  the PAGE-CONTENT / PAGE-STYLE / SITE-FAMILY-MAP pointers, kit specs moved to the catalog, `index.html` =
+  `embed.html`.
+- 2026-09-23 and 2026-09-24: the ICON-* and REPO-STAMP / REPO-LAYOUT / RULE-DELIVERY pointers, `docs/README.md`.
+- **2026-09-27 `9c076fe`: a Google AdSense loader added to `index.html` and `embed.html`, and a new `ads.txt`.**
+
+### Open owner decision - AdSense on the hub (flagged, not fixed)
+
+When the loader was added the canon had no word about advertising (grep: none); the new [UI_UX](../UI_UX.md) §3 now
+says "no advertising in the product" and that a third-party ad network on a product site is an exception that must
+be declared in the repo's stamp and capped, the default being none. The hub has **no privacy or consent text**
+(`index.html` does not mention privacy) and its stamp comment says the privacy check does not apply. Two canon
+sections now bear on it:
+
+- [UI_UX](../UI_UX.md) §3: whether the ad network is an exception to declare and cap, or is to be removed.
+- [SECURITY_AND_PRIVACY](../SECURITY_AND_PRIVACY.md) §4 and §7: an advertising or analytics loader is an outbound
+  third-party surface with cookies, so the "empty, dated, one sentence" form of the §7 inventories is **no longer
+  available**; a row is owed (what leaves, to whom, on by default), and the privacy promise must say so
+  (INVARIANT 14). `ads.txt` and the loader's publisher id must agree.
+
+Whether to keep monetising the hub is the owner's intent to state; this entry only records that the 2026-09-27
+change conflicts with the new rules and that nothing has been decided. For context, the inventory behind
+[UI_UX](../UI_UX.md) found the catalog's `PAGE-STYLE` listing AdSense in the product-site role (line cited as 67),
+which §3 reverses - a catalog question of the same owner decision (proposed candidate, medium confidence, depends
+on the intent to monetise: a network-surface row for third-party scripts in SECURITY_AND_PRIVACY §7 and an
+`ads.txt` line in [SITE_CONFIGURATION](../SITE_CONFIGURATION.md)).
+
+### What a re-sync owes
+
+- **DOCUMENTATION_CONCEPT §6 registry:** the mandatory half is owed even for a no-site-framework repo; the hub has
+  `docs/README.md`, 5 pointers and plans, so it is trivially small.
+- **SECURITY_AND_PRIVACY §7:** see the AdSense decision above.
+- **SUPPORT_AND_FEEDBACK §7:** not applicable.
+- **The 2026-09-30 stance:** `AGENTS.md` says "Review `git status` first" for `deploy.bat`. That is inside a
+  publish flow and therefore allowed, but one clause should say so.
+
+**Safe to commit: clean, nothing pending.**

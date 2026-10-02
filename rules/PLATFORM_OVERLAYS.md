@@ -133,6 +133,15 @@ flavor) - no collision, because they never meet on one store.
 (countries / min-API / device count), foreground-service and permission declarations must match
 runtime use, native `.so` bundling constraints per flavor.
 
+**A secondary form-factor artifact (Wear, TV, Auto, XR) is judged against its own store guidelines**, and a
+criterion that rests on a permission or a notification passes every unit test and is still absent in review
+(a Wear artifact was rejected right after its ticket was Verified on unit tests alone: the store flavor's
+manifest had removed the permission the ongoing-activity notification needs). Claim such a criterion met only
+after reading the **store flavor's merged manifest** and walking that flavor on the smallest supported screen
+and the oldest supported OS. Run the store's own validator before every upload (Meta VR:
+`ovr-platform-util upload-quest-build --validate`); the first VR upload freezes the package name. Review
+verdicts are not API-readable - the owner's console screenshot is the source.
+
 ---
 
 ## Overlay C - Go CLI / Wails desktop tool (GitHub-only)

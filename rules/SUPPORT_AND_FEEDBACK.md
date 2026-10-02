@@ -25,7 +25,10 @@ in `contrib/`. Platform specifics marked *(overlay)*.
 
 When a user hits something you can't reproduce, a diagnostic bundle is the bridge:
 
-- Make it **easy for the user to capture and send** a log/diagnostic bundle from the app.
+- Make it **easy for the user to capture and send** a log/diagnostic bundle from the app. Path redaction
+  runs on the **serialised bytes**, not on the path as the program holds it: the native, JSON-escaped
+  (`\\`), forward-slash and `file:///` percent-encoded forms of the profile and app-data directories all
+  map to the placeholder, and a test packs a settings file with recent paths.
 - Have a **repeatable intake procedure** on your side: ingest the bundle, analyze it, extract the
   failure *(Android reference: the `newlog` intake skill + logcat sinks under `temp/`; the `log-reader`
   analysis flow)*.

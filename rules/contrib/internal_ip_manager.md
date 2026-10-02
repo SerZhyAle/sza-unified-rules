@@ -191,3 +191,29 @@ plus the pointer that none of them restate the canon.
 
 **Evidence.** `check-compliance.ps1 -RepoRoot P:/WINDOWS/internal_IP_manager` before -> `0 error(s), 2
 warning(s)`; after -> **`0 error(s), 0 warning(s)`**, exit 0.
+
+## Re-sync owed 2026-10-02 - stamp 2026.09.06.1 against canon 2026.09.30.1; nothing to commit
+
+Read-only pass over `P:\WINDOWS\internal_IP_manager` (overlay A, role internal, 0 commits since 2026-09-06) with
+`check-compliance.ps1`. Re-measured 2026-10-02: `0 error(s), 1 warning(s)`, the warning being `SZA-CANON03`. The
+stamp (`2026.09.06.1`, `adoptedOn` 2026-08-18) is committed, with no uncommitted bump. **No re-sync was run;
+nothing in the repo was edited.**
+
+**The dirty tree and the verdict.** Only an untracked `.vscode/` (a per-machine editor tint; the hub gitignored the
+same file on 2026-09-03). **Safe to commit: nothing to commit.** Add `.vscode/` to `.gitignore` if the owner wants.
+
+### What a re-sync must reconcile - the smallest of all
+
+The shape has no release boundary, no remote, no tags and no test suite, so INVARIANT 4 and 5, RELEASE §2 and §4,
+the contract gate and the registry's site half are **not applicable by shape**; the re-sync should record that, as
+the 2026-09-03 entry did. Owed:
+
+- **DOCUMENTATION_CONCEPT §6, mandatory half:** `docs/` holds 6 files including the `README.md` index, so a 6-row
+  registry.
+- **SECURITY_AND_PRIVACY §7:** the permission inventory is empty and dated; the network inventory has **one real
+  row** - outbound ICMP ping and scan of a user-typed range, concurrency 20, no listening port, nothing leaves the
+  LAN - so the "nothing to list" shortcut does not apply.
+- **Contracts:** classify the repo and declare `NO-ROLE` unless it shares the CSV schema (`ipnew.txt` is
+  user-authored data, so INVARIANT 10 "a reader for every version" applies if it does).
+- **Stale kit copies:** `docs/` holds an old `VALIDATION` of 95 lines against the kit's 331.
+- **Stamp:** refresh `adoptedOn`.

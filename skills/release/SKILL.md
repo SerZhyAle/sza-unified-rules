@@ -95,6 +95,10 @@ asked. **Default when the repo is silent: ask once, immediately before the irrev
   explicit override.**
 - The tag must not exist **locally or on origin**, and `main` must not be behind origin. Check all three -
   a remote-only tag fails *after* the anchor commit and local tag are already made.
+- **Where the repo has a dev branch and a trunk, nothing is stranded on the trunk.** Run
+  `git rev-list --count <dev>..<trunk>`; a non-zero count means a trunk-direct commit (a site publish, a
+  post-tag showcase, a hotfix) was never merged back, so back-merge it **before** merging dev into the trunk -
+  both sides regenerate the same render targets, and one release hit 533 conflicted paths this way.
 - Tools present and authenticated: `git`, `gh` (`gh auth status`), plus the shape's toolchain (`go`, `dotnet`,
   `wingetcreate`, `makeappx`/MSBuild, `vsce`).
 - **Confirm GitHub Actions is actually enabled.** A malformed or 0-byte workflow file auto-disables Actions;
@@ -106,6 +110,18 @@ asked. **Default when the repo is silent: ask once, immediately before the irrev
 
 Run the repo's build+test gate in the **release** configuration, not the dev default. If the repo has a local
 CI-parity build, run it: a failure discovered here is free, a failure discovered in a paid Windows job is not.
+Judge a **detached worktree of HEAD**, never the working tree: the tree is dirty by design, and `[skip ci]`
+commits mean this is the only clean-room run before the paid one.
+
+The ship step takes **evidence, not a bare verdict**: it names the plan that ran and the tree it judged, a
+subset run never unlocks it, an edit during the run voids it, and a gate that checked nothing is COULD NOT
+VERIFY, never PASS; any flow that rewrites tracked files runs *before* the gate. A gate that can only run on
+the owner's machine travels as a committed `release-verdicts/<version>.json` inside the tagged tree (the writer
+refuses a dirty tree and writes nothing on red; the checker needs the judged commit to be an ancestor of the
+tag and nothing outside `release-verdicts/` changed since). Rules:
+[RELEASE_AND_DISTRIBUTION.md](../../rules/RELEASE_AND_DISTRIBUTION.md) §2.
+
+Check every channel credential that has a fixed lifetime against its recorded rotation date (Phase 8).
 
 Handle environment blockers the gate itself trips on (a running tray app can lock the output exe and kill the
 build) - and restore what you stopped.
@@ -162,10 +178,13 @@ one line and the gate is `n/a`.
   `versionCode` + `versionName`. Prefer the regex in the release script or CI over any prose.
 - Validate with **both** a shape regex and a real-date parse before anything irreversible - that is what stops
   a mistyped `v26.1345.9999`.
-- Monotonic against every published version. Never reuse a timestamp.
+- Monotonic against every published version - every channel's list, including an off-tag stamp that shipped on
+  one channel only. Never reuse a timestamp. Derive date stamps in UTC, or name the local clock the repo uses
+  and keep it; the clock is part of the frozen shape.
 - **Pin the build to the tag** where the stamp is otherwise computed at build time from the clock
   (`-p:Version=<tag>`, `-p:ReleaseVersion=<tag>`, `-ldflags -X main.version=<tag>`), so binary, asset name and
-  tag agree.
+  tag agree, then **read the version back out of the built artifact** - a source-level check agrees with a stale
+  artifact by construction.
 - Compute channel remaps mechanically. MSIX Identity forbids leading zeros and caps each part at 65535:
   int-cast every component (`26.0723.0959.0` -> `26.723.959.0`).
 - Where no orchestrator writes the version, this skill owns the edit (`Directory.Build.props`, the csproj
@@ -206,12 +225,19 @@ This is the anti-loss phase and the reason this skill exists.
    `[skip ci]` commit means the workflow never runs. The fix is an empty `release: v<stamp>` commit whose
    prefix makes the CI workflow skip the branch push, so only the release workflow bills. Never hand-tag
    around it.
-3. Push the branch, then `git push origin <tag>` - the single action that starts everything.
-4. **Know the rollback before pushing.** Tag pushed and CI failed: either re-dispatch the workflow for the
-   *same* tag from the Actions tab (release workflows serialize per tag and deliberately do not
-   cancel-in-progress), or delete the tag and Release and re-run with a **new** version. A shipped release is
-   immutable - you ship the next version, and the monotonic shape guarantees the hotfix sorts above the bad
-   build. If `git tag` fails after the anchor commit was made, drop it with `git reset --hard HEAD~1` first.
+3. Push the branch, then `git push origin <tag>` - the single action that starts everything. The workflow
+   behind it builds only the named tag's tree, refuses a tag whose commit carries no gate stamp, and holds
+   `contents: write` on the publish job alone ([RELEASE_AND_DISTRIBUTION.md](../../rules/RELEASE_AND_DISTRIBUTION.md)
+   §1 "CI safety levers"); never publish around it.
+4. **Know the rollback before pushing.** Tag pushed and CI failed **before anything was published**: re-dispatch
+   the workflow for the *same* tag from the Actions tab (release workflows serialize per tag and deliberately
+   do not cancel-in-progress), or delete the tag and re-run with a **new** version. **Once the Release carries
+   its asset, the tag is never rebuilt** - a rebuilt zip has other bytes and breaks the hash already merged
+   into winget; the workflow refuses it (`overwrite_files: false`). After a failure that published nothing and
+   cannot be re-dispatched, cut a new, strictly newer stamp and leave the failed number retired. A shipped
+   release is immutable - you ship the next version, and the monotonic shape guarantees the hotfix sorts above
+   the bad build. If `git tag` fails after the anchor commit was made, drop it with `git reset --hard HEAD~1`
+   first.
 5. Watch the run (`gh run watch`) and confirm green before any store step.
 
 ## Phase 7 - Distribute, in order
@@ -222,8 +248,10 @@ Release's asset URL and SHA256:
 
 1. **GitHub Release** - assets named per the repo's convention, each with a `.sha256`. Verify the body reads
    sensibly; where the repo keeps a CHANGELOG, replace the auto-generated body with the dated section.
-2. **winget** - refresh the committed manifests, validate and install locally from them, then submit and
-   **rewrite the PR body**.
+2. **winget** - refresh the committed manifests (every file of every locale), validate and install locally
+   from them, then submit and **rewrite the PR body**. The manifest carrying the asset hash is the one
+   generated file that may be committed after the tag: one scripted commit right after the publish, verified
+   against the published `.sha256`.
 3. **Microsoft Store** - build the MSIX unsigned with the real Partner Center identity, upload, refresh the
    listing.
 4. **Any extra channel**: VS Code Marketplace (own semver clock, only if the subtree changed), Chrome/Edge
@@ -241,11 +269,16 @@ A release is not done until it is proven live.
   expects.
 - The listing or store page renders the new version and the new notes.
 - Durable-URL CTAs on the site resolve.
+- Every "includes X" sentence in a listing holds for each channel's **built artifact**, not only the source tree.
 - **The update path works from a real prior install** - not just a fresh install. A frozen-anchor mistake is
   invisible on a fresh install and only surfaces when a real user cannot update, by which point it is
   irreversible.
 - Channel liveness with the right latency: `winget show <Id>` only after the PR merges (hours to a day); the
   Store sits in certification for days; Edge review is slower than Chrome.
+- **Write each channel's state to the repo's durable state file** (default `RELEASE_STATE.md`) with the
+  vocabulary `pending`, `submitted`, `live`, `blocked`, `n/a` - `submitted` is not `live`. Note every credential
+  with a fixed lifetime and its rotation date (the Edge Add-ons API key lasts about 72 days; an expired key
+  shows as HTTP 401 at the one-way step, so check it in Phase 2).
 - Reset state: `## [Unreleased]` empty again.
 - **Ship the release package, and ship it before any archive or cleanup sweep.** One operator command moves
   the ready block into the history file (newest first, stamped with the version that shipped) and advances

@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Contract | `RULE-DELIVERY` |
-| Version | 0.9, draft |
+| Version | 0.10, draft |
 | Home | the shared contracts catalog, domain `rule-adoption/` (the path is in [CLAUDE.md](../../CLAUDE.md)) |
 | Role | **producer**, and the only one. Every adopting repository is the consumer |
 

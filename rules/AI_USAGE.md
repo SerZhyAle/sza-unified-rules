@@ -43,7 +43,10 @@ shares. Reconciled against the portfolio; per-project records in `contrib/`.
   one file that happened to be named. Two: **PASS is printed only when every gate passed** - a green
   tail line over a failed gate inside is worse than no gate, because callers read the tail. Three:
   **the exit code distinguishes "found a defect" from "could not verify"** - a missing tool, an
-  unexpanded argument or a timeout is not a pass. The scripts differ per project; these do not.
+  unexpanded argument or a timeout is not a pass. The scripts differ per project; these do not. A
+  **fallback to a weaker mode** (a snapshot taken from `HEAD` when the real one failed, the full scope cut
+  to changed files) prints a different line than the full path and records the degradation where the later
+  judge reads it - a fallback that looks like success is a lie about what was measured.
 
 ## 3. Cost & parallelism discipline
 
@@ -99,6 +102,11 @@ shares. Reconciled against the portfolio; per-project records in `contrib/`.
   message's authoring model separately and never correlates the two. The earliest honest re-measurement
   is a fresh mining pass after this rule has been live; the telemetry itself is a local, repeatable mining
   run against a transcript store outside any repository, not committed history.
+- **Fanning out writers over a shared file set: put each agent's exact file names in its own prompt.**
+  Never point agents at "line N of the batch file" - in the reference project 2 of 10 translator agents
+  read a 0-indexed line as 1-indexed, took a sibling's batch, overwrote each other while two batches went
+  untouched, and each reported "clean". After each agent returns, re-run the shared checker over that
+  agent's intended set, not over what it says it did.
 - **Read a large file with an explicit range, first time.** The blind whole-file read of a file you
   have not located anything in yet is the single largest avoidable context cost. Locate with one
   search, then take one window wide enough to cover it - iterative probing costs more turns than it
@@ -155,7 +163,10 @@ shares. Reconciled against the portfolio; per-project records in `contrib/`.
   every turn; the topic files cost nothing until opened, so the index is the only part that needs a
   ceiling - and a hand-run cleanup does not hold, it regrows within the week. Give the index a target
   and a ratchet that refuses growth. The restatement ban above is part of this: a memory that repeats
-  the rules file bills the same instruction twice per turn, forever.
+  the rules file bills the same instruction twice per turn, forever. Measured across the portfolio,
+  committed memory indexes run 11-90 lines; the one that reached 1274 lines (115 KB, roughly 25-30k
+  tokens) held its entry bodies inline and is billed to every session that opens it. Cap the index and
+  move the bodies to topic files.
 - **Expire memory by work-item liveness, not by age.** A memory anchored to a ticket that no longer
   exists is dead weight; a three-month-old trap that cost real turns to discover is not. Prune by
   "never opened" and by dead anchor, and flag a memory whose named paths have disappeared - that one

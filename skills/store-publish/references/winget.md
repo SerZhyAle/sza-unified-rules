@@ -20,6 +20,10 @@ A winget package is three or more YAML files in one folder,
 - `ReleaseDate` - ISO `YYYY-MM-DD`.
 - `ReleaseNotes` **per locale**, and `ReleaseNotesUrl`.
 
+The files carrying `InstallerSha256` cannot exist before the asset, so they are the one generated change that
+legitimately follows the tag: a **single scripted commit right after the publish**, verified against the
+published `.sha256` before the PR, with nothing else folded into it.
+
 `ReleaseNotesUrl` convention is currently split in the portfolio: `/releases/tag/v<ver>` pins the notes to the
 version the manifest describes, `/releases/latest` drifts as soon as the next release ships. Prefer the
 tagged form; if the repo uses `/latest`, follow the repo and flag it.
@@ -60,16 +64,23 @@ Token styles differ per repo - `__VERSION__`/`__URL__`/`__SHA256__`, `REPLACE_VE
 **Why yaml-only**: `winget validate --manifest winget/` on the repo folder trips over a `README.md` in that
 folder being parsed as YAML.
 
+**Keep the folder flat.** `--manifest` rejects a folder with subdirectories, so an archive of past submissions
+(`winget/manifests/`) breaks the gate. Keep the history outside the folder, and point `wingetcreate update
+--out` there - never at `winget/`.
+
 ## Pre-submit verification ladder - all blocking, in order
 
 1. Confirm the GitHub Release asset exists, and **re-hash it yourself**. Sidecars go stale after a rebuild.
-2. `winget validate --manifest <yaml-only dir>` - **schema only**. It does not download the URL and does not
+2. **Re-stamp every manifest file of every locale** - `PackageVersion` in all of them, `InstallerUrl` +
+   `InstallerSha256` in the installer file, `ReleaseNotesUrl` in the default locale (a 15-file set is not "three
+   manifests"). Skip this and the local install test below re-verifies the *previous* zip.
+3. `winget validate --manifest <yaml-only dir>` - **schema only**. It does not download the URL and does not
    verify the hash.
-3. `winget settings --enable LocalManifestFiles`, then `winget install --manifest <dir>` - the only gate that
+4. `winget settings --enable LocalManifestFiles`, then `winget install --manifest <dir>` - the only gate that
    verifies URL + SHA end to end.
-4. Line endings: `git ls-files --eol -- manifests/<letter>/<Publisher>/<Pkg>/<ver>/*`.
+5. Line endings: `git ls-files --eol -- manifests/<letter>/<Publisher>/<Pkg>/<ver>/*`.
    Bad is `i/mixed w/mixed attr/text=auto`; good is `i/mixed w/crlf attr/text=auto`.
-5. Grep every substituted `ReleaseNotes` value for `': '` before validating - see the colon-space trap below.
+6. Grep every substituted `ReleaseNotes` value for `': '` before validating - see the colon-space trap below.
 
 For an Inno shape, additionally run
 `setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /CURRENTUSER` and confirm exit 0 plus an ARP entry
@@ -118,6 +129,16 @@ dependency churn, and its `.iss` sets `AppVersion={#Version}` so the ARP `Displa
 `PackageVersion` - exactly what Installation Validation matches on. `PrivilegesRequired=lowest` installs
 per-user.
 
+### Inno upgrade traps (the install passes, the upgrade exits 1)
+
+- **No `AppMutex` for an app that lives in the tray or starts at logon.** Inno checks it before
+  `PrepareToInstall`, and winget's `/SUPPRESSMSGBOXES` answers the close-the-program prompt with Cancel, so
+  every upgrade exits 1 without touching a file. Stop the program, the service and the worker in
+  `PrepareToInstall`, in dependency order, instead.
+- **`UsePreviousGroup=no` when the group page is hidden**, or Inno keeps reusing the old Start-menu folder.
+- Test the **upgrade** over a running prior install with the same `/VERYSILENT /SUPPRESSMSGBOXES` flags the
+  harness uses, not only a fresh install.
+
 ## Error-code table
 
 | Symptom | Cause and fix |
@@ -126,6 +147,7 @@ per-user.
 | `0x80004004` | Heavy portable-zip payload. Switch shape or shrink it. |
 | `Program:Script/Wacapew.A!ml` | A self-extracting bootstrap zip was pointed at. Never do that. |
 | `Validation-Line-Endings-Error` | Mixed or LF endings. Repair as above. |
+| Upgrade exits 1, no file touched | An Inno `AppMutex` on a resident app; `/SUPPRESSMSGBOXES` answered Cancel. See the Inno upgrade traps. |
 | `mapping values are not allowed in this context` | A `': '` inside a substituted plain scalar - the YAML scanner reads it as a nested mapping. Use a spaced hyphen, or a block scalar (`ReleaseNotes: \|-`, `Description: >-`) which tolerates `: `. **First thing to check** when validation rejects a manifest that looks fine. |
 
 **Non-blocking noise, ignore it**: the "Missing property `NestedInstallerType`/`NestedInstallerFiles` /
@@ -178,6 +200,14 @@ $u = ($arts.value | ? name -eq 'InstallationVerificationLogs').resource.download
 
 Read `*Log_InstallationClient*.txt` for the exit code and `*WinGet-*.log` for the terminating HRESULT. The
 `<id>` is in the `WinGetSvc-Validation-...-<id>` link the bot posts.
+
+## A portable package runs through a symlink
+
+winget installs a portable package's exes as symlinks under `%LOCALAPPDATA%\Microsoft\WinGet\Links`, so the
+path the process sees as its own is the link, not the install directory. A program that looks for bundled data
+beside its exe (`os.Executable()` in Go, the module path elsewhere) must **resolve the symlink first**, or it
+looks in `Links\`, misses what the listing promises, and may create its working folder in the shared Links
+directory. Test it with a winget-style alias to the exe, not only the exe in place.
 
 ## Locales
 

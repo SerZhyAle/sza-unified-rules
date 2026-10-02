@@ -592,3 +592,153 @@ Carried by a FileDO commit not yet made on this date - the next reconcile sectio
    40 lines would be reported as a copy.
 3. Three contract questions filed in the catalog, not here: `PROPOSAL-2026-09-23-stamp-defaults.md`,
    `-adoption-date.md`, `-own-spec-scheme.md` under `rule-adoption/`.
+
+## Canon re-sync owed 2026-10-02 - stamp 2026.09.22.2 behind canon 2026.09.30.1
+
+Read-only mining of `P:\WINDOWS\FileDo` against canon `2026.09.30.1` (21 commits in 2026-09-20 .. 10-01, 12 of
+them bodiless: "1", "2", "4", "Build v..", "Sync winget"; the real history lives in `AGENTS.md`, `RELEASE.md`
+and the untracked `PLAN/` tree). **The re-sync itself has not been run**; this entry records what it must
+reconcile so the next run starts from facts.
+
+- **What to re-read** since the 2026-09-24 stamp (`2026.09.22.2`): CONTRACTS, DOCUMENTATION_CONCEPT,
+  LOCALIZATION, PLATFORM_OVERLAYS, README, REPOSITORY_LAYOUT, SECURITY_AND_PRIVACY, SUPPORT_AND_FEEDBACK (the
+  2026-09-23 update) and GITHUB_INTERACTION, INVARIANTS (the 2026-09-30 update, the "tree state is not the
+  agent's concern" stance). Both of the 2026-09-30 files are about working-tree etiquette; nothing in the
+  release path is touched.
+- **Canon fix 1 of 2026-09-24 is applied** (the pointer spelled `<ID>.md`, REPOSITORY_LAYOUT line 57).
+- **Canon fix 2 of 2026-09-24 (SZA-CTR01 and the bold `| **Id** |` header) is applied: fixed in the canon tool on
+  2026-10-02.** The three CTR01 warnings this repo carried (`APP-BEHAVIOUR.md` 49 lines, `CLI-EVENT-STREAM.md` 42,
+  `ICON-SET.md` 55) were the check misreading the house header, not drift; `ICON-RENDER.md` at exactly 40 lines
+  had escaped by one line. Measured on 2026-10-02 after the fix: `0 error(s), 3 warning(s)` (was `0 error(s),
+  6 warning(s)` before): `SZA-CANON03` (stale stamp), `SZA-CTR02` and `SZA-RULES05`.
+- **SZA-CTR02, `cmd/filedo/vdisk_surfaces_test.go` line 275** is a negative assertion that fails if a README links
+  into the catalog, and it spells the banned string `P:\Contracts` literally, so the check cannot tell the test
+  from a leak. Repo-side fix: replace the literal with a regular expression for "a drive-letter path to a
+  Contracts folder, or a catalog folder-qualified contract file" (`regexp` is already imported); the assertion
+  becomes stricter and `git grep -F` stops matching. A canon-side skip for `canon-ok:` lines was considered and
+  **rejected** (not mechanically decidable for arbitrary `_test` files). Still open in the repo.
+- **SZA-RULES05 stays informational** until the AGENTS.md question below is answered.
+- **The three pointers are not drifted in version** (APP-BEHAVIOUR 0.10, CLI-EVENT-STREAM 0.11, ICON-SET 0.16
+  all equal the registry) but two have text drift: `APP-BEHAVIOUR.md` rule 4 says "No network code" while the
+  same file's Status and the dated registry exception (loopback block server, until 2026-12-31) record that the
+  mount path listens on 127.0.0.1, and its rule 6 names `filedo_win.log` while the shell now writes
+  `filedo_win.session-*.log`; `ICON-SET.md` lines 40-55 are a history paragraph that stops at the 0.14 meanings
+  although 0.16 added `content.disk-container`, and it cites SP-0016, an untracked PLAN id. All three
+  paraphrase the catalog's rules, which is not a pointer's job. Target 25-35 lines each: header table, "what this
+  repository must do" as obligations each held by a named test or selftest row, exceptions left to the registry.
+- **What the dirty tree is** (88 modified, 33 untracked, 121 entries): the preflight remediation for the next
+  release plus new features - the Go toolchain pin 1.26.1 -> 1.26.8, `.gitattributes` `-text` for vdisk and event
+  fixtures, a new WACK verdict parser `msix/wack-verdict.ps1`, rebuilt `exe_to_download/*.exe`, 25 refreshed MSIX
+  screenshots, settings / tray / autostart / Disk Manager work, a new `fmsworker/` and `contracts/` and
+  `vdisk_share.go` (SP-0121 FMS share integration), and the `INPUT-PARITY.md` / `DIAGNOSTIC-REPORT.md` pointer
+  changes. Not judged safe to commit as one unit by this entry; committing is the owner's call.
+
+## Carried-forward items of 2026-09-24 - status 2026-10-02
+
+- **INVARIANT 5 verdict artifact: substantially met, owner to confirm closure.** The gate's last line
+  `build-gate <stamp>: PASS` names the version, `release.ps1` runs the gate before the tag, and since `c565277`
+  (2026-10-01, AUD-68-F1, owner decision) CI refuses a tag whose commit no gate stamped: the tagged tree must
+  contain the gate's own `exe_to_download\filedo.exe` printing the tag's stamp and a `filedo_win.exe` whose PE
+  FileVersion equals it, and a second step re-runs the gate's `go test` set on the tagged source before building.
+  `release.ps1` `Get-TagSourceDrift` refuses the Store MSIX unless HEAD equals the tag outside `winget\` and the
+  tree is clean, even under `-Resume`.
+- **CONTRACTS §6 / the release contract gate: still open** in `release.ps1` (no registry-row freshness check
+  seen on 2026-10-02).
+
+## Overlay facts refresh 2026-10-02
+
+Several lines of "Overlay facts" and the channel rows above are stale; they are not rewritten, this is current:
+
+- **MSIX identity is no longer a placeholder:** reserved name `SZA.FileDO`, Store ID `9PH1LPCMRG83`, live
+  2026-09-23.
+- **The direct artifact is a WiX Burn setup EXE carrying the MSI**, with its own bundle `UpgradeCode` (a separate
+  identity from the MSI's, which makes the setup EXE replace itself in Apps and features).
+- **Five binaries and a third codebase:** C++ `shellext/` (MSIX-only first-level menu, SP-0020). `capacitytest/`
+  is retired (SP-0026); `fsx/` and `statedir/` were added.
+- **Version remaps now include the MSI three-field map:** Windows Installer compares only the first three
+  fields, so `yy.M.d.HHmm` made two same-day releases equal; `ProductVersion` is now
+  `yy.M.((d-1)*1440 + H*60 + m)` and `release.ps1` reads the latest release's MSI and refuses a triple that is
+  not greater (SP-0030 PKG-01).
+- **Toolchain pin:** Go 1.26.x through the `toolchain` line of `go.mod`, which must equal `release.yml`'s
+  `go-version` (the gate fails when they differ).
+- **Contracts:** FileDO owns FDSEC-FORMAT 1.3, FDSEC-BEHAVIOUR 1.4, CLI-EVENT-STREAM 0.11, FDD-FORMAT and
+  FDD-BEHAVIOUR 0.1, and consumes 17 listed in `docs/contracts/README.md`.
+
+## Audit campaign record 2026-09-25 .. 10-01
+
+Specs SP-0023, SP-0031, SP-0064 and SP-0065, the FileDO analogue of the FastMediaSorter S3556 campaign.
+
+- **SP-0023:** eight parallel read-only auditors, about 190 defects, 15 critical, in code the gate was passing;
+  ten cross-cutting themes each fixed once as a shared mechanism (stop model, path identity, error to verdict,
+  atomic writes, state root, secret hygiene, child-process contract, test what ships, GUI/CLI destructive
+  parity, promises not true). The 337-file commit `3349bbb` carries the implementation.
+- **SP-0031:** `slice.ps1` cuts by package or file family at 12 files / 2500 lines with a risk score,
+  `manifest.json` records per-file hashes, `fanout.ps1` writes one self-contained record per slice,
+  `summary.ps1` reports uncovered, duplicate and drifted files and exits 1 until every slice is closed. Inline-fix
+  rule: a fix needs a failing-then-passing test or is behaviour-preserving by construction, one slice's fixes at
+  a time under a write lock, destructive paths only with a black-box test.
+- **Yield by wave:** first pass 29 slices, 2 critical / 28 high; final audit of the new virtual-disk code 13
+  slices, 3 critical / 10 high; the "redo" wave re-auditing files changed since their slice closed, 36 slices,
+  0 critical / 10 high / 53 medium. **Total 420 findings (5 / 49 / 176 / 190 by severity).** The redo wave is the
+  measurement worth keeping: re-auditing files that earlier fixes had changed still found 10 high.
+- **A protocol defect found by AUD-66-F1** (a stop must not outrank a defect in the event stream) was fixed
+  contract-first: CLI-EVENT-STREAM 0.11, 2026-10-01.
+
+## Lessons promoted from this window - proposed 2026-10-02, none applied yet
+
+Twelve candidates; each is a proposal until the owner approves it, at which point the line below gets the
+section it landed in, as the 2026-07-23 "APPLIED" list does. Each was grepped against `rules/`, `skills/`,
+`tools/` and `hooks/`; "no hit" means the canon says nothing today.
+
+| # | Lesson | Proposed landing | Evidence (this repo) |
+| --- | --- | --- | --- |
+| C1 | Bind the tag to the gate in CI; build derived channels only from tag-equal sources | [RELEASE_AND_DISTRIBUTION](../RELEASE_AND_DISTRIBUTION.md) §2 after "Wire the gate into the command that ships", one line in `skills/release` Phase 3 | `release.yml` step "Bind the tag to the release gate", `Get-TagSourceDrift`; a valid-looking tag on an un-gated commit is what INVARIANT 5 leaves open |
+| C2 | Split the release workflow (read-only build job, a publish job that alone may write and runs no project code); pin by commit SHA; `persist-credentials: false`; tag through `env:`; `make_latest` only when the stamp is newer than the current Latest | [RELEASE_AND_DISTRIBUTION](../RELEASE_AND_DISTRIBUTION.md) §1 "CI cost & safety levers", one sentence in the GitHub Release playbook of [CHANNEL_MATRIX](../CHANNEL_MATRIX.md) | SP-0030 CI-01..03, `release.yml` lines 516-549; grep for `make_latest` in rules/skills: no hit |
+| C3 | Parse-check every CI shell step before the one-way tag | [DEVELOPMENT](../DEVELOPMENT.md) §15 next to "Reachable exit codes (PowerShell)", a clause in RELEASE §2 | `007151f` (2026-09-24): `"release-artifacts $version: PASS"` failed the tagged v2609241700 run because PowerShell reads `$version:` as a scope qualifier; the language parser reports it. The gate is the report's proposal, **not mechanised in FileDO** |
+| C4 | A name-glob secrets guard (`*secret*`, `*token*`) silently swallows legitimate files; gate on "ignored but needed" | [REPOSITORY_LAYOUT](../REPOSITORY_LAYOUT.md) "Secrets - never in the repo" and [TESTING_AND_QA](../TESTING_AND_QA.md) §5 pre-flight item 2 | SP-0049 AUD-18-F1: two catalog glyphs ignored, a local build passed while the tagged CI checkout lacked them; `packaging/check-build-inputs.ps1`. A canon check only if a decidable list survives a run over real repos |
+| C5 | Windows App Certification Kit procedure: read the verdict from the report, never `appcert`'s exit code | `skills/store-publish/references/msix-store.md` (new "Pre-submission: WACK") and one line in the MSIX playbook of [CHANNEL_MATRIX](../CHANNEL_MATRIX.md) | `appcert.exe` needs elevation even for `/?`, exits 0 for a session that found failures, rolls an optional FAIL into `OVERALL_RESULT=WARNING`; `msix/wack-verdict.ps1`, seven regression checks; grep for WACK/appcert: no hit |
+| C6 | Windows Installer compares three version fields; refuse an MSI not greater than the published one | [WINDOWS_PACKAGING](../WINDOWS_PACKAGING.md) §2 version stamping map, cross-linked from the version shape in [PLATFORM_OVERLAYS](../PLATFORM_OVERLAYS.md) | SP-0030 PKG-01, see the overlay refresh above |
+| C7 | The anchor set of a WiX product is wider than the `UpgradeCode`: component GUIDs, feature ids, file-type extension and ProgId, a COM class id, a Burn bundle's own `UpgradeCode` | [SECURITY_AND_PRIVACY](../SECURITY_AND_PRIVACY.md) §2 anchor list; whether INVARIANT 1 is touched is the owner's call | AGENTS.md lines 48-60; `TestShellExtClsidAgrees` |
+| C8 | A secret handed between processes travels by environment-variable name, is deleted from the receiver on read, an empty value is an error; every text surface redacts through one function with a single shared vector file | [SECURITY_AND_PRIVACY](../SECURITY_AND_PRIVACY.md) §4 (new bullet) | SP-0025 FDSEC-07/19; `cmd/filedo/testdata/redaction/vectors.tsv` read by the Go test and the VB `--selftest`; release-queue R-F1 (2026-10-01), a password with spaces slipped through word-rule redaction |
+| C9 | One persisted shape with N writers: make the installer a test fixture of the program's own writer, compare both directions, remove only what carries your mark | [DEVELOPMENT](../DEVELOPMENT.md) new §12a beside §12-§13 (the third parity model) | `TestRegistryParity_TheMSIAndFdsecRegisterWriteTheSameShellIntegration`, `TestShellExtMenuMatchesClassic`, `FileDO.RegisteredBy` |
+| C10 | Byte-exact fixtures need `-text`, and a fresh-worktree run proves it | [TESTING_AND_QA](../TESTING_AND_QA.md) §3 "Contract conformance" bullet, cross-linked from [REPOSITORY_LAYOUT](../REPOSITORY_LAYOUT.md) | `.gitattributes`; the preflight report: "a fresh Windows worktree had exposed CRLF-induced provenance/sample failures". Streams and CyrFlip found the same on the same days |
+| C11 | Auditing a tree too big for one pass: slice, hash, re-audit what the audit changed | `skills/spec-to-audit/references/audit-campaign.md` plus a pointer in [DEVELOPMENT](../DEVELOPMENT.md) §11 (the same landing as the FastMediaSorter candidate; the generic tools can be lifted from `PLAN/SP-0031*/tools/`) | the campaign record above, 420 findings, redo wave 10 high |
+| C12 | Verify the built artifact for the property, not the build log | [DEVELOPMENT](../DEVELOPMENT.md) §16 ("and prove the result is in the artifact") and the evidence ladder row "Packaging / resources: inspect the built artifact" in [TESTING_AND_QA](../TESTING_AND_QA.md) §2 | a WiX build omitting `-loc` and the two bitmap `-d` defines "still succeeds and quietly ships the stock blue dialogs"; unpinned `WixToolset.*.wixext` resolves to 7.x; SP-0023 T8, "the gate tested a 386 build with no manifest and a different Go than the one that shipped" |
+
+The report's top five by value: C1, C4, C5, C8, C11.
+
+**Considered and dropped:** the persona inversion / force-skips-prompts / modtime cache rules (applied
+2026-07-23, [TESTING_AND_QA](../TESTING_AND_QA.md) §6 and INVARIANT 9; `AGENTS.md` still carries a copy);
+known-red `go test ./...` and the shrink-only vet baseline (`CHECK-BASELINE`); the three-state verdict (`CHECK-VERDICT`);
+the unmeasured "about 90 s" claim (registry row closed 2026-10-01). **Not worth a standalone rule, optional
+one-liners if the owner wants them:** the `.NET Framework` DPI pair (`app.manifest` plus `app.config` must both
+ship, and winget `ArchiveBinariesDependOnPath: true` because portable aliases are symlinks); Go `os.Rename`
+replaces its target on Windows; the MSIX integrity sidecar is hashed after signing; site download buttons
+resolved by release-asset suffix; a GUI-subsystem exe has no exit code in PowerShell unless started with
+`Start-Process -Wait -PassThru`.
+
+## Open question for the owner 2026-10-02 - split the 756-line AGENTS.md?
+
+`AGENTS.md` is 756 lines, 71,078 bytes, loaded every turn (roughly 18k tokens per session);
+[AI_USAGE](../AI_USAGE.md) §5 says a rule that does not earn a gate is compressed to one line plus a pointer.
+`SZA-RULES05` is informational at 400 lines and says only "check the bulk is repo-specific architecture", which
+FileDO did and which still leaves the file at 756 lines.
+
+- **About 520 lines (70%) are correct content in the wrong file:** lines 62-161 the installer, MSI/Burn, wizard
+  strings, registry shape and shell extension (100); 163-377 the code map (215, 29% of the file); 461-486 Store
+  channel facts; 570-652 the GUI shell, Disk Manager and child-process contract; 654-689 coding style, site and
+  the PLAN scheme. Proposal: move 62-377 and 570-652 to a tracked, registered internal doc (for example
+  `docs/dev/ARCHITECTURE.md`, with a row in `docs/DOCUMENT_REGISTRY.jsonl`, which `check-internal-docs.ps1`
+  already requires) and leave one line per trap with a pointer. Target 250-300 lines. No canon change is needed.
+- **About 85 lines duplicate the canon or a contract:** the plugin-hooks restatement (lines 14-18), the
+  known-broken `go test`, 0/1/2 exit semantics, persona inversion and modtime cache (489-490, 508-513, 564-568),
+  the "shell consumes APP-BEHAVIOUR / APP-STYLE" bullets (602-611, 625-632), and the External contracts block
+  (691-752, 62 lines), whose two tables of 25 rows duplicate `docs/contracts/README.md` with different row sets
+  (`INPUT-PARITY` is in AGENTS.md only, five other ids are in the README only). Keep the one paragraph naming the
+  catalog (SZA-CTR03 needs it) and the vector-regeneration command.
+- **Lessons to extract first** (then shrink to one line each): lines 337-340 -> C4, 342-354 -> C8, 102-116 and
+  146-157 -> C9, 79-88 -> C12, 38-43 and 405-409 -> C6, 48-60 -> C7, 438-445 -> C2, 446-451 -> C5.
+- **Optional canon-side change:** reword the `SZA-RULES05` Fix text to name the remedy ("move architecture to a
+  registered internal doc and leave one line per trap"). Not applied.
+
+The decision is the owner's: split now, or accept `SZA-RULES05` as a standing note with a dated reason here.

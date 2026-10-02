@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Contract | `REPO-STAMP` |
-| Version | 0.9, draft |
+| Version | 0.10, draft |
 | Home | the shared contracts catalog, domain `rule-adoption/` (the path is in [CLAUDE.md](../../CLAUDE.md)) |
 | Role | **consumer**, and the schema's owner. Every adopting repository writes its own stamp; this repo holds the only reader |
 

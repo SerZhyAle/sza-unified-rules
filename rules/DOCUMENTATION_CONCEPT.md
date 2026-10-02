@@ -140,6 +140,8 @@ scope elsewhere renders from it:
 
 - `..` never `...`; plain hyphen `-`, never em-/en-dash/horizontal bar.
 - Russian `ё`/`Ё` wherever grammatically correct.
+- One carve-out: a Windows menu item that opens a dialog may end in the platform's trailing ellipsis, and a
+  quoted real UI string in a document is not a violation. `..` stays the rule everywhere else.
 - When editing an existing file, fix stray violations in the lines you touch; no unrequested
   project-wide sweep. A gate may carry a scoped allowlist for a legitimate exception
   ([DEVELOPMENT.md](DEVELOPMENT.md) §9).
@@ -182,6 +184,10 @@ not announced and why. It is a declaration the project keeps, not a prose index 
 
 A project with no public site runs items 1-5 and is compliant. That is a permanent, declared state, not a
 stage on the way to the full set.
+
+The machine-readable interface of the checks that guard all this is a shared contract, not a local
+invention: a new gate adopts `CHECK-VERDICT`, `CHECK-BASELINE`, `CHECK-PLACEMENT` and `BUILD-EVIDENCE`, and a
+project's documents adopt `DOC-INTERNAL-QUALITY` and `DOC-EXTERNAL-QUALITY` ([CONTRACTS.md](CONTRACTS.md)).
 
 Two ordering rules make the registry true rather than aspirational: a document is registered **before**
 anything links to it, and on adoption the registry is built from the tree **as it actually is**, exclusions

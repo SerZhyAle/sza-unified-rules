@@ -282,6 +282,17 @@ This is also where the pre-release sweep hooks in: clean install over nothing **
 resources, first success with zero configuration, the core scenario end to end, performance - ending in a
 written PASS/FAIL verdict where FAIL blocks the release.
 
+## Campaign mode - auditing code that did not change
+
+Everything above judges a change. A tree too large for one pass, before a major release, is audited as a
+**campaign**: a script cuts the shipped code and the release path into risk-ordered slices (parity pairs kept
+together), a second script proves every file is in exactly one slice and exits non-zero until every slice is
+closed, slices are generated from one template, a live defect-class registry turns a second sighting into a
+tree-wide sweep, and every file changed after its slice closed is audited again - code written to close a
+finding has been read by nobody but its author. The campaign closes only on the roll-up's exit 0, and the
+owner's device tests are drained once afterwards, in Sweep mode. Load
+[references/audit-campaign.md](references/audit-campaign.md) for the method and the measured yields.
+
 ## The self-audit checklist
 
 Each question has a mechanical answer.

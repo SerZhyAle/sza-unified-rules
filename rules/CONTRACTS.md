@@ -91,6 +91,11 @@ the change it asks for. The owner accepts it by folding it into the contract as 
 rejects it in writing, and the proposal stays as the record either way. A proposal is how the obligation
 above is met without one product rewriting another's decision.
 
+**Answering a sibling's question.** A question from another product about a shared contract is answered in
+a dated `RESPONSE` document. Contract facts cite the id and section; implementation facts cite code with
+the tree's date and say what was not run. Deviations found while answering become the answerer's own
+tickets and a registry row. The answer amends nothing, and it corrects the requester's wrong premises.
+
 **The contract changes before the code does.** Agree it in the catalog, bump the version, regenerate the
 conformance artifacts, update the registry, tell the consumers, and only then let the implementations
 follow. Code that ships ahead of its contract is how two projects stop being able to read each other's data.
@@ -106,7 +111,7 @@ catalog:
 
 - A contract carries a document version `MAJOR.MINOR`, and where the format has a wire carrier - a
   `schemaVersion` field, a version byte, a named column set - the carrier is what code dispatches on. They
-  bump together.
+  bump together. A contract below 1.0 (draft) is not final law.
 - **MAJOR** when an implementation that shipped against the previous version would do something *wrong*
   rather than something *less*: a field removed, renamed or given new meaning or units; an optional value
   becoming required; an "optional" addition whose absence changes security or write semantics; a derivation

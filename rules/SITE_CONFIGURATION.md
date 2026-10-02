@@ -51,6 +51,12 @@ The reusable one-command publish (hub reference: `deploy.bat`):
 3. Stage everything, commit with a dated auto-message (overridable by an argument), push to `main`.
 4. Pages rebuilds on push; the custom domain updates within a minute.
 
+**Live means built by the Pages workflow.** Content committed to a branch that the workflow does not build is
+not live: verify the live URL after the trunk merge, never before. And a `paths-ignore` that spares docs from
+CI also spares them from the only gate before Pages publishes - make the deploy job wait for the CI run of
+the same SHA and require it green, or say plainly in the rules file that it does not, and run the doc and
+site checks in the local build and the release pre-flight.
+
 Keep this script per-repo and identical in shape across properties, so "how do I publish?" has one
 answer everywhere. For a *release* (versioned artifact) rather than a *site update*, use the project's
 release flow instead - see [GITHUB_INTERACTION.md](GITHUB_INTERACTION.md) §4.

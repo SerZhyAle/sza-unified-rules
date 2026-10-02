@@ -43,7 +43,11 @@ Read what you find; do not judge by filename.
 - published artifacts other products download: a ZIP, a bank, a catalog, an event stream on stdout;
 - user-facing text that exists in more than one product in almost the same words - an install-trust page,
   a permission explanation, an import warning. These are contracts too, and they are the ones nobody
-  thinks to look for.
+  thinks to look for;
+- check scripts and their reports, and the document set itself: the catalog's automated-checks domain
+  (`CHECK-VERDICT`, `CHECK-BASELINE`, `CHECK-PLACEMENT`, `BUILD-EVIDENCE`) and documentation-quality domain
+  (`DOC-INTERNAL-QUALITY`, `DOC-EXTERNAL-QUALITY`) are the interface a gate or a doc set adopts. Count them
+  as held, not as local inventions.
 
 ## Step 2 - Classify and place
 
@@ -113,6 +117,10 @@ Commit only if the owner asks. The catalog is outside git, so changes there are 
 written - say plainly what you changed in it.
 
 ---
+
+## Answering a request from a sibling product
+
+When another product asks about a shared contract, answer in a dated `RESPONSE` document ([CONTRACTS.md](../../rules/CONTRACTS.md) §4): contract facts cite id and section; implementation facts cite code with the tree's date and say what was **not run**; every deviation found while answering becomes a ticket in this repo and a registry row; the answer amends nothing; and it corrects the requester's wrong premises rather than answering around them.
 
 ## What this skill must not do
 

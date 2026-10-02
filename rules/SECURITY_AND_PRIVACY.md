@@ -17,7 +17,9 @@ leak globs; a real build secret goes in the CI secrets store, referenced by name
 - The signing key / certificate and the identity fields are **frozen anchors**: the winget / installer
   (Inno `AppId` **or** WiX MSI `UpgradeCode`) / MSIX identity (desktop), the `applicationId` + Play
   upload/signing key (Android), the installer product id (Wails), the **Chrome item id + Edge product id**
-  (browser extension - distinct per store). Reserve once;
+  (browser extension - distinct per store). For a WiX product the set is wider than the `UpgradeCode`:
+  component GUIDs, feature ids, the extension + ProgId of any file type it registers, a COM class id, and
+  the separate `UpgradeCode` of a Burn bundle wrapped around the MSI. Reserve once;
   changing them orphans every installed copy. For an extension, never pin a private `key` in the manifest to
   force an id, and keep the CRX/CWS signing key (`cws-key*.json`, `*.pem`) git-ignored, never committed.
 - Publisher-constant, non-secret values (publisher CN / display name) live in the build-script
@@ -47,6 +49,11 @@ leak globs; a real build secret goes in the CI secrets store, referenced by name
   a packaged manifest capability. The privileged step is the narrowest possible (a program-scoped inbound
   firewall allow for that one exe), taken once, visible to the user - never a background elevation. The
   portable form of this rule, and the inventory row such a feature owes, are §7.
+- **A loopback-only server that backs a desktop UI is still reachable from every page the user opens**, so
+  "bound to localhost" is not a defence. Bind `127.0.0.1` on a random port; require a per-run token or the
+  app's own `Origin`; check `Host` against DNS rebinding; accept state-changing requests only as `POST`
+  with the expected content type (a `GET` never acts); and list it as a network surface in §7 even though
+  no other machine can reach it.
 
 ## 4. Data handling & the privacy promise
 
@@ -57,6 +64,12 @@ leak globs; a real build secret goes in the CI secrets store, referenced by name
 - **User data belongs to the user**: app-level credentials/keys live in the OS secret store at runtime,
   not in the build, not in plain files.
 - Network calls are named and bounded; nothing silently uploads user content.
+- **A secret handed between processes travels by environment-variable *name*, never by value** (never in
+  argv, history or a run report); the receiver deletes it from its own environment on read, so a process it
+  launches never inherits it, and an empty value is an error, not an empty secret. Every surface that writes
+  text (events, history, reports, log bundles, error messages) redacts through **one** function whose test
+  vectors are a single file consumed by every language that implements it, including values with spaces and
+  quotes.
 
 ## 5. Store declarations (one source, many forms)
 
@@ -116,7 +129,10 @@ remembers. Two inventories, both mandatory, both part of the product's registere
    outbound connection, or hands a file outward, each answering the same four questions: **on by default or
    off**, **what turns it on**, **how long it lives**, and **what leaves, to where**. This inventory - not
    the privacy page's prose - is the material for the "no telemetry" claim and for answering a user asking
-   what the product can send.
+   what the product can send. **An advertising, analytics or other third-party loader on an owned page is
+   such a row** - what leaves, to whom, on by default - and it changes the privacy promise: the page states
+   that it carries one, and `ads.txt` and the loader's publisher id agree. An app carries none
+   ([UI_UX.md](UI_UX.md) §3).
 4. **Born off, dies with its session.** A new listening surface, or a feature needing elevation, ships
    disabled, is enabled by a deliberate user action, stops when the user-visible session that created it
    stops, and never advertises a local address as an external one. §3's desktop form is one instance of
@@ -153,3 +169,18 @@ remembers. Two inventories, both mandatory, both part of the product's registere
 8. Stand up both inventories - permissions and network surfaces - register them, and wire the consistency
    check into the pre-release sweep; an empty inventory with a date is the compliant answer for a product
    with nothing to list (§7).
+9. If the product opens a file or page the user did not write, apply the untrusted-input checklist (§9).
+
+## 9. Untrusted input - a file or page the user did not write is hostile
+
+Anything that opens such a file or page (an archive, a document, a downloaded page, clipboard text) treats it
+as hostile:
+
+- **Refuse by size** from the directory listing, before reading or unpacking; cap nesting depth and total
+  expansion.
+- **Resolve every path the document supplies once** and confine it to the document's own tree; allow-list
+  URL schemes; never hand a name taken from the input to a shell.
+- **Every hand-written scanner over such input has a worst-case test with a time or memory bound.** The
+  failure is a hang or an uncatchable out-of-memory, not an error: measured on one product, an unclosed-tag
+  rewrite took 0.8 s on 60 KB and 13 s on 240 KB, and 99 MB of `{` under a 100 MB size cap killed the
+  process.

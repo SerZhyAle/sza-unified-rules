@@ -19,6 +19,11 @@ Every shape ships the **Microsoft Store MSIX** beside it (unsigned upload, Store
 `PackageIdentifier` (plus `PackageName` = installed ARP DisplayName where an installer exists) and MSIX
 Identity `Name` + `Publisher`. Reserve-once rules: PLATFORM_OVERLAYS Overlay A, fact 4.
 
+For a **WiX** product the anchor set is wider than the `UpgradeCode`: component GUIDs (an MSI component keeps
+its GUID for the product's life, or an upgrade leaves the old copy installed), feature ids, the extension and
+ProgId of any file type it registers, a COM class id, and the separate `UpgradeCode` of a Burn bundle wrapped
+around the MSI. Each outlives a rename in users' registries and upgrade state.
+
 Default to the **portable zip** until a requirement in the second column forces an installer - the
 no-installer variant has the smallest anchor set and no installer identity to freeze.
 
@@ -29,12 +34,17 @@ no-installer variant has the smallest anchor set and no installer identity to fr
   PLATFORM_OVERLAYS Overlay A "Version shape".
 - Pin the release build to the tag when the stamp is computed at build time: RELEASE_AND_DISTRIBUTION §4.
 - PE `VS_VERSIONINFO` + app-manifest stamping for native (Go) exes: DEVELOPMENT §16.
+- **MSI `ProductVersion`** is compared on its first **three** fields only, so a stamp whose distinguishing part
+  sits in the fourth lets a same-day update install beside the old copy. Map the stamp into three fields that
+  strictly increase per release (e.g. `yy.M.((d-1)*1440 + H*60 + m)`), and have the release script read the
+  `ProductVersion` of the published MSI and refuse a triple that is not greater.
 
 ## 3. Where the traps live
 
 - winget validation failure modes (no `Scope` / no `Dependencies`, never a self-extracting zip, CRLF-only
-  manifests, the `PackageName`/ARP coupling, the `MinimumOSVersion` anti-pattern): CHANNEL_MATRIX winget
-  playbook.
+  manifests, the `PackageName`/ARP coupling, the `MinimumOSVersion` anti-pattern, the Inno `AppMutex` that
+  makes every winget upgrade exit 1, a portable package launched through a `WinGet\Links` symlink so
+  `os.Executable()` must be resolved): CHANNEL_MATRIX winget playbook.
 - MSIX container traps (virtualized HKCU Run and `%LOCALAPPDATA%` -> use `%ProgramData%` for
   cross-process files, `uap5:StartupTask`, `desktop2:FirewallRules`, two `<Application>` in one package,
   Partner Center program choice, listing CSV export-then-merge): CHANNEL_MATRIX MSIX playbook.

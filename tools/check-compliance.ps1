@@ -9,6 +9,8 @@ shortcoming, so keep the checks mechanical and the false-positive rate at zero.
 Groups:
   CANON  adoption stamp, staleness, a stamp ahead of the canon, mirror banners
   RULES  the agent-rules file: canon pointer, no restatement, no self-declared fork
+  MEM    a committed agent-memory index stays within the 200 lines that are loaded (MEM01, advisory)
+  CI     workflows holding a write token or a secret pin third-party actions by commit (CI01, advisory)
   HOOK   the enforcement layer: every registered hook is in the inventory table
   LAY    layout and ledger
   CTR    shared contracts: pointers not copies, and the catalog named in exactly one file
@@ -17,7 +19,8 @@ Groups:
   SURF   product surfaces: privacy page, SEO block, sitemap/robots
   STYLE  house text style in prose and user-visible UI text
 
-Exit codes: 0 = clean; 1 = violations; 2 = internal error.
+Exit codes: 0 = clean; 1 = violations; 2 = internal error, or could not verify (run under Windows PowerShell
+5.1, which misreads the BOM-less UTF-8 repo files - use pwsh 7+).
 
 Usage:
   pwsh -File tools/check-compliance.ps1                      # target = repo at cwd
@@ -37,6 +40,15 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Host guard. Windows PowerShell 5.1 reads a BOM-less UTF-8 file as ANSI, and nearly every repo file this
+# gate judges is exactly that - so under 5.1 the house-style checks report em-dashes that are not there
+# and fail a clean repo. Refusing to run is the only honest answer: exit 2 is "could not verify", never
+# a verdict. -PrintDigest is exempt - it reads the canon through ReadAllText, which detects UTF-8.
+if ($PSVersionTable.PSVersion.Major -lt 7 -and -not $PrintDigest) {
+    Write-Host "check-compliance: needs PowerShell 7+ (running $($PSVersionTable.PSVersion)) - Windows PowerShell 5.1 misreads UTF-8 repo files and would report false errors. Run it with: pwsh -File tools/check-compliance.ps1"
+    exit 2
+}
 
 try {
     # ---------------------------------------------------------------- setup
@@ -250,6 +262,12 @@ try {
         if (Test-Path -LiteralPath $guidesDir) {
             foreach ($copy in (Get-ChildItem -Path $guidesDir -Filter *.md -File)) {
                 if ($canonDocNames -notcontains $copy.Name) { continue }
+                # A short pointer stub is neither a mirror nor a copy: a few lines that link to the canon
+                # carry no rule text to drift. The cap is what keeps a real copy that merely mentions the
+                # canon from slipping through - a copy is the whole document, never twelve lines.
+                $stubLines = @(Get-Content -LiteralPath $copy.FullName)
+                if ($stubLines.Count -le 12 -and
+                    (($stubLines -join "`n") -match '(?i)github\.com/SerZhyAle/sza-unified-rules|sza-unified-rules[/\\]')) { continue }
                 $head = (Get-Content -LiteralPath $copy.FullName -TotalCount 3) -join "`n"
                 if ($head -notmatch '(?i)mirror' -or $head -notmatch '(?i)unified[ _]rules') {
                     Add-Finding -Id 'SZA-CANON05' -Severity 'error' -Path "docs/guides/$($copy.Name)" -Line 1 `
@@ -459,7 +477,73 @@ try {
         if ($lineCount -gt 400) {
             Add-Finding -Id 'SZA-RULES05' -Severity 'warn' -Path $af `
                 -Message "$lineCount lines" `
-                -Fix 'Check the bulk is repo-specific architecture, not process. Size alone is not a violation.'
+                -Fix 'Size alone is not a violation. If the bulk is architecture, move it to a registered internal doc and leave one line per trap with a pointer to it; if it is process, it belongs in the canon.'
+        }
+    }
+
+    # --------------------------------------------------------- group MEM
+
+    # SZA-MEM01 - a committed agent-memory index that outgrew what the agent reads. Claude Code loads the
+    # first 200 lines of a MEMORY.md and silently drops the rest, so an index past that is a log, not an
+    # index: the newest entries are the ones that never arrive. Advisory (AI_USAGE.md section 4).
+    #
+    # TRACKED files only, and only the two reference layouts. A git-ignored memory directory is one
+    # person's scratch store - judging it reports a violation nobody can see in a clone - and an arbitrary
+    # MEMORY.md elsewhere in the tree is somebody's document, not the agent's index.
+    if ($isGit -and (Test-Enabled 'SZA-MEM01')) {
+        $memIndexRe = '(^|/)memory/MEMORY\.md$|(^|/)\.claude/agent-memory/.+/MEMORY\.md$'
+        foreach ($f in ($tracked | Where-Object { $_ -match $memIndexRe })) {
+            $p = Join-RepoPath $f
+            if (-not (Test-Path -LiteralPath $p)) { continue }
+            $memLines = @(Get-Content -LiteralPath $p).Count
+            if ($memLines -gt 200) {
+                Add-Finding -Id 'SZA-MEM01' -Severity 'warn' -Path $f `
+                    -Message "committed memory index is $memLines lines - only the first 200 are loaded, the rest never reaches the agent" `
+                    -Fix 'Keep the index to one line per topic file under about 150 lines: move the bodies into per-topic files and prune stale entries (AI_USAGE.md section 4).'
+            }
+        }
+    }
+
+    # --------------------------------------------------------- group CI
+
+    # SZA-CI01 - a third-party action pinned by a moving tag, in a workflow that holds a write token or a
+    # secret. `uses: owner/action@v3` runs whatever the owner's tag points at TODAY, with this workflow's
+    # `contents: write` token and secrets in reach; a commit SHA cannot be moved under the repo
+    # (RELEASE_AND_DISTRIBUTION.md section 1, "Least privilege"). Advisory.
+    #
+    # Decidable per file, with no YAML parse: the trigger is a literal `contents: write` line or a
+    # `${{ secrets.X }}` other than GITHUB_TOKEN (comment lines ignored), and a pin is `@` + 40 hex.
+    # Three deliberate narrowings keep the false-positive rate down:
+    #  - FIRST-PARTY owners (actions/*, github/*) are out. The canon names third-party actions, and a repo
+    #    that pins those and leaves actions/checkout on its major tag is following the rule as written.
+    #  - a workflow with neither a write token nor a secret has nothing to steal, so it is not judged.
+    #  - a deliberate exception carries `canon-ok` in a comment on the `uses:` line or the line above it.
+    # Local (`./`) and `docker://` references are not action pins and are skipped.
+    if ($isGit -and (Test-Enabled 'SZA-CI01')) {
+        $firstPartyOwners = @('actions', 'github')
+        foreach ($f in ($tracked | Where-Object { $_ -match '^\.github/workflows/[^/]+\.ya?ml$' })) {
+            $p = Join-RepoPath $f
+            if (-not (Test-Path -LiteralPath $p)) { continue }
+            $wfLines = @(Get-Content -LiteralPath $p)
+            $holdsToken = @($wfLines | Where-Object {
+                $_ -match '^\s*contents:\s*write\b' -or $_ -match '^[^#]*\$\{\{\s*secrets\.(?!GITHUB_TOKEN\b)'
+            }).Count -gt 0
+            if (-not $holdsToken) { continue }
+            $loose = New-Object System.Collections.Generic.List[int]
+            for ($i = 0; $i -lt $wfLines.Count; $i++) {
+                if ($wfLines[$i] -notmatch '^\s*(?:-\s*)?uses:\s*["'']?([^\s#"'']+)') { continue }
+                $ref = $Matches[1]
+                if ($ref -match '^\./|^docker://') { continue }
+                if ($ref -match '@[0-9a-fA-F]{40}$') { continue }
+                if ($firstPartyOwners -contains ($ref -split '/')[0]) { continue }
+                if ($wfLines[$i] -match 'canon-ok' -or ($i -gt 0 -and $wfLines[$i - 1] -match '^\s*#.*canon-ok')) { continue }
+                $loose.Add($i + 1)
+            }
+            if ($loose.Count -gt 0) {
+                Add-Finding -Id 'SZA-CI01' -Severity 'warn' -Path $f -Line $loose[0] `
+                    -Message "$($loose.Count) third-party action(s) pinned by a moving tag in a workflow that holds contents: write or a secret, line(s) $(Format-Lines $loose)" `
+                    -Fix 'Pin each to the full 40-hex commit with the version in a trailing comment (uses: owner/action@<sha> # v3.0.3). Where a tag is deliberate, add a canon-ok comment on that line or the line above.'
+            }
         }
     }
 
@@ -699,11 +783,12 @@ try {
         $lines = @(Get-Content -LiteralPath $doc.FullName)
         # A pointer names the contract it points at. Length alone is not the test - a short note with no
         # id is still a note - but a long file with no id is a copy of something that belongs elsewhere.
-        $hasId = ($lines -join "`n") -match '(?im)^\s*(\|\s*)?(contract|id)\s*[:|]\s*`?[A-Z][A-Z0-9-]{2,}'
+        # The id line comes as `id: X`, `- **Id:** `X``, or a table row `| **Id** | `X` |` - all pointers.
+        $hasId = ($lines -join "`n") -match '(?im)^\s*(?:[-*]\s+)?(?:\|\s*)?(?:\*\*)?(contract|ids?)(?:\*\*)?\s*[:|]\s*(?:\*\*)?\s*`?[A-Z][A-Z0-9-]{2,}'
         if (-not $hasId -and $lines.Count -gt 40) {
             Add-Finding -Id 'SZA-CTR01' -Severity 'warn' -Path "docs/contracts/$($doc.Name)" `
                 -Message "$($lines.Count) lines and no contract id - reads like a copy, not a pointer into the shared catalog" `
-                -Fix 'Move the contract into the catalog under its function, and leave id/version/home/role here. Run the contract-sync skill.'
+                -Fix 'If this file restates a contract, move that text into the catalog under its function. If it already points at the catalog, trim it to the contract id, version, home, role and what this repo owes (its obligations), and drop the rest. Run the contract-sync skill.'
         }
     }
 
@@ -1002,7 +1087,11 @@ try {
                 $prose = [regex]::Replace($line, '`[^`]*`', '')
                 $prose = [regex]::Replace($prose, '\]\([^)]*\)', ']()')
                 if ($prose -match '[\u2013\u2014\u2015]') { $dashLines.Add($n) }
-                if ($prose -match '\.{3,}' -or $prose -match '\u2026') { $dotsLines.Add($n) }
+                # An ellipsis that closes a quote or an emphasis mark ("Import...", **"Open ..."**,
+                # <<...>>) is a real UI string quoted verbatim - the product's own Win32 "..." menu
+                # convention, not prose. Only a bare one is the defect.
+                $bare = [regex]::Replace($prose, '(\.{3,}|\u2026)(?=["\u00bb\u201d*])', '')
+                if ($bare -match '\.{3,}' -or $bare -match '\u2026') { $dotsLines.Add($n) }
             }
             # One finding per file, not per line. A style backlog is one job; listing it line by line
             # buries every other check under it and the gate stops being read.
@@ -1014,7 +1103,7 @@ try {
             if ($dotsLines.Count -gt 0) {
                 Add-Finding -Id 'SZA-STYLE02' -Severity 'warn' -Path $f -Line $dotsLines[0] `
                     -Message "$($dotsLines.Count) '...' in prose, line(s) $(Format-Lines $dotsLines)" `
-                    -Fix "House style: '..'. Warn-only - a quoted real UI string or a CLI placeholder is legitimate."
+                    -Fix "House style: '..'. Warn-only - a CLI placeholder is legitimate. A quoted real UI string (an ellipsis right before the closing quote or emphasis mark) is already skipped."
             }
         }
     }
@@ -1056,7 +1145,10 @@ try {
         if ($f.fix) { Write-Host "     fix: $($f.fix)" }
     }
 
-    $overlayText = if ($stamp -and $stamp.overlay) { ($stamp.overlay -join ',') } else { '?' }
+    # A canon home or a portfolio page declares no overlay by design (SZA-CANON04); say "none", not "?".
+    $overlayText = if ($stamp -and $stamp.overlay) { ($stamp.overlay -join ',') }
+                   elseif ($stamp -and $stamp.role -and $stamp.role -ne 'product') { 'none' }
+                   else { '?' }
     Write-Host "check-compliance: $(Split-Path $RepoRoot -Leaf) - $($errors.Count) error(s), $($warns.Count) warning(s) (overlay $overlayText, canon $canonVersion)"
 
     if ($errors.Count -gt 0) {

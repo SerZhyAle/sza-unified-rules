@@ -554,3 +554,195 @@ The gate's aggregate was FAIL on test, lint and typos from files this run did no
    address - "a permalink or the equivalent" in §6 item 6 - so a static-HTML site can use the harness.
 3. SECURITY_AND_PRIVACY §7 item 6: name the store forms' 1000-character justification limit as part of the
    consistency check; it is the cheapest failure to catch and the one a paste hides.
+
+## Release-integrity wave 2026-09-26 (tickets 34-37, 5767e29)
+
+The pre-release audit of ticket 34 (22 slices, 138 findings, 6 high, closed 2026-09-26) found its highs in the
+**release path**, which the earlier audit of 2026-09-24 had left out entirely. They were fixed in `5767e29`
+and `d11adae`:
+
+- **Gate evidence binds to the tested tree.** Before: `check.ps1 -Plan <one child>` wrote release-grade
+  evidence, so a lint-only run unlocked the tag line (R1, high); the tree was hashed after the children, so an
+  edit made while the gate ran was recorded as tested (R3); the documented `build-local` flow rewrote tracked
+  `build/*.exe` after the check, so evidence could never match HEAD and the BLOCKED hint looped, an invitation
+  to bypass (R2); `contract-gate.ps1` printed PASS after checking zero contracts (R12). Now evidence records the
+  plan and every child's verdict, `release.ps1` derives the "full plan" from the placement file and not from
+  the evidence's own claim, the tree is hashed before the first child and after the last and a mismatch voids
+  it (COULD NOT VERIFY), `build-local` builds first, then gates, then commits, and a gate that checked nothing
+  exits 2. Tests: `TestGateEvidenceBindsTheRelease`, `TestContractGateOutcomes`.
+- **`release.yml` builds only the tag it names** (ticket 37, R18-R25). Before: a `workflow_dispatch` with a
+  free-text tag checked out the branch it started from and the release action created the tag if missing, so
+  "re-run for vX" after `main` moved shipped `main` as vX and winget then pinned that zip's hash. Now the tag
+  is resolved and its shape and date validated before checkout, `ref: refs/tags/<tag>` is checked out and a
+  step stops unless HEAD is the tag's commit and the tree is clean, a dispatch runs from `main` only, actions
+  are pinned by 40-hex commit with the version in a trailing comment, `contents: write` is granted on the
+  publishing job only, dispatch input reaches scripts through `env:`, and the local installer and MSIX builds
+  take `-Tag` and refuse a dirty tree or HEAD different from the tag. Release notes are ranged with
+  `--match 'v*'` because `git describe` also matched the `ext-cws-` and `ext-edge-` tags and dropped commits.
+  Verified with actionlint on the three workflows (exit 0).
+
+**Candidates raised for the canon from this wave - proposed 2026-10-02, not applied:**
+
+- *CI safety levers (provenance)* - landing in [RELEASE_AND_DISTRIBUTION](../RELEASE_AND_DISTRIBUTION.md) §1
+  beside "CI cost & safety levers", one line each in [`skills/release/SKILL.md`](../../skills/release/SKILL.md)
+  Phase 5 and the `store-publish` GitHub leg; mechanical checks `SZA-CI01` (a workflow with `contents: write`
+  or a secret whose `uses:` ref is not a 40-hex commit, warn only, first-party `actions/*` an owner decision)
+  and `SZA-CI02` (a publishing `workflow_dispatch` with no `refs/tags/` checkout) are **needs verification
+  against the real repos** before shipping. Portfolio grep on 2026-10-02: moving-tag `uses:` still present in
+  FastMediaSorter_Lite (8), Streams_Player (9, one pinned) and FastMediaSorter_mob_v2 (56 across 6 workflows);
+  CyrFlip and FileDO are already pinned. A raw `${{ inputs.* }}` in a `run:` is **not** a repo-wide problem
+  (Lite, Streams and FileDO already route it through `env:`). `store-publish` leg 3 ("never invoke
+  `build-msix.ps1` bare, pass all three identity values") should be reconciled with this repo's safer shape,
+  where the defaults are the frozen anchors and a bare unsigned build is refused unless `-Tag`.
+- *Release evidence names the plan and the tree it judged* - landing in
+  [RELEASE_AND_DISTRIBUTION](../RELEASE_AND_DISTRIBUTION.md) §2 (after "The absence of a verdict is not a
+  pass"), a clause in [INVARIANTS](../INVARIANTS.md) item 5 ("naming the version **and tree** it judged") and a
+  corollary in [DEVELOPMENT](../DEVELOPMENT.md) §15 ("order the work so the gate reads what the commit
+  holds"), with the catalog first: `BUILD-EVIDENCE` rule 8, additive, 0.10. The catalog's 0.9 has subject banner,
+  artifact version, no-retry and regenerate-and-compare, but nothing on binding the gate to the tree or on
+  subset runs.
+
+## Release 26.0930.1107 2026-09-30
+
+Tag `v26.0930.1107` on `48cc355`, plus `ext-cws-v26.0930` and `ext-edge-v26.0930`. Per-channel state is kept in
+`DEV/RELEASE_STATE.md` (`scripts/release-state.ps1`, `a rs`):
+
+| Channel | State on 2026-09-30 | Note |
+| --- | --- | --- |
+| GitHub | live | run 36699011635, 8 assets, exe stamp verified |
+| winget | submitted | PR #444113; 15 manifest files re-stamped and install-tested; the SHA taken from the release `.sha256`; previous PR #433869 merged |
+| Microsoft Store | pending | unsigned MSIX built from the tag; the listing CSV release notes not refreshed yet |
+| Chrome | submitted | `PENDING_REVIEW`; the previous revision stays published |
+| Edge | submitted | the first run failed HTTP 401 on an expired `EDGE_API_KEY`; rerun after storing a new key (the Edge API key lasts about 72 days, `extension/PUBLISHING.md`) |
+
+The release was cut from the ticket-70 audit commit, which included the RTF depth cap, the linear XHTML rewrite,
+the winget-alias symlink fix and the report-redaction fix. **Candidates raised - proposed 2026-10-02:** durable
+per-channel publish state with the vocabulary pending / submitted / live / blocked / n/a ("submitted" is not
+"live"), and a credential-lifetime column with rotation dates checked in the release preflight, landing in
+[RELEASE_AND_DISTRIBUTION](../RELEASE_AND_DISTRIBUTION.md) §6, `skills/release` Phase 8 and the Chrome/Edge
+paragraph of [CHANNEL_MATRIX](../CHANNEL_MATRIX.md); the grep for "state file / PENDING_REVIEW / expire / rotate"
+in rules and skills found nothing relevant.
+
+## Final pre-release audit 2026-09-30 (ticket 70)
+
+24 slices, 272 class-A files, 51 058 lines, **54 findings** (15 medium, 39 low), tickets 79-89, four days after
+ticket 34 and on the code its fixes had rewritten: a regression of R5 (the typo gate red again), a
+release-blocking test failure (ticket 89, `TestResearchNoteNaming`, a research note without the `RESEARCH_`
+prefix cited in the catalog, fixed catalog-first with a backup because `P:\Contracts` is not under git), the
+symlinked-alias OCR-data miss (ticket 83) and the unredacted user name (ticket 84). `audit-slices -Summary` PASS
+with 135 of 135 re-checks. The stated rationale in ticket 34: "code written to close a finding has not itself
+been read by anyone but its author" (about 13 100 Go lines added against a 22 700-line base).
+
+**Caveat recorded:** the tree read was `8cc1bcb` plus uncommitted work, so slices touched afterwards must be
+re-read before the next tag.
+
+**Candidate raised - proposed 2026-10-02:** a sliced whole-repo audit with script-proven coverage (every
+in-scope file in exactly one slice, every earlier finding id re-checked, class A = shipped code **and** the
+release path), landing with the FastMediaSorter S3556 method in `skills/spec-to-audit/references/audit-campaign.md`
+and a pointer in [DEVELOPMENT](../DEVELOPMENT.md) §11. This repo's `scripts/audit-slices.ps1` is 800 lines and
+tied to its layout; promoting it needs a repo config for the class-A globs and the parity map.
+
+## Contract pointers 2026-10-02 - SZA-CTR01 on three files
+
+`check-compliance.ps1 -RepoRoot P:/WINDOWS/EPUB_2_HTML` reported three SZA-CTR01 warnings, on
+`docs/contracts/APP-BEHAVIOUR.md`, `OCR-OVERLAY.md` and `OCR-PIPELINE.md` (43 to 47 lines each, against 37 or
+fewer for the other 24 pointers), beside the stale-digest warning.
+
+- **Root cause: a canon bug, now FIXED in the canon tool on 2026-10-02.** The id test accepted only
+  `id: X` and `| Id | X |`; all three files carry the id in the portfolio-common bold forms (`- **Id:**
+  `OCR-OVERLAY`` here, 27 of 27 pointers), so the check fell back to the length test (more than 40 lines). The
+  pattern in `tools/check-compliance.ps1` is now bold-tolerant and also accepts the bullet form and the plural
+  `Ids`. Measured after the fix, 2026-10-02: this repo reports 0 errors and 1 warning (`SZA-CANON03`); the three
+  CTR01 warnings are gone without a repo edit. The Fix text of the rule ("Move the contract into the catalog")
+  was not re-read in this entry.
+- **Mapping to the catalog, no version drift.**
+
+| Local file | Contract id | Catalog home | Local | Catalog | Role here |
+| --- | --- | --- | --- | --- | --- |
+| `OCR-OVERLAY.md` | `OCR-OVERLAY` | `ocr-overlay/README.md` | 1.2 | 1.2, active, shared | reference implementation, producer and consumer |
+| `OCR-PIPELINE.md` | `OCR-PIPELINE` | `ocr-overlay/ocr-pipeline.md` | 1.8 | 1.8, active, owner doc-html-translate | producer and owner |
+| `APP-BEHAVIOUR.md` | `APP-BEHAVIOUR` | `desktop-app-ux/APP-BEHAVIOUR.md` | 0.10 draft | 0.10 draft, owner StreamsPlayer | consumer |
+
+- **Content drift of form, not of numbers.** `OCR-PIPELINE.md` carries the whole amendment history 1.1-1.8 in
+  its `Version:` bullet (about 22 lines), a copy of the catalog's Document log that already lags (the log has a
+  2026-09-30 correction row for 1.6 the pointer does not mention). `OCR-OVERLAY.md` narrates closed exceptions
+  that registry rows already hold; only the two open ones (rule 1 JPEG-only EXIF, rule 10 extension `eng`,
+  until 2026-12-31) belong near the pointer. `APP-BEHAVIOUR.md` carries a rule-by-rule paragraph on how the GUI
+  meets rules 1-12 (about 25 lines), which is conformance evidence and the part most likely to rot. Nothing
+  contradicts the catalog; it is the repetition [CONTRACTS](../CONTRACTS.md) §3 names ("a pointer that grows a
+  second page has become a copy"). Trimming is **optional** now that the check is fixed; if done, it is a
+  `contract-sync` pass for this repo, not a canon change.
+
+## Deviation 2026-10-02 - cloud-session branches
+
+This repo is worked by parallel cloud sessions that push `claude/*` branches (`worktree-agent-*` merges of
+2026-09-25 and 2026-09-26, 12 or more worktrees). `scripts/sync-main.ps1` (`eb68101`, four auto-commits in the
+window) commits everything, merges every branch ahead of `main` (conflicts in the append-only `DEV/CHANGELOG.md`
+keep both sides, any other conflict aborts), builds as a cheap gate and pushes `main` - which here also publishes
+GitHub Pages.
+
+No other repo has such a script or a merged `claude/*` branch since 2026-09-20 (checked). It does not fit the
+canon's working stance of 2026-09-30 ([INVARIANTS](../INVARIANTS.md) "Working stance": the owner works alone, no
+branches or merges) nor INVARIANT 18's "commit only when asked" in letter. It stays here as a **repo delta, not a
+canon proposal**: the re-sync that moves the stamp past `2026.09.24.1` needs an owner decision on this, not a
+mechanical bump, and must record the delta instead of adopting the sentence. The stamp is still `2026.09.24.1`
+(`SZA-CANON03`, measured 2026-10-02); the only reading owed is [GITHUB_INTERACTION](../GITHUB_INTERACTION.md) §1
+and that stance.
+
+## Open canon suggestions carried 2026-10-02
+
+Status of the 2026-09-25 suggestions, re-checked against the canon working tree on 2026-10-02:
+
+1. **`check-compliance.ps1` should exit 2 under Windows PowerShell 5.1** - the host guard is now present in the
+   working tree of `tools/check-compliance.ps1` (exit 2 with a message, `-PrintDigest` exempt) but was not yet in
+   a commit at the time of reading, so it reaches this repo with the next deploy.
+2. **The CTR01 regex** - fixed 2026-10-02, see above.
+3. **The stamp lacks a documented `docRegistryShape` / `docRegistryFile` key** - still open: `templates/.sza-canon.json`
+   and the compliance tool name neither (only `ledgerShape` is read). This repo declares both, additively under
+   `REPO-STAMP` rule 7.
+
+**Further candidates from the 2026-10-02 mining, proposed and not applied** (each verified by grepping `rules/`,
+`skills/`, `tools/` and the catalog; evidence is in the commits and ticket files named):
+
+- *Untrusted-input checklist for apps that open files from the internet* - `SECURITY_AND_PRIVACY` (a new "Untrusted
+  input" section before the inventories) plus a pathological-input tier in [TESTING_AND_QA](../TESTING_AND_QA.md)
+  §3. Classes closed by the 2026-09-24 audit and the second pass: book paths confined to the book's tree, an output
+  path handed to the shell (`x&calc&.epub`, `01f4003`), archive list-before-unpack, a pixel budget before decode,
+  size-scaled helper deadlines with process-tree kill, an unbounded RTF `{` nesting that kills the process with an
+  uncatchable OOM (99 MB of `{` under a 100 MB cap, ticket 81), a quadratic XHTML rewrite (60 KB 0.8 s, 240 KB
+  13.3 s, ticket 86), a `ToLower` offset that breaks on Turkish `İ` (ticket 87).
+- *A loopback GUI server is a listening port that is on by default* - `SECURITY_AND_PRIVACY` §3 (a bullet after the
+  listening-port rule) and a scope clause on INVARIANT 11 (owner's call on wording). Ticket 03, `da78d1b`: any page
+  the user visited could drive the GUI's API before the Origin, Host and token checks; the catalog already holds
+  `PROPOSAL-2026-09-29-block-server-loopback.md` and a FileDO dated exception on `APP-BEHAVIOUR` rule 4.
+- *Output-folder protocol* - [TESTING_AND_QA](../TESTING_AND_QA.md) §6 and [DEVELOPMENT](../DEVELOPMENT.md) §10:
+  prove ownership with a token only the tool writes before deleting (ticket 05 deleted a user's folder holding one
+  `a.jpg`; ticket 80 treated a saved DHT-22 page as ours), a foreign-looking folder skipped even under `-force`,
+  reuse only against a completion record written last.
+- *Diagnostic-report redaction covers every serialisation of the profile path* - catalog first
+  (`DIAGNOSTIC-REPORT` rule 3, additive), then one clause in `SUPPORT_AND_FEEDBACK`. Ticket 84: the rule matched
+  single backslashes, the settings JSON in the mailed archive held `\\`-escaped, forward-slash and `file:///`
+  forms.
+- *What the package holds is proven per channel; an ignore rule can drop an embedded binary* -
+  [RELEASE_AND_DISTRIBUTION](../RELEASE_AND_DISTRIBUTION.md) §6 and `SECURITY_AND_PRIVACY` §6, with a possible
+  `SZA-LAY0x` check (a path named in a `//go:embed` / `Include=` / installer `[Files]` source that
+  `git check-ignore` reports ignored; false-positive rate **unverified**). Ticket 35: `pdftotext.exe` matched
+  `*.exe` in `.gitignore`, so a clean-checkout CI build shipped the DLLs without the executable; ticket 38: "OCR -
+  English bundled" in 13 winget locales while the winget zip, the MSIX and the CI zip carried no `eng.traineddata`.
+- *winget mechanics on a 15-file locale set* - `skills/store-publish/references/winget.md` and the winget paragraph
+  of [CHANNEL_MATRIX](../CHANNEL_MATRIX.md): re-stamp every manifest file before the local install test (else it
+  verifies the previous release), keep the manifest folder flat, and resolve `os.Executable()` through the
+  `WinGet\Links` symlink before looking for files beside the exe (ticket 83).
+- *Windows build and runtime traps* - [DEVELOPMENT](../DEVELOPMENT.md) §16 and §10, `RELEASE_AND_DISTRIBUTION` §4:
+  a tool another repo may also install is invoked by pinned version (FileDO pins `goversioninfo@v1.4.1`, this repo
+  `@v1.7.0`, both against one shared `%USERPROFILE%\go\bin`), stage helper files under an ASCII-only root, derive a
+  date-stamped version in UTC (R43), keep `./...` out of the gitignored `temp/` (R45), and a 386 toolchain's 2 GB
+  address space turns a large test into a flaky OOM.
+- *Promote the contract gate to a shared tool* - `tools/check-release-contracts.ps1` run by the `release` skill
+  Phase 2, since the canon states the contract gate in prose and ships no script (this repo's
+  `scripts/contract-gate.ps1`, 222 lines, is the only one in the portfolio). Medium effort: it assumes the
+  `_meta/REGISTRY.md` column order.
+
+**Seen, not worth a canon line:** permanent ticket ids under parallel sessions (two tickets numbered 51); a
+once-per-release sitemap resubmission; the accessibility floor as measured gates (ticket 57), revisit if a second
+product asks.
