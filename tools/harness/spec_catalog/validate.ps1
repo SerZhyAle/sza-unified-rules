@@ -75,7 +75,9 @@ if ($records.Count -gt 0) {
 # 4. Filesystem -> journal: every PLAN/S####_* file/folder has a record
 $repoRoot = (Get-SzaProjectRoot)
 $planDir  = Join-Path $repoRoot 'PLAN'
-$prefixed = Get-ChildItem -Path $planDir -Force | Where-Object { $_.Name -match '^S\d{4}_' }
+# @(): a pipeline with no match is $null, and under StrictMode $null has no .Count - a repository
+# with no S####_ entry in PLAN/ yet would otherwise end the whole run here.
+$prefixed = @(Get-ChildItem -Path $planDir -Force | Where-Object { $_.Name -match '^S\d{4}_' })
 $known = @{}
 foreach ($r in $records) { $known[$r.id] = $true }
 $orphans = New-Object System.Collections.Generic.List[string]
