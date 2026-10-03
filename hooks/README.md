@@ -28,6 +28,7 @@ name, so a repo may keep its inventory wherever it documents hooks.
 | [`session-start.ps1`](session-start.ps1) | `SessionStart` | injects | the twenty hard invariants, in an adopting repo only | [INVARIANTS.md](../rules/INVARIANTS.md) |
 | [`guard-bash.ps1`](guard-bash.ps1) | `PreToolUse` (Bash) | refuses | five things that cannot work in Bash on Windows, plus one that corrupts silently | [GITHUB_INTERACTION.md](../rules/GITHUB_INTERACTION.md) section 6 |
 | [`guard-fire-and-forget.ps1`](guard-fire-and-forget.ps1) | `PreToolUse` (Bash) | refuses | backgrounding a gate, a closure facade or a catalog mutator | [AI_USAGE.md](../rules/AI_USAGE.md) section 1 |
+| [`guard-git-rewind.ps1`](guard-git-rewind.ps1) | `PreToolUse` (Bash, PowerShell) | refuses | git commands that rewrite files on disk from history: checkout, switch, restore, `reset --hard`, clean, stash, revert, rebase, cherry-pick | [GITHUB_INTERACTION.md](../rules/GITHUB_INTERACTION.md) section 1 |
 | [`guard-uncapped-read.ps1`](guard-uncapped-read.ps1) | `PreToolUse` (Read) | rewrites | windows an uncapped read of a file over 500 lines, and says so | [AI_USAGE.md](../rules/AI_USAGE.md) sections 3 and 5 |
 | [`on-user-prompt.ps1`](on-user-prompt.ps1) | `UserPromptSubmit` | warns, nudges | context size past the band; a micro-task reaching for the full pipeline | [AI_USAGE.md](../rules/AI_USAGE.md) sections 3 and 5 |
 
@@ -136,8 +137,8 @@ canon's own "batch the fast gates into one process"
 ## Testing them
 
 ```powershell
-pwsh -NoProfile -File hooks/tests/smoke-hooks.ps1        # 46 cases, exit 0 required
-pwsh -NoProfile -File hooks/tests/smoke-prefilters.ps1   # 25 cases, exit 0 required
+pwsh -NoProfile -File hooks/tests/smoke-hooks.ps1        # 90 cases, exit 0 required
+pwsh -NoProfile -File hooks/tests/smoke-prefilters.ps1   # 31 cases, exit 0 required
 ```
 
 Every refusal is smoked **from both sides** - payloads it must refuse and payloads it must allow -

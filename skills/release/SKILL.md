@@ -236,8 +236,9 @@ This is the anti-loss phase and the reason this skill exists.
    into winget; the workflow refuses it (`overwrite_files: false`). After a failure that published nothing and
    cannot be re-dispatched, cut a new, strictly newer stamp and leave the failed number retired. A shipped
    release is immutable - you ship the next version, and the monotonic shape guarantees the hotfix sorts above
-   the bad build. If `git tag` fails after the anchor commit was made, drop it with `git reset --hard HEAD~1`
-   first.
+   the bad build. If `git tag` fails after the anchor commit was made, drop it with `git reset --mixed HEAD~1`
+   first (the stamp stays in the files and the next run overwrites it; the plugin's `guard-git-rewind` hook
+   refuses `--hard`, because a rewind of the tree also destroys uncommitted work).
 5. Watch the run (`gh run watch`) and confirm green before any store step.
 
 ## Phase 7 - Distribute, in order

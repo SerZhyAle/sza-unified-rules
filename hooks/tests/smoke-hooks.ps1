@@ -23,7 +23,7 @@ $repoRoot = Split-Path $hooksDir -Parent
 $failures = 0
 $cases = 0
 
-foreach ($f in @('guard-bash.ps1', 'guard-fire-and-forget.ps1', 'guard-uncapped-read.ps1',
+foreach ($f in @('guard-bash.ps1', 'guard-fire-and-forget.ps1', 'guard-git-rewind.ps1', 'guard-uncapped-read.ps1',
                  'on-user-prompt.ps1', 'session-start.ps1')) {
     if (-not (Test-Path -LiteralPath (Join-Path $hooksDir $f))) {
         Write-Error "smoke-hooks: $f is missing - cannot verify" -ErrorAction Continue
@@ -129,6 +129,51 @@ Invoke-Case 'backgrounded catalog mutator'     'guard-fire-and-forget.ps1' '{"to
 Invoke-Case 'same facade in foreground - allowed' 'guard-fire-and-forget.ps1' '{"tool_input":{"command":"pwsh -NoProfile -File scripts/post-change.ps1 -File a.kt -ChangeType Kotlin"}}' 0
 Invoke-Case 'backgrounded full build - allowed' 'guard-fire-and-forget.ps1' '{"tool_input":{"command":"pwsh -NoProfile -File ./a.ps1 d","run_in_background":true}}' 0
 Invoke-Case 'long job chained with a gate - allowed' 'guard-fire-and-forget.ps1' '{"tool_input":{"command":"pwsh -NoProfile -File ./a.ps1 d && pwsh -NoProfile -File scripts/post-change.ps1 -File a.kt","run_in_background":true}}' 0
+
+Write-Host '--- guard-git-rewind: REFUSE (canon GITHUB_INTERACTION.md section 1) ---'
+$rewind = 'guard-git-rewind.ps1'
+Invoke-Case 'git reset --hard'                 $rewind (Bash-Payload 'git reset --hard HEAD~50') 2 -MustContain 'rewrites files on disk'
+Invoke-Case 'git reset --hard, chained'        $rewind (Bash-Payload 'cd src && git reset --hard origin/main && ./build') 2
+Invoke-Case 'git -C <dir> reset --hard'        $rewind (Bash-Payload 'git -C ../app -c core.x=1 reset --hard HEAD~1') 2
+Invoke-Case 'git.exe by full path'             $rewind (Bash-Payload '/mingw64/bin/git.exe reset --hard') 2
+Invoke-Case 'checkout a commit over paths'     $rewind (Bash-Payload 'git checkout HEAD~3 -- .') 2
+Invoke-Case 'checkout a branch'                $rewind (Bash-Payload 'git checkout main') 2
+Invoke-Case 'checkout -- file'                 $rewind (Bash-Payload 'git checkout -- src/a.kt') 2
+Invoke-Case 'switch a branch'                  $rewind (Bash-Payload 'git switch main') 2
+Invoke-Case 'restore from HEAD'                $rewind (Bash-Payload 'git restore .') 2
+Invoke-Case 'restore --source'                 $rewind (Bash-Payload 'git restore --source=HEAD~2 --staged --worktree .') 2
+Invoke-Case 'clean -fd'                        $rewind (Bash-Payload 'git clean -fdx') 2
+Invoke-Case 'bare stash'                       $rewind (Bash-Payload 'git stash') 2
+Invoke-Case 'stash push -u'                    $rewind (Bash-Payload 'git stash push -u -m wip') 2
+Invoke-Case 'stash pop'                        $rewind (Bash-Payload 'git stash pop') 2
+Invoke-Case 'revert'                           $rewind (Bash-Payload 'git revert HEAD') 2
+Invoke-Case 'rebase'                           $rewind (Bash-Payload 'git rebase -i HEAD~5') 2
+Invoke-Case 'cherry-pick'                      $rewind (Bash-Payload 'git cherry-pick abc123') 2
+Invoke-Case 'apply --reverse'                  $rewind (Bash-Payload 'git diff HEAD~1 | git apply -R') 2
+Invoke-Case 'bash -c wrapper'                  $rewind (Bash-Payload "bash -c 'git reset --hard HEAD~1'") 2
+Invoke-Case 'pwsh -Command wrapper'            $rewind (Bash-Payload 'pwsh -NoProfile -Command "git checkout ."') 2
+Invoke-Case 'PowerShell tool, && chain'        $rewind (@{ tool_name = 'PowerShell'; tool_input = @{ command = 'git fetch; git reset --hard FETCH_HEAD' } } | ConvertTo-Json -Compress) 2
+Invoke-Case 'PowerShell tool, call operator'   $rewind (@{ tool_name = 'PowerShell'; tool_input = @{ command = '& git restore src' } } | ConvertTo-Json -Compress) 2
+
+Write-Host '--- guard-git-rewind: ALLOW - the load-bearing half ---'
+Invoke-Case 'git status'                       $rewind (Bash-Payload 'git status --short') 0 -MustBeSilent
+Invoke-Case 'git log / diff / show'            $rewind (Bash-Payload 'git log --oneline -5 && git diff HEAD -- a.kt && git show HEAD:a.kt') 0 -MustBeSilent
+Invoke-Case 'commit, tag, push'                $rewind (Bash-Payload 'git add -- a.kt && git commit -m "x" && git tag v1.0.0 && git push origin main') 0 -MustBeSilent
+Invoke-Case 'fetch and branch'                 $rewind (Bash-Payload 'git fetch origin && git branch -a') 0 -MustBeSilent
+Invoke-Case 'checkout -b creates, rewrites nothing' $rewind (Bash-Payload 'git checkout -b feature/x') 0 -MustBeSilent
+Invoke-Case 'switch -c creates, rewrites nothing'   $rewind (Bash-Payload 'git switch -c feature/x') 0 -MustBeSilent
+Invoke-Case 'reset --soft keeps the files'     $rewind (Bash-Payload 'git reset --soft HEAD~1') 0 -MustBeSilent
+Invoke-Case 'reset (mixed) keeps the files'    $rewind (Bash-Payload 'git reset HEAD~1') 0 -MustBeSilent
+Invoke-Case 'restore --staged is index-only'   $rewind (Bash-Payload 'git restore --staged a.kt') 0 -MustBeSilent
+Invoke-Case 'clean --dry-run'                  $rewind (Bash-Payload 'git clean -nd') 0 -MustBeSilent
+Invoke-Case 'stash list / show'                $rewind (Bash-Payload 'git stash list; git stash show -p') 0 -MustBeSilent
+Invoke-Case 'apply (forward) is not a rewind'  $rewind (Bash-Payload 'git apply fix.patch') 0 -MustBeSilent
+Invoke-Case 'sparse-checkout is not checkout'  $rewind (Bash-Payload 'git sparse-checkout set manifests/s/X') 0 -MustBeSilent
+Invoke-Case 'command quoted in a grep'         $rewind (Bash-Payload 'grep -rn "git reset --hard" rules/') 0 -MustBeSilent
+Invoke-Case 'command inside a commit message'  $rewind (Bash-Payload 'git commit -m "never git reset --hard here"') 0 -MustBeSilent
+Invoke-Case 'command in a heredoc body'        $rewind (Bash-Payload "cat > note.md <<'EOF'`ngit checkout .`nEOF") 0 -MustBeSilent
+Invoke-Case 'echo of the command'              $rewind (Bash-Payload "echo 'git stash'") 0 -MustBeSilent
+Invoke-Case 'a different tool named git-x'     $rewind (Bash-Payload 'git-lfs pull; gitk --all') 0 -MustBeSilent
 
 Write-Host '--- guard-uncapped-read: REWRITE, not block (canon AI_USAGE.md sections 3 and 5) ---'
 $long  = Join-Path $repoRoot 'tools/check-compliance.ps1'   # over the 500-line window

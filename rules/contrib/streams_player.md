@@ -655,3 +655,22 @@ under an unnamed commit (CyrFlip has two such commits, `a928ace` and `e619590`).
 `[skip ci]`, the `paths` filter and the tag-only trigger ([RELEASE_AND_DISTRIBUTION](../RELEASE_AND_DISTRIBUTION.md)
 §1); tag regex and build pinned to the tag (§4, `BUILD-EVIDENCE` rule 2); source-scanning conformance tests
 ([DEVELOPMENT](../DEVELOPMENT.md) §9); check-placement records (`CHECK-PLACEMENT`).
+
+## Canon adoption 2026-10-02 (SP-0186)
+
+Full canon reconciliation to **2026.10.02.5** (core digest `sha256:1a8cbbb10997597ade50c7bd78edbd0c072cd5df8ac6279773d27d20adcb0903`, `reconciledOn: "2026-10-02"`).
+
+### Reconciled items and fixes:
+- **`SZA-CTR02` cleared:** Removed literal `P:\Contracts` occurrences from `docs/contracts/README.md` and `tools/Sync-IconGlyphs.ps1`.
+- **`SZA-MEM01` cleared:** Modularized `memory/` into focused topic files (`feedback.md`, `project_architecture.md`, `project_playback.md`, `project_theme.md`, `project_localization.md`, `project_distribution.md`, `project_testing_and_automation.md`, `project_contracts.md`) and reduced `memory/MEMORY.md` to an index under 50 lines. Declared all in `DOCUMENT_REGISTRY.jsonl`.
+- **Contract pointers synchronized:** All 20 pointers in `docs/contracts/*.md` updated to latest catalog versions.
+- **`APP-BEHAVIOUR` rule 5 safe default button focus:** Updated all confirmation dialogs (`MessageBox.Show`) to set default button focus to safe result (`MessageBoxResult.No` / `MessageBoxResult.Cancel`).
+- **`APP-STYLE` warning color:** Synchronized light `WarningBrush` day tone to `#EF6C00` / `#FFEF6C00` (`ThemeService.cs`, `App.xaml`), matching `ICON-RENDER` 0.14 section 10 D.
+- **`WAVE-PARTICLES` rule 9:** Integrated Windows host animation signal via `SystemParameters.ClientAreaAnimation` (`BackdropEnvironment.AnimationEffectsEnabled` listened to in `WaveParticlesBackdrop.UpdateTicking`). Closed rule 9 exception in `P:\Contracts\_meta\REGISTRY.md`.
+- **Adoption rows in `P:\Contracts\_meta\REGISTRY.md`:** Updated all StreamsPlayer rows with current versions, `2026-10-02` sync date and `SP-0186` citations.
+
+### Verification:
+- `check-compliance.ps1`: `Streams_Player - 0 error(s), 0 warning(s) (overlay A, canon 2026.10.02.5)`
+- `check-docs.ps1`: `docs-quality: PASS (134 documents, 95 source documents checked, 180 links)`
+- `build.ps1 -Test -Deploy:$false`: 0 warnings, 0 errors, 1847/1847 tests passed.
+

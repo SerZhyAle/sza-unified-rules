@@ -50,7 +50,10 @@ Ordered by cost of violation. The pointer after each line is the doc that expand
     exists. ([DOCUMENTATION_CONCEPT](DOCUMENTATION_CONCEPT.md) §5, [LOCALIZATION](LOCALIZATION.md))
 18. **Commit or push only when asked**, never casually on the default branch (the site-publish flow is the one
     named exception), never `--no-verify` / `--force` / bypassed signing; agent commits carry the co-author
-    trailer. ([GITHUB_INTERACTION](GITHUB_INTERACTION.md) §2-3)
+    trailer. **Never rewrite files from git history** - no `checkout`, `restore`, `reset --hard`, `clean`,
+    `stash`, `revert`, `rebase` - to fix a build or for any other reason: uncommitted work is the only copy,
+    a red build is fixed forward, and a hook refuses these at the tool call.
+    ([GITHUB_INTERACTION](GITHUB_INTERACTION.md) §1-3)
 19. **Chat in Russian; write every artifact in English** - files, code, comments, script and console output,
     commit messages, PR titles and bodies. ([AUTHOR](AUTHOR.md) "Language", [DEVELOPMENT](DEVELOPMENT.md) §4)
 20. Apply the **house text style** to prose and UI only - `..` never `...`, plain hyphen, Russian `ё` - never in

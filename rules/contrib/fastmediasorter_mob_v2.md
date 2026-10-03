@@ -1950,3 +1950,18 @@ the catalog, not this record): whether colour *values* are shared across platfor
 hues; the humour level (policy "light irony" against the web guide's "3/5, dry"); the contrast target a gate can
 enforce (`state.warning` day tone is 2.70:1 against white in `palette.json`, below 3:1); whether a destructive
 dialog's default focus is the safe answer (desktop) or the confirm (FMS: Enter confirms).
+
+## Canon adoption 2026-10-02 - re-sync to 2026.10.02.3 (ticket S4060)
+
+- Stamp: `canon.version` 2026.09.24.1 -> 2026.10.02.3, `coreDigest` sha256:79ee3333.. -> sha256:410463a9..,
+  `reconciledOn` 2026-10-02 written for the first time; `adoptedOn` stays 2026-09-24 (REPO-STAMP rule 8).
+- Reconciled the 17 changed rule documents and the new `UI_UX.md` against `CLAUDE.md` and `AGENTS.md`: every
+  section the repo cites by number (AI_USAGE 1/3/7, DEVELOPMENT 5/10/15, GITHUB_INTERACTION 6,
+  DOCUMENTATION_CONCEPT 5, INVARIANTS 7) kept its heading; no repo rule contradicts the new text. The new
+  13-locale wording of LOCALIZATION matches the repo's Rule 30; the tree-state stance of GITHUB_INTERACTION 1
+  is not restated in the repo rules.
+- `scripts/utils/restamp-canon.ps1` now writes `reconciledOn` and leaves `adoptedOn` alone when the installed
+  reader names `reconciledOn` (2026.1002.3 does, `tools/check-compliance.ps1:201`); against an older reader it
+  still moves `adoptedOn`, so the sequencing caveat of `rule-adoption/README.md` holds either way.
+- `check-compliance.ps1`: before 0 errors / 1 warning (SZA-CANON03), after 0 errors / 0 warnings.
+- No canon fix found in this pass.

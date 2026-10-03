@@ -151,6 +151,24 @@ Write-Host '--- guard-fire-and-forget pre-filter (must SKIP: an ordinary foregro
 Assert-Case 'foreground call'                 $ffPat (Json './a.ps1 fk') 'nomatch'
 Assert-Case 'foreground build'                $ffPat (Json 'pwsh -File ./a.ps1 d') 'nomatch'
 
+# ------------------------------------------------------------------ the git-rewind guard: match => the hook runs
+
+$gitCmd = Get-RegisteredCommand 'guard-git-rewind.ps1'
+if (-not $gitCmd) { Cannot-Verify 'no PreToolUse registration invokes guard-git-rewind.ps1' }
+$gitPat = Get-CasePattern $gitCmd
+if (-not $gitPat) { Cannot-Verify 'could not recover the case pattern from the guard-git-rewind registration' }
+
+Write-Host '--- guard-git-rewind pre-filter (must REACH: any call that names git) ---'
+Write-Host "    pattern: $gitPat"
+Assert-Case 'git reset --hard'                $gitPat (Json 'git reset --hard HEAD~3') 'match'
+Assert-Case 'git -C <dir> checkout'           $gitPat (Json 'git -C ../app checkout .') 'match'
+Assert-Case 'git.exe by full path'            $gitPat (Json '/mingw64/bin/git.exe stash') 'match'
+Assert-Case 'bash -c wrapper'                 $gitPat (Json "bash -c 'git restore .'") 'match'
+
+Write-Host '--- guard-git-rewind pre-filter (must SKIP: a call that never names git) ---'
+Assert-Case 'plain ls'                        $gitPat (Json 'ls -la') 'nomatch'
+Assert-Case 'plain build'                     $gitPat (Json 'pwsh -NoProfile -File ./a.ps1 d') 'nomatch'
+
 # ------------------------------------------------------------------ the Read guard: match => the hook is SKIPPED
 
 $readCmd = Get-RegisteredCommand 'guard-uncapped-read.ps1'

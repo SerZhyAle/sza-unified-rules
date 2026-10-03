@@ -176,11 +176,12 @@ queue - hours to days, with extra scrutiny for first-time publishers.
 Cloning a fork of winget-pkgs is multi-GB, so use a partial clone with sparse-checkout:
 
 ```bash
-git init -q; git remote add origin https://github.com/<you>/winget-pkgs.git
-git config core.sparseCheckout true
-echo "manifests/s/SerZhyAle/<Pkg>/" > .git/info/sparse-checkout
-git fetch --depth 1 origin <pr-branch>; git checkout -q FETCH_HEAD
+git clone -q --depth 1 --filter=blob:none --sparse --branch <pr-branch> https://github.com/<you>/winget-pkgs.git
+cd winget-pkgs && git sparse-checkout set manifests/s/SerZhyAle/<Pkg>
 ```
+
+(No `git checkout` here on purpose: the plugin's `guard-git-rewind` hook refuses it in any repo, and a clone
+needs none.)
 
 A push to the PR branch is the reliable re-validation trigger; `@wingetbot run` may fail with "Commenter does
 not have sufficient privileges".

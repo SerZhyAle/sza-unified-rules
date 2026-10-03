@@ -43,6 +43,17 @@
         ]
       },
       {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "input=$(cat); case \"$input\" in *git*) printf \"%s\" \"$input\" | pwsh -NoProfile -File \"${CLAUDE_PLUGIN_ROOT}/hooks/guard-git-rewind.ps1\" ;; esac",
+            "shell": "bash",
+            "timeout": 10
+          }
+        ]
+      },
+      {
         "matcher": "Read",
         "hooks": [
           {
