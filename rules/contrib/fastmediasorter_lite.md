@@ -712,3 +712,63 @@ links from tracked docs to gitignored specs (`DOC-INTERNAL-QUALITY`); the prefli
 default (INVARIANT 4 and 5 verbatim); the CANON03 version-gap rung (already filed in the 2026-08-18 and kit records);
 product-level items (a viewer handing a file to "the registered default player" that is itself, secure-clipboard
 history exclusion, access code against enforced setting).
+
+## Canon re-sync 2026-10-03 - the specification-109 pass, run from a session inside the repo
+
+Canon **2026.09.06.1 -> 2026.10.02.3**, core digest `sha256:cdf49be6..` -> `sha256:410463a9..` (from
+`check-compliance.ps1 -PrintDigest`), `reconciledOn` 2026-10-03, `adoptedOn` 2026-08-18 kept. The trigger was the
+repo's specification 109, whose section 3 checklist carried this re-sync plus six still-open items. Gate before
+2 errors / 4 warnings, after **0 errors / 1 warning** (the informational `SZA-RULES05` `CLAUDE.md`-size note).
+
+- **The stamp.** `docRegistryShape: 1` and `docRegistryFile: docs/DOCUMENT_REGISTRY.jsonl` declared beside
+  `ledgerShape` (DOCUMENTATION_CONCEPT §6 item 5). The open 2026-08-18 DIVERGE on `editions: []` is settled as
+  `editions: ["server"]`: the Server edition (own winget package `SerZhyAle.FastMediaSorter.Server`, Inno AppId, ARP
+  name, asset) is a **packaging and host-mode variant of the same source tree** - `tools/Build-ServerInstaller.ps1`
+  states this itself ("NOT a fork") - so it ships off the same `v*` tag and `editionTagPrefixes` stays empty.
+- **`AGENTS.md`** (a Codex `/init` file, the `SZA-RULES02` error) gained the canon pointer block (plugin, overlay A,
+  model reference, contrib record) and its one restated canon rule was rewritten as a pointer (`SZA-RULES03` cleared).
+  The body was kept rather than replaced by the delegating stub, because `CLAUDE.md`'s Git & PR section defers to the
+  file's Preserve-Local-Work rules as the full text - deleting the body would have orphaned that reference. The two
+  goals (pointer present, no restatement) are both met.
+- **`SZA-SEC03`, new in canon 2026.10.02** and not in the specification's list, fired on the five committed 7z test
+  fixtures of `tests/Lite.Tests/TestData/archives/` (deterministic payload archives; nothing in the test process can
+  write a 7z). Cleared with the check's own remedy: a narrow `!` negation group in `.gitignore` headed by a why-comment
+  naming the README that documents how to reproduce them.
+- **`SZA-CI01`**: `microsoft/setup-msbuild@v3`, `NuGet/setup-nuget@v4` and `softprops/action-gh-release@v3` in
+  `.github/workflows/release.yml` are pinned to the full 40-hex commit each tag resolves to, with the version in a
+  trailing comment (`actions/*` are first-party per the check and stay on their majors).
+- **Contract-sync and the product rows**: re-verified, not reworked - every `docs/contracts/` pointer reads
+  2026-10-02 at the version of record (specification 098's pass). This pass closed the catalog's `RULE-DELIVERY`
+  staleness exception on the stamp work, narrowed the PAGE row's stale "the switcher says `UK`" clause (verified
+  against `index.html`: stores `ua`, maps legacy `uk`, switcher reads RU/EN/UA), and dated the
+  `REPO-STAMP`/`REPO-LAYOUT`/`RULE-DELIVERY` adoption row. The destructive-confirmation sweep (098's item) found two
+  more un-defaulted prompts and fixed them; advertising was searched for the first time and found nowhere in `src/`
+  nor on the root site pages.
+- **Committed, at the owner's request (specification 109's commit item)**: `759b2c6` - the two canonical-pointer
+  stubs and the `docs/README.md` repoint, after `tools/Test-DocRegistry.ps1` PASS (96 documents, 349 links; it needs
+  ripgrep on PATH in fresh shells, which this harness supplies only inside Git Bash). The registry files the
+  specification called untracked had already been committed in `544ef5e`, so the premise was stale; their two pending
+  rows belong to other work in flight and stayed out of the commit.
+- **Reconciliation across the digest jump (2026.09.06 -> 2026.10.02)**: nothing else bites. The contract-conformance
+  rung, the registry declaration and the tree-state stance were already satisfied before the re-sync (recorded in the
+  2026-10-02 read-only entry above and cited there as evidence); specification 098 had paid the contract side. The
+  new `UI_UX.md` lands here through the shared contracts (`APP-BEHAVIOUR`/`APP-STYLE`/`ICON-*` rows), which this
+  repo's catalog rows already hold.
+- **Canon 2026.10.03.1 exists in the source repo, undeployed** (installed plugin still serves 2026.10.02.3, so the
+  stamp names that). Its two changed rule docs were read anyway: the GITHUB_INTERACTION never-rewind rule and
+  INVARIANT 18's strengthening codify exactly this repo's Preserve-Local-Work stance of 2026-09-02 - nothing to
+  reconcile when the plugin deploys; the stamp updates again at the next re-sync.
+
+**Canon fixes found (not applied from here):**
+
+1. **The `editions` stamp key has no documented form for an edition that is not an independent codebase.** The
+   PLATFORM_OVERLAYS "Editions" section defines an edition as a separate source tree on its own clock; this repo's
+   Server edition is a packaging variant of the same tree on the same clock, which the key's vocabulary cannot say -
+   the stamp now carries `["server"]` with the explanation pushed into `$comment`. A sentence in PLATFORM_OVERLAYS
+   (or the template comment) naming the packaging-variant case would stop the next repo from re-opening the same
+   question. Medium confidence.
+2. **`SZA-SEC03`'s remedy reads oddly for deliberately committed fixtures that no ignore rule touches.** The check
+   wants a `!` negation "with a why-comment" even when nothing ignores the file, so the honest `.gitignore` grows
+   negations that are no-ops for git. Accepting an adjacent `PROVENANCE`-style header (the archives README, the
+   fd-sec vectors' `PROVENANCE.txt`) as the why-comment would match how this repo already documents vendored bytes.
+   Low confidence - the negation group does work, it is just not the only honest shape.

@@ -14,6 +14,7 @@ Checks:
   CTR-PATH    no Windows path inside markdown link parentheses (the backslashes vanish silently)
   CTR-EXPIRE  no exception row past its `until` date
   CTR-STALE   how many adoption rows are still unverified (informational)
+  CTR-LAG     how many adoption rows are behind their contract, from tools/contract-lag.ps1 (informational)
 
 Exit codes: 0 = clean; 1 = violations found; 2 = internal error.
 
@@ -266,6 +267,24 @@ try {
     if ($adoptionRows -gt 0 -and $adoptionPending -gt 0) {
         Add-Finding -Id 'CTR-STALE' -Severity 'warn' -Path '_meta/REGISTRY.md' `
             -Message "$adoptionPending of $adoptionRows adoption rows are still unverified"
+    }
+
+    # CTR-LAG is informational like CTR-STALE: a product behind a contract is a spec to write, not a broken
+    # catalog. The numbers come from contract-lag.ps1, the one program that reads the adoption cells.
+    $lagScript = Join-Path $PSScriptRoot 'contract-lag.ps1'
+    if (Test-Path -LiteralPath $lagScript) {
+        $lagJson = & pwsh -NoProfile -File $lagScript -CatalogRoot $CatalogRoot -Json 2>$null
+        if ($LASTEXITCODE -eq 0 -and $lagJson) {
+            $lag = ($lagJson -join "`n") | ConvertFrom-Json
+            $behindCount = [int]$lag.counts.behind + [int]$lag.counts.partial
+            if ($behindCount -gt 0 -or [int]$lag.counts.unparsed -gt 0) {
+                $products = @($lag.rows | Where-Object { $_.state -in 'behind', 'partial' } |
+                              ForEach-Object { $_.product -replace '\s*\(.*$', '' } | Sort-Object -Unique).Count
+                Add-Finding -Id 'CTR-LAG' -Severity 'warn' -Path '_meta/REGISTRY.md' `
+                    -Message ("$behindCount adoption rows are behind their contract ($products products), $($lag.counts.unparsed) unreadable - " +
+                              'run tools/contract-lag.ps1; -Product <name> -EmitSpec writes the sync spec')
+            }
+        }
     }
 
     if ($Json) {

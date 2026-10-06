@@ -77,6 +77,10 @@ In `P:\Contracts\_meta\REGISTRY.md`, for every contract this product produces or
 **implements**, the range it **reads**, today's date as **verified**, a one-line note. Every deviation
 becomes a dated **exception** with a reason and an `until` date.
 
+Write the cells in the format `REGISTRY.md` section 2 states, because a program reads them: **one** version
+(or `partial <version>`, or `-`) per cell, one contract id per row, `pending` or a date in `Verified`, and
+everything else in the note. `tools/contract-lag.ps1` reports a row it cannot read as `unparsed`; fix your own.
+
 **Edit this product's rows only.** Another product's row, and another product's contract, are amended by
 written proposal, never by edit. A row you cannot verify honestly stays `pending` with a note naming what
 is missing - that is a correct answer, and the registry is designed to carry it.
@@ -117,6 +121,22 @@ Commit only if the owner asks. The catalog is outside git, so changes there are 
 written - say plainly what you changed in it.
 
 ---
+
+## Which product is behind, and the spec that catches it up
+
+The registry is the ledger of which version each product is synchronized with. From the canon repo:
+
+- `pwsh -File tools/contract-lag.ps1` lists every adoption row that is **behind** its contract, `partial`,
+  `pending` or unreadable. `check-contracts.ps1` shows the totals as `CTR-LAG`.
+- `pwsh -File tools/contract-lag.ps1 -Product <name> -EmitSpec -OutFile <path>` writes the **synchronization
+  spec** for one product: per contract, the document-log entries between its version and the current one, each
+  with its kind and what it obliges, plus the definition of done. Hand it to that product's own session; this
+  skill, run in the canon, never edits another product's rows or tree.
+- Running this skill **in a product's repo** with such a spec in hand is the catch-up run: steps 4-6 for the
+  contracts the spec lists, then the registry rows, written by the product.
+
+A row can be behind because the code is, or because nobody re-read the contract since it moved; the spec
+cannot tell which, and the owner's verification is what tells.
 
 ## Answering a request from a sibling product
 
