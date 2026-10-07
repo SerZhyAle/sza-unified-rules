@@ -98,6 +98,7 @@ All fields below are optional. Absence in any record - old or new - is valid and
 - `blocked_by` (string array) - ids of tickets this one depends on, e.g. `["S0099"]`; informational, not enforced by `validate.ps1`.
 - `closed_at` (string) - `YYYY-MM-DD` date of intentional finalization; written by `close.ps1`; absent until the ticket is closed.
 - `has_tactical` (boolean) - `true` when a `PLAN/Sxxxx_*/INDEX.md` tactical folder exists; written by `/spec-tech` during the Tactical status transition.
+- `statusNote` (string) - why the ticket is in its current status; written by `update.ps1 -StatusNote`, **required** on every `Block*` status (a parked ticket must say what it waits for) and removed again when the ticket leaves one. Mirrored into the spec file as a `**Status note:**` header line.
 
 ---
 

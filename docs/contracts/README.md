@@ -10,5 +10,8 @@ these files are concise pointers, not local copies.
 | `REPO-LAYOUT` | 0.10, draft | `rule-adoption/` | producer and consumer | [REPO-LAYOUT.md](REPO-LAYOUT.md) |
 | `RULE-DELIVERY` | 0.10, draft | `rule-adoption/` | producer | [RULE-DELIVERY.md](RULE-DELIVERY.md) |
 
+It also implements one contract it does not own: `TASK-FLOW` (domain `task-flow/`, owner `shared`), through the
+harness - see [TASK-FLOW.md](TASK-FLOW.md).
+
 Catalog paths are intentionally not repeated here. Code and documentation cite a contract by id and rule
 or section, not by a catalog filesystem path.

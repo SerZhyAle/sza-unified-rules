@@ -74,6 +74,7 @@ compliance gate read instead of guessing.
 | [`spec-to-audit`](skills/spec-to-audit/SKILL.md) | the task lifecycle from triage through spec, plan, implementation, evidence, self-audit, documentation and commit, with a refusing gate at each boundary |
 | [`adopt-canon`](skills/adopt-canon/SKILL.md) | adopting or re-syncing the canon in a repository, and writing its stamp |
 | [`contract-sync`](skills/contract-sync/SKILL.md) | aligning a repo with the shared contracts catalog: inventory, migrate by function, pointers instead of copies, registry rows, the seven-point compatibility audit |
+| [`task-flow-init`](skills/task-flow-init/SKILL.md) | day 0 of a project's tasks: the numbered ledger, the queue and ready/done plan files, a ticket template, an R0 runner rendered from the profile, and the rehearsal that gates the first unattended run |
 | [`agent-cost`](skills/agent-cost/SKILL.md) | measuring what a session actually costs, with the five corrections without which every token figure is inflated roughly threefold - and the subagent model tier, the largest single lever that measurement reaches |
 | [`caveman`](skills/caveman/SKILL.md) | terse mode - prose compressed, every exact string and every gate reason left intact; plus the commit and review shapes |
 
@@ -143,7 +144,7 @@ before committing anything under `rules/`.
 ```
 .claude-plugin/     plugin.json + marketplace.json - this repo is both
 rules/              the canon: INVARIANTS.md + 18 reference docs + contrib/ per-project records
-skills/             the seven skills, each with its own references/
+skills/             the nine skills, each with its own references/ where it needs one
 tools/              check-rules.ps1 (the canon) + check-compliance.ps1 (a project)
 hooks/              the enforcement layer, enumerated in its own inventory table - not counted here
 templates/          .sza-canon.json - what a project copies when it adopts

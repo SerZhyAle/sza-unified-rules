@@ -32,6 +32,16 @@ that keeps its own thin entry points can point them here without passing a root.
 `SZA_PROFILE_PATH` points at an alternate profile file without touching the project's - for a test
 harness or a migration.
 
+## Day 0 of a new project
+
+A project with nothing yet runs `scaffold/init-task-flow.ps1 -Root .` once: it creates the stores the ticket
+tools write into, the three plan files, `TICKET_TEMPLATE.md` and an **R0 launcher** (`r0.ps1`) rendered from the
+project's profile. Tickets are then created with `spec_catalog/capture-draft.ps1`, which writes the ledger row and
+its spec file in one call - `insert.ps1 -Slug` alone writes the row and leaves the file for something else. The
+launcher is standalone: it reads the ledger and the queue file and starts one fresh agent process per ticket, so
+it keeps working on a machine that has no harness. The `task-flow-init` skill drives all of this with its
+rehearsal; the rules are the `TASK-FLOW` contract in the shared catalog.
+
 ## What is deliberately not here
 
 - **The test suites.** A `*.tests/Run-Tests.ps1` exercises the harness through one project's paths,
