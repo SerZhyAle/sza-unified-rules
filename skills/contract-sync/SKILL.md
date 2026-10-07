@@ -82,7 +82,8 @@ Write the cells in the format `REGISTRY.md` section 2 states, because a program 
 everything else in the note. `tools/contract-lag.ps1` reports a row it cannot read as `unparsed`; fix your own.
 
 **Edit this product's rows only.** Another product's row, and another product's contract, are amended by
-written proposal, never by edit. A row you cannot verify honestly stays `pending` with a note naming what
+written proposal, never by edit. Every contract is sealed (since 2026-10-07), drafts included: only its owner
+edits it, so a draft this product merely consumes is not this product's to supplement. A row you cannot verify honestly stays `pending` with a note naming what
 is missing - that is a correct answer, and the registry is designed to carry it.
 
 ## Step 5 - Audit the consumer code against the compatibility law
@@ -152,3 +153,5 @@ When another product asks about a shared contract, answer in a dated `RESPONSE` 
   row intact, because a consumer may have shipped against it.
 - **Never touch another repository's working tree.** One repo per run, and the other side of a shared
   contract finds out by proposal, not by surprise.
+- **Never edit a contract this product does not own** - sealed, draft or not. Write
+  `PROPOSAL-<date>-<topic>.md` beside it in its domain folder and leave the contract untouched.

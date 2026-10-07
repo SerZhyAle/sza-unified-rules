@@ -99,6 +99,13 @@ the change it asks for. The owner accepts it by folding it into the contract as 
 rejects it in writing, and the proposal stays as the record either way. A proposal is how the obligation
 above is met without one product rewriting another's decision.
 
+**Every contract is sealed (since 2026-10-07).** The rule above holds for drafts too: there is no longer an
+allowance for a product to supplement a contract it does not own. Only the owner supplements, spells out the
+implementation of, or corrects a contract; every other product files a proposal and leaves the text alone,
+and until the owner accepts it the sealed text binds. Where the owner is `shared`, the owner is the catalog
+owner, working through the canon session. Sealed is not final - a draft may still change shape - and the
+registry is not sealed: a product still writes its own rows and its own exceptions.
+
 **Answering a sibling's question.** A question from another product about a shared contract is answered in
 a dated `RESPONSE` document. Contract facts cite the id and section; implementation facts cite code with
 the tree's date and say what was not run. Deviations found while answering become the answerer's own
@@ -119,7 +126,7 @@ catalog:
 
 - A contract carries a document version `MAJOR.MINOR`, and where the format has a wire carrier - a
   `schemaVersion` field, a version byte, a named column set - the carrier is what code dispatches on. They
-  bump together. A contract below 1.0 (draft) is not final law.
+  bump together. A contract below 1.0 (draft) is not final law - and it is no less sealed (§4).
 - **MAJOR** when an implementation that shipped against the previous version would do something *wrong*
   rather than something *less*: a field removed, renamed or given new meaning or units; an optional value
   becoming required; an "optional" addition whose absence changes security or write semantics; a derivation
