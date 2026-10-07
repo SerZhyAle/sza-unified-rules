@@ -7,22 +7,23 @@ specifics marked *(overlay)*.
 
 ## 1. What localizes, what stays English
 
-- **Localize the user-facing surfaces**: the app UI, `README`/`README_<lang>`, the site pages, and the
-  store/Play listing - to the audiences you actually have. `README_<lang>` is optional when the site and a
-  localized docs page set already carry the translation; an EN-only README is fine then, not a gap.
+- **Localize every user-facing surface**: the app UI, `README`/`README_<lang>`, site pages, and store/Play
+  listing ship EN/RU/UK where that surface exists. `README_<lang>` is optional only where an equivalent,
+  maintained localized docs page set carries the same information.
 - **Keep English (canonical technical ledgers)**: `CHANGELOG.md` (published verbatim as the release
   body and site "What's new"), the `docs/contracts/` pointers, code, and technical/tactical specs.
-- **EN/RU/UK are the strict, owner-authored set.** Further languages are machine-assisted: the full set is
+- **EN/RU/UK are the strict, owner-authored set.** English is the source; Russian and Ukrainian are
+  maintained translations. Further languages are machine-assisted: the full set is
   declared in one place (a product ships up to 13 UI languages), a new or reworded key is gated at release
   (DOCUMENTATION_CONCEPT §5, fan-out at the release boundary), and a missing translation falls back to the
-  source language, never to a bare key. Add a locale only when there are users for it - a half-translated
+  source language, never to a bare key. Add a further locale only when there are users for it - a half-translated
   surface reads worse than an honest English one.
-- **Locale coverage is per surface, not one uniform set.** A surface carries a locale only when there are
-  users *for that surface*; EN/RU/UK is the usual core, not an obligation every surface must meet. It is
-  fine and common for the website + README to ship EN/RU/UK while the app UI and store
-  listing ship EN/RU only (reference: `StreamsPlayer` - UK on the site and README, EN+RU in the app and the
-  Store listing). Do not treat a locale present on the site as a gap in the app; each surface's set is its
-  own decision.
+- **Legacy exception only:** earlier per-surface locale choices remain recorded as history; they do not
+  authorize a new EN/RU-only surface or a translation regression. Bring a touched legacy surface to the
+  required set as part of its normal localization work.
+- **Every localizable product surface ships EN/RU/UK.** This includes UI, site, README and store listings
+  where those surfaces exist. A non-localizable technical artifact remains English. Do not treat Ukrainian
+  as optional or as a fallback-only locale.
 
 ## 2. String management without drift
 
@@ -68,7 +69,7 @@ formulas (toast, error, empty, progress, success, destructive confirm) and the v
 
 ## 6. Applying to a new project
 
-1. Decide the shipped locales (EN + the audiences you actually have).
+1. Ship the required EN/RU/UK locales on every localizable surface.
 2. Put every user-facing string in the resource; wire the parity-enforcing add/audit tool.
 3. Keep CHANGELOG + contracts English; localize README/site/listing/UI.
 4. Apply the text style to prose/UI; add `hreflang` + consistent ISO codes on the site.

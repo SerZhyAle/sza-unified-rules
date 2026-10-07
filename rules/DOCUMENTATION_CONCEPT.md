@@ -27,14 +27,14 @@ text - keep the long form in CHANGELOG, the trimmed form in the listing file.
 
 ## 2. Versioning & change tracking
 
-- **Version is derived mechanically, never hand-bumped.** The exact shape is a per-platform frozen
-  decision (see overlay: date tag `YY.M.D.HHmm` for desktop/CLI; `versionCode`+`versionName` for
-  Android). Each channel that wants a different shape derives it mechanically from the one
-  authoritative form.
+- **Version is derived mechanically, never hand-bumped.** New release streams use the portfolio version
+  clock `YY.MMDD.HHmm` in `Europe/Malta`; each channel that wants a different shape derives it
+  mechanically from that authoritative form. A public stream's established shape remains frozen, because
+  changing it can break updates.
 - **CHANGELOG is the ledger.** Keep-a-Changelog format, English only (it is published verbatim as the
   release body and the site "What's new"). Categories: `Added / Changed / Fixed / Removed`.
   - Regular builds accrete bullets under `## [Unreleased]`.
-  - A release moves `[Unreleased]` into `## [<version>] - <YYYY-MM-DD>` and opens a fresh empty
+  - A release moves `[Unreleased]` into `## [<version>] - <YY-MM-DD HH:mm>` and opens a fresh empty
     `[Unreleased]`. That dated section *is* the release note - do not re-author it elsewhere.
   - **Four ledger shapes are accepted - pick one per project**, keeping exactly one authoritative
     internal ledger and one public-notes render:

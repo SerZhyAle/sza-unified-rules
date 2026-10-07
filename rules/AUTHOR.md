@@ -30,11 +30,30 @@ here.
 
 ## Language
 
-- **Chat in the owner's language (Russian); code, docs, logs, and commits in English.**
+- **Chat in the owner's language (Russian); code, docs, logs, and commits in international English.**
+- **English is the source language for documentation.** Translations render from that source; they are
+  never independent specifications.
+- **Ukrainian is supported everywhere a product exposes localizable text.** Ship it alongside English and
+  Russian in UI, site, README and listing surfaces; do not make Ukrainian a second-class fallback.
 - English is weak-but-improving (technical reading is OK). Keep any English the owner must read **short
   and simple**.
 - **Text style**: the house standard (`..` not `...`; plain hyphen; `ё`; prose + UI only, never
   code/specs/commands/logs/chat) - one home: [DOCUMENTATION_CONCEPT.md](DOCUMENTATION_CONCEPT.md) §5.
+
+## Portfolio defaults
+
+- **Time zone:** `Europe/Malta` (Central European Time / Central European Summer Time). All human-facing
+  project dates and times use local time in that zone, never an unlabelled host-local clock.
+- **Date and time:** `YY-MM-DD HH:mm` (for example, `26-10-07 14:35`). A timestamp in a file name is
+  `YY-MM-DD_HHm` (for example, `26-10-07_1435`).
+- **Currency:** euro. Use the `EUR` ISO code in technical fields and the appropriate localized euro
+  presentation in user-facing text.
+- **Units:** SI (metric). Preserve a platform, legal, API or user-supplied unit only where its contract
+  requires it; convert it for display when useful.
+- **Version clock:** new product release streams use `YY.MMDD.HHmm` (for example, `26.1007.1435`). The
+  timestamp is generated mechanically in the portfolio time zone. A released stream keeps its established
+  version shape, because changing it can break updates; platform-specific channel versions derive from the
+  authoritative value.
 
 ## Working style
 

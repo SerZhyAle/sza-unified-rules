@@ -29,9 +29,8 @@ no-installer variant has the smallest anchor set and no installer identity to fr
 
 ## 2. Version stamping map
 
-- The date-stamp shapes (dotted `YY.M.D.HHmm`, zero-padded `YY.MMDD.HHmm`, separator-less `yyMMddHHmm`)
-  and both MSIX remaps (`M*100+D`; no-leading-zeros int-cast with the `<=65535` guard):
-  PLATFORM_OVERLAYS Overlay A "Version shape".
+- The date-stamp shape (`YY.MMDD.HHmm`) and its MSIX remap (no-leading-zeros int-cast with the
+  `<=65535` guard): PLATFORM_OVERLAYS Overlay A "Version shape".
 - Pin the release build to the tag when the stamp is computed at build time: RELEASE_AND_DISTRIBUTION §4.
 - PE `VS_VERSIONINFO` + app-manifest stamping for native (Go) exes: DEVELOPMENT §16.
 - **MSI `ProductVersion`** is compared on its first **three** fields only, so a stamp whose distinguishing part

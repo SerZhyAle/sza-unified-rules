@@ -89,7 +89,7 @@ This folder is the **source of truth**; a project never re-authors the conventio
   edited in place - fixes land here first, then re-mirror.
 
 ```
-<!-- Mirrored from Unified_Rules @ <canonVersion> digest:<first12> on <YYYY-MM-DD>. Edit the canonical copy, not this. -->
+<!-- Mirrored from Unified_Rules @ <canonVersion> digest:<first12> on <YY-MM-DD HH:mm>. Edit the canonical copy, not this. -->
 ```
 
 **A self-contained restatement is a fork, not a mirror.** A repo that duplicates these rules in its own

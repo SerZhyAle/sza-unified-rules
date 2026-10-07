@@ -1,6 +1,6 @@
 ---
 # Contribution: <ProjectName> (<overlay letter(s) + notable shape>) -> Unified_Rules
-Source repo: <path> | Date: <YYYY-MM-DD>
+Source repo: <path> | Date: <YY-MM-DD HH:mm>
 Read: <core docs read>; deduped against: contrib/<existing files>.md
 ---
 

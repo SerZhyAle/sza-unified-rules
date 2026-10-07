@@ -24,7 +24,7 @@ explain itself without the rows marked **no**, and each of those is gitignored *
 | Launcher | `a.ps1` | yes | the one command a contributor runs - build, check, test, release; the toolchain's own wrapper (`gradlew`) sits beside it |
 | Source and tests | the platform's source root(s) | yes | named by the [overlay](PLATFORM_OVERLAYS.md): `app_v2/` and `wear/` on Android, `src/` and `tests/` on desktop |
 | Automation | `scripts/` | yes | everything that *drives* a build, check or release and is not tied to one channel; sub-folders by purpose, a script's own tests beside it (`guard.tests/`) |
-| Engineering docs | `dev/` | yes | how the project is worked: process, the routing index, the ledger (`dev/CHANGELOG.md` for ledger shape `2`), dated research notes `<YYYY-MM-DD>_<slug>.md`, refuted approaches; `dev/archive/` is read-only |
+| Engineering docs | `dev/` | yes | how the project is worked: process, the routing index, the ledger (`dev/CHANGELOG.md` for ledger shape `2`), dated research notes `<YY-MM-DD_HHm>_<slug>.md`, refuted approaches; `dev/archive/` is read-only |
 | Maintained docs | `docs/` | yes | what a contributor or a user reads: guides, the sources of public pages, legal, release docs. `docs/README.md` indexes the tree; where a repo keeps a document registry it is `docs/DOCUMENT_REGISTRY.jsonl`, naming each document's audience, owner, update trigger and whether it is published; `docs/contracts/` holds the contract pointers |
 | Site | the repo root, plus `documentation/` for a portal | yes | the published pages, as the stamp's `site.root` says ([SITE_CONFIGURATION.md](SITE_CONFIGURATION.md)) |
 | Shared assets | `assets/` | yes | icons and images the product and its site ship |

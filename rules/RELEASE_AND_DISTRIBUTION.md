@@ -134,10 +134,10 @@ owner decision, made before the release, never discovered after.
 - **The scope of this cut** - which tickets this version claims - comes from the release package plan's
   ready block (§8) where the project keeps one, never from re-deriving it out of the ticket store.
 - **Stamp the version mechanically** - never hand-bump (see [DOCUMENTATION_CONCEPT.md](DOCUMENTATION_CONCEPT.md)
-  §2). Date tag `YY.M.D.HHmm` for desktop/CLI; monotonic `versionCode` + `versionName` for Android
+  §2). Date tag `YY.MMDD.HHmm` for desktop/CLI; monotonic `versionCode` + `versionName` for Android
   *(overlay)*. Remap to each channel's required shape mechanically.
 - **A build-time date stamp is not the tag minute - pin the release build to the tag.** When the authoritative
-  version is stamped from the clock at *build* time (`YY.M.D.HHmm` computed in the project file), it drifts
+  version is stamped from the clock at *build* time (`YY.MMDD.HHmm` computed in the project file), it drifts
   minutes from the `v*` tag it ships under. The release CI must build with the version **pinned to the tag**
   (e.g. `-p:Version=<tag>`), so the version embedded in the binary matches the asset name and the tag exactly
   (reference: `CyrFlip`).
@@ -160,7 +160,7 @@ owner decision, made before the release, never discovered after.
   same tag has other bytes (archive tools stamp fresh file times), and the hash already merged into winget no
   longer matches. Re-dispatching a tag is safe only while nothing was published; after a failure that
   published nothing, cut a new, strictly newer stamp and leave the failed number retired.
-- **Cut the CHANGELOG**: move `## [Unreleased]` into `## [<version>] - <YYYY-MM-DD>`, open a fresh empty
+- **Cut the CHANGELOG**: move `## [Unreleased]` into `## [<version>] - <YY-MM-DD HH:mm>`, open a fresh empty
   `[Unreleased]`. That dated section *is* the release note, rendered verbatim into the release body and
   the site "What's new". The public showcase/features text is generated *from* the changelog diff since
   the last release, never hand-authored per change.

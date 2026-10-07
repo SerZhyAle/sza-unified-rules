@@ -60,16 +60,13 @@ Portability rules:
   `UpgradeCode` to reserve - the frozen-anchor set collapses to {winget `PackageIdentifier`, MSIX Identity
   `Name`/`Publisher`}. Reference: `StreamsPlayer` (portable-zip + winget-portable + MSIX).
 
-**Version shape.** Date tag - monotonic, unique per minute, sortable, no manual bump, stamped into every
-exe at build. **The digit-padding is a per-project frozen choice**: `YY.M.D.HHmm` (e.g. `26.7.23.1127`) or
-zero-padded `YY.MMDD.HHmm` (e.g. `26.0702.1530`), or a **separator-less continuous stamp** `yyMMddHHmm`
-(e.g. `2606120121`, a plain sortable integer) are all valid - the zero-padded and separator-less forms sort
-lexically without a numeric parse. The only hard requirements: monotonic and sortable, and **once chosen
-never change it** (the shape orders every future update against the installed one). Store remap:
+**Version shape.** Date tag `YY.MMDD.HHmm` (for example, `26.1007.1435`) - monotonic, unique per minute,
+sortable, no manual bump, stamped into every exe at build. Compute it in the portfolio time zone
+(`Europe/Malta`). **Once released, never change the shape**: it orders every future update against the
+installed one. Store remap:
 `Major.Minor.Build.0` derived mechanically from the same stamp. **The MSIX Identity Version forbids leading
 zeros in any component**, so a zero-padded stamp cannot merely gain a `.0` suffix - int-cast each component
-to strip the padding (`26.0723.0959.0` -> `26.723.959.0`; equivalently a dotted `YY.M.D` stamp collapses the
-date to `YY.(M*100+D)`) and guard each part at `<=65535`. GitHub and winget keep the canonical padded
+to strip the padding (`26.1007.1435.0` -> `26.1007.1435.0`) and guard each part at `<=65535`. GitHub and winget keep the canonical padded
 value; only the MSIX identity is remapped.
 
 **Distribution channels.** GitHub Release (authoritative asset `<App>-<version>-<platform>-setup.exe`,
@@ -158,7 +155,7 @@ private packages, `frontend/` for a Wails UI, `main.go` at root, `go.mod`/`go.su
 Wails. Release mechanics are a single `build.ps1` (`-Release`, `-Installer`) - no `publishing/`
 umbrella, because there is one channel.
 
-**Version shape.** Date tag `YY.M.D.HHmm` like desktop (or a semver `vX.Y.Z` if the tool exposes a
+**Version shape.** Date tag `YY.MMDD.HHmm` like desktop (or a semver `vX.Y.Z` if the tool exposes a
 stable API other code depends on). Stamped via Go `-ldflags "-X main.version=..."`.
 
 **Distribution channels.** GitHub Releases only (portable binary / ZIP, `.sha256`; optional NSIS
