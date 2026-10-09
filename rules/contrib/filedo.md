@@ -742,3 +742,7 @@ FileDO did and which still leaves the file at 756 lines.
   registered internal doc and leave one line per trap"). Not applied.
 
 The decision is the owner's: split now, or accept `SZA-RULES05` as a standing note with a dated reason here.
+
+## Promotion campaign (2026-10-09)
+
+- Ticket `PLAN/SP-0166 free-promotion-campaign.md` (Draft), aligned to canon [PROMOTION](../PROMOTION.md). It replaces the open draft that wrongly carried `SP-0149`, an id owned by the closed `done/SP-0149` disk-sharing spec; invented traffic, install and star figures were replaced by a measured baseline. Depends on the hub ticket for the host-root `robots.txt` and console property.

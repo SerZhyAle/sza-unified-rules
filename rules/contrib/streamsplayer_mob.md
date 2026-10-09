@@ -94,3 +94,7 @@ New-repo adoption against canon **2026.10.02.2**, core digest `sha256:410463a9..
   (S0002 sends the amendment diff to the canon session).
 - **Remains:** phases 2-10 as tickets S0002-S0010; open owner decisions 4.3, 4.4, 4.5, 4.7.
 - **Verification:** see the repo's S0001 `## Last Audit` for the compliance gate and harness validator runs.
+
+## Promotion campaign (2026-10-09)
+
+- Spec `PLAN/S0014_free-promotion-campaign.md` (Draft, created through the harness), pre-launch, blocked by S0010 decisions; [PROMOTION](../PROMOTION.md).

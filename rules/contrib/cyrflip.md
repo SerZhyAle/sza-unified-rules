@@ -682,3 +682,7 @@ ones both repos found; each is defined once):
 (`CHECK-VERDICT`), "the stamp is written only by adopt-canon" (`REPO-STAMP` rule 8), a check only a human can run
 ([TESTING_AND_QA](../TESTING_AND_QA.md) §1), check placement records (`CHECK-PLACEMENT`), PNG `tIME` and
 account-name redaction (catalog `CAPTURE-OUTPUT` proposal of 2026-10-01 and `DIAGNOSTIC-REPORT`).
+
+## Promotion campaign (2026-10-09)
+
+- Ticket `PLAN/S0024_free-promotion-campaign.md` (Partial) rewritten in English to the [PROMOTION](../PROMOTION.md) shape, stage-0 progress kept. Found: `punto-switcher-alternative` is a live GitHub topic and winget tag - a competitor name as a keyword, open question Q10. `RELEASE_QUEUE.md` still lists S0017 as Partial though it is Implemented.

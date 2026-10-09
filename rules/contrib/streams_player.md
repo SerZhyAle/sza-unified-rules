@@ -674,3 +674,7 @@ Full canon reconciliation to **2026.10.02.5** (core digest `sha256:1a8cbbb109975
 - `check-docs.ps1`: `docs-quality: PASS (134 documents, 95 source documents checked, 180 links)`
 - `build.ps1 -Test -Deploy:$false`: 0 warnings, 0 errors, 1847/1847 tests passed.
 
+
+## Promotion campaign (2026-10-09)
+
+- Ticket `PLAN/SP-0039_free_promotion_campaign.md` (In Progress) - the campaign canon [PROMOTION](../PROMOTION.md) was distilled from. Amended 2026-10-09: open point O4 (host root) moved to the hub ticket, phase 3 uses the host-root property when it exists, plus an own Scoop bucket fallback, dev.to and Lobsters rows, and the positioning statement.

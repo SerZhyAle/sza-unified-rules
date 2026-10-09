@@ -233,3 +233,7 @@ on the intent to monetise: a network-surface row for third-party scripts in SECU
   publish flow and therefore allowed, but one clause should say so.
 
 **Safe to commit: clean, nothing pending.**
+
+## Promotion campaign (2026-10-09)
+
+- Plan `docs/PLAN-2026-10-09-free-promotion-campaign.md` (new) - the **portfolio** ticket every product ticket depends on: host-root `robots.txt` and Search Console property through `SerZhyAle/SerZhyAle.github.io` (sourced from `github-root-redirect/`), the redirect http to https, the hub's own indexing, and the AdSense decision before any outreach - keep it as a declared non-intrusive slot or remove it (rule clarified 2026-10-09: no intrusive advertising and none dedicated to others' products); [PROMOTION](../PROMOTION.md).

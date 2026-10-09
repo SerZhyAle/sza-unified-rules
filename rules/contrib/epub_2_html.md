@@ -746,3 +746,7 @@ Status of the 2026-09-25 suggestions, re-checked against the canon working tree 
 **Seen, not worth a canon line:** permanent ticket ids under parallel sessions (two tickets numbered 51); a
 once-per-release sitemap resubmission; the accessibility floor as measured gates (ticket 57), revisit if a second
 product asks.
+
+## Promotion campaign (2026-10-09)
+
+- Ticket `DEV/plan/111_2026-10-09_free-promotion-campaign.md` (new; 110 was taken the same day by a parallel session), positioning from `docs/POSITIONING.md`; [PROMOTION](../PROMOTION.md).

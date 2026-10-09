@@ -1965,3 +1965,7 @@ dialog's default focus is the safe answer (desktop) or the confirm (FMS: Enter c
   still moves `adoptedOn`, so the sequencing caveat of `rule-adoption/README.md` holds either way.
 - `check-compliance.ps1`: before 0 errors / 1 warning (SZA-CANON03), after 0 errors / 0 warnings.
 - No canon fix found in this pass.
+
+## Promotion campaign (2026-10-09)
+
+- Ticket `PLAN/S1268_search-engine-registration-and-free-promotion.md` (BlockExternal) corrected and extended to the [PROMOTION](../PROMOTION.md) shape; its done-claims were re-verified (the IndexNow key file it claimed is not served). The site pages carry `meta keywords`, which `check-compliance` now reports as `SZA-SURF04`. Applies to the `FastMediaSorter_release` worktree too.

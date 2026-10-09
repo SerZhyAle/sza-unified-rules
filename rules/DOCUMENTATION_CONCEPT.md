@@ -76,10 +76,17 @@ A page without these is invisible to crawlers even when live:
 - Open Graph + Twitter card - `og:title/description/image/url`, `twitter:card=summary_large_image`,
   with a real preview image (>=1200x630)
 - One `<h1>` stating the job the product does; `<h2>`s for each feature area
-- `JSON-LD` structured data (`SoftwareApplication`: name, OS, price, ratingValue) for an app
-  rich-result
-- `hreflang` for each translated page; language toggles use consistent ISO codes across the site
-- A `sitemap.xml` + `robots.txt` at the site root listing every public page
+- `JSON-LD` structured data - on the landing a `SoftwareApplication` (name, operating system, category,
+  `offers` price 0); a rating or review **only** from real, visible user ratings, never invented - a free
+  app without them is simply not eligible for the rich result ([PROMOTION.md](PROMOTION.md) §3)
+- `hreflang` for each translated page, reciprocal with an `x-default`; language toggles use consistent ISO
+  codes across the site, and a language that only a script switches on one URL is invisible to search
+- A generated `sitemap.xml` listing every public page, and a `robots.txt` - which crawlers read **only at the
+  host root**, so a `github.io` project site is served by the portfolio's host-root file
+  ([PROMOTION.md](PROMOTION.md) §3)
+
+Being found beyond these tags - positioning, search consoles, free channels, launch moments, measurement
+without telemetry - is [PROMOTION.md](PROMOTION.md).
 
 ## 4. Mandatory site pages
 

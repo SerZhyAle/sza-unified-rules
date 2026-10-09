@@ -45,20 +45,32 @@ vocabulary). Every other product listens to it:
 - **No dead ends.** An empty state is a glyph, one sentence giving the reason, and an invitation to act. A
   loading state says what is loading. An error state offers Retry.
 
-## 3. No advertising in the product
+## 3. No intrusive or dedicated advertising
 
-Less advertising is a product rule, not a preference.
+Less advertising is a product rule, not a preference. What is ruled out on our own surfaces is **intrusive
+advertising, and advertising dedicated to someone else's products and services** - not every ad slot.
 
-- **No ads, no ad network, no tracker or analytics SDK, no upsell, no paywall nag, no promo banner inside an
-  app.** Say so in the privacy page only if it is true ([SECURITY_AND_PRIVACY.md](SECURITY_AND_PRIVACY.md)
-  §4).
+- **Intrusive** - anything that interrupts or hides the user's work or reading: a pop-up, an interstitial, an
+  overlay, a sticky or auto-playing ad, an ad inside a work flow or between a user and the result, an ad that
+  imitates a control or a download button. Never, on any surface.
+- **Dedicated to another's product or service** - a sponsored placement, a "recommended partner" banner, an
+  affiliate pitch, a paid mention, a bundled offer. Never, on any surface. Linking the author's **own** products
+  where it serves the reader is not advertising ([PROMOTION.md](PROMOTION.md) §4).
+- **Inside an app: no ad network, no tracker or analytics SDK, no upsell, no paywall nag, no promo banner.** An
+  in-app ad SDK is a tracker by construction, so the privacy promise rules it out even when it would be
+  unobtrusive. Say "no ads" in the privacy page only if it is true
+  ([SECURITY_AND_PRIVACY.md](SECURITY_AND_PRIVACY.md) §4).
 - **One solicitation at most: a review request**, shown only after proven use (reference: 20 successful
   operations and 3 sessions), then silent for 90 days. It never blocks and never appears after an error.
 - **Help routes to one channel, and only in a dead end** - the docs for a fixable setup, e-mail for a repeated
   failure. Never inside a toast, never after a success.
 - **A product site tells what the product does in a few honest lines** - no water, no superlatives, no
-  comparison with a competitor, edition limits stated plainly. A third-party ad network on a product site is
-  an exception that must be declared in the repo's stamp and capped; the default is none.
+  comparison with a competitor, edition limits stated plainly.
+- **A general ad slot on a site is allowed when it is neither of the above** - a contextual network block
+  (AdSense-style) placed beside the content, never in it, never above the job statement or the download. It
+  is declared in the repo's stamp and capped (at most one slot per page), it is a network-surface row
+  ([SECURITY_AND_PRIVACY.md](SECURITY_AND_PRIVACY.md) §7), and the site's privacy page says it is there. The
+  default is none.
 
 ## 4. Voice: clear and friendly
 

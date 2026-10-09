@@ -217,3 +217,7 @@ the 2026-09-03 entry did. Owed:
   user-authored data, so INVARIANT 10 "a reader for every version" applies if it does).
 - **Stale kit copies:** `docs/` holds an old `VALIDATION` of 95 lines against the kit's 331.
 - **Stamp:** refresh `adoptedOn`.
+
+## Promotion campaign (2026-10-09)
+
+- Internal tool with no remote: no promotion ticket, by canon [PROMOTION](../PROMOTION.md) section 8.

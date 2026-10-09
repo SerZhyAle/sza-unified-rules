@@ -16,7 +16,7 @@ Groups:
   CTR    shared contracts: pointers not copies, and the catalog named in exactly one file
   SEC    secrets and committed artifacts
   VER    version shape and channel manifests
-  SURF   product surfaces: privacy page, SEO block, sitemap/robots
+  SURF   product surfaces: privacy page, SEO block, sitemap/robots, promotion traps (rating, keywords)
   STYLE  house text style in prose and user-visible UI text
 
 Exit codes: 0 = clean; 1 = violations; 2 = internal error, or could not verify (run under Windows PowerShell
@@ -1025,6 +1025,18 @@ try {
                 Add-Finding -Id 'SZA-SURF02' -Severity 'warn' -Path $rel `
                     -Message "SEO block missing: $(($missingOpt | Sort-Object) -join ', ')" `
                     -Fix 'og:image and twitter:card are what break link previews.'
+            }
+            # SZA-SURF04 - promotion traps (canon PROMOTION.md section 3): a rating in structured data is legal
+            # only from real, visible user ratings, and meta keywords is ignored by Google.
+            if ($html -match '"(aggregateRating|ratingValue)"') {
+                Add-Finding -Id 'SZA-SURF04' -Severity 'warn' -Path $rel `
+                    -Message 'structured data carries a rating' `
+                    -Fix 'Keep it only if it is real user ratings shown on the page; otherwise remove it - ineligible is the honest outcome.'
+            }
+            if ($html -match '<meta[^>]*name=["'']keywords') {
+                Add-Finding -Id 'SZA-SURF04' -Severity 'warn' -Path $rel `
+                    -Message 'meta keywords present' `
+                    -Fix 'Google ignores it; spend the words on the title, description and h1.'
             }
             # SZA-VER04 - a hard-coded version in a CTA goes stale on the next release.
             if ($html -match '/download/v?\d+[\d.]*\d/') {

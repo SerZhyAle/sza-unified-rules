@@ -288,3 +288,7 @@ together with the re-sync so the record exists. Per the canon, committing is on 
   copies kit documents stamps each copy with the kit date or version so the re-sync can compare it (medium-low
   confidence; `SZA-CANON05` looks only at canon document names).
 - **Stamp:** refresh `adoptedOn`.
+
+## Promotion campaign (2026-10-09)
+
+- Ticket `PLAN/T0028_free-promotion-campaign.md` (new), positioning through T0026; [PROMOTION](../PROMOTION.md).

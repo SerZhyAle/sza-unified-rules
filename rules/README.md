@@ -58,16 +58,17 @@ that sequences every doc below into one runbook.
 
 | File | Read it for |
 | --- | --- |
-| [UI_UX.md](UI_UX.md) | how every product looks, behaves and speaks: compact use of the screen, no advertising, the friendly-and-clear voice, one kit of colours/icons/buttons, FastMediaSorter Android as the reference |
+| [UI_UX.md](UI_UX.md) | how every product looks, behaves and speaks: compact use of the screen, no intrusive or dedicated advertising, the friendly-and-clear voice, one kit of colours/icons/buttons, FastMediaSorter Android as the reference |
 | [LOCALIZATION.md](LOCALIZATION.md) | which surfaces translate, parity-enforced string workflow, shipped locales, text style |
 | [SECURITY_AND_PRIVACY.md](SECURITY_AND_PRIVACY.md) | secrets, signing/identity anchors, minimal permissions, the privacy promise, store declarations, the permission and network-surface inventories, hostile input (files and pages the user did not write) |
 | [SUPPORT_AND_FEEDBACK.md](SUPPORT_AND_FEEDBACK.md) | support path, diagnostic-log intake, feedback-to-ticket loop, answer-once-in-the-listing, the usage-counting boundary |
 | [SITE_CONFIGURATION.md](SITE_CONFIGURATION.md) | hosting, custom domain, redirects, deploy flow (visual style lives in `kit/SZA-WEB-STYLE-GUIDE.md`) |
+| [PROMOTION.md](PROMOTION.md) | being found without spending money: positioning worksheet, indexing on github.io project pages, search consoles, free channels by shape, launch moments, measurement without telemetry, the promotion ticket |
 
 Read order for a new project: **NEW_PROJECT_CHECKLIST → AUTHOR → AI_USAGE → REPOSITORY_LAYOUT →
 DOCUMENTATION_CONCEPT → DEVELOPMENT → TESTING_AND_QA → GITHUB_INTERACTION → RELEASE_AND_DISTRIBUTION →
 CHANNEL_MATRIX → the one platform overlay → (as applicable) CONTRACTS / WINDOWS_PACKAGING / UI_UX / LOCALIZATION /
-SECURITY_AND_PRIVACY / SUPPORT_AND_FEEDBACK / SITE_CONFIGURATION.**
+SECURITY_AND_PRIVACY / SUPPORT_AND_FEEDBACK / SITE_CONFIGURATION / PROMOTION.**
 
 > **Status: shipped as a plugin.** Extracted from the portfolio's most mature repo, reconciled against the
 > active repos through 2026-07-27, then moved out of the site repository into its own home so it can be

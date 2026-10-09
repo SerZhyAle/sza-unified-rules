@@ -646,3 +646,7 @@ the lines that still address a programmer; the owner's model is that the kit als
    `kit/docs/AGENT_MEMORY.md:40,77` ("bundled PR"), `kit/docs/PARALLEL.md:64` and `kit/CLAUDE.md:263-267` (stash,
    checkout, reset, a shared git directory - in the template body, not marked code layer). The example set has
    one non-code entry (`feedback_figures_carry_source.md`) against four code-flavoured ones.
+
+## Promotion campaign (2026-10-09)
+
+- Spec `docs/specifications/SPECIFICATION_FREE_PROMOTION_CAMPAIGN.md` (new, shape K - package channels void); writing the positioning source is its first step; [PROMOTION](../PROMOTION.md).

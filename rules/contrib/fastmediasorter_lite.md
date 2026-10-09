@@ -772,3 +772,7 @@ repo's specification 109, whose section 3 checklist carried this re-sync plus si
    negations that are no-ops for git. Accepting an adjacent `PROVENANCE`-style header (the archives README, the
    fd-sec vectors' `PROVENANCE.txt`) as the why-comment would match how this repo already documents vendored bytes.
    Low confidence - the negation group does work, it is just not the only honest shape.
+
+## Promotion campaign (2026-10-09)
+
+- Ticket `docs/specifications/186_SPECIFICATION_FREE_PROMOTION_CAMPAIGN.md` (new), positioning from `done/132`; [PROMOTION](../PROMOTION.md).

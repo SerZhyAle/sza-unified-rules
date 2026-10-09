@@ -79,7 +79,8 @@ apply (a CLI tool has no site, a single-locale app skips localization).
 ## 7. Product surfaces (as applicable)
 
 - **Has a user interface?** Build it against the family look and voice ([UI_UX.md](UI_UX.md)): the
-  compact layout, no advertising, the message formulas, and the shared palette, glyphs and button roles.
+  compact layout, no intrusive or dedicated advertising, the message formulas, and the shared palette,
+  glyphs and button roles.
 - **Multi-language?** Adopt the localization workflow ([LOCALIZATION.md](LOCALIZATION.md)): which
   surfaces localize, the parity-enforced string tool, the shipped locales.
 - **Store submission?** Fill the privacy/permissions posture
@@ -90,6 +91,8 @@ apply (a CLI tool has no site, a single-locale app skips localization).
   block.
 - **Support path**: wire the issue tracker + contact email and the diagnostic-log intake
   ([SUPPORT_AND_FEEDBACK.md](SUPPORT_AND_FEEDBACK.md)).
+- **Public product?** Open its promotion ticket before the first public release - positioning worksheet,
+  indexing, free channels - with the `promote` skill ([PROMOTION.md](PROMOTION.md)).
 
 ## 8. Reserve the frozen anchors
 
