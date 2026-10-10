@@ -650,3 +650,28 @@ the lines that still address a programmer; the owner's model is that the kit als
 ## Promotion campaign (2026-10-09)
 
 - Spec `docs/specifications/SPECIFICATION_FREE_PROMOTION_CAMPAIGN.md` (new, shape K - package channels void); writing the positioning source is its first step; [PROMOTION](../PROMOTION.md).
+
+## Canon re-sync 2026-10-09 - canon `2026.10.02.3`
+
+Re-sync plus contract-sync, carrying two rounds in one: the 2026-10-02 notice
+(`docs/specifications/SPECIFICATION_CANON_CONTRACTS_SYNC_NOTICE.md`) and the 2026-10-07 owner order
+(`docs/specifications/SPECIFICATION_CONTRACT_SYNC_2026_10_07.md`), because the catalog had moved past the
+notice's "now" column before the session ran and a version may not be pinned to a date the catalog left behind.
+
+- **Stamp.** `canon.version` `2026.10.02.3`, `canon.coreDigest` from the gate's `-PrintDigest`
+  (`sha256:410463a9..b81afa`), `canon.reconciledOn` `2026-10-09` - the three as one write; `adoptedOn`
+  stays `2026-09-23`. Gate before: `0 error(s), 1 warning(s)` (SZA-CANON03); after: `0 error(s), 0 warning(s)`, exit 0.
+- **Contracts.** Pointers, `CLAUDE.md` and the registry rows moved to `PAGE-CONTENT` 1.4, `PAGE-STYLE` 1.6,
+  `SITE-FAMILY-MAP` 1.4, `ICON-SET` 0.29, `ICON-RENDER` 0.18, `ICON-EXTERNAL` 0.12, `REPO-STAMP` 0.12,
+  `REPO-LAYOUT` 0.11, `RULE-DELIVERY` 0.12; `HARNESS-PROFILE` 0.11 declared not bound in a new pointer
+  (`docs/contracts/HARNESS-PROFILE.md`) and a registry row, per its rule 7.
+- **Kit.** `assets/sza-kit.css` re-vendored byte-identical to the 2026-10-07 reference (15661 bytes,
+  SHA-256 `27501a10..cef2895`); `tools/build-kit.ps1` PASS, 45 entries, 0 mismatches, stamped 2026-10-09.
+- **Site.** The owner's rulings closed the 2026-09-23 exception's items and the page follows: full width
+  (no page-layer cap), the copied state is the localized word beside the `action.copy` glyph (`status.ok`
+  withdrawn), the kit's `nav.expand` marker and labelled theme control (page-layer overrides dropped),
+  the hero opens with the full name in display type (docs variant: the name alone), the footer credit
+  name links the hub, and the footer grid carries the corrected `Tool` cells. The registry exception is
+  narrowed to the `?lang=` parameter name, until 2026-12-31.
+- **Not run.** No browser session: the `PAGE-STYLE` section 11 walk was against the source, and the
+  rendered walk of 2026-09-23 was not repeated. The section 5 URL check was run (9/9 HTTP 200).

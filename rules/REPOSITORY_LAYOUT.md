@@ -1,8 +1,10 @@
 # Repository Layout - the universal core
 
-The portable structure every project shares, independent of platform. It serves three goals: (1) one
+The portable structure every project shares, independent of platform. It serves four goals: (1) one
 obvious home for every kind of file, (2) a publication process that is identical *in shape* across
-projects, (3) nothing secret or heavy ever committed by accident.
+projects, (3) nothing secret or heavy ever committed by accident, (4) **git carries the project as a
+*user* or a *forker* meets it** - the working developer's own material (the ticket workspace, the
+engineering notes) stays local and ignored.
 
 **The defaults are the names `FastMediaSorter_mob_v2` uses.** It is the repository where the practice is
 earned and the others receive it ([PLATFORM_OVERLAYS.md](PLATFORM_OVERLAYS.md) "Overlay B"), so where this
@@ -14,8 +16,11 @@ platform-specific (the source root, the release-mechanics folders, the version r
 
 ## The role map
 
-One row per kind of file. The **In git** column is the part to get right: a fresh clone must build and
-explain itself without the rows marked **no**, and each of those is gitignored *by name*.
+One row per kind of file. The **In git** column is the part to get right, and it is an audience split:
+the rows marked **yes** are the project as a user or a forker receives it - the product, its source,
+its published explanation - while the rows marked **no** are the working developer's own support and
+are gitignored *by name*. A fresh clone - a user's download, a fork's starting point - must build and
+understand the project without them.
 
 | Role | Default | In git | What goes there |
 | --- | --- | --- | --- |
@@ -24,8 +29,8 @@ explain itself without the rows marked **no**, and each of those is gitignored *
 | Launcher | `a.ps1` | yes | the one command a contributor runs - build, check, test, release; the toolchain's own wrapper (`gradlew`) sits beside it |
 | Source and tests | the platform's source root(s) | yes | named by the [overlay](PLATFORM_OVERLAYS.md): `app_v2/` and `wear/` on Android, `src/` and `tests/` on desktop |
 | Automation | `scripts/` | yes | everything that *drives* a build, check or release and is not tied to one channel; sub-folders by purpose, a script's own tests beside it (`guard.tests/`) |
-| Engineering docs | `dev/` | yes | how the project is worked: process, the routing index, the ledger (`dev/CHANGELOG.md` for ledger shape `2`), dated research notes `<YY-MM-DD_HHm>_<slug>.md`, refuted approaches; `dev/archive/` is read-only |
-| Maintained docs | `docs/` | yes | what a contributor or a user reads: guides, the sources of public pages, legal, release docs. `docs/README.md` indexes the tree; where a repo keeps a document registry it is `docs/DOCUMENT_REGISTRY.jsonl`, naming each document's audience, owner, update trigger and whether it is published; `docs/contracts/` holds the contract pointers |
+| Engineering docs | `dev/` | **no** | developer-support documentation, local like `PLAN/`: process, the routing index, the ledger (`dev/CHANGELOG.md` for ledger shape `2`), dated research notes `<YY-MM-DD_HHm>_<slug>.md`, refuted approaches; `dev/archive/` is read-only |
+| Maintained docs | `docs/` | yes | what a *user* or a *forker* reads - about the project as a whole: guides, the sources of public pages, legal, release docs. `docs/README.md` indexes the tree; where a repo keeps a document registry it is `docs/DOCUMENT_REGISTRY.jsonl`, naming each document's audience, owner, update trigger and whether it is published; `docs/contracts/` holds the contract pointers |
 | Site | the repo root, plus `documentation/` for a portal | yes | the published pages, as the stamp's `site.root` says ([SITE_CONFIGURATION.md](SITE_CONFIGURATION.md)) |
 | Shared assets | `assets/` | yes | icons and images the product and its site ship |
 | Channel sources | one folder per distribution channel, named after it, plus `store_assets/` | yes | the listing text, manifests and operator runbooks a channel is submitted *from*: `play/`, `meta/`, `fastlane/`, `fdroid/` on Android; `winget/`, `msix/`, `installer/` on desktop. `store_assets/` holds what several channels share - runbooks, screenshots, release waivers |
@@ -44,9 +49,10 @@ thing to run on a repository whose layout is in doubt.
 
 **Root stays minimal.** Only what a *user* or a *first-time contributor* expects at eye level lives at
 root: the README(s), LICENSE, the agent rules, the launcher and the toolchain's own build files, the
-site's pages when the repo hosts one, and the dot-files. Everything explanatory goes under `docs/` or
-`dev/`, everything automated under `scripts/`, and **nothing generated lands at root** - an exe, a zip or a
-log at the root is a build output or a capture in the wrong place.
+site's pages when the repo hosts one, and the dot-files. Everything explanatory goes under `docs/`,
+where a user or a forker reads it, or `dev/`, the developer's local workspace; everything automated
+under `scripts/`, and **nothing generated lands at root** - an exe, a zip or a log at the root is a
+build output or a capture in the wrong place.
 
 ## Documents - where a type goes and what it is called
 
@@ -71,7 +77,8 @@ by. The older `CONTRACT_<ID>.md` spelling is still read.
 > keeps them there and says so; the roles are unchanged - one home per document type, a dated or prefixed
 > filename a glob can find. The ledger sits where the stamp's `ledgerShape` says, so it moves off the repo
 > root only on shape `2` (see [DOCUMENTATION_CONCEPT.md](DOCUMENTATION_CONCEPT.md) §2 for the internal
-> ledger plus curated notes).
+> ledger plus curated notes). On shape `2` the dev-log rides in gitignored `dev/`, so the curated public
+> notes are the only ledger rendering a clone or a fork ever receives.
 
 > **`docs/guides/` is the mirror home, and nothing else.** Only a repository on the *mirror* consumption
 > model ([README.md](README.md)) has it: the canon's copies, each stamped with the sync marker.
@@ -145,11 +152,12 @@ Binaries are **build output, not source** - the repo never stores a compiled rel
 
 ## Applying this to a new project - checklist
 
-1. Create the universal skeleton: the root files, `scripts/`, `dev/`, `docs/` (with `docs/contracts/`),
+1. Create the universal skeleton: the root files, `scripts/`, `docs/` (with `docs/contracts/`),
    the source root and tests, and a `.gitignore` that names every **no** row of the role map.
 2. Add the channel folders and source root from your [platform overlay](PLATFORM_OVERLAYS.md).
 3. Adopt the version + ledger flow (see DOCUMENTATION_CONCEPT §2).
 4. Reserve the platform's **frozen anchors** (overlay) - unique per product.
-5. Create `PLAN/`, `temp/`, `.secrets/` locally and prove with `git check-ignore -v` that each is ignored.
+5. Create `PLAN/`, `dev/`, `temp/`, `.secrets/` locally and prove with `git check-ignore -v` that each
+   is ignored.
 6. If site-hosted, set Pages to serve the right root and add the mandatory pages
    (DOCUMENTATION_CONCEPT §4).

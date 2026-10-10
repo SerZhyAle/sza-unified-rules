@@ -54,6 +54,33 @@ REPOSITORY_LAYOUT (Android spec home), INVARIANTS, NEW_PROJECT_CHECKLIST.
 
 ## Candidate core edits (PROPOSED - apply only on owner instruction)
 
+- **Harness `close` deletes the spec header's `**Status note:**` line (`tools/harness/spec_catalog/_lib.ps1`,
+  `Sync-SpecHeaderStatus`, plugin 2026.1002.3; found by the StreamsPlayer Android session 2026-10-10):**
+  the parameter is `[string] $StatusNote = $null`, and an omitted `[string]` parameter binds as `''`
+  (the type coerces the absent value; measured in pwsh 7.5 - `$null -eq $StatusNote` is `False` even with
+  the default removed), so the caller that omits it - `close.ps1`, `archive.ps1`, `bulk-update.ps1` -
+  reaches the `elseif ($StatusNote -eq '')` "Clear note line" branch, never the documented
+  "$null - preserve" branch. Every `spec_catalog/close` therefore rewrites the header block as the
+  status line alone. Observed twice on 2026-10-10: S0001 and S0002 closed to Verified and both spec
+  headers lost their note line (the journal note survives - the journal is the source of truth, but the
+  header is the half the owner reads at a glance). The function's own comment on the adjacent `[ref]`
+  parameter documents exactly this coercion class. Proposed exact diff:
+
+  ```diff
+  -        if ($null -ne $StatusNote -and $StatusNote -ne '') {
+  +        if ($PSBoundParameters.ContainsKey('StatusNote') -and $StatusNote -ne '') {
+               # Upsert note
+               $newBlock = $newStatusLine + $lineEnd + '**Status note:** ' + $StatusNote + $lineEnd
+  -        } elseif ($StatusNote -eq '') {
+  +        } elseif ($PSBoundParameters.ContainsKey('StatusNote') -and $StatusNote -eq '') {
+               # Clear note line
+               $newBlock = $newStatusLine + $lineEnd
+           } else {
+  ```
+
+  (`$PSBoundParameters.ContainsKey` is how `update.ps1` already distinguishes omitted from explicit
+  empty - `NoteSupplied` - so the fix reuses the corpus's own idiom. The `= $null` default on the
+  parameter declaration should also go: it is the same trap the `[ref]` comment warns about.)
 - **Harness ticket-id grammar (tools/harness):** `grammar.ticketIdPattern` is a profile key, but `New-CatalogId`
   (`spec_catalog/_lib.ps1`) and `insert.ps1 -Id` hard-code `^S\d{4}$` (canon session count: 57 occurrences in
   42 files). A profile with another scheme validates ids that allocation can never issue. Confirmed by the canon

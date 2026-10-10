@@ -19,9 +19,9 @@ apply (a CLI tool has no site, a single-locale app skips localization).
 ## 1. Skeleton
 
 - Create the role map ([REPOSITORY_LAYOUT.md](REPOSITORY_LAYOUT.md)): root files (`README`, `LICENSE`,
-  agent-rules file, the `a.ps1` launcher), the source root and tests, `scripts/`, `dev/`,
+  agent-rules file, the `a.ps1` launcher), the source root and tests, `scripts/`,
   `docs/` with `docs/contracts/`, and the overlay's channel folders.
-- Point `.gitignore` at every **no** row of the role map (`PLAN/`, `temp/`, `logs/`, `DOWNLOADS/`,
+- Point `.gitignore` at every **no** row of the role map (`PLAN/`, `dev/`, `temp/`, `logs/`, `DOWNLOADS/`,
   `.secrets/`, `test_media/`), the platform's build-output dirs and the secret globs; prove each with
   `git check-ignore -v`.
 

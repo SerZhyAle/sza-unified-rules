@@ -41,7 +41,9 @@ text - keep the long form in CHANGELOG, the trimmed form in the listing file.
     1. **Public ledger** - Keep-a-Changelog at repo root, rendered verbatim into the release body and
        the site "What's new" (reference: `FastMediaSorter_Lite`).
     2. **Dev log -> curated notes** - an internal per-change ledger (`DEV/CHANGELOG.md`) feeds a curated
-       public "What's new" from the diff since the last release (reference: `doc-html-translate`).
+       public "What's new" from the diff since the last release (reference: `doc-html-translate`). The
+       dev-log is local: `dev/` is gitignored ([REPOSITORY_LAYOUT.md](REPOSITORY_LAYOUT.md) role
+       map), so the curated notes are the only form a clone or a fork ever receives.
     3. **Structured inventory** - a machine-validated capability inventory (`ALL_FEATURES.jsonl`,
        written through a CLI) is the developer source of truth; the public showcase is generated from
        its diff at release; chronology comes from git history (reference: `FastMediaSorter_mob_v2`).

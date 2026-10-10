@@ -750,3 +750,4 @@ product asks.
 ## Promotion campaign (2026-10-09)
 
 - Ticket `DEV/plan/111_2026-10-09_free-promotion-campaign.md` (new; 110 was taken the same day by a parallel session), positioning from `docs/POSITIONING.md`; [PROMOTION](../PROMOTION.md).
+- 2026-10-09, state: ticket 111 In Progress. Phases 01-07 done as far as tag A allows (metrics script and baseline checkpoint, worksheet and research note, `docs/discoverability.json`, social card, page heads with sitemap `lastmod`, 13-locale winget, Store and extension fields, demo, AlternativeTo draft). Every outward step waits for a go in the ticket's go ledger; Q1, Q2 part 1 and Q4-Q6 are open.
