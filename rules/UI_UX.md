@@ -6,7 +6,7 @@ same places, said in the same way. Where products cannot be identical, they must
 
 This page holds the **principles, the precedence and the tone**. The exact shapes - palette roles, glyph
 vocabulary, window behaviour, page layout - are shared contracts in the catalog (`APP-STYLE`,
-`APP-BEHAVIOUR`, `ICON-SET`, `ICON-RENDER`, `PAGE-STYLE`; see [CONTRACTS.md](CONTRACTS.md)) and are cited
+`APP-BEHAVIOUR`, `WINDOWS-UI`, `ICON-SET`, `ICON-RENDER`, `PAGE-STYLE`; see [CONTRACTS.md](CONTRACTS.md)) and are cited
 there by id and section, never copied here. Platform specifics are marked *(overlay)*.
 
 ## 1. The reference is FastMediaSorter Android
@@ -122,13 +122,20 @@ kit has none.
   "English". A flag denotes a country, not a language.
 - **Buttons are chosen by role, not by look:** primary (at most one per surface), tonal, outlined, text,
   icon, destructive. The same role looks the same in every product.
+- **Every button carries a simple icon** *(overlay: Windows, a recommendation)*: a light glyph from the
+  vocabulary before the caption, instead of it only where the meaning is learned, so that narrow buttons
+  stand in one row. A dialog's answers draw the eye by colour on the glyph - OK green, Cancel red - and they
+  alone do (`WINDOWS-UI` section 11, `ICON-RENDER` section 14). A control with no meaning in the vocabulary
+  gets one added the way the last bullet of this section says.
 - **Destructive confirms:** the acting button is the red one; Escape is the one no-action way out; the safe
   answer holds the default focus. On touch the confirm and cancel may differ in size, for the blind thumb.
 - **Three channels for a message:** a toast for one glance, an inline state for an error with Retry or Undo,
   a dialog for a confirm or a long error. One dialog factory per product, not one per screen.
-- **A thing the kit lacks is proposed to the catalog first,** then built: a missing meaning, a missing
-  role, a missing token. Specify first, migrate opportunistically, and hold the line with a gate whose
-  baseline only falls - never a rewrite campaign.
+- **A thing the kit lacks is proposed to the catalog first,** then built: a missing role, a missing token.
+  **A missing meaning is the exception** (`ICON-SET` section 15): the product draws it to the catalog's style,
+  ships it and files the proposal in the same change, so a control never waits for an icon. Specify first,
+  migrate opportunistically, and hold the line with a gate whose baseline only falls - never a rewrite
+  campaign.
 
 ## 6. Reachable by everyone
 
