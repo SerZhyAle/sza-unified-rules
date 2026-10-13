@@ -180,6 +180,12 @@ $Script:SzaProfileDefaults = [ordered]@{
         alwaysStrongStatuses = @('BlockQuestions')
         strongTierMin        = 4
         shapeCheapTierMax    = 2
+        # The model alias each declared complexity level launches, read by -ModelPolicy shape from the
+        # spec's own `**Complexity:** <level> - <reason>` header line. Declared here for the same
+        # reason as the three cut lines above: Get-SzaProfileValue throws on an unknown path. The
+        # values are aliases the runner's argsTemplate turns into a model id, so a project that pins
+        # a generation (`claude-{model}-5-5`) keeps pinning it and only this map names the tier.
+        complexityModels     = [ordered]@{ light = 'haiku'; medium = 'sonnet'; hard = 'opus' }
         # The child invocation, per runner instance. A key is the -Instance name; the value may
         # carry `command`, `argsTemplate` and `modelPolicy`, each falling back to the shared value
         # beside it. Empty is the honest default: every instance launches the same command, which

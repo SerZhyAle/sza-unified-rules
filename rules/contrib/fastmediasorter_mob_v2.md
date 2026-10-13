@@ -1969,3 +1969,128 @@ dialog's default focus is the safe answer (desktop) or the confirm (FMS: Enter c
 ## Promotion campaign (2026-10-09)
 
 - Ticket `PLAN/S1268_search-engine-registration-and-free-promotion.md` (BlockExternal) corrected and extended to the [PROMOTION](../PROMOTION.md) shape; its done-claims were re-verified (the IndexNow key file it claimed is not served). The site pages carry `meta keywords`, which `check-compliance` now reports as `SZA-SURF04`. Applies to the `FastMediaSorter_release` worktree too.
+
+## Efficiency audit 2026-10-13 - seven candidates raised (source ticket S4190)
+
+Raised from an FMS session as **proposals**: nothing under `rules/` other than this file was touched. The
+repo-side half of each is shipped and measured in S4190; the canon half is the landing named per item.
+
+**Numbers**, measured 2026-10-13 over the repo's own journals (`temp/metrics/gate-executions.jsonl`, the
+runner journals, `dev/CHANGELOG.md`, `agent-cost-report.ps1` 2026-09-29..10-13):
+
+- inflow equals outflow over 60 days (42.0 tickets created per day, 43.4 closed); 32% of September's 1745
+  tickets were agent-parked findings, and 27% of them left no dev-log row at all;
+- product share of tickets fell from 80% (April) to 61-64% (July-September) and 50% (October);
+- `detekt-preflight` refused 99 of 203 closures (48%) in 14 days;
+- a bare `fg` was red in 30 of 36 runs, the same batch given the changed set in 0 of 10;
+- the runner's cheap-model share was 4.4% over 30 days with a "tier 1-2 to the cheap model" policy in force;
+- one exploratory device walk scrolled one screen for about two hours (2026-10-03).
+
+### Raised
+
+1. **A parked finding has a price, so it waits outside the queue until triaged** - landing
+   `rules/DEVELOPMENT.md`, as the counterweight sentence after "Out-of-scope findings are parked". Proposed
+   text: "A parked finding does not enter the automatic work queue until someone triages it with one line
+   saying what breaks if it is not done; an untriaged one expires into the archive after a fixed age.
+   Report the share of tickets closed with no change." FMS mechanism: `capture-draft.ps1 -Parked`
+   (BlockQuestions + marker), `/spec-sweep` Phase D, `archive-untriaged-drafts.ps1` run at every runner start.
+2. **Shift the cheapest scoped analyser to the edit** - landing `rules/DEVELOPMENT.md` section 15, beside
+   "the closure RUNS the ladder's rung". Proposed text: "When an analyser can judge one file in seconds
+   without the build system, run it on the file at the edit (a post-edit hook) and attach its findings; the
+   closure keeps the authoritative verdict." FMS mechanism: `observe-kt-edit-detekt.ps1` over
+   `detekt-scoped.ps1 -ReportDir`.
+3. **An exploratory UI walk needs a stop rule** - landing `rules/TESTING_AND_QA.md`. Proposed text: "A walk
+   without a scenario stops when the screen signature (window plus the set of view ids, never text or
+   bounds) repeats past a threshold; the stop belongs over the agent's calls, not in the device tool other
+   scripts call." FMS mechanism: `adb.ps1` WINDOW/LAYOUT lines + `observe-device-walk-progress.ps1`.
+4. **A per-change gate batch is called with the change set** - landing `rules/DEVELOPMENT.md` section 15,
+   "Place a gate by its subject". Proposed text: "A batch that runs whole-tree gates per change takes the
+   change set and demotes red outside it to an advisory; a bare run says how to get the scoped verdict.
+   Prefer that to relocating the gates, which drops their per-push coverage." FMS mechanism: S2693 split
+   verdict + S4190 `-Files` alias and bare-red hint.
+5. **No counts in prose** - landing `rules/DOCUMENTATION_CONCEPT.md` section 1 (render targets). Proposed
+   text: "Prose never states how many of a generated set exist (gates, flavors, SDK levels); it points at
+   the generated source. A gate that guards a number in prose is a sign the number should not be there."
+   FMS: three such gates (S2935, S2445, S1438) were retired with their numbers; together they were red in a
+   quarter of `fg` runs on other sessions' work.
+6. **A routing rule reports its achieved share** - landing `rules/AI_USAGE.md` section 3. Proposed text:
+   "A model-routing policy is ungated until its runner prints the achieved cheap-model share and the
+   outcome per model and tier; route by tier, compare by tier." FMS mechanism:
+   `measure-process-throughput.ps1` "outcome by model and tier".
+7. **The gate journal and the throughput sweep belong in the harness** - landing `tools/harness/`
+   (a `metrics/` folder beside `batch/`). Every gate appends one row (`timestampUtc, runner, gate, status,
+   exitCode, elapsedMs, scope`) and one script sweeps the runner and gate journals; today each project
+   re-mines transcripts for the same numbers. FMS sources: `scripts/quality/lib/gate-telemetry.ps1`,
+   `scripts/utils/measure-process-throughput.ps1` and its suite.
+
+### Also raised, small
+
+- `hooks/guard-bash.ps1`: the refusal for a cmdlet in a pipeline (`.. | Select-Object -Last N`) could name
+  the POSIX equivalent per cmdlet (`tail -n N`, `head -n N`, `grep`); 84 refusals of
+  `explain-last-failure.ps1 | Select-Object` were measured in 14 days, a script that already takes `-Last`.
+
+### Refuted on the FMS side, not raised
+
+- Routing small runner tickets to a no-ticket fix command: such a command never moves a status, so the
+  runner's idle series holds the ticket; the closing cheap path is the pipeline's own trivial path.
+- Relocating whole-tree gates to release scope to quiet the per-change batch: see item 4.
+
+### Owed
+
+- The canon session decides each landing; the repo carries the shipped half regardless.
+
+## Complexity level picks the model - proposed for AI_USAGE.md section 3 2026-10-13 (source ticket S4193)
+
+Raised from an FMS session on the owner's instruction as a **proposal**: nothing under `rules/` other than this
+file was touched. The mechanism half is edited in the canon checkout (`tools/harness/batch/run-spec-queue.ps1`,
+`tools/harness/_profile.ps1`) and waits for the deploy; the rule half is below with its landing.
+
+### Raised
+
+1. **A ticket declares how hard its own work is, and the runner routes its model by that declaration** - landing
+   `rules/AI_USAGE.md` section 3, as a bullet after "Route models in two tiers: judgement and procedure".
+   Proposed text: "Route an unattended work item's model by what the item itself declares. A ticket carries one
+   level - light, medium or hard, defined by what the work is (a known local fix; a bounded change with a
+   visible approach; a change that contains a decision) and never by hours or size - written by whoever
+   approves it and revisable twice: after research and after the plan. The runner reads the declaration at
+   every launch, so a pass that disagrees with the level corrects it for the NEXT pass instead of switching
+   model mid-run; a raise ends the pass at its stage boundary, a lowering does not. A status that only audits
+   finished work caps the model, and a ticket with no declaration keeps the policy it had. Record the declared
+   level beside the model in the run journal so the outcome per level is read back, not assumed."
+2. **The weakest tier is earned by a declaration, not by a status or a size label** - landing `rules/AI_USAGE.md`
+   section 3, the same bullet or a sibling. Proposed text: "The lightest model is never chosen from a roadmap
+   label or a status; only a ticket whose own spec declares the lightest level reaches it, and the first pass's
+   research is where a wrong declaration is corrected."
+
+### The mechanism, for the canon session
+
+- `tools/harness/batch/run-spec-queue.ps1`: `Get-TicketComplexity` reads the first forty header lines of the spec
+  (`**Complexity:** <level> - <reason>`, the Russian words accepted for a hand edit); `Select-ModelFor` consults
+  it under `-ModelPolicy shape` right after `runner.alwaysStrongStatuses`; `runner.complexityModels` maps level
+  to alias; `runner.cheapStatuses` cap the answer at the cheap model; the run journal row gains `complexity`.
+- `tools/harness/_profile.ps1`: default `runner.complexityModels` = light haiku, medium sonnet, hard opus,
+  declared because `Get-SzaProfileValue` throws on an unknown path (S2705).
+- The docstring's "Haiku - never for a whole ticket" bullet is rewritten: Haiku is reachable only through the
+  declaration. The runner's premise for that bullet (a lookup tier with a small window) predates Haiku 5.5.
+- Checked 2026-10-13 with `SZA_HARNESS_ROOT` at the checkout: the consumer suite
+  `scripts/utils/run-spec-queue.tests/Run-Tests.ps1` runs 14 cases for this - levels, a tier outranked, the
+  cheap-status cap, BlockQuestions, no-line and garbage fall-through, a header rewritten between two launches,
+  `tiered` ignoring the line - all PASS; against the deployed harness the same cases SKIP.
+
+### Deliberately NOT raised
+
+- A catalog field. The header line is read at the launch with no schema change, no `insert.ps1` or `update.ps1`
+  parameter and no migration; `**Verify:**` set the precedent.
+- Applying the declaration under `-ModelPolicy tiered`. That policy's premise is status-first; the declaration
+  lives under `shape`, where the work's own description comes first.
+- Backfilling existing tickets. A ticket with no line keeps its route; levels arrive as tickets are created or
+  returned to the queue.
+
+### Owed
+
+- The canon session decides the two landings; the repo ships the line, the checkpoints and the runner reading
+  regardless.
+- A deploy of `tools/harness/` before the runner obeys a level: the deployed harness predates it, which is why
+  the consumer suite's cases SKIP there.
+- This repo sets Haiku 5.5 to effort `xhigh` in `.claude/runner/model-effort.json` by the cheap-model rule of
+  the owner's 2026-09-30 decision; whether the canon should name an effort per tier is the canon session's call.

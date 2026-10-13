@@ -65,9 +65,12 @@
                  human on a device; and tier 1-3 tickets, the band below the strong tier's own
                  floor. Status is read before tier: a status names what work is left, a tier only
                  names how big it is.
-      - Haiku  - never for a whole ticket. It is a lookup tier: a full /spec-all run has to hold a
-                 spec, a tactical plan, gate verdicts and a build log at once. Where haiku belongs is
-                 inside a session, on the search and doc subagents (CLAUDE.md Rule 31), and that is a
+      - Haiku  - never chosen by status or tier. It is a lookup tier, and a full /spec-all run has
+                 to hold a spec, a tactical plan, gate verdicts and a build log at once. A whole
+                 ticket reaches it only under -ModelPolicy shape and only when its own spec declares
+                 `**Complexity:** light` (below): the declaration is what earns it, and the first
+                 pass's research is where a wrong declaration gets corrected. Inside a session it
+                 also belongs on the search and doc subagents (CLAUDE.md Rule 31), which is a
                  property of those agent definitions, not of this script.
 
     -ModelPolicy shape is the same split re-cut by the SHAPE of the work rather than by the status,
@@ -80,14 +83,23 @@
 
       1. a status in runner.alwaysStrongStatuses  -> strong (BlockQuestions, whose whole product is
          a set of questions put to the owner),
-      2. tier at or above runner.strongTierMin    -> strong,
-      3. tier from 1 to runner.shapeCheapTierMax  -> cheap, whatever the status,
-      4. anything else                            -> falls through to the tiered order, unchanged.
+      2. a `**Complexity:**` line in the spec     -> runner.complexityModels[level] - light, medium
+         and hard name haiku, sonnet and opus. In a runner.cheapStatuses state the run audits code
+         the tree already carries, so the answer never rises above the cheap model there,
+      3. a status in runner.cheapStatuses         -> cheap,
+      4. tier at or above runner.strongTierMin    -> strong,
+      5. tier from 1 to runner.shapeCheapTierMax  -> cheap, whatever the status,
+      6. anything else                            -> falls through to the tiered order, unchanged.
 
-    Step 4 falls through rather than defaulting to strong on purpose: a ticket with no tier, or with
+    Step 6 falls through rather than defaulting to strong on purpose: a ticket with no tier, or with
     a status neither list names, must get exactly what it gets today, or the policy would change
-    behaviour where it promised nothing. Step 3 starts at 1 for the same reason - a blank or zero
-    tier is not a small ticket, it is an unstated one.
+    behaviour where it promised nothing. Step 5 starts at 1 for the same reason - a blank or zero
+    tier is not a small ticket, it is an unstated one. Step 2 is skipped for the same reason when the
+    line is absent or names no known level: an unstated complexity is not a light one.
+
+    The complexity line is read from the spec's own header at every launch, never cached. That is
+    the whole revision mechanism: a pass that disagrees with the level after its research rewrites
+    the line, and the NEXT launch of the ticket obeys it. The running child is never re-modelled.
 
     Pass -ModelPolicy fixed with -Model <name> to override the whole run.
 
@@ -428,10 +440,51 @@ function Get-TicketRecord {
     }
 }
 
+function Get-TicketComplexity {
+    <#
+        The level a spec declares for itself: light, medium or hard, or '' when the spec carries no
+        `**Complexity:**` line or the line names nothing this function recognises.
+
+        Read from the spec's own header rather than from the catalog or the preflight payload. The
+        preflight's `frontmatter` carries only Status, Priority, Tier and Date, and an explicit -Ids
+        run takes its record from select.ps1, which has no header at all - the file path is the one
+        thing both sources share. The read is the first forty lines, which is where every template
+        puts its header block, so it costs a single small file open per launch.
+
+        The Russian words are accepted because the owner edits this line by hand and chats in
+        Russian; an unrecognised value returns '' on purpose, so a typo never turns into a model.
+    #>
+    param($Ticket)
+
+    if ($null -eq $Ticket) { return '' }
+    $fileProp = $Ticket.PSObject.Properties['file']
+    if ($null -eq $fileProp -or [string]::IsNullOrWhiteSpace([string]$fileProp.Value)) { return '' }
+
+    $specPath = Join-Path $RepoRoot ([string]$fileProp.Value)
+    if (-not (Test-Path -LiteralPath $specPath -PathType Leaf)) { return '' }
+
+    $raw = ''
+    try {
+        foreach ($line in (Get-Content -LiteralPath $specPath -TotalCount 40 -Encoding UTF8)) {
+            if ($line -match '^\*\*Complexity:\*\*\s*(.+?)\s*$') { $raw = $Matches[1]; break }
+        }
+    } catch {
+        return ''
+    }
+    if (-not $raw) { return '' }
+
+    switch -Regex ($raw.ToLowerInvariant()) {
+        '^(light|лёгкий|легкий)\b'  { return 'light' }
+        '^(medium|средний)\b'       { return 'medium' }
+        '^(hard|сложный)\b'         { return 'hard' }
+    }
+    return ''
+}
+
 function Select-ModelFor {
     <#
-        The whole decision, in one place. It reads only what the catalog already knows - status and
-        tier - so choosing a model costs nothing and never opens the spec.
+        The whole decision, in one place. It reads the catalog's status and tier, and - only under
+        -ModelPolicy shape - the one header line of the spec that declares its complexity.
     #>
     param($Ticket)
 
@@ -459,6 +512,36 @@ function Select-ModelFor {
     # to the tiered order below and gets exactly what it gets today.
     if ($ModelPolicy -eq 'shape') {
         if (@(Get-SzaProfileValue 'runner.alwaysStrongStatuses') -contains $status) { return $StrongModel }
+
+        # The ticket's own declaration of how hard its work is. It outranks the tier because the tier
+        # is a roadmap label and this is the author's - or the previous pass's - statement about the
+        # work itself, and it is read at every launch so a pass that revised the level after its
+        # research is obeyed by the next one. A level the profile does not map, or a profile that
+        # predates the key, is treated as no declaration: the ticket then gets what it got before.
+        $level = Get-TicketComplexity -Ticket $Ticket
+        if ($level) {
+            $mapped = ''
+            try {
+                # The same dotted read Get-InstanceSetting uses: the merged tree holds ordered
+                # dictionaries where the defaults declare a map and objects where only the project does.
+                $map = Get-SzaProfileValue 'runner.complexityModels'
+                if (Test-SzaHasProperty -Object $map -Name $level) { $mapped = [string]$map.$level }
+            } catch {
+                $mapped = ''
+            }
+            if ($mapped) {
+                # Code-complete states are audits of code the tree already carries, and a big change
+                # already made is not a big decision still to take (measured below): the declared
+                # level may lower the model there but never raise it above the cheap one.
+                if (@(Get-SzaProfileValue 'runner.cheapStatuses') -contains $status) {
+                    $rank = @('haiku', 'sonnet', 'opus')
+                    $mappedRank = [array]::IndexOf($rank, $mapped)
+                    $cheapRank = [array]::IndexOf($rank, $CheapModel)
+                    if ($mappedRank -ge 0 -and $cheapRank -ge 0 -and $mappedRank -gt $cheapRank) { return $CheapModel }
+                }
+                return $mapped
+            }
+        }
 
         # The code-complete states are tested BEFORE the strong tier, and this order was set by a
         # measurement rather than by taste. Written the other way round - strong tier first - shape
@@ -590,7 +673,8 @@ function Add-RunRecord {
         [bool] $Moved,
         [string] $Outcome,
         $ExitCode,
-        [int] $Minutes
+        [int] $Minutes,
+        [string] $Complexity = ''
     )
     $record = [pscustomobject][ordered]@{
         id           = $Id
@@ -600,6 +684,10 @@ function Add-RunRecord {
         # comparing two rules asks "which rule chose the model". The two answers agree only until
         # an instance is re-pointed or a run is launched by hand, and then they disagree silently.
         policy       = $ModelPolicy
+        # The level the spec declared AT LAUNCH, '' when it declared none. Without it a run's model
+        # cannot be told apart as "the level said so" or "the old rule said so", and the outcome per
+        # level - the only evidence that a cheaper model earned its share - could not be read back.
+        complexity   = $Complexity
         statusBefore = $StatusBefore
         statusAfter  = $StatusAfter
         moved        = $Moved
@@ -690,7 +778,7 @@ Write-Host ("  permission     : {0}" -f $PermissionMode)
 Write-Host ("  model policy   : {0}" -f $(
     switch ($ModelPolicy) {
         'tiered'  { "tiered ($StrongModel, $CheapModel for Implemented and tier 1-2)" }
-        'shape'   { "shape ($CheapModel for tier 1-2 and Implemented, $StrongModel otherwise)" }
+        'shape'   { "shape (a spec's Complexity light/medium/hard picks haiku/sonnet/opus; without one $CheapModel for tier 1-2 and Implemented, $StrongModel otherwise)" }
         'fixed'   { "fixed ($Model)" }
         'default' { 'CLI default' }
     }))
@@ -721,16 +809,18 @@ if ($DryRun) {
         $i = 1
         foreach ($id in $explicit) {
             $rec = Get-TicketRecord -Id $id
-            Write-Host ("  {0,2}. {1}  (status: {2}, tier {3}) -> model {4}" -f `
-                    $i, $id, $rec.status, $rec.tier, (Select-ModelFor -Ticket $rec))
+            $recComplexity = Get-TicketComplexity -Ticket $rec
+            Write-Host ("  {0,2}. {1}  (status: {2}, tier {3}, complexity {4}) -> model {5}" -f `
+                    $i, $id, $rec.status, $rec.tier, $(if ($recComplexity) { $recComplexity } else { 'none' }), (Select-ModelFor -Ticket $rec))
             Write-DryRunLeaseNote -Id $id
             $i++
         }
     } else {
         $next = Get-NextQueuedTicket -Exclude @()
         if ($next -and $next -ne 'PARSE_ERROR') {
-            Write-Host ("  next up: {0}  (status: {1}, tier {2}) -> model {3}" -f `
-                    $next.id, $next.status, $next.tier, (Select-ModelFor -Ticket $next))
+            $nextComplexity = Get-TicketComplexity -Ticket $next
+            Write-Host ("  next up: {0}  (status: {1}, tier {2}, complexity {3}) -> model {4}" -f `
+                    $next.id, $next.status, $next.tier, $(if ($nextComplexity) { $nextComplexity } else { 'none' }), (Select-ModelFor -Ticket $next))
             Write-DryRunLeaseNote -Id ([string]$next.id)
             Write-Host '  the rest is re-ranked after every ticket, so only the head is knowable in advance.'
         } else {
@@ -808,6 +898,7 @@ while ($true) {
 
     $statusBefore = if ($ticket) { [string]$ticket.status } else { Get-TicketStatus -Id $id }
     $childModel = Select-ModelFor -Ticket $ticket
+    $childComplexity = Get-TicketComplexity -Ticket $ticket
 
     # --- is it still free? ----------------------------------------------------------------
     # The ranking above read the lease store, but nothing reserves a ticket between that read and
@@ -828,7 +919,7 @@ while ($true) {
         }
         [void](Add-RunRecord -Id $id -ChildModel $childModel -StatusBefore $statusBefore `
                 -StatusAfter $statusBefore -Moved $false -Outcome 'claim-lost-before-launch' `
-                -ExitCode $null -Minutes 0)
+                -ExitCode $null -Minutes 0 -Complexity $childComplexity)
         $processed.Add($id)
         continue
     }
@@ -838,8 +929,9 @@ while ($true) {
     Write-Host ''
     Write-Host ('=' * 78) -ForegroundColor DarkGray
     Write-Host ("  {0}  [{1}]   ticket {2} of {3}" -f $id, $statusBefore, ($processed.Count + 1), $(if ($MaxTickets -gt 0) { $MaxTickets } else { '?' })) -ForegroundColor Cyan
-    Write-Host ("  started {0}   model {1}   fresh context - this is a new process" -f `
-            $started.ToString('HH:mm:ss'), $(if ($childModel) { $childModel } else { 'CLI default' })) -ForegroundColor DarkGray
+    Write-Host ("  started {0}   model {1}{2}   fresh context - this is a new process" -f `
+            $started.ToString('HH:mm:ss'), $(if ($childModel) { $childModel } else { 'CLI default' }),
+            $(if ($childComplexity) { " ($childComplexity)" } else { '' })) -ForegroundColor DarkGray
     Write-Host ('=' * 78) -ForegroundColor DarkGray
 
     # --- run it in its own process --------------------------------------------------------
@@ -1040,7 +1132,7 @@ while ($true) {
 
     $runRecord = Add-RunRecord -Id $id -ChildModel $childModel -StatusBefore $statusBefore `
             -StatusAfter $statusAfter -Moved $moved -Outcome $outcome -ExitCode $exitCode `
-            -Minutes $elapsed
+            -Minutes $elapsed -Complexity $childComplexity
 
     # Read AFTER the row is written, and forced fresh, so the series includes the run that just
     # ended. The count is attached to the in-memory record only - the journal is the input to this
