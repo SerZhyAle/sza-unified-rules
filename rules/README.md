@@ -104,8 +104,11 @@ in this folder, is the live map of adoption - `tools/check-compliance.ps1` reads
 
 - **Gate before committing:** run `tools/check-rules.ps1` (exit 0 required) - it validates internal links,
   section numbering, `§`-references, and the house text style across these docs.
-- **Bump `CANON_VERSION`** in the same commit as any rule-doc change. The digest changes anyway; the version
-  is what lets an adopter tell a minor reconciliation from a hard re-adoption.
+- **The version pair is written by `deploy.ps1`, never by hand.** The version is the delivery key
+  ([RELEASE_AND_DISTRIBUTION.md](RELEASE_AND_DISTRIBUTION.md) §4): a rule-doc change reaches an adopter by
+  the version and nothing else, so the deploy raises `CANON_VERSION` and the plugin version itself, before
+  staging, and both always ride in the same commit (it skips the bump when the change set reaches no
+  consumer). The version is what lets an adopter tell a minor reconciliation from a hard re-adoption.
 - **Adopting or re-syncing a repo:** run the `adopt-canon` skill in a session started in that repo, one repo
   per session. It replaces the old copy-paste spread-back prompt.
 - **Surveying a new project:** copy `contrib/TEMPLATE.md`, fill it against the repo with evidence, dedupe

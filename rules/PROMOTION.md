@@ -96,6 +96,14 @@ alternative in public copy ("unlike online converters"), never a brand.
 | Google Play | title = name plus at most a category word; short description = tagline + value | title 30, short 80, full 4000 |
 | Per-locale search terms | researched per locale, never translated literally | same limits per locale |
 
+**A store's own listing never names that store's platform; every surface outside the store does.** The
+listing title carries no platform suffix - no "for Windows" on the Microsoft Store page, no "for Android"
+on the Play listing: the user is already inside that platform's store, the title space is short, and the
+store's review dislikes the redundant tag (owner, 2026-10-14). Outside the store's own page - site, README,
+GitHub, directories, sibling channels - the platform is named, as the site `<title>` row above already
+carries. A product that runs on more than one form factor also keeps "mobile" out of its public name: the
+same product reaches a VR headset and a TV, so the word understates the reach.
+
 **Keyword research without paid tools:** search-engine autocomplete (clean profile, locale set), store and
 `winget search` suggestions, competitor listings for their *generic* terms, GitHub topic pages for the spelling
 people use, and - once registered - the Search Console query report (§3.2). Competitor names are research

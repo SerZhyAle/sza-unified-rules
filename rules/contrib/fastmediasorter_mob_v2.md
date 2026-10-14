@@ -2094,3 +2094,75 @@ file was touched. The mechanism half is edited in the canon checkout (`tools/har
   the consumer suite's cases SKIP there.
 - This repo sets Haiku 5.5 to effort `xhigh` in `.claude/runner/model-effort.json` by the cheap-model rule of
   the owner's 2026-09-30 decision; whether the canon should name an effort per tier is the canon session's call.
+## The version is the delivery key - lifted into the canon 2026-10-15 (source: the canon deploy, ticket S2463)
+
+The rule the canon's own `deploy.ps1` was rebuilt around (this record, 2026-09-07) lived in the canon
+repo's `CLAUDE.md` and `README.md` and in this file, but in no `rules/` document: a product that read only
+the canon could not learn that a channel which caches by version number delivers nothing under an unchanged
+one. Promoted from a canon session on the owner's instruction.
+
+**The rule**, landing [RELEASE_AND_DISTRIBUTION](../RELEASE_AND_DISTRIBUTION.md) §4 right after "Stamp the
+version mechanically": the consumer-visible version is the delivery key - a push that changes anything a
+consumer runs but leaves the version where it stands reaches no consumer while the release tool and the
+update command both report success; the release operation raises the version itself (a hand bump is the
+measured failure, not the remedy), the version change rides in the same commit - the same artifact - as the
+payload it versions, and delivery is proven by reading the version back at the consumer, not by a tool's
+success report.
+
+**Why §4 and not the two other candidate homes:** [PROMOTION](../PROMOTION.md) owns being found -
+positioning, listings, indexing - and this is a delivery law, not a discovery one;
+[PLATFORM_OVERLAYS](../PLATFORM_OVERLAYS.md) owns the platform instances (the Android `versionCode`, the
+Windows MSIX identity) and the law is channel-agnostic, each platform already carrying its instance.
+RELEASE_AND_DISTRIBUTION §4 held the two halves ("stamp the version mechanically", "read the version back
+out of the built artifact") without the law that joins them.
+
+**Cross-checked against `WINDOWS-STORE` (2026-10-15, read-only - the contract is sealed and was not
+edited):** its rule 3 is this same law at the Microsoft Store channel - the identity version is the
+mechanical remap of the release stamp, strictly greater than the version the dashboard shows, "derived by
+code from the tag, never typed" - and its conformance rung 3 (the package read-back asserts `Version`
+before upload) is the same read-back at the consumer. No conflict and no duplication to remove: the canon
+bullet states the channel-agnostic law and cites the contract by id; the Store-specific remap (four parts,
+revision 0, the per-part caps) stays with `PACKAGE-VERSIONING`, where the contract's own out-of-scope
+section puts it. No defect found, so no proposal is owed.
+
+**Also closed - the correction the 2026-09-07 entry left to a canon session:** `rules/README.md`
+"Maintaining these rules" still told a maintainer to "Bump `CANON_VERSION`" by hand. It now says the version
+pair is written by `deploy.ps1`, never by hand, and points at §4 for the law.
+
+**Verification:** `pwsh -File tools/check-rules.ps1` - exit 0 (22 core docs, 13 contrib docs), run after all
+three edits. The change is left uncommitted: the deploy is the operator's command (INVARIANTS 18), and it
+raises the version pair itself - which is the point of the rule.
+
+## A store listing never names its own platform - lifted into the canon 2026-10-15 (source: this repo, ticket S4220)
+
+The owner's naming decision of 2026-10-14 (S4220, key K1 of the S4203 milestone, owner questionnaire answer
+4): the Microsoft Store listing carries no "for Windows" tag - the store dislikes it - Google Play likewise
+carries no "for Android", every other surface names the platform, and the word "mobile" is avoided because
+the products also run on VR headsets and Android TV. The rule lived in no `rules/*.md` document (checked
+2026-10-14: neither phrase greps), so a project that read only the canon could not learn it; S4220 parked in
+`BlockExternal` on exactly that gap.
+
+**The rule**, landing [PROMOTION](../PROMOTION.md) §2 right after the derived-fields table: a store's own
+listing title never names that store's platform - the user is already inside it, the title space is short,
+and the store's review dislikes the redundant tag - while every surface outside the store (site, README,
+GitHub, directories, sibling channels) names the platform, and a product that runs on more than one form
+factor keeps "mobile" out of its public name because the word understates a reach that includes VR and TV.
+
+**Why §2 and not the two other candidate homes:** [RELEASE_AND_DISTRIBUTION](../RELEASE_AND_DISTRIBUTION.md)
+owns the shipping runbook - how a release is cut and reaches its channels - and this is a naming rule about
+what the published listing says, decided once in positioning, not per release.
+[PLATFORM_OVERLAYS](../PLATFORM_OVERLAYS.md) owns the platform instances (Overlay A Store fields, Overlay B
+Play listings) and would force the rule to be restated per overlay, while the owner's decision is one law
+for every store. PROMOTION §2 already owns the discoverability fields derived from the worksheet, and its
+table already carried both halves - the site `<title>` naming the platform, the Play title "name plus at
+most a category word" - so the new paragraph states the law the two rows implied.
+
+**Cross-checked against `WINDOWS-STORE` (2026-10-15, read-only - the contract is sealed and was not
+edited):** its rule 14 holds how the `Title` is written - one source, unchanged into every language column,
+never translated - and says nothing about what it names, so the canon rule constrains the value the copy
+deck produces while the contract constrains the wire: no conflict. Rule 15 (search terms per language) is
+a different field this rule does not touch. No defect found, so no proposal is owed beside the contract.
+
+**Verification:** `pwsh -File tools/check-rules.ps1` - exit 0 (22 core docs, 13 contrib docs), run after
+both edits. The change is left uncommitted beside the delivery-key entry of the same date: the deploy is
+the operator's command (INVARIANTS 18), and it raises the version pair itself.

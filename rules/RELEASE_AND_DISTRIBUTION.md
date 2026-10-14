@@ -136,6 +136,18 @@ owner decision, made before the release, never discovered after.
 - **Stamp the version mechanically** - never hand-bump (see [DOCUMENTATION_CONCEPT.md](DOCUMENTATION_CONCEPT.md)
   §2). Date tag `YY.MMDD.HHmm` for desktop/CLI; monotonic `versionCode` + `versionName` for Android
   *(overlay)*. Remap to each channel's required shape mechanically.
+- **The version is the delivery key: a channel that caches by number delivers nothing under an unchanged
+  one.** A push that changes anything a consumer runs but leaves the version where it stands reaches no
+  consumer - every one keeps the cached copy of the previous version - while the release tool and the
+  update command both report success, so nothing announces the gap. The release operation therefore
+  raises the consumer-visible version itself, and the version change rides in the same commit - the
+  same artifact - as the payload it versions; a hand bump is the measured failure, not the remedy.
+  Delivery is proven by reading the version back **at the consumer** (the newest cache directory, the
+  store dashboard's number), not by a tool's success report. Measured twice on the canon plugin channel
+  (2026-09-03, 2026-09-07): a harness fix and three catalog files pushed under an already-installed
+  version, the deploy and the plugin update both green, no consumer running the change. The Microsoft
+  Store holds the same law for its channel (`WINDOWS-STORE` rule 3: strictly greater than the dashboard
+  shows, derived by code, never typed); the channel-specific remaps stay with the contracts.
 - **A build-time date stamp is not the tag minute - pin the release build to the tag.** When the authoritative
   version is stamped from the clock at *build* time (`YY.MMDD.HHmm` computed in the project file), it drifts
   minutes from the `v*` tag it ships under. The release CI must build with the version **pinned to the tag**
