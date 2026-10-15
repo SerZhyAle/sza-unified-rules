@@ -7,7 +7,9 @@ apply (a CLI tool has no site, a single-locale app skips localization).
 ## 0. Decide the shape
 
 - Pick the **platform overlay** ([PLATFORM_OVERLAYS.md](PLATFORM_OVERLAYS.md)): Windows desktop /
-  Android / Go CLI / browser extension, or draft a new overlay if none fits. This decides your source
+  Android / Go CLI / browser extension / browser application, or draft a new overlay if none fits - in the
+  repo's contrib record as a candidate core edit, with the letter declared in the stamp and a `$comment` saying
+  so until the canon adopts it. This decides your source
   root, release-mechanics folder, version shape, and channels. A product may also combine one overlay's
   distribution with another's source shape, ship as several **editions**, co-ship several artifacts in
   one release, or carry a **companion editor extension** - the shapes and their parity mechanisms are

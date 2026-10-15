@@ -33,7 +33,7 @@ that sequences every doc below into one runbook.
 | --- | --- |
 | [REPOSITORY_LAYOUT.md](REPOSITORY_LAYOUT.md) | where every kind of file lives; secrets; binaries; versioning principle |
 | [DOCUMENTATION_CONCEPT.md](DOCUMENTATION_CONCEPT.md) | single-source-of-truth model; changelog; discoverability; site pages; tone; the document registry |
-| [PLATFORM_OVERLAYS.md](PLATFORM_OVERLAYS.md) | the concrete shape for Android / Windows desktop / Go CLI, plus cross-project contracts |
+| [PLATFORM_OVERLAYS.md](PLATFORM_OVERLAYS.md) | the concrete shape for Windows desktop / Android / Go CLI / browser extension / browser application, plus cross-project contracts |
 | [CONTRACTS.md](CONTRACTS.md) | what binds across products: the shared contracts catalog, pointers not copies, comply-or-amend, versioning and backward compatibility, the release gate |
 | [RELEASE_AND_DISTRIBUTION.md](RELEASE_AND_DISTRIBUTION.md) | the shipping runbook: build/release boundary, coverage-regression gate, per-channel distribute, post-release checks, the release package plan |
 | [CHANNEL_MATRIX.md](CHANNEL_MATRIX.md) | the per-channel publishing reference: trigger/cost/auth/signer/listing/anchor/verify for GitHub, winget, MS Store, Chrome, Edge, Play |

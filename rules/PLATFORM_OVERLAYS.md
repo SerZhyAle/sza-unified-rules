@@ -197,6 +197,55 @@ own release; keep `_locales` keys at parity across shipped languages or the buil
 
 ---
 
+## Overlay E - Browser application (static files, no install)
+
+Reference: `FastMediaSorter_WEB`, drafted on 2026-10-16 before its first code, so these facts are the shape a
+web application starts from, not a shipped history. A browser application is a program delivered as files to a
+browser tab and optionally installed from there as a PWA. It is neither a product page (the
+`product-web-pages` contract family governs those) nor a browser extension (Overlay D).
+
+**Source root & release-mechanics.** One source root of static files (`web/` or `src/`), dependencies vendored,
+and a build step only if the stack needs one, writing into an ignored output folder. No `publishing/` umbrella:
+each serving shape below is a folder or a script beside the source. The page loads no code from a CDN at run
+time - a CDN request logs every visitor, which breaks "no telemetry" (invariant 14), and a CDN can swap the
+script.
+
+**Version shape.** Derived mechanically and frozen for the product's life (invariant 8); the desktop date tag
+`YY.MMDD.HHmm` fits. The build or packaging step stamps it into the files; the page shows it in its About view
+and in every diagnostic report. A page cached by a Service Worker learns of a new version by fetching a small
+version file with `cache: no-store` on start (or from the worker's `updatefound`), tells the person a new
+version is ready, and never swaps the page under a running session. Invariant 6 reads here as: a page cached
+from the previous version keeps its stored state - IndexedDB, the worker cache, non-extractable keys, granted
+folder handles - across the new one.
+
+**Distribution channels.** Each free: a free static host (GitHub Pages, or a host the owner already has); a copy
+served by another product's server when that product carries the files - a change to that product, reached
+through the catalog; and PWA install from either, through the web app manifest. No store channel and no package
+manager; discoverability is the product page, if the product has one. `REPO-STAMP` has no channel value for
+these yet: the first product that ships one adds it, catalog first, with its `CHANNEL_MATRIX` row.
+
+**Frozen anchors.** The **origin** - scheme, host and port. IndexedDB, the Service Worker, granted permissions,
+non-extractable WebCrypto keys and the PWA install all belong to it, so moving the page to another origin
+forgets every stored key and setting and orphans every install - the web counterpart of a changed
+`applicationId`. With it: the web app manifest `id` (the install's identity; when absent the browser falls back
+to `start_url`, so set it explicitly at first publish), the Service Worker scope and the `start_url` path. The
+visible name rides on top and may change.
+
+**Permissions and privacy.** Invariants 13 and 14 for a page: request a browser permission - camera,
+microphone, clipboard read, notifications, persistent storage, a folder handle - at the moment the function that
+needs it is used, with a one-sentence reason on screen, never at load. The privacy page lists every permission the
+page can request; "no telemetry" holds only if the page talks to no address but the ones the person chose.
+
+**Traps worth carrying in the checklist:** a page opens no raw socket, so TCP, SMB, FTP and SFTP are reachable
+only through a server the product speaks to; TLS trust belongs to the browser, so a self-signed server needs a
+stated trust path; an `https:` page cannot load `http:` LAN resources (mixed content); support differs per
+engine - writing back to a real folder (File System Access) is Chromium-only, and nearly every iOS and iPadOS
+browser is WebKit - so each function names its engine floor and says when it is unavailable, never a silently
+missing control; clearing site data or storage eviction erases everything the origin holds, so a key that
+identifies a device goes with it, and the product says so before sign-out.
+
+---
+
 ## Editions - one product shipped in several forms
 
 A single product can ship as more than one **edition** - e.g. a desktop app (Overlay A) *and* a browser

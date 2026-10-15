@@ -22,6 +22,10 @@
       <specs>/TICKET_TEMPLATE.md the template capture-draft.ps1 fills; carries the approval-gate section
       the R0 launcher            -RunnerPath, default r0.ps1 in the project root; standalone, it needs
                                  neither the harness nor the profile at run time
+      tools/harness.ps1          the forwarder every later harness call goes through - it finds the
+                                 newest installed plugin, so no project copies a harness script or pins
+                                 a plugin version; -NoForwarder skips it for a project with its own
+                                 entry points
 
     It does not create tickets, install the agent, write a pipeline command or touch .gitignore: the
     temp directory holds run journals and leases and should be ignored, which is printed as a hint.
@@ -44,9 +48,13 @@
 .PARAMETER RunnerPath
     Where the launcher goes, project-relative. Defaults to r0.ps1.
 
+.PARAMETER NoForwarder
+    Do not write tools/harness.ps1 - for a project that keeps its own entry points (mapped in the
+    profile's harness.entryPoints).
+
 .PARAMETER Force
-    Replace the generated files that already exist (the plan files, the template, the launcher). The
-    profile and the ledger files are never replaced.
+    Replace the generated files that already exist (the plan files, the template, the launcher, the
+    forwarder). The profile and the ledger files are never replaced.
 
 .PARAMETER Help
     Print this help.
@@ -66,6 +74,7 @@ param(
     [ValidateSet('acceptEdits', 'auto', 'bypassPermissions', 'manual', 'dontAsk', 'plan')]
     [string] $PermissionMode = 'bypassPermissions',
     [string] $RunnerPath = 'r0.ps1',
+    [switch] $NoForwarder,
     [switch] $Force,
     [switch] $Help
 )
@@ -210,14 +219,28 @@ foreach ($k in $render.Keys) { $launcher = $launcher.Replace("{{$k}}", $render[$
 if ($launcher -match '\{\{\w+\}\}') { throw "the launcher template has an unfilled placeholder: $($Matches[0])" }
 Use-File $runnerFull $launcher -Replaceable
 
+# --- the harness forwarder: every later call goes through it, never through a copied script
+if (-not $NoForwarder) {
+    Use-File (Join-Path $Root 'tools/harness.ps1') ([IO.File]::ReadAllText((Join-Path $templatesDir 'harness-forwarder.ps1'))) -Replaceable
+}
+# Hints name the forwarder unless the profile maps entry points of its own (Get-SzaInvocation reads them).
+function Get-Hint([string] $Script, [string] $Arguments = '') {
+    $viaProfile = Get-SzaInvocation "$Script.ps1" $Arguments
+    # Get-SzaInvocation falls back to the absolute harness path when the profile maps no entry point.
+    if ($NoForwarder -or -not $viaProfile.Contains((Get-SzaHarnessRoot))) { return $viaProfile }
+    $line = "pwsh -NoProfile -File ./tools/harness.ps1 $Script"
+    if ($Arguments) { $line += " $Arguments" }
+    return $line
+}
+
 $lines | ForEach-Object { Write-Host $_ }
 $runnerRel = [IO.Path]::GetRelativePath($Root, $runnerFull).Replace('\', '/')
 $tempRel = Get-SzaPath 'tempDir' -Relative
 Write-Host ''
 Write-Host 'Next:'
 Write-Host "  1. add '$tempRel/' to .gitignore - it holds run journals and leases, which are not source."
-Write-Host ('  2. create tickets, one at a time: ' + (Get-SzaInvocation 'spec_catalog/capture-draft.ps1' '-Slug <kebab-slug> -Text "<the owner''s words>"'))
-Write-Host ('  3. check the ledger:              ' + (Get-SzaInvocation 'spec_catalog/validate.ps1'))
+Write-Host ('  2. create tickets, one at a time: ' + (Get-Hint 'spec_catalog/capture-draft' '-Slug <kebab-slug> -Text "<the owner''s words>"'))
+Write-Host ('  3. check the ledger:              ' + (Get-Hint 'spec_catalog/validate'))
 Write-Host "  4. read the order R0 would use:    pwsh -NoProfile -File ./$runnerRel -DryRun"
 Write-Host "  5. run ONE ticket attended:        pwsh -NoProfile -File ./$runnerRel -MaxTickets 1"
 exit 0

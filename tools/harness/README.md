@@ -35,8 +35,10 @@ harness or a migration.
 ## Day 0 of a new project
 
 A project with nothing yet runs `scaffold/init-task-flow.ps1 -Root .` once: it creates the stores the ticket
-tools write into, the three plan files, `TICKET_TEMPLATE.md` and an **R0 launcher** (`r0.ps1`) rendered from the
-project's profile. Tickets are then created with `spec_catalog/capture-draft.ps1`, which writes the ledger row and
+tools write into, the three plan files, `TICKET_TEMPLATE.md`, an **R0 launcher** (`r0.ps1`) rendered from the
+project's profile, and the **forwarder** `tools/harness.ps1` - the project's one entry point here, resolved against
+the newest installed plugin on every call (`pwsh -NoProfile -File tools/harness.ps1 spec_catalog/validate`; skip it
+with `-NoForwarder` when the profile maps entry points of its own). Tickets are then created with `spec_catalog/capture-draft.ps1`, which writes the ledger row and
 its spec file in one call - `insert.ps1 -Slug` alone writes the row and leaves the file for something else. The
 launcher is standalone: it reads the ledger and the queue file and starts one fresh agent process per ticket, so
 it keeps working on a machine that has no harness. The `task-flow-init` skill drives all of this with its

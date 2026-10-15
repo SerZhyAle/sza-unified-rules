@@ -55,8 +55,11 @@ pwsh -NoProfile -File "<root>/tools/harness/scaffold/init-task-flow.ps1" -Root .
 ```
 
 It writes: a minimal `.sza-profile.json` (only when absent), the specs and temp directories, the empty ledger,
-archive and burned-ids files, the queue / ready / done plan files, `TICKET_TEMPLATE.md`, and the R0 launcher
-(default `r0.ps1` in the project root, standalone - it needs no harness at run time).
+archive and burned-ids files, the queue / ready / done plan files, `TICKET_TEMPLATE.md`, the R0 launcher
+(default `r0.ps1` in the project root, standalone - it needs no harness at run time), and the forwarder
+`tools/harness.ps1`. Every later harness call in the project goes through the forwarder -
+`pwsh -NoProfile -File tools/harness.ps1 spec_catalog/validate` - which finds the newest installed plugin; never
+copy a harness script or a sibling's forwarder. `-NoForwarder` skips it for a project with its own entry points.
 
 Then add the temp directory to `.gitignore`: it holds run journals and leases, which are not source.
 

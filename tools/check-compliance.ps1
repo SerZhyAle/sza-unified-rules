@@ -27,6 +27,11 @@ Usage:
   pwsh -File tools/check-compliance.ps1 -RepoRoot P:\X -Strict
   pwsh -File tools/check-compliance.ps1 -Json | ConvertFrom-Json
   pwsh -File tools/check-compliance.ps1 -PrintDigest         # canon core digest, for a stamp
+  pwsh -File tools/check-compliance.ps1 -IncludeUntracked    # also judge untracked, non-ignored files
+
+The git-scoped checks judge tracked files. A repo with no commit yet (adoption runs before the first one)
+is judged on its tracked and untracked, non-ignored files instead - what the first commit would hold - and
+the run says so; -IncludeUntracked asks for that set on any repo.
 #>
 [CmdletBinding()]
 param(
@@ -36,7 +41,8 @@ param(
     [string[]]$Only,
     [string[]]$Skip,
     [switch]$Json,
-    [switch]$PrintDigest
+    [switch]$PrintDigest,
+    [switch]$IncludeUntracked
 )
 
 $ErrorActionPreference = 'Stop'
@@ -151,8 +157,19 @@ try {
     # Tracked files, when this is a git repo. Everything git-scoped degrades to N/A otherwise.
     $isGit = Test-Path -LiteralPath (Join-Path $RepoRoot '.git')
     $tracked = @()
+    $fileSet = 'tracked'
     if ($isGit) {
-        $tracked = @(& git -C $RepoRoot ls-files 2>$null)
+        # A repo with no commit has an empty index until its first `git add`, so judging tracked files
+        # alone would report "no agent-instructions file" beside a CLAUDE.md on disk.
+        $null = & git -C $RepoRoot rev-parse --verify --quiet HEAD 2>$null
+        $unborn = $LASTEXITCODE -ne 0
+        if ($IncludeUntracked -or $unborn) {
+            $tracked = @(& git -C $RepoRoot ls-files --cached --others --exclude-standard 2>$null | Sort-Object -Unique)
+            $fileSet = if ($unborn) { 'tracked and untracked, non-ignored (no commit yet)' } else { 'tracked and untracked, non-ignored' }
+        }
+        else {
+            $tracked = @(& git -C $RepoRoot ls-files 2>$null)
+        }
         if ($LASTEXITCODE -ne 0) { $tracked = @() }
     }
 
@@ -237,14 +254,26 @@ try {
         # product, so it has no overlay to declare.
         $overlays = @($stamp.overlay)
         $needsOverlay = -not ($stamp.role -in @('canon-home', 'portfolio'))
+        # The letters are read from the overlay headings, so a new overlay needs no change here.
+        $overlayDoc = Join-Path $rulesDir 'PLATFORM_OVERLAYS.md'
+        $knownOverlays = @(Select-String -LiteralPath $overlayDoc -Pattern '^## Overlay ([A-Z]) - ' |
+            ForEach-Object { $_.Matches[0].Groups[1].Value })
+        $draftFix = 'If none fits, draft a new overlay in the contrib record as a candidate core edit and keep a stamp $comment saying so until the canon adopts it (NEW_PROJECT_CHECKLIST, first step).'
         if ($overlays.Count -eq 0 -and $needsOverlay) {
             Add-Finding -Id 'SZA-CANON04' -Severity 'error' -Path '.sza-canon.json' `
-                -Message 'no overlay declared' -Fix 'Declare one of A B C D - see PLATFORM_OVERLAYS.md.'
+                -Message 'no overlay declared' -Fix "Declare one of $($knownOverlays -join ' ') - see PLATFORM_OVERLAYS.md. $draftFix"
         }
         elseif ($overlays.Count -gt 1 -and -not (@($stamp.editions).Count -or @($stamp.shapes).Count)) {
             Add-Finding -Id 'SZA-CANON04' -Severity 'error' -Path '.sza-canon.json' `
                 -Message "more than one overlay ($($overlays -join ', ')) without an editions or shapes entry" `
                 -Fix 'A project reads the core then exactly one overlay. Several overlays means editions - declare them.'
+        }
+        foreach ($o in $overlays) {
+            if ($knownOverlays.Count -and [string]$o -cnotin $knownOverlays) {
+                Add-Finding -Id 'SZA-CANON04' -Severity 'warn' -Path '.sza-canon.json' `
+                    -Message "overlay '$o' is not in PLATFORM_OVERLAYS.md (the canon has $($knownOverlays -join ' '))" `
+                    -Fix "A drafted overlay is expected to warn until the canon adopts it. $draftFix"
+            }
         }
 
         # SZA-CANON06 - the contrib record resolves.
@@ -1147,7 +1176,7 @@ try {
 
     if ($Json) {
         [pscustomobject]@{
-            repo = $RepoRoot; canonVersion = $canonVersion; canonDigest = $canonDigest
+            repo = $RepoRoot; canonVersion = $canonVersion; canonDigest = $canonDigest; fileSet = $fileSet
             errors = $errors.Count; warnings = $warns.Count; findings = $findings
         } | ConvertTo-Json -Depth 6
         exit ($(if ($errors.Count -gt 0) { 1 } else { 0 }))
@@ -1164,6 +1193,7 @@ try {
     $overlayText = if ($stamp -and $stamp.overlay) { ($stamp.overlay -join ',') }
                    elseif ($stamp -and $stamp.role -and $stamp.role -ne 'product') { 'none' }
                    else { '?' }
+    if ($fileSet -ne 'tracked') { Write-Host "note: files judged - $fileSet" }
     Write-Host "check-compliance: $(Split-Path $RepoRoot -Leaf) - $($errors.Count) error(s), $($warns.Count) warning(s) (overlay $overlayText, canon $canonVersion)"
 
     if ($errors.Count -gt 0) {

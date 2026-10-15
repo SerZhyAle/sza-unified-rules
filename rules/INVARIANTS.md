@@ -9,7 +9,8 @@ Ordered by cost of violation. The pointer after each line is the doc that expand
 
 1. Never change a shipped **frozen anchor** - winget `PackageIdentifier`/`PackageName`, Inno `AppId` or
    WiX `UpgradeCode`, MSIX Identity `Name`+`Publisher`, Play `applicationId` + signing key, Chrome item id /
-   Edge product id, VS Code `<publisher>.<name>`, Go module path. ([PLATFORM_OVERLAYS](PLATFORM_OVERLAYS.md),
+   Edge product id, VS Code `<publisher>.<name>`, Go module path, a web app's origin + manifest `id`.
+   ([PLATFORM_OVERLAYS](PLATFORM_OVERLAYS.md),
    [SECURITY_AND_PRIVACY](SECURITY_AND_PRIVACY.md) §2, [CHANNEL_MATRIX](CHANNEL_MATRIX.md))
 2. Never ship a release that **shrinks reach** - countries, age rating, minimum platform version,
    ABI/feature/device set - and check it per flavor. ([RELEASE_AND_DISTRIBUTION](RELEASE_AND_DISTRIBUTION.md) §3)
