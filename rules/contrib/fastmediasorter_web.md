@@ -158,3 +158,11 @@ New-repo adoption against canon **2026.10.15.4**, core digest `sha256:224d2a22..
   unparsed. No contract edited.
 - **Remains:** S0002 onward; the attended R0 rehearsal; the first commit, when the owner asks.
 - **Verification:** see the repo's S0001 `## Last Audit`.
+
+## Re-sync 2026-10-16
+
+Reconciled the same day against canon **2026.10.16.1**, core digest `sha256:18957ab0..`, which adopted overlay E
+from this record and the three candidate core edits. Re-read the changed rule docs (PLATFORM_OVERLAYS "Overlay E",
+INVARIANTS item 1, NEW_PROJECT_CHECKLIST step 0); nothing in the repository contradicted them - the dependencies are
+to be vendored (S0003) and every function names its engine floor (S0002). Stamp `canon.version`, `coreDigest` and
+`reconciledOn` moved together; `adoptedOn` unchanged. Gate on the repository itself: 0 errors, 0 warnings.
