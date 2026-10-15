@@ -2166,3 +2166,436 @@ a different field this rule does not touch. No defect found, so no proposal is o
 **Verification:** `pwsh -File tools/check-rules.ps1` - exit 0 (22 core docs, 13 contrib docs), run after
 both edits. The change is left uncommitted beside the delivery-key entry of the same date: the deploy is
 the operator's command (INVARIANTS 18), and it raises the version pair itself.
+
+## The runner backs off on a usage limit instead of failing tickets - proposed for the harness 2026-10-15 (source ticket S4265)
+
+Raised from an FMS session as a **proposal**: nothing under `rules/` other than this file was touched, and nothing under `tools/` either.
+The mechanism is owed to a canon session; its full design and acceptance cases are in the FMS spec `PLAN/S4265_runner-weekly-limit-backoff.md`.
+
+### Raised
+
+1. **A usage limit is not a ticket failure** - landing `tools/harness/batch/run-spec-queue.ps1`, `tools/harness/batch/_idle-runs.ps1`,
+   `tools/harness/_profile.ps1`. Measured 2026-10-13: after one child ended on the weekly limit the runner started three more
+   children 11-12 s apart, each exit 1 at 0 min, each dropped for the rest of the run and journalled `child-failed`.
+   The watchdog restarts a dead instance, so exiting is not a backoff; the wait has to live in the runner.
+2. **The signal is structured.** The child's transcript ends with a synthetic assistant record carrying `apiError: usage_limit_reached`,
+   `apiErrorStatus: 429` and `quotaLimits.resetsAt` (unix seconds) with `rateLimitType`; the runner finds the file by passing
+   `--session-id <guid>` and never parses console text.
+3. **A third class in the idle series.** `limit-hit` neither extends nor ends a ticket's series - the existing two classes
+   ("counts" and "ends it") both misstate a cause that is not about the ticket.
+4. **One shared hold file under `temp/spec-queue/`**, read before every launch including a restarted runner's first, so that
+   parallel instances and the watchdog all wait on the same timestamp; it expires by its own `resetsAt`.
+
+### Deliberately NOT raised
+
+- A cap on the wait. A sleeping runner costs nothing and the stop files already end it.
+- Lowering the model or effort to stay under a limit.
+
+### Owed
+
+- The canon session implements the four items and deploys `tools/harness/`; the consumer suite
+  `scripts/utils/run-spec-queue.tests/Run-Tests.ps1` gains the cases named in the FMS spec section 5 and SKIPs against a harness that predates them.
+- Verify `--session-id` against the installed CLI's `--help` before the runner depends on it.
+
+## The runner backs off on a usage limit - the canon half landed in the working tree 2026-10-15 (source ticket S4265)
+
+The proposal above is built. Written by a canon session on the FMS session's hand-off; **not committed and not
+deployed** - the owner has not asked for either, and the deploy is what raises the plugin version, which is the
+only thing that delivers it. Until it runs, the consumer's forwarder keeps resolving the previous cached harness.
+
+### What landed
+
+| File | Change |
+|---|---|
+| `tools/harness/batch/_limit-hold.ps1` | **New.** The signal reader (`Find-ChildTranscript`, `Get-LimitSignal`) and the shared hold (`Get-LimitHoldState`, `Write-LimitHold`, `Wait-LimitHold`). A library, so the runner and the monitor share one reading and the suite can dot-source it |
+| `tools/harness/batch/run-spec-queue.ps1` | `--session-id <guid>` appended after `Expand-ChildArgs`; transcript read after exit and after a timeout kill; `Resolve-RunOutcome -LimitHit`; limit-hit tickets stay out of `$processed`; the hold is read before every launch; summary and dry run print the hold |
+| `tools/harness/batch/_idle-runs.ps1` | Third class: a `limit-hit` row is stepped over, neither extending nor ending the series. A moved row still ends it |
+| `tools/harness/_profile.ps1` | `runner.limitResumeMarginSeconds` = 120, `runner.limitPollMinutes` = 30 |
+| `tools/harness/batch/dev-monitor-snapshot.ps1` | `limitHold` field (additive, schema stays 1); `limit-hit` rows leave `idleToday`, and count in `limitHitsToday` |
+| `tools/harness/batch/monitor-spec-queue.ps1` | A line at the top while a hold is active; `limit-hit` rows in their own colour |
+
+`runner.idleOutcomes` is untouched. No new exit code: a runner that sleeps and resumes exits as it did.
+
+### Where the build departs from the design in the spec, and why
+
+- **A new file** where the spec named three. The monitor has to read the same hold the runner waits on, and the
+  runner is not dot-sourceable, so the reading lives in a library both load.
+- **`--session-id` is added only when the CLI's own `--help` lists it** (asked once per process, bounded to 20 s),
+  not only checked once by hand. `claude` 2.1.300 lists it today; a CLI that stops listing it, or an instance
+  whose `command` is another agent, then runs exactly as before instead of failing every launch. Not added
+  either when the template already names a session or resumes one (the CLI refuses the pair).
+- **The log fallback needs a non-zero exit, and reads the last 4000 characters only.** A child that exited 0
+  having merely written about limits - this ticket's own children will - must not be filed as one.
+- **A `timeout` becomes `limit-hit` when the child's last act was the limit.** The spec names the timeout kill
+  as a place the transcript is read; the limit is why such a child made no more progress. `claim-lost` and
+  `launch-failed` are never renamed.
+- **A reset time already past (plus the margin) is treated as none,** so the poll wait applies. Without it a
+  stale value relaunches children as fast as they fail, and the wait has no cap to stop that.
+- **The hold's write is a compare under a named mutex,** not a plain write: three children failing seconds apart
+  is the case it exists for. A reset time not greater than the one on disk is not written, expired or not; a hit
+  with no reset time never replaces a live hold; a reported reset time replaces a hold that was only a poll wait.
+- **The wait is in slices of 15 s, not 60** (the spec says "at most 60"): the stop file and a deleted hold are
+  noticed sooner and a slice costs two file reads.
+- **The wait sits after the ranking, not before it.** An empty queue still ends the run at once; a wait that did
+  happen hands the ticket back and the loop ranks again, because a ranking taken before a wait of days is stale.
+- **`Resolve-RunOutcome` gained `-LimitHit`** rather than only accepting `limit-hit` as an established verdict,
+  so "decided before `child-failed`" is one visible rule in the function whose order is its whole point.
+
+### Findings the design did not carry
+
+- **The last line of a transcript is not the last assistant record.** The limit record is followed by
+  `last-prompt` and `cost-state` lines (measured on three real transcripts, 2026-10-13); a reader that took the
+  last line would never see it. The reader takes the last non-sidechain `assistant` record and reads only a
+  window at the file's end (a 35 MB transcript: 3 ms).
+- **Two of five transcripts that contain the string `usage_limit_reached` are not limit hits** - the string is
+  quoted inside a session that was investigating it. A text match would have filed them; the field match does not.
+- **Other runners are not covered.** `tools/harness/scaffold/templates/r0-runner.ps1.tpl` (the day-0 R0 runner)
+  files a non-zero exit as `child-failed` and would burn through a queue at a limit the same way; it was not
+  part of this ticket and is left for a canon session to decide.
+
+### Verification, 2026-10-15
+
+- **Real transcripts** (`~/.claude/projects/P--ANDROID-FastMediaSorter-mob-v2`): the three that end on the limit
+  read as `seven_day`, `resetsAt` 1791892800; the two that merely quote it read as no signal.
+- **Consumer suite, unmodified, `SZA_HARNESS_ROOT` at this checkout:** `run-spec-queue tests: PASS (37 case(s))`,
+  exit 0, no skips. It carries none of the new cases - the suite lives in the consumer repository, which this
+  session did not edit.
+- **The same suite with the block below spliced in:** `run-spec-queue tests: PASS (64 case(s))`, exit 0 (37 + 27).
+  Against the harness at `HEAD`, which predates the change: `PASS (37 case(s), 27 skipped)`, exit 0.
+- **The real runner against a stand-in CLI** (three runs, in a scratch tree): a child that hits the limit once ->
+  `limit-hit` journalled with `moved: false`, one line announcing the wait, the same ticket relaunched under a new
+  session id, exit 0; a runner started into a live hold with a stop file written mid-wait -> no child launched,
+  exit 3; a CLI without `--session-id` under `-Quiet` -> one warning, `limit-hit` read from the log, poll wait.
+- **The monitor** against that tree: `limitHold` present while a hold is active and `null` without a hold file;
+  the fixture is byte-for-byte unchanged by the call.
+- `tools/harness/assert-portable.ps1` - PASS (81 scripts); `tools/check-rules.ps1` - exit 0 (22 core docs, 13 contrib docs), run after this record was written.
+
+### Owed
+
+- **The owner's deploy** (`deploy.ps1`): it raises the version pair itself. Then, in the consumer,
+  `claude plugin update sza@sza-unified-rules` and read the installed version back.
+- **The consumer suite gains the block below** (paste before the closing summary of `Run-Tests.ps1`), and the
+  idle-series passages of `docs/DEV_OPS.md` and `docs/SPEC_CATALOG_RATIONALE.md` gain `limit-hit` and its class.
+- **The consumer's monitor page** (`rmw`) renders `limitHold`; the text monitor already does.
+- A canon session decides whether the R0 template learns the same signal.
+
+### The cases for the consumer suite
+
+Run as written against this checkout; they SKIP against a harness without `-LimitHit` in `Resolve-RunOutcome`.
+They use `$repoRoot`, `Assert-Case` and `$skipped` of the existing file and nothing else.
+
+```powershell
+Write-Host ''
+Write-Host 'run-spec-queue tests - a usage limit is not a failure of the ticket (S4265)' -ForegroundColor Cyan
+
+# Three layers, because the mechanism has three places a wrong answer can hide:
+#   - the signal and the outcome, in this process: Get-LimitSignal reads synthetic transcripts and
+#     Resolve-RunOutcome (lifted out of the runner, which ranks and launches from its top level)
+#     names the run;
+#   - the idle series, in a nested pwsh against synthetic journals - the profile and the journal map
+#     are cached per process;
+#   - the shared hold, in a nested pwsh against a synthetic hold file, including four writers racing.
+# The transcripts follow the shape of a real limit hit, 2026-10-13: the synthetic assistant record is
+# followed by `last-prompt` and `cost-state` lines, so "the last line" is never the answer.
+$limitRunner = $null
+$limitLib = $null
+$limitIdleLib = $null
+try {
+    . (Join-Path $repoRoot 'scripts/utils/agent-lock-domains.ps1')
+    $limitRunner = Get-SzaHarnessScript 'batch/run-spec-queue.ps1'
+    $limitLib = Get-SzaHarnessScript 'batch/_limit-hold.ps1'
+    $limitIdleLib = Get-SzaHarnessScript 'batch/_idle-runs.ps1'
+} catch {
+    $limitLib = $null
+}
+$hasLimitBackoff = $limitLib -and (Test-Path -LiteralPath $limitLib) -and $limitRunner -and
+    (Test-Path -LiteralPath $limitRunner) -and (Select-String -LiteralPath $limitRunner -Pattern '\[switch\] \$LimitHit' -Quiet)
+if (-not $hasLimitBackoff) {
+    Write-Host '  SKIP S4265 usage-limit backoff (27 cases) - the resolved harness predates the change.' -ForegroundColor DarkGray
+    Write-Host '        Run with SZA_HARNESS_ROOT pointed at the canon checkout to execute them.' -ForegroundColor DarkGray
+    $skipped += 27
+} else {
+    $limitSandbox = Join-Path $repoRoot 'temp/S4265/sandbox'
+    try {
+        if (Test-Path -LiteralPath $limitSandbox) { Remove-Item -LiteralPath $limitSandbox -Recurse -Force }
+        New-Item -ItemType Directory -Path (Join-Path $limitSandbox 'temp/spec-queue') -Force | Out-Null
+
+        # --- the signal and the outcome -----------------------------------------------------------
+        . $limitLib
+        $limitAst = [System.Management.Automation.Language.Parser]::ParseFile($limitRunner, [ref]$null, [ref]$null)
+        $limitFn = $limitAst.FindAll({
+                param($n)
+                $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Resolve-RunOutcome'
+            }, $true)
+        if ($limitFn.Count -eq 0) { throw "function Resolve-RunOutcome not found in $limitRunner" }
+        . ([scriptblock]::Create($limitFn[0].Extent.Text))
+
+        $recUser = '{"type":"user","isSidechain":false,"message":{"role":"user","content":"/spec-all S9001"}}'
+        $recWork = '{"type":"assistant","isSidechain":false,"message":{"model":"claude-opus-5-5","role":"assistant","content":[{"type":"text","text":"reading the spec"}]}}'
+        $recLimit = '{"type":"assistant","isSidechain":false,"message":{"model":"<synthetic>","role":"assistant","content":[{"type":"text","text":"You''ve hit your weekly limit - resets 2pm (Europe/Malta)"}]},"isApiErrorMessage":true,"apiError":"usage_limit_reached","error":"rate_limit","apiErrorStatus":429,"quotaLimits":{"status":"rejected","resetsAt":1791892800,"rateLimitType":"seven_day"},"apiErrorParams":{"rate_limit_info":{"status":"rejected","resetsAt":1791892800,"rateLimitType":"seven_day"}}}'
+        $recLimitNoQuota = '{"type":"assistant","isSidechain":false,"message":{"model":"<synthetic>","role":"assistant","content":[]},"isApiErrorMessage":true,"apiError":"usage_limit_reached","error":"rate_limit","apiErrorStatus":429,"apiErrorParams":{"rate_limit_info":{"resetsAt":1791896400,"rateLimitType":"five_hour"}}}'
+        $recRate429 = '{"type":"assistant","isSidechain":false,"message":{"model":"<synthetic>","role":"assistant","content":[]},"isApiErrorMessage":true,"error":"rate_limit","apiErrorStatus":429}'
+        $recSidechain = '{"type":"assistant","isSidechain":true,"message":{"model":"claude-haiku-5-5","role":"assistant","content":[{"type":"text","text":"subagent turn"}]}}'
+        $recTail = @('{"type":"last-prompt","lastPrompt":"/spec-all S9001"}', '{"type":"cost-state","costUSD":0.01}')
+
+        function New-LimitTranscript {
+            param([string] $Name, [string[]] $Records)
+            $path = Join-Path $limitSandbox $Name
+            [System.IO.File]::WriteAllLines($path, $Records, [System.Text.UTF8Encoding]::new($false))
+            return $path
+        }
+
+        $tHit = New-LimitTranscript 'hit.jsonl' (@($recUser, $recWork, $recLimit) + $recTail)
+        $tPast = New-LimitTranscript 'past.jsonl' (@($recUser, $recLimit, $recWork) + $recTail)
+        $tFallback = New-LimitTranscript 'fallback.jsonl' (@($recUser, $recWork, $recLimitNoQuota) + $recTail)
+        $tRate = New-LimitTranscript 'rate429.jsonl' (@($recUser, $recWork, $recRate429) + $recTail)
+        $tSide = New-LimitTranscript 'sidechain.jsonl' (@($recUser, $recWork, $recLimit, $recSidechain) + $recTail)
+
+        $sigHit = Get-LimitSignal -TranscriptPath $tHit -LogBody '' -ExitCode 1
+        $verdictHit = Resolve-RunOutcome -Outcome 'ok' -ExitCode 1 -StatusBefore 'Draft' -StatusAfter 'Draft' -ElapsedSeconds 3 -LimitHit:($null -ne $sigHit)
+        Assert-Case -Name 'a transcript whose last assistant record is the limit record, exit 1, is limit-hit and not child-failed' `
+            -Ok ($null -ne $sigHit -and $verdictHit.Outcome -eq 'limit-hit' -and -not $verdictHit.Moved) `
+            -Detail "expected: signal, limit-hit, moved false | actual: signal=$($null -ne $sigHit) outcome=$($verdictHit.Outcome) moved=$($verdictHit.Moved)"
+
+        Assert-Case -Name 'the reset time and the limit type are read from quotaLimits' `
+            -Ok ($null -ne $sigHit -and $sigHit.ResetsAt -eq 1791892800 -and $sigHit.RateLimitType -eq 'seven_day' -and $sigHit.Source -eq 'transcript') `
+            -Detail "expected: 1791892800 / seven_day / transcript | actual: $($sigHit.ResetsAt) / $($sigHit.RateLimitType) / $($sigHit.Source)"
+
+        $sigFallback = Get-LimitSignal -TranscriptPath $tFallback -LogBody '' -ExitCode 1
+        Assert-Case -Name 'the reset time falls back to apiErrorParams.rate_limit_info' `
+            -Ok ($null -ne $sigFallback -and $sigFallback.ResetsAt -eq 1791896400 -and $sigFallback.RateLimitType -eq 'five_hour') `
+            -Detail "expected: 1791896400 / five_hour | actual: $($sigFallback.ResetsAt) / $($sigFallback.RateLimitType)"
+
+        $sigRate = Get-LimitSignal -TranscriptPath $tRate -LogBody '' -ExitCode 1
+        Assert-Case -Name 'a 429 rate_limit without apiError is a limit too, with no reset time' `
+            -Ok ($null -ne $sigRate -and $null -eq $sigRate.ResetsAt) `
+            -Detail "expected: signal with ResetsAt null | actual: signal=$($null -ne $sigRate) resetsAt=$(if ($sigRate) { $sigRate.ResetsAt })"
+
+        $sigPast = Get-LimitSignal -TranscriptPath $tPast -LogBody '' -ExitCode 1
+        $verdictPast = Resolve-RunOutcome -Outcome 'ok' -ExitCode 1 -StatusBefore 'Draft' -StatusAfter 'Draft' -ElapsedSeconds 3 -LimitHit:($null -ne $sigPast)
+        Assert-Case -Name 'the same record followed by ordinary assistant work is a past event, not limit-hit' `
+            -Ok ($null -eq $sigPast -and $verdictPast.Outcome -eq 'child-failed') `
+            -Detail "expected: no signal, child-failed | actual: signal=$($null -ne $sigPast) outcome=$($verdictPast.Outcome)"
+
+        $sigSide = Get-LimitSignal -TranscriptPath $tSide -LogBody '' -ExitCode 1
+        Assert-Case -Name 'a subagent (sidechain) turn after the limit record is not main-thread work' `
+            -Ok ($null -ne $sigSide) -Detail 'expected: the limit record still counts as the last assistant record of the main thread'
+
+        $sigNone = Get-LimitSignal -TranscriptPath '' -LogBody '' -ExitCode 1
+        $verdictNone = Resolve-RunOutcome -Outcome 'ok' -ExitCode 1 -StatusBefore 'Draft' -StatusAfter 'Draft' -ElapsedSeconds 3 -LimitHit:($null -ne $sigNone)
+        Assert-Case -Name 'no transcript and no log, exit 1, stays child-failed exactly as before' `
+            -Ok ($null -eq $sigNone -and $verdictNone.Outcome -eq 'child-failed') `
+            -Detail "expected: no signal, child-failed | actual: signal=$($null -ne $sigNone) outcome=$($verdictNone.Outcome)"
+
+        $quietBody = "...`nYou've hit your weekly limit - resets 2pm (Europe/Malta)`n"
+        $sigLog = Get-LimitSignal -TranscriptPath '' -LogBody $quietBody -ExitCode 1
+        $verdictLog = Resolve-RunOutcome -Outcome 'ok' -ExitCode 1 -StatusBefore 'Draft' -StatusAfter 'Draft' -ElapsedSeconds 3 -LimitHit:($null -ne $sigLog)
+        Assert-Case -Name 'with -Quiet and no transcript the log body is the fallback, and it names no reset time' `
+            -Ok ($null -ne $sigLog -and $sigLog.Source -eq 'log' -and $null -eq $sigLog.ResetsAt -and $verdictLog.Outcome -eq 'limit-hit') `
+            -Detail "expected: log signal, no reset time, limit-hit | actual: signal=$($null -ne $sigLog) outcome=$($verdictLog.Outcome)"
+
+        $sigTalk = Get-LimitSignal -TranscriptPath '' -LogBody $quietBody -ExitCode 0
+        Assert-Case -Name 'the log fallback does not read a child that exited 0 and merely wrote about limits' `
+            -Ok ($null -eq $sigTalk) -Detail 'expected: no signal for exit 0'
+
+        $verdictMoved = Resolve-RunOutcome -Outcome 'ok' -ExitCode 1 -StatusBefore 'Tactical' -StatusAfter 'In Progress' -ElapsedSeconds 1140 -LimitHit
+        Assert-Case -Name 'a ticket that moved before the limit keeps moved: true' `
+            -Ok ($verdictMoved.Outcome -eq 'limit-hit' -and $verdictMoved.Moved) `
+            -Detail "expected: limit-hit / moved true | actual: $($verdictMoved.Outcome) / moved=$($verdictMoved.Moved)"
+
+        $verdictTimeout = Resolve-RunOutcome -Outcome 'timeout' -ExitCode $null -StatusBefore 'Draft' -StatusAfter 'Draft' -ElapsedSeconds 5400 -LimitHit
+        $verdictPlainTimeout = Resolve-RunOutcome -Outcome 'timeout' -ExitCode $null -StatusBefore 'Draft' -StatusAfter 'Draft' -ElapsedSeconds 5400
+        Assert-Case -Name 'a child killed on its timeout whose last act was the limit is limit-hit; without that it stays timeout' `
+            -Ok ($verdictTimeout.Outcome -eq 'limit-hit' -and $verdictPlainTimeout.Outcome -eq 'timeout') `
+            -Detail "expected: limit-hit then timeout | actual: $($verdictTimeout.Outcome) then $($verdictPlainTimeout.Outcome)"
+
+        $verdictClaim = Resolve-RunOutcome -Outcome 'claim-lost' -ExitCode $null -StatusBefore 'Draft' -StatusAfter 'Approved' -ElapsedSeconds 40 -LimitHit
+        Assert-Case -Name 'a lost claim is never renamed by a limit' `
+            -Ok ($verdictClaim.Outcome -eq 'claim-lost' -and -not $verdictClaim.Moved) `
+            -Detail "expected: claim-lost / moved false | actual: $($verdictClaim.Outcome) / moved=$($verdictClaim.Moved)"
+
+        # --- the idle series: a third class ---------------------------------------------------------
+        $seriesProbe = @'
+param([Parameter(Mandatory)][string]$HarnessLib, [Parameter(Mandatory)][string]$Sandbox)
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+$env:SZA_PROJECT_ROOT = $Sandbox
+. $HarnessLib
+$out = [ordered]@{}
+foreach ($id in @('S9101', 'S9102', 'S9103', 'S9104', 'S9105')) {
+    $s = Get-IdleRunSeries -Id $id
+    $out[$id] = [ordered]@{ count = $s.Count; last = [string]$s.LastOutcome }
+}
+$out | ConvertTo-Json -Depth 4 -Compress
+'@
+        $seriesProfile = Get-Content -LiteralPath (Join-Path $repoRoot '.sza-profile.json') -Raw | ConvertFrom-Json
+        $seriesProfile.runner | Add-Member -NotePropertyName idleRunThreshold -Force -NotePropertyValue 2
+        $seriesProfile.runner | Add-Member -NotePropertyName idleOutcomes -Force -NotePropertyValue @(
+            'ok', 'timeout', 'claim-lost', 'claim-lost-before-launch', 'no-progress-or-claim-lost', 'launch-failed'
+        )
+        $seriesProfile | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $limitSandbox '.sza-profile.json') -Encoding UTF8
+        $seriesRows = @(
+            # ok, limit-hit, ok -> the limit row is stepped over, so the two ok runs are one series.
+            '{"id":"S9101","moved":false,"outcome":"ok","finishedAt":"2026-10-13T10:00:00"}'
+            '{"id":"S9101","moved":false,"outcome":"limit-hit","finishedAt":"2026-10-13T11:00:00"}'
+            '{"id":"S9101","moved":false,"outcome":"ok","finishedAt":"2026-10-13T12:00:00"}'
+            # limit-hit alone -> nothing counted.
+            '{"id":"S9102","moved":false,"outcome":"limit-hit","finishedAt":"2026-10-13T10:00:00"}'
+            # the S4184 / S4185 / S4189 shape: three limit rows after a series of two leave it at two.
+            '{"id":"S9103","moved":false,"outcome":"ok","finishedAt":"2026-10-13T09:00:00"}'
+            '{"id":"S9103","moved":false,"outcome":"ok","finishedAt":"2026-10-13T10:00:00"}'
+            '{"id":"S9103","moved":false,"outcome":"limit-hit","finishedAt":"2026-10-13T11:00:00"}'
+            '{"id":"S9103","moved":false,"outcome":"limit-hit","finishedAt":"2026-10-13T12:00:00"}'
+            '{"id":"S9103","moved":false,"outcome":"limit-hit","finishedAt":"2026-10-13T13:00:00"}'
+            # a limit row that moved the ticket ends the series like any move.
+            '{"id":"S9104","moved":false,"outcome":"ok","finishedAt":"2026-10-13T10:00:00"}'
+            '{"id":"S9104","moved":true,"outcome":"limit-hit","finishedAt":"2026-10-13T11:00:00"}'
+            # a limit row cannot resurrect a series that a non-idle outcome already ended.
+            '{"id":"S9105","moved":false,"outcome":"ok","finishedAt":"2026-10-13T09:00:00"}'
+            '{"id":"S9105","moved":false,"outcome":"child-failed","finishedAt":"2026-10-13T10:00:00"}'
+            '{"id":"S9105","moved":false,"outcome":"limit-hit","finishedAt":"2026-10-13T11:00:00"}'
+        )
+        Set-Content -LiteralPath (Join-Path $limitSandbox 'temp/spec-queue/runs-a.jsonl') -Value $seriesRows -Encoding UTF8
+        $seriesProbePath = Join-Path $limitSandbox 'series-probe.ps1'
+        Set-Content -LiteralPath $seriesProbePath -Value $seriesProbe -Encoding UTF8
+        $rawSeries = & pwsh -NoProfile -File $seriesProbePath -HarnessLib $limitIdleLib -Sandbox $limitSandbox 2>&1 | Out-String
+        try { $rs = $rawSeries | ConvertFrom-Json } catch { throw "series probe returned no JSON:`n$rawSeries" }
+
+        Assert-Case -Name 'series walk: ok, limit-hit, ok counts 2' `
+            -Ok ($rs.S9101.count -eq 2 -and $rs.S9101.last -eq 'ok') -Detail "expected: 2 / ok | actual: $($rs.S9101.count) / $($rs.S9101.last)"
+        Assert-Case -Name 'series walk: limit-hit alone leaves the series at 0' `
+            -Ok ($rs.S9102.count -eq 0) -Detail "expected: 0 | actual: $($rs.S9102.count)"
+        Assert-Case -Name 'series walk: three consecutive limit-hit rows leave the series as it was' `
+            -Ok ($rs.S9103.count -eq 2 -and $rs.S9103.last -eq 'ok') -Detail "expected: 2 / ok | actual: $($rs.S9103.count) / $($rs.S9103.last)"
+        Assert-Case -Name 'series walk: a limit-hit row that moved the ticket ends the series' `
+            -Ok ($rs.S9104.count -eq 0) -Detail "expected: 0 | actual: $($rs.S9104.count)"
+        Assert-Case -Name 'series walk: a limit-hit row does not resurrect a series a failure ended' `
+            -Ok ($rs.S9105.count -eq 0) -Detail "expected: 0 | actual: $($rs.S9105.count)"
+
+        # --- the shared hold --------------------------------------------------------------------------
+        $holdProbe = @'
+param([Parameter(Mandatory)][string]$HarnessLib, [Parameter(Mandatory)][string]$Sandbox)
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+$env:SZA_PROJECT_ROOT = $Sandbox
+. $HarnessLib
+$hold = Join-Path $Sandbox 'temp/spec-queue/limit-hold.json'
+$stop = Join-Path $Sandbox 'temp/STOP-SPEC-QUEUE'
+$now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+function Set-Hold($ResetsAt, $WrittenAt) {
+    # Written the way a foreign writer would, by hand: the library is the thing under test.
+    $r = [ordered]@{ resetsAt = $ResetsAt; resetsAtIso = $null; rateLimitType = 'seven_day'
+        writtenAt = ([DateTimeOffset]::FromUnixTimeSeconds($WrittenAt).UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'")); instance = 'a'; ticket = 'S9001' }
+    if ($null -ne $ResetsAt) { $r.resetsAtIso = ([DateTimeOffset]::FromUnixTimeSeconds($ResetsAt).UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'")) }
+    [System.IO.File]::WriteAllText($hold, ($r | ConvertTo-Json -Compress))
+}
+function Read-Resets { ([System.IO.File]::ReadAllText($hold) | ConvertFrom-Json).resetsAt }
+$out = [ordered]@{}
+
+# future hold, stop file already present: no launch, and it must not sleep a slice to find out
+Set-Hold ($now + 3600) $now
+Set-Content -LiteralPath $stop -Value 'stop'
+$t = [Diagnostics.Stopwatch]::StartNew()
+$r = Wait-LimitHold -Path $hold -StopFile @($stop) -Instance 'x' -SliceSeconds 1 6>$null
+$out.futureStop = [ordered]@{ launch = [bool]$r; seconds = [math]::Round($t.Elapsed.TotalSeconds, 1) }
+Remove-Item -LiteralPath $stop -Force
+
+# future hold, stop file appears while the wait is running
+$job = Start-Job -ScriptBlock { param($p) Start-Sleep -Seconds 2; Set-Content -LiteralPath $p -Value 'stop' } -ArgumentList $stop
+$t = [Diagnostics.Stopwatch]::StartNew()
+$r = Wait-LimitHold -Path $hold -StopFile @($stop) -Instance 'x' -SliceSeconds 1 6>$null
+$out.stopDuring = [ordered]@{ launch = [bool]$r; seconds = [math]::Round($t.Elapsed.TotalSeconds, 1) }
+Wait-Job $job | Out-Null; Remove-Job $job -Force
+Remove-Item -LiteralPath $stop -Force -ErrorAction SilentlyContinue
+
+# past hold: launch at once
+Set-Hold ($now - 3600) ($now - 7200)
+$t = [Diagnostics.Stopwatch]::StartNew()
+$r = Wait-LimitHold -Path $hold -StopFile @($stop) -Instance 'x' -SliceSeconds 1 6>$null
+$out.past = [ordered]@{ launch = [bool]$r; seconds = [math]::Round($t.Elapsed.TotalSeconds, 1); active = [bool](Get-LimitHoldState -Path $hold).Active }
+
+# a reset 30 s ago is still inside the 120 s margin
+Set-Hold ($now - 30) ($now - 600)
+$out.margin = [bool](Get-LimitHoldState -Path $hold).Active
+
+# no reset time: the poll wait counts from when it was written
+Set-Hold $null ($now - 600)
+$s = Get-LimitHoldState -Path $hold
+$out.pollFresh = [ordered]@{ active = [bool]$s.Active; mode = [string]$s.Mode }
+Set-Hold $null ($now - 2400)
+$out.pollOld = [bool](Get-LimitHoldState -Path $hold).Active
+
+# only ever raises
+Remove-Item -LiteralPath $hold -Force
+[void](Write-LimitHold -Path $hold -ResetsAt ($now + 7200) -RateLimitType 'seven_day' -Instance 'a' -Ticket 'S9001')
+$first = Read-Resets
+[void](Write-LimitHold -Path $hold -ResetsAt ($now + 3600) -RateLimitType 'seven_day' -Instance 'b' -Ticket 'S9002')
+$afterSmaller = Read-Resets
+[void](Write-LimitHold -Path $hold -ResetsAt ($now + 10800) -RateLimitType 'seven_day' -Instance 'b' -Ticket 'S9002')
+$afterLarger = Read-Resets
+[void](Write-LimitHold -Path $hold -ResetsAt $null -RateLimitType 'unknown' -Instance 'c' -Ticket 'S9003')
+$afterNull = Read-Resets
+$out.raise = [ordered]@{ first = $first - $now; smaller = $afterSmaller - $now; larger = $afterLarger - $now; nullHit = $afterNull - $now }
+$fields = ([System.IO.File]::ReadAllText($hold) | ConvertFrom-Json).PSObject.Properties.Name
+$out.fields = @($fields)
+$out.tempLeft = @(Get-ChildItem -LiteralPath (Split-Path $hold) -Filter '*.tmp').Count
+
+# a reset time replaces a hold that was only a poll wait
+Remove-Item -LiteralPath $hold -Force
+[void](Write-LimitHold -Path $hold -ResetsAt $null -RateLimitType 'unknown' -Instance 'a' -Ticket 'S9001')
+$pollModeBefore = (Get-LimitHoldState -Path $hold).Mode
+[void](Write-LimitHold -Path $hold -ResetsAt ($now + 600) -RateLimitType 'five_hour' -Instance 'a' -Ticket 'S9001')
+$out.pollReplaced = [ordered]@{ before = [string]$pollModeBefore; resets = (Read-Resets) - $now }
+
+# four writers at once, different values, one answer
+Remove-Item -LiteralPath $hold -Force
+$procs = @()
+foreach ($delta in 1000, 4000, 2000, 3000) {
+    $cmd = ". '$HarnessLib'; [void](Write-LimitHold -Path '$hold' -ResetsAt ($now + $delta) -RateLimitType 'seven_day' -Instance 'p$delta' -Ticket 'S9001')"
+    $procs += Start-Process pwsh -ArgumentList @('-NoProfile', '-Command', $cmd) -PassThru -WindowStyle Hidden
+}
+$procs | Wait-Process -Timeout 60
+$out.race = (Read-Resets) - $now
+
+$out | ConvertTo-Json -Depth 5 -Compress
+'@
+        $holdProbePath = Join-Path $limitSandbox 'hold-probe.ps1'
+        Set-Content -LiteralPath $holdProbePath -Value $holdProbe -Encoding UTF8
+        $rawHold = & pwsh -NoProfile -File $holdProbePath -HarnessLib $limitLib -Sandbox $limitSandbox 2>&1 | Out-String
+        try { $rh = $rawHold | ConvertFrom-Json } catch { throw "hold probe returned no JSON:`n$rawHold" }
+
+        Assert-Case -Name 'a hold in the future with the stop file present launches nothing and returns at once' `
+            -Ok (-not $rh.futureStop.launch -and $rh.futureStop.seconds -lt 5) `
+            -Detail "expected: no launch within 5 s | actual: launch=$($rh.futureStop.launch) after $($rh.futureStop.seconds) s"
+        Assert-Case -Name 'a stop file that appears during the wait is honoured within a slice' `
+            -Ok (-not $rh.stopDuring.launch -and $rh.stopDuring.seconds -lt 20) `
+            -Detail "expected: no launch within 20 s | actual: launch=$($rh.stopDuring.launch) after $($rh.stopDuring.seconds) s"
+        Assert-Case -Name 'a hold in the past launches at once' `
+            -Ok ($rh.past.launch -and -not $rh.past.active -and $rh.past.seconds -lt 5) `
+            -Detail "expected: launch, inactive | actual: launch=$($rh.past.launch) active=$($rh.past.active) after $($rh.past.seconds) s"
+        Assert-Case -Name 'the margin keeps a hold in force past its reset time' `
+            -Ok ($rh.margin -eq $true) -Detail "expected: active 30 s after the reset with a 120 s margin | actual: $($rh.margin)"
+        Assert-Case -Name 'a hold with no reset time is a poll wait counted from when it was written' `
+            -Ok ($rh.pollFresh.active -and $rh.pollFresh.mode -eq 'poll' -and -not $rh.pollOld) `
+            -Detail "expected: active/poll at 10 min, inactive at 40 min | actual: $($rh.pollFresh.active)/$($rh.pollFresh.mode), old active=$($rh.pollOld)"
+        Assert-Case -Name 'a hold written with a smaller resetsAt than the one on disk does not lower it' `
+            -Ok ($rh.raise.first -eq 7200 -and $rh.raise.smaller -eq 7200) `
+            -Detail "expected: 7200 then 7200 | actual: $($rh.raise.first) then $($rh.raise.smaller)"
+        Assert-Case -Name 'a larger resetsAt raises it, and a hit with no reset time never replaces a live hold' `
+            -Ok ($rh.raise.larger -eq 10800 -and $rh.raise.nullHit -eq 10800) `
+            -Detail "expected: 10800 then 10800 | actual: $($rh.raise.larger) then $($rh.raise.nullHit)"
+        Assert-Case -Name 'a reported reset time replaces a hold that was only a poll wait' `
+            -Ok ($rh.pollReplaced.before -eq 'poll' -and $rh.pollReplaced.resets -eq 600) `
+            -Detail "expected: poll then 600 | actual: $($rh.pollReplaced.before) then $($rh.pollReplaced.resets)"
+        $limitWantFields = @('resetsAt', 'resetsAtIso', 'rateLimitType', 'writtenAt', 'instance', 'ticket')
+        $limitMissing = @($limitWantFields | Where-Object { @($rh.fields) -notcontains $_ })
+        Assert-Case -Name 'the hold carries resetsAt (seconds and ISO), rateLimitType, writtenAt, instance and ticket, and leaves no temp file' `
+            -Ok ($limitMissing.Count -eq 0 -and $rh.tempLeft -eq 0) `
+            -Detail "expected: all six fields, no .tmp | actual: missing=[$($limitMissing -join ',')] tmp=$($rh.tempLeft)"
+        Assert-Case -Name 'four writers racing leave the largest resetsAt' `
+            -Ok ($rh.race -eq 4000) -Detail "expected: 4000 | actual: $($rh.race)"
+    } finally {
+        if (Test-Path -LiteralPath $limitSandbox) { Remove-Item -LiteralPath $limitSandbox -Recurse -Force -ErrorAction SilentlyContinue }
+    }
+}
+```

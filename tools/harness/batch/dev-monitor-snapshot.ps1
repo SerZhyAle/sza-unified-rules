@@ -20,7 +20,9 @@
                            `phase` message of each agent), the tail of the stream, alive findings;
       - run journals       temp/spec-queue/runs-<instance>.jsonl, tail rows plus counts;
       - stop flags         temp/STOP-SPEC-QUEUE*;
-      - live sessions      ticket-lease owners still judged live, plus fresh session-start records;
+      - the limit hold     temp/spec-queue/limit-hold.json - whether the runners are waiting on the
+                           account's usage limit, until when, and who recorded it (`limitHold`);
+      - live sessions     ticket-lease owners still judged live, plus fresh session-start records;
       - headless children  claude.exe started with -p, with the age of the newest file its ticket wrote;
       - the release queue  PLAN/RELEASE_QUEUE.md rows of the current package, in file order, with the
                            [taken ..] marker and the Block* statuses the ranker would skip.
@@ -33,6 +35,7 @@
 #>
 
 . (Join-Path $PSScriptRoot '..\_profile.ps1')
+. (Join-Path $PSScriptRoot '_limit-hold.ps1')
 . (Get-SzaHarnessScript 'locks/agent-lock-domains.ps1')
 
 function ConvertFrom-DevMonitorEpoch {
@@ -314,9 +317,12 @@ function Get-DevMonitorInstances {
             recorded = $lines.Count
             moved    = $moved
             stayed   = ($lines.Count - $moved)
-            idleToday = @($rows | Where-Object { -not $_.moved }).Count
-            idleMinutesToday = [math]::Round((@($rows | Where-Object { -not $_.moved } | Measure-Object -Property minutes -Sum).Sum), 1)
+            # A run that ended on the usage limit is not an idle one: the queue was waiting, not
+            # empty, and the two must not read alike (S4265). It is counted on its own line below.
+            idleToday = @($rows | Where-Object { -not $_.moved -and $_.outcome -ne 'limit-hit' }).Count
+            idleMinutesToday = [math]::Round((@($rows | Where-Object { -not $_.moved -and $_.outcome -ne 'limit-hit' } | Measure-Object -Property minutes -Sum).Sum), 1)
             timeoutsToday = @($rows | Where-Object { $_.outcome -eq 'timeout' }).Count
+            limitHitsToday = @($rows | Where-Object { $_.outcome -eq 'limit-hit' }).Count
             cheapModelShare = if ($rows.Count -gt 0) {
                 [math]::Round((@($rows | Where-Object { $_.model -and $_.model -notmatch 'opus' }).Count / $rows.Count) * 100, 1)
             } else { $null }
@@ -324,6 +330,37 @@ function Get-DevMonitorInstances {
         }
     }
     return $out
+}
+
+function Get-DevMonitorLimitHold {
+    <#
+        The shared usage-limit hold as a plain object, or $null when there is no hold file (S4265).
+
+        Read through the same library the runner waits on, so the page and the runner cannot
+        disagree about whether a wait is in force. `active` is the verdict; a file whose time has
+        passed is still reported, inactive, because "the last limit was at .." is information and
+        the renderers decide whether to show it. Reads one small file and writes nothing.
+    #>
+    param([string]$RepoRoot)
+    $path = Get-LimitHoldPath -RepoRoot $RepoRoot
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return $null }
+    $state = Get-LimitHoldState -Path $path
+    if ($state.Mode -eq 'none') { return $null }
+    $until = $state.Until
+    return [pscustomobject][ordered]@{
+        active        = [bool]$state.Active
+        # Where the operator deletes it to end a wait early - the profile's layout, not a literal.
+        path          = (Get-DevMonitorRelativePath -RepoRoot $RepoRoot -Path $path)
+        mode          = [string]$state.Mode
+        rateLimitType = [string]$state.RateLimitType
+        resetsAt      = $state.ResetsAt
+        resumeAtUtc   = if ($null -ne $until) { $until.UtcDateTime.ToString('o') } else { $null }
+        resumeAtLocal = if ($null -ne $until) { $until.LocalDateTime.ToString('yyyy-MM-dd HH:mm:ss') } else { $null }
+        minutesLeft   = if ($null -ne $until -and $state.Active) { [math]::Round(($until - [DateTimeOffset]::UtcNow).TotalMinutes, 1) } else { 0 }
+        writtenAtUtc  = if ($null -ne $state.WrittenAt) { $state.WrittenAt.UtcDateTime.ToString('o') } else { $null }
+        instance      = [string]$state.Instance
+        ticket        = [string]$state.Ticket
+    }
 }
 
 function Get-DevMonitorStopFlags {
@@ -482,6 +519,7 @@ function Get-DevMonitorSnapshot {
     $contexts = & $measure 'context' { Get-DevMonitorContextSignals -RepoRoot $RepoRoot }
     $watchdog = @(& $measure 'watchdog' { Get-DevMonitorWatchdogActions -RepoRoot $RepoRoot })
     $stop = @(& $measure 'stop' { Get-DevMonitorStopFlags -RepoRoot $RepoRoot })
+    $limitHold = & $measure 'limitHold' { Get-DevMonitorLimitHold -RepoRoot $RepoRoot }
     $children = @(& $measure 'children' { Get-DevMonitorChildren -RepoRoot $RepoRoot })
     # Not `$nextUp`: PowerShell names are case-insensitive, so that would be the [int] parameter.
     $queueRows = & $measure 'queue' { Get-DevMonitorNextUp -RepoRoot $RepoRoot -NextUp $NextUp }
@@ -739,6 +777,9 @@ function Get-DevMonitorSnapshot {
         gates               = $gates
         watchdog            = $watchdog
         stop                = $stop
+        # Additive, schema stays 1 (S4265). $null when no limit was ever recorded here; otherwise the
+        # shared hold, with `active` saying whether the runners are waiting on it right now.
+        limitHold           = $limitHold
         children            = $children
         nextUp              = $queueRows
     }

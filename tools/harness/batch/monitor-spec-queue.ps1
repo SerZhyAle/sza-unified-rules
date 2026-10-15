@@ -143,6 +143,19 @@ function Show-Snapshot {
     Write-Host ''
     Write-Host ("spec-queue monitor   {0}   ({1} ms)" -f $Snapshot.takenAtLocal, $Snapshot.durationMs) -ForegroundColor Cyan
 
+    # --- the usage limit (S4265) ------------------------------------------------------------------
+    # First and only when in force: an idle queue and a runner asleep until the limit resets look the
+    # same further down (no child running, tickets waiting), and they call for opposite responses.
+    $limit = $Snapshot.limitHold
+    if ($null -ne $limit -and $limit.active) {
+        $kind = if ($limit.rateLimitType) { $limit.rateLimitType } else { 'usage' }
+        $how = if ($limit.mode -eq 'resetsAt') { 'reset time reported' } else { 'no reset time reported - polling' }
+        Write-Host ("WAITING FOR THE {0} LIMIT   resumes {1}  (in {2})   {3}; set by '{4}' on {5}" -f `
+                $kind.ToUpper(), $limit.resumeAtLocal, (Format-Minutes $limit.minutesLeft), $how, $limit.instance,
+                $(if ($limit.ticket) { $limit.ticket } else { 'a ticket' })) -ForegroundColor Magenta
+        Write-Host ("  not an idle queue: nothing launches until then. Delete {0} to end the wait." -f $limit.path) -ForegroundColor DarkGray
+    }
+
     # --- leases: what is being worked on right now ----------------------------------------------
     Write-Section 'ticket leases (what is claimed now)'
     $leases = @($Snapshot.leases)
@@ -268,7 +281,8 @@ function Show-Snapshot {
         Write-Host '  source silent.' -ForegroundColor DarkYellow
     } else {
         foreach ($instance in @($Snapshot.instances)) {
-            Write-Host ('  {0}: idle {1} ({2:N1}m), timeouts {3}, cheap model {4}%' -f $instance.instance, $instance.idleToday, $instance.idleMinutesToday, $instance.timeoutsToday, $instance.cheapModelShare) -ForegroundColor Gray
+            $limitNote = if ($instance.PSObject.Properties['limitHitsToday'] -and $instance.limitHitsToday -gt 0) { ", limit hits $($instance.limitHitsToday)" } else { '' }
+            Write-Host ('  {0}: idle {1} ({2:N1}m), timeouts {3}{4}, cheap model {5}%' -f $instance.instance, $instance.idleToday, $instance.idleMinutesToday, $instance.timeoutsToday, $limitNote, $instance.cheapModelShare) -ForegroundColor Gray
         }
     }
 
@@ -292,7 +306,7 @@ function Show-Snapshot {
             Write-Host ("  instance '{0}' - {1} ticket(s) recorded" -f $i.instance, $i.recorded) -ForegroundColor Cyan
             if ($i.recorded -eq 0) { continue }
             foreach ($r in @($i.rows)) {
-                $colour = if ($r.moved) { 'Green' } elseif ($r.outcome -ne 'ok') { 'Red' } else { 'Yellow' }
+                $colour = if ($r.moved) { 'Green' } elseif ($r.outcome -eq 'limit-hit') { 'Magenta' } elseif ($r.outcome -ne 'ok') { 'Red' } else { 'Yellow' }
                 Write-Host ("    {0,-6} {1,-14} -> {2,-18} {3,-26} {4,3} min  {5}" -f `
                         $r.id, $r.statusBefore, $r.statusAfter, $r.outcome, $r.minutes, $r.model) -ForegroundColor $colour
             }

@@ -24,6 +24,15 @@ $script:IdleRunDefaultOutcomes = @(
     'ok', 'timeout', 'claim-lost', 'claim-lost-before-launch', 'no-progress-or-claim-lost', 'launch-failed'
 )
 
+# The third class (S4265). A run is one of: one that COUNTS (an idle outcome, below), one that ENDS
+# the series (any other outcome, or a status move), and one that is NEUTRAL - it says nothing about
+# the ticket, so the walk steps over it and neither grows nor cuts the series. The only member is a
+# run that ended on the account's usage limit: the cause was never the ticket, so listing it as idle
+# would hold a healthy ticket out of the queue, and leaving it out of the idle list would end a real
+# series of two. Not configurable on purpose - it is the canon's statement about a cause, and a
+# project that listed it in runner.idleOutcomes would otherwise change what the word means.
+$script:IdleRunNeutralOutcomes = @('limit-hit')
+
 $script:IdleRunMap = $null
 
 function Get-IdleRunProfileValue {
@@ -121,9 +130,12 @@ function Get-IdleRunMap {
             $record = $ordered[$i]
             $moved = $false
             try { $moved = [bool] $record.moved } catch { $moved = $false }
+            # A move ends the series even on a neutral row: a ticket that advanced before the limit
+            # arrived did advance, and what came before that move is a different series.
             if ($moved) { break }
             $outcome = ''
             try { $outcome = [string] $record.outcome } catch { $outcome = '' }
+            if ($script:IdleRunNeutralOutcomes -contains $outcome) { continue }
             # An outcome the project does not call idle ends the series rather than being skipped
             # over: the series claims CONSECUTIVE idle runs, and stepping past a record that is not
             # one would join two separate series into a count no run ever produced.

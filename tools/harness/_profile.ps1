@@ -203,6 +203,17 @@ $Script:SzaProfileDefaults = [ordered]@{
         # instance running another agent overrides it, or -Stop, -Kill and the "a stop is still
         # draining" guard all stop seeing that instance's children.
         headlessMatch    = '\s-p\s'
+        # What the runner does when a child ends on the account's usage limit (S4265), read by
+        # batch/_limit-hold.ps1. Declared here because Get-SzaProfileValue throws on an unknown
+        # path by design (S2705): a consumer that never wrote them would meet an exception on the
+        # first limit instead of a wait.
+        #   limitResumeMarginSeconds - how long past the reported reset time the runner stays
+        #                              quiet; the limit window does not refresh at the exact second.
+        #   limitPollMinutes         - the wait when the limit carried no reset time. After it the
+        #                              runner launches one child as the probe.
+        # Neither is a cap on sleeping: a weekly limit is a wait of days and that is the design.
+        limitResumeMarginSeconds = 120
+        limitPollMinutes         = 30
     }
     commands    = [ordered]@{
         statusCommands = [ordered]@{

@@ -103,6 +103,20 @@
 
     Pass -ModelPolicy fixed with -Model <name> to override the whole run.
 
+    A usage limit is not a failure of the ticket (S4265). Every child is launched with a
+    --session-id the runner chose (when the CLI's --help lists the flag), so after it exits - or is
+    killed on its timeout - the runner reads that session's transcript: when the LAST assistant
+    record is the CLI's synthetic limit record, the run is journalled `limit-hit` ahead of
+    `child-failed`. Such a run is neutral to its ticket: the ticket is not dropped for the rest of the
+    run, and the idle series steps over the row, neither growing nor ending. The limit is written to
+    one shared file, <runs dir>/limit-hold.json, holding the reset time and only ever raising it.
+    Before EVERY launch - a restarted runner's first one included - the runner reads it and, while it
+    is in force, launches nothing: it sleeps in short slices, re-reading the stop files and the hold
+    on each, and resumes the same ticket afterwards. runner.limitResumeMarginSeconds is the margin past
+    the reset time; a limit that reported no reset time is waited out in runner.limitPollMinutes
+    steps, after which one child is launched as the probe. There is no cap on the wait and no new
+    exit code: a runner that sleeps and resumes exits as it always did.
+
     Stopping: `.\a.ps1 rs`, or this script with -Stop, writes temp/STOP-SPEC-QUEUE and every instance
     finishes the ticket it is on, then stops cleanly; -Stop -Instance b stops one instance only, and
     -Stop -Kill also terminates the headless children instead of letting them finish. Ctrl+C stops
@@ -204,6 +218,7 @@ param(
 
 . (Join-Path $PSScriptRoot '..\_profile.ps1')
 . (Join-Path $PSScriptRoot '_idle-runs.ps1')
+. (Join-Path $PSScriptRoot '_limit-hold.ps1')
 if ([string]::IsNullOrWhiteSpace($RepoRoot)) { $RepoRoot = Get-SzaProjectRoot }
 
 if ($Help) {
@@ -274,6 +289,51 @@ function Expand-ChildArgs {
     return $out
 }
 
+$script:ChildTakesSessionIdAnswer = $null
+
+function Test-ChildTakesSessionId {
+    <#
+        Whether this instance's CLI lists --session-id in its own --help (S4265). Asked once per
+        process and remembered.
+
+        The runner launches every child under a session id it chose, so that a child which ended on
+        the usage limit can be read back from its transcript by name. A CLI that does not know the
+        flag would reject EVERY launch, so the flag is added only on the CLI's own say-so, and a CLI
+        that cannot be asked gets none: the runner then behaves exactly as it did before the flag
+        existed and a limit is recognised from the -Quiet log alone. The question is bounded, because
+        a command that answers --help by starting something interactive must not hold the queue.
+    #>
+    if ($null -ne $script:ChildTakesSessionIdAnswer) { return $script:ChildTakesSessionIdAnswer }
+
+    $help = ''
+    try {
+        $probe = [System.Diagnostics.ProcessStartInfo]::new()
+        $probe.FileName = $claude
+        $probe.ArgumentList.Add('--help')
+        $probe.RedirectStandardInput = $true
+        $probe.RedirectStandardOutput = $true
+        $probe.RedirectStandardError = $true
+        $probe.UseShellExecute = $false
+        $helpProc = [System.Diagnostics.Process]::Start($probe)
+        $helpProc.StandardInput.Close()
+        $helpOut = $helpProc.StandardOutput.ReadToEndAsync()
+        $helpErr = $helpProc.StandardError.ReadToEndAsync()
+        if ($helpProc.WaitForExit(20000)) {
+            $help = [string]$helpOut.Result + [string]$helpErr.Result
+        } else {
+            & taskkill.exe /PID $helpProc.Id /T /F 2>&1 | Out-Null
+        }
+    } catch {
+        $help = ''
+    }
+
+    $script:ChildTakesSessionIdAnswer = ($help -match '--session-id\b')
+    if (-not $script:ChildTakesSessionIdAnswer) {
+        Write-Host ("run-spec-queue: '{0}' --help does not list --session-id - children run without it, so a usage limit is recognised from the -Quiet log only." -f $runnerCommand) -ForegroundColor DarkYellow
+    }
+    return $script:ChildTakesSessionIdAnswer
+}
+
 $runnerCommand = [string](Get-InstanceSetting -Field 'command')
 $runnerArgsTemplate = @(Get-InstanceSetting -Field 'argsTemplate')
 $headlessMatch = [string](Get-InstanceSetting -Field 'headlessMatch')
@@ -317,6 +377,7 @@ $stopFileMine = "{0}-{1}" -f $stopFileAll, $Instance
 $runDir = Join-Path $RepoRoot (Get-SzaPath 'queueRunsDir' -Relative)
 if (-not (Test-Path $runDir)) { New-Item -ItemType Directory -Path $runDir | Out-Null }
 $journal = Join-Path $runDir ("runs-{0}.jsonl" -f $Instance)
+$limitHoldPath = Get-LimitHoldPath -RepoRoot $RepoRoot
 
 # ---------------------------------------------------------------------------------------------
 # Stop mode - write the flag the running loops read, then leave. Nothing else in this script runs.
@@ -717,10 +778,16 @@ function Resolve-RunOutcome {
         The order of the rules is the point:
 
         1. An established verdict is never overwritten. 'timeout', 'claim-lost',
-           'claim-lost-before-launch' and 'launch-failed' all observed the child itself, and a killed
-           process's exit code is a consequence of the kill rather than a diagnosis of it.
-        2. A non-zero exit is 'child-failed'.
-        3. Otherwise the pre-existing guess: a child that exited quickly having changed nothing
+           'claim-lost-before-launch', 'launch-failed' and 'limit-hit' all observed the child itself,
+           and a killed process's exit code is a consequence of the kill rather than a diagnosis of it.
+        2. A usage limit (-LimitHit, decided by the caller from the child's transcript, S4265) is
+           'limit-hit', and it is set BEFORE the exit code is read. A child that ended on the limit
+           exits non-zero, so read the other way round it would be filed as a failure of the ticket,
+           and two such rows in a row are what took tickets out of automatic ranking. A child the
+           runner killed on its timeout takes the same name when its last act was the limit: the
+           limit is why it made no more progress. Only 'ok' and 'timeout' are ever renamed this way.
+        3. A non-zero exit is 'child-failed'.
+        4. Otherwise the pre-existing guess: a child that exited quickly having changed nothing
            usually lost its claim to a parallel instance.
 
         Moved is false on a lost claim (the sibling working the ticket wrote the status this run
@@ -729,16 +796,23 @@ function Resolve-RunOutcome {
         Get-TicketStatus could not read the catalog and '' differs from every real status. An
         unreadable status is a missing reading, not a move - and moved outranks the outcome in every
         consumer, so renaming those rows without this would leave them reading as successes.
+
+        A limit hit keeps Moved truthful: a ticket that advanced before the limit arrived reports
+        moved, and the idle series reads that move as the end of its previous series.
     #>
     param(
         [string] $Outcome,
         $ExitCode,
         [string] $StatusBefore,
         [string] $StatusAfter,
-        [int] $ElapsedSeconds
+        [int] $ElapsedSeconds,
+        [switch] $LimitHit
     )
 
     $resolved = $Outcome
+    if ($LimitHit -and ($resolved -eq 'ok' -or $resolved -eq 'timeout')) {
+        $resolved = 'limit-hit'
+    }
     if ($resolved -eq 'ok') {
         if ($null -ne $ExitCode -and [int]$ExitCode -ne 0) {
             $resolved = 'child-failed'
@@ -755,6 +829,36 @@ function Resolve-RunOutcome {
     }
 
     return [pscustomobject]@{ Outcome = $resolved; Moved = $moved }
+}
+
+function Read-ContextHandoff {
+    <#
+        The context-handoff marker a child left on its way out, or $null (FastMediaSorter S4264).
+
+        A runner child carries its whole pipeline in one context and, unchecked, reached 808k tokens:
+        measured over 2026-10-08..15, 37.4% of /spec-all requests ran above 300k and carried 58.6% of
+        its cache_read. The child now checks its context at stage and phase boundaries and, past the
+        threshold, writes `<tempDir>/<Id>/context-handoff.json` and ends. A phase boundary leaves the
+        status unchanged, so without this branch the stop reads as an idle run and two in a row take
+        the ticket out of automatic ranking.
+
+        Only a marker written after this child started counts; a consumed marker is moved into the
+        run dir so it can never be read twice.
+    #>
+    param(
+        [Parameter(Mandatory)][string] $Id,
+        [Parameter(Mandatory)][datetime] $Since
+    )
+    $marker = Join-Path (Join-Path $tempDir $Id) 'context-handoff.json'
+    if (-not (Test-Path -LiteralPath $marker)) { return $null }
+    $item = Get-Item -LiteralPath $marker
+    $data = $null
+    try { $data = Get-Content -LiteralPath $marker -Raw | ConvertFrom-Json } catch { $data = $null }
+    $consumed = Join-Path $runDir ("{0}-context-handoff-{1}.json" -f $Id, (Get-Date).ToString('yyyyMMdd-HHmmss'))
+    try { Move-Item -LiteralPath $marker -Destination $consumed -Force } catch { Remove-Item -LiteralPath $marker -Force -ErrorAction SilentlyContinue }
+    if ($item.LastWriteTime -lt $Since) { return $null }
+    if ($null -eq $data) { $data = [pscustomobject]@{ id = $Id } }
+    return $data
 }
 
 # ---------------------------------------------------------------------------------------------
@@ -787,6 +891,7 @@ Write-Host ("  max tickets    : {0}" -f $(if ($MaxTickets -gt 0) { $MaxTickets }
 Write-Host ("  instance       : {0}" -f $Instance)
 Write-Host ("  stop files     : {0}  (all instances)" -f $stopFileAll)
 Write-Host ("                   {0}  (this one)" -f $stopFileMine)
+Write-Host ("  limit hold     : {0}" -f $limitHoldPath)
 Write-Host ''
 
 if ($DryRun) {
@@ -827,6 +932,14 @@ if ($DryRun) {
             Write-Host '  nothing eligible.'
         }
     }
+    # The same read the loop makes before a launch, so a dry run says "this would wait" rather
+    # than listing a ticket that would not start.
+    $dryHold = Get-LimitHoldState -Path $limitHoldPath
+    if ($dryHold.Active) {
+        Write-Host ("  usage limit hold: ACTIVE ({0}, set by '{1}') - a real run would launch nothing before {2}." -f `
+                $(if ($dryHold.RateLimitType) { $dryHold.RateLimitType } else { 'usage' }), $dryHold.Instance,
+                $dryHold.Until.LocalDateTime.ToString('yyyy-MM-dd HH:mm:ss')) -ForegroundColor Yellow
+    }
     Write-Host ''
     Write-Host 'run-spec-queue: dry run, nothing launched.' -ForegroundColor Yellow
     exit 0
@@ -855,6 +968,12 @@ $processed = New-Object System.Collections.Generic.List[string]
 $results = New-Object System.Collections.Generic.List[object]
 $explicitIndex = 0
 $ranAny = $false
+# Context handoffs (Read-ContextHandoff): the ticket to relaunch next, and how many times each
+# ticket has been handed back in this process. The cap keeps a child that crosses the threshold
+# right after its own start from being relaunched forever.
+$relaunchId = $null
+$handoffCounts = @{}
+$handoffCap = 6
 
 while ($true) {
 
@@ -880,8 +999,17 @@ while ($true) {
     # --- pick the next id -----------------------------------------------------------------
     $id = $null
     $ticket = $null
-    if ($explicit.Count) {
+    # Where this pick came from, so a ticket that is handed back unlaunched goes back the way it
+    # came (the usage-limit wait below, and a limit hit after the launch).
+    $pickedFrom = 'queue'
+    if ($relaunchId) {
+        $pickedFrom = 'relaunch'
+        $id = $relaunchId
+        $relaunchId = $null
+        $ticket = Get-TicketRecord -Id $id
+    } elseif ($explicit.Count) {
         if ($explicitIndex -ge $explicit.Count) { break }
+        $pickedFrom = 'explicit'
         $id = $explicit[$explicitIndex]
         $explicitIndex++
         $ticket = Get-TicketRecord -Id $id
@@ -894,6 +1022,23 @@ while ($true) {
             break
         }
         $id = $ticket.id
+    }
+
+    # --- is the account under a usage limit? ----------------------------------------------
+    # Read before EVERY launch, a restarted runner's first one included: the hold is the only memory
+    # a restarted or parallel runner has of a limit that somebody else's child just hit, and the
+    # watchdog restarts a fallen instance into exactly that wall.
+    #
+    # It sits after the pick and not before it so that an empty queue still ends the run at once
+    # instead of sleeping first. The cost is a second ranking after a wait: a wait can be days, and
+    # a ranking taken before it is stale - the ticket may have been taken by a sibling or moved. The
+    # ticket is therefore handed back untouched, the wait runs, and the loop picks again.
+    if ((Get-LimitHoldState -Path $limitHoldPath).Active) {
+        if ($pickedFrom -eq 'relaunch') { $relaunchId = $id }
+        elseif ($pickedFrom -eq 'explicit') { $explicitIndex-- }
+        # False means a stop file appeared; the stop checks at the top of the loop act on it.
+        [void](Wait-LimitHold -Path $limitHoldPath -StopFile @($stopFileMine, $stopFileAll) -Instance $Instance)
+        continue
     }
 
     $statusBefore = if ($ticket) { [string]$ticket.status } else { Get-TicketStatus -Id $id }
@@ -939,6 +1084,23 @@ while ($true) {
     $childArgs = @(Expand-ChildArgs -Template $runnerArgsTemplate -Prompt $prompt `
             -Mode $PermissionMode -Model $childModel)
 
+    # S4265: the child runs under a session id the runner chose, so that if it ends on the usage
+    # limit its transcript is found by that name and never by guessing the CLI's project directory.
+    # Appended AFTER the template is expanded, so every runner.instances.*.argsTemplate stays as its
+    # owner wrote it. Not added when the template already names a session, or resumes one (the CLI
+    # refuses --session-id beside --resume), or when the CLI does not list the flag in its --help.
+    $sessionId = $null
+    $ownSession = [array]::IndexOf($childArgs, '--session-id')
+    if ($ownSession -ge 0) {
+        $given = [guid]::Empty
+        if ($ownSession + 1 -lt $childArgs.Count -and [guid]::TryParse([string]$childArgs[$ownSession + 1], [ref]$given)) {
+            $sessionId = $given.ToString()
+        }
+    } elseif (-not ($childArgs | Where-Object { $_ -in @('--resume', '-r', '--continue', '-c') }) -and (Test-ChildTakesSessionId)) {
+        $sessionId = [guid]::NewGuid().ToString()
+        $childArgs += @('--session-id', $sessionId)
+    }
+
     # ProcessStartInfo.ArgumentList, never Start-Process -ArgumentList. Start-Process joins the array
     # into one command line WITHOUT quoting, so an element containing a space is split at the space:
     # '/spec-all S1949' reached the CLI as '-p /spec-all' plus a stray 'S1949', and every child then
@@ -960,6 +1122,9 @@ while ($true) {
 
     $outcome = 'ok'
     $exitCode = $null
+    # What -Quiet captured of the child's own output, kept for the usage-limit check below: it is
+    # the only record of the limit message when no transcript can be found.
+    $logBody = ''
     try {
         $proc = [System.Diagnostics.Process]::Start($psi)
 
@@ -1077,6 +1242,7 @@ while ($true) {
                 $body = ''
                 if ($outTask -and $outTask.IsCompleted) { $body += $outTask.Result }
                 if ($errTask -and $errTask.IsCompleted -and $errTask.Result) { $body += "`n--- stderr ---`n" + $errTask.Result }
+                $logBody = $body
                 [System.IO.File]::WriteAllText($logFile, $body, [System.Text.Encoding]::UTF8)
             } catch {
                 Write-Host ("  run-spec-queue: could not write {0} - {1}" -f $logFile, $_.Exception.Message) -ForegroundColor DarkYellow
@@ -1117,18 +1283,69 @@ while ($true) {
     $elapsedSeconds = [int]((Get-Date) - $started).TotalSeconds
     $elapsed = [int]((Get-Date) - $started).TotalMinutes
 
+    # --- did the child end on the account's usage limit? (S4265) ---------------------------------
+    # Asked of a child that exited and of one the runner killed on its timeout, and of no other: a
+    # lost claim was killed for a different reason and a launch that failed never ran. The answer
+    # comes from the child's transcript, found by the session id it was given; the -Quiet log is the
+    # fallback when no transcript exists. A failure to ask is no answer, never a failed runner.
+    $limitSignal = $null
+    if ($outcome -eq 'ok' -or $outcome -eq 'timeout') {
+        try {
+            $transcript = if ($sessionId) { Find-ChildTranscript -SessionId $sessionId } else { $null }
+            $limitSignal = Get-LimitSignal -TranscriptPath $transcript -LogBody $logBody -ExitCode $exitCode
+        } catch {
+            $limitSignal = $null
+        }
+    }
+
+    # A handoff is an outcome only for a child that ended on its own terms; a killed or failed child
+    # keeps its verdict, and its marker is still consumed so it cannot leak into the next run.
+    $handoff = Read-ContextHandoff -Id $id -Since $started
+    if ($null -ne $handoff -and $outcome -eq 'ok' -and ($null -eq $exitCode -or [int]$exitCode -eq 0)) {
+        $outcome = 'context-handoff'
+    }
+
     # What the run was, and whether the ticket moved. Both answers come from one function so the
     # journal row, the summary colour and the idle series cannot disagree - see Resolve-RunOutcome
     # for the rules and the measurements behind each of them (S2873).
     #
-    # A ticket handed back with the status it started with has no autonomous next step; it stays in
-    # $processed either way, so the re-ranking below never offers it again this run.
+    # A ticket handed back with the status it started with has no autonomous next step; it goes into
+    # $processed, so the re-ranking below never offers it again this run. The one exception is a
+    # context handoff under the cap: the child stopped on purpose with work left, so it is relaunched.
     $verdict = Resolve-RunOutcome -Outcome $outcome -ExitCode $exitCode `
-            -StatusBefore $statusBefore -StatusAfter $statusAfter -ElapsedSeconds $elapsedSeconds
+            -StatusBefore $statusBefore -StatusAfter $statusAfter -ElapsedSeconds $elapsedSeconds `
+            -LimitHit:($null -ne $limitSignal)
     $outcome = $verdict.Outcome
     $moved = $verdict.Moved
     $ranAny = $true
-    $processed.Add($id)
+    $relaunch = $false
+    if ($outcome -eq 'context-handoff') {
+        $handoffCounts[$id] = 1 + [int]$handoffCounts[$id]
+        $relaunch = $handoffCounts[$id] -le $handoffCap
+    }
+    $limitHold = $null
+    if ($outcome -eq 'limit-hit') {
+        # A limit is nothing the ticket did. It is not added to $processed, so the ranking offers it
+        # again - after the wait below, or ranked afresh if its status moved before the limit. A
+        # ticket that has no ranking to return to (an explicit list, or a handoff relaunch) is handed
+        # back by name instead. Nothing here counts against it: the idle series steps over the row.
+        if ($pickedFrom -ne 'queue') { $relaunchId = $id }
+
+        # A reset time that has already passed (plus the margin) carries no information - the same
+        # wall would be hit again at once - so it is treated as no reset time and the poll wait
+        # applies. Without this a stale value would relaunch children as fast as they fail.
+        $resetsAt = $limitSignal.ResetsAt
+        if ($null -ne $resetsAt -and
+            [DateTimeOffset]::FromUnixTimeSeconds([int64]$resetsAt).AddSeconds((Get-LimitPolicy).MarginSeconds) -le [DateTimeOffset]::UtcNow) {
+            $resetsAt = $null
+        }
+        $limitHold = Write-LimitHold -Path $limitHoldPath -ResetsAt $resetsAt `
+                -RateLimitType $limitSignal.RateLimitType -Instance $Instance -Ticket $id
+    } elseif ($relaunch) {
+        $relaunchId = $id
+    } else {
+        $processed.Add($id)
+    }
 
     $runRecord = Add-RunRecord -Id $id -ChildModel $childModel -StatusBefore $statusBefore `
             -StatusAfter $statusAfter -Moved $moved -Outcome $outcome -ExitCode $exitCode `
@@ -1140,10 +1357,19 @@ while ($true) {
     $series = Get-IdleRunSeries -Id $id -Refresh
     Add-Member -InputObject $runRecord -NotePropertyName 'idle' -NotePropertyValue $series.Count -Force
 
-    $colour = if ($moved) { 'Green' } elseif ($outcome -ne 'ok') { 'Red' } else { 'Yellow' }
+    $colour = if ($moved) { 'Green' } elseif ($outcome -eq 'context-handoff') { 'Cyan' } elseif ($outcome -eq 'limit-hit') { 'Magenta' } elseif ($outcome -ne 'ok') { 'Red' } else { 'Yellow' }
     Write-Host ''
     Write-Host ("  {0}: {1} -> {2}   ({3}, {4} min)" -f $id, $statusBefore, $statusAfter, $outcome, $elapsed) -ForegroundColor $colour
-    if (-not $moved) {
+    if ($relaunch) {
+        Write-Host ("  {0} handed back at {1} tokens ({2}) - relaunching with a fresh context, handoff {3} of {4}." -f `
+                $id, $handoff.tokens, $handoff.boundary, $handoffCounts[$id], $handoffCap) -ForegroundColor DarkCyan
+    } elseif ($outcome -eq 'context-handoff') {
+        Write-Host ("  {0} handed back {1} times in this run - dropped for the rest of it." -f $id, $handoffCounts[$id]) -ForegroundColor DarkYellow
+    } elseif ($outcome -eq 'limit-hit') {
+        $until = if ($null -ne $limitHold.Until) { $limitHold.Until.LocalDateTime.ToString('yyyy-MM-dd HH:mm:ss') } else { 'unknown' }
+        Write-Host ("  {0} ended on the {1} usage limit (read from the {2}) - not counted against the ticket, and no child starts before {3}." -f `
+                $id, $limitSignal.RateLimitType, $limitSignal.Source, $until) -ForegroundColor Magenta
+    } elseif (-not $moved) {
         Write-Host ("  {0} did not move - dropped for the rest of this run." -f $id) -ForegroundColor DarkYellow
     }
     if ($series.Count -ge (Get-IdleRunPolicy).Threshold) {
@@ -1169,7 +1395,23 @@ if ($results.Count -eq 0) {
     $results | Format-Table -AutoSize id, statusBefore, statusAfter, outcome, minutes, idle | Out-String | Write-Host
     $movedCount = ($results | Where-Object { $_.moved }).Count
     Write-Host ("  {0} ticket(s) run, {1} moved, {2} stayed put." -f $results.Count, $movedCount, ($results.Count - $movedCount))
+    $limitHits = @($results | Where-Object { $_.outcome -eq 'limit-hit' }).Count
+    if ($limitHits -gt 0) {
+        Write-Host ("  {0} run(s) ended on the usage limit - not counted against their tickets." -f $limitHits) -ForegroundColor Magenta
+    }
     Write-Host ("  journal: {0}" -f $journal)
+}
+
+# Said in the summary because a stopped run that is waiting for the limit and one that has run out of
+# tickets look the same from the table above, and they call for opposite responses (S4265).
+$summaryHold = Get-LimitHoldState -Path $limitHoldPath
+if ($summaryHold.Active) {
+    Write-Host ''
+    Write-Host ("  WAITING FOR THE USAGE LIMIT: {0}, set by instance '{1}' on {2} - nothing launches before {3}." -f `
+            $(if ($summaryHold.RateLimitType) { $summaryHold.RateLimitType } else { 'usage' }), $summaryHold.Instance,
+            $(if ($summaryHold.Ticket) { $summaryHold.Ticket } else { 'a ticket' }),
+            $summaryHold.Until.LocalDateTime.ToString('yyyy-MM-dd HH:mm:ss')) -ForegroundColor Magenta
+    Write-Host ("  The queue is not empty or idle. Delete {0} to end the wait early." -f $limitHoldPath) -ForegroundColor DarkGray
 }
 Write-Host ''
 
