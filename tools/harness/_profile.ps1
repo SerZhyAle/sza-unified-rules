@@ -149,10 +149,16 @@ $Script:SzaProfileDefaults = [ordered]@{
         ownLineRegex = '^Timber\.d\(.*\)$'
         callTemplate = 'Timber.d("{Id}: {Message}")'
         callName     = 'Timber.d'
-        # S2934: the command that clears a ticket's probes, printed by the exit gate when a ticket
-        # leaves BlockNeedUserTest still carrying them. Empty = this project has no remover, and the
-        # refusal falls back to naming the probe form. {Id} is replaced with the ticket id.
+        # S2934: the command that clears a ticket's probes. {Id} is replaced with the ticket id.
+        # Used by the exit gate when removeOnExit is true; with it false, the refusal prints the
+        # command so the owner can run it by hand. Empty = this project has no remover, and the
+        # refusal falls back to naming the probe form.
         removeCommand = ''
+        # S4270: when true, a transition OUT of BlockNeedUserTest (and archive.ps1 of a ticket still
+        # in it) runs removeCommand for that ticket first, under the code-domain lock of the files
+        # that carry its probes, then check-probe-absent.ps1 judges the result. false = refuse and
+        # print the command, exactly as before S4270. true with an empty removeCommand is refused.
+        removeOnExit  = $false
     }
     hooks       = [ordered]@{
         # Each entry: { script, args } - args may carry {Module}. Run after a closing transition

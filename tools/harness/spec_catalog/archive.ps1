@@ -148,6 +148,30 @@ foreach ($oneId in $ids) {
     })
 }
 
+# S4270 - a record still in BlockNeedUserTest leaves its probes behind only if nothing removes them,
+# and archive.ps1 is the path that would otherwise archive them unremoved. With probes.removeOnExit
+# true, each such record gets the same remover and the same checker as an exit through update.ps1,
+# BEFORE the catalog critical section below is entered: the remover takes a code-domain lock, and
+# taking it inside the catalog lock would order the two the other way round from every source edit.
+# A refused id is dropped from $plans, so nothing is moved or written for it. Records in any other
+# status are not touched. With the key false this block does not run and archive.ps1 touches no probe.
+if ([bool](Get-SzaProfileValue 'probes.removeOnExit')) {
+    $kept = [System.Collections.Generic.List[object]]::new()
+    foreach ($plan in $plans) {
+        if ([string]$plan.Record.status -ne 'BlockNeedUserTest') { $kept.Add($plan); continue }
+        try {
+            Invoke-ProbeRemovalOnExit -Id $plan.Id
+            Invoke-SpecCheckers -Id $plan.Id -NewStatus 'Archived' -Checkers @('check-probe-absent.ps1')
+            $kept.Add($plan)
+        }
+        catch {
+            $failed.Add($plan.Id)
+            $lines.Add("$($plan.Id): $($_.Exception.Message)")
+        }
+    }
+    $plans = $kept
+}
+
 # Phase 2: one critical section for the whole list. S1437: read -> mutate -> write is one critical
 # section; two processes holding the same snapshot lose one change entirely. Both journals are read
 # once and written once - the per-id Add-ArchiveRecord path re-read and rewrote the whole archive

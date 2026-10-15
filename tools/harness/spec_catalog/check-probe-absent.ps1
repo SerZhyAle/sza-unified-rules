@@ -5,7 +5,7 @@ param(
 
 . (Join-Path $PSScriptRoot '..\_profile.ps1')
 
-# Gate for a transition OUT of BlockNeedUserTest - see S2934.
+# Gate for a transition OUT of BlockNeedUserTest - see S2934 and S4270.
 #
 # Contract:
 #   - CLAUDE.md Rule 2 states the debug-probe invariant as an equivalence: a probe exists in source
@@ -18,17 +18,20 @@ param(
 #     to this run", so another session's closure passes; the project-wide run judges it fatally, so
 #     the tree is red for whoever happened to run it. Three clean-ups in five weeks - S2639, S2656,
 #     S2929, the last of them six places across three tickets - because the symptom was being fixed.
-#   - A refusal, not a deletion. Deleting the probes from here would be a catalog mutator writing
-#     source: outside any code-domain lock and outside the closure that judges a source edit. The
-#     objection that a refusal strands the ticket is answered by probes.removeCommand, which this
-#     refusal prints filled in - the way out is one line, not a search.
+#   - S4270: this checker never removes anything. It is read-only, and it is the judge, not the
+#     remover. With probes.removeOnExit true, Assert-ClosingGates (and archive.ps1, for the records
+#     it archives out of BlockNeedUserTest) first runs probes.removeCommand for the ticket, under the
+#     code-domain lock of the files that carry its probes - Invoke-ProbeRemovalOnExit in _lib.ps1 -
+#     and only then calls this checker. What the remover leaves behind still refuses the transition:
+#     a probe that does not own its physical line, or any probe the remover did not reach. With the
+#     key false, the S2934 behaviour stands: refuse, and print probes.removeCommand for a person to run.
 #   - The baseline is deliberately NOT consulted. An excused ticket is one with no executable path
 #     to instrument, so it has no probe to leave behind and the question does not arise; reading the
 #     allow-list here would only let an excused ticket keep a probe it should never have had.
-#   - archive.ps1 does not call Assert-ClosingGates and is untouched by this. That is the path the
-#     release sweep takes, and it deletes the probes of every ticket it archives and proves it with
-#     the tree gate. A hand-written update.ps1 -Status Archived does reach this gate, like any other
-#     exit.
+#   - archive.ps1 touches no probe while probes.removeOnExit is false. With it true, archive.ps1 runs
+#     the same remover and then this checker for each record it archives out of BlockNeedUserTest,
+#     before its catalog critical section and before any Archived write. Other statuses are untouched.
+#     A hand-written update.ps1 -Status Archived reaches this gate like any other exit.
 #
 # Exit codes: 0 = no probe of this ticket remains in source.
 #             1 = at least one remains - the transition must not proceed.
@@ -88,7 +91,13 @@ Write-Output "Left behind, they belong to nobody - a scoped closure reports them
 Write-Output "and passes, while the project-wide run fails for whichever session happens to run it."
 Write-Output ""
 $removeCommand = [string](Get-SzaProfileValue 'probes.removeCommand')
-if (-not [string]::IsNullOrWhiteSpace($removeCommand)) {
+if ([bool](Get-SzaProfileValue 'probes.removeOnExit')) {
+    # S4270 - the remover already ran before this checker was called. What is listed here is what
+    # it left: a line it does not own, or a probe it did not reach. The remover backs up every file
+    # it writes, so a line it should have taken can be restored from there and taken by hand.
+    Write-Output "probes.removeOnExit is true: the remover already ran for this ticket and left these."
+    Write-Output "Clear them by hand, each one a whole line of its own, then re-run this transition."
+} elseif (-not [string]::IsNullOrWhiteSpace($removeCommand)) {
     Write-Output "Clear them, then re-run this transition:"
     Write-Output ("    {0}" -f $removeCommand.Replace('{Id}', $Id))
     Write-Output ""

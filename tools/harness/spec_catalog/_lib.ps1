@@ -1046,6 +1046,107 @@ function Invoke-SpecCheckers {
     }
 }
 
+function Invoke-ProbeRemovalOnExit {
+    # S4270 - the remover half of the BlockNeedUserTest exit, run only when probes.removeOnExit is
+    # true. Clears the probes of one ticket by running probes.removeCommand, the way a source edit
+    # is made: under the code-domain lock of exactly the files that carry those probes.
+    #
+    # Lock decision (S2934 asked for this, and it is answered here, not dropped): option (a). The
+    # S2934 objection to deleting from a catalog mutator was that it writes source outside any code
+    # lock. So the lock is taken, from the same resolver a source edit uses (enter-code-lock.ps1
+    # -Files), and released in finally as soon as the remover has finished - not after the checker,
+    # which only reads (S2419). Not waited on: a held lock (exit 4) withdraws this request from the
+    # queue and refuses the transition, printing the queue state and the command. A mutator that
+    # waited would park its session at the head of the queue for the length of another session's
+    # edit, and the queue would not grant the place from the outside (S2098, S2200).
+    #
+    # Ordering inside the caller: this runs before check-probe-absent.ps1 and before the journal
+    # write. Nothing here touches the journal.
+    #
+    # Exit contract, as the caller sees it: returns when the probes are gone or there were none to
+    # remove; throws (the transition is refused) on a configuration error, a held lock, or a remover
+    # that exits non-zero. The remover's own output is part of the message.
+    param(
+        [Parameter(Mandatory)][string] $Id
+    )
+    if ($Id -notmatch '^S\d{4}$') { throw "Invoke-ProbeRemovalOnExit: invalid id '$Id'." }
+
+    # Configuration first, before anything is scanned or locked: a key set with no command to run
+    # must never pass silently, which is what a missing remover would do if it were checked last.
+    $removeCommand = [string](Get-SzaProfileValue 'probes.removeCommand')
+    if ([string]::IsNullOrWhiteSpace($removeCommand)) {
+        throw ("Cannot leave BlockNeedUserTest for '{0}': probes.removeOnExit is true but probes.removeCommand is empty. Set probes.removeCommand in the project profile, or set probes.removeOnExit to false." -f $Id)
+    }
+
+    . (Get-SzaHarnessScript 'spec_catalog/lib/blockneedusertest-probes.ps1')
+    $repoRoot = Get-SzaProjectRoot
+    $sourceRoots = @(Get-ProbeSourceRoot -RepoRoot $repoRoot)
+    if ($sourceRoots.Count -eq 0) {
+        throw ("Cannot leave BlockNeedUserTest for '{0}': no source root to scan under {1}." -f $Id, $repoRoot)
+    }
+
+    $hit = Test-TicketProbeInSource -Id $Id -SourceRoots $sourceRoots -All
+    if (-not $hit.Found) { return }
+
+    # The files that carry the probes - the set a source edit would name, so the domain resolver
+    # sees the same paths the lock is judged on.
+    $files = @($hit.Hits | ForEach-Object {
+        ($_.File.Substring($repoRoot.Length).TrimStart('\', '/')) -replace '\\', '/'
+    } | Select-Object -Unique)
+
+    . (Get-SzaHarnessScript 'locks/agent-lock.ps1')
+    $domains = @(Resolve-CodeDomainsForPaths -Path $files)
+    # Recorded before the acquire, because the release below must give back only what this call
+    # took. A domain this session already held is not ours to release.
+    $acquired = @()
+    if ($domains.Count -gt 0) {
+        $topUp = Resolve-AgentLockTopUp -Domains $domains
+        $acquired = @($topUp.Missing)
+    }
+
+    $enterOut = @()
+    $enterExit = 0
+    if ($domains.Count -gt 0) {
+        $enterOut = & (Get-SzaHarnessScript 'locks/enter-code-lock.ps1') -Reason ("{0} probe removal on BlockNeedUserTest exit" -f $Id) -Files $files 2>&1
+        $enterExit = $LASTEXITCODE
+    }
+    $enterText = (@($enterOut) | ForEach-Object { [string]$_ }) -join [Environment]::NewLine
+
+    if ($enterExit -eq 4) {
+        # Withdraw the queue place this call just took (S2098). Leaving it would park this session
+        # at the head of the Code queue with nothing to do under it.
+        & (Get-SzaHarnessScript 'locks/withdraw-lock-ticket.ps1') -Name 'Code' | Out-Null
+        throw ("Cannot clear the probes of '{0}' now: a code lock for {1} is held by another session, and this request was queued and then withdrawn. Queue state:{2}{3}{2}When the lock is free, re-run this transition after running: {4}" -f $Id, ($domains -join ', '), [Environment]::NewLine, $enterText, $removeCommand.Replace('{Id}', $Id))
+    }
+    if ($enterExit -ne 0) {
+        # A top-up can take some domains before it fails; give those back before refusing.
+        foreach ($domain in $acquired) {
+            & (Get-SzaHarnessScript 'locks/exit-code-lock.ps1') -Name $domain | Out-Null
+        }
+        throw ("Cannot clear the probes of '{0}': enter-code-lock.ps1 exited {1}.{2}{3}" -f $Id, $enterExit, [Environment]::NewLine, $enterText)
+    }
+
+    try {
+        Push-Location -LiteralPath $repoRoot
+        try {
+            $removeOut = Invoke-Expression ($removeCommand.Replace('{Id}', $Id)) 2>&1
+            $removeExit = $LASTEXITCODE
+        }
+        finally { Pop-Location }
+        $removeText = (@($removeOut) | ForEach-Object { [string]$_ }) -join [Environment]::NewLine
+        if ($removeExit -ne 0) {
+            throw ("Cannot leave BlockNeedUserTest for '{0}': the probe remover exited {1}; the transition is refused and the status is unchanged.{2}{3}" -f $Id, $removeExit, [Environment]::NewLine, $removeText)
+        }
+        Write-Host ("Probe remover for {0} exited 0:" -f $Id) -ForegroundColor DarkGray
+        $removeOut | ForEach-Object { Write-Host $_ }
+    }
+    finally {
+        foreach ($domain in $acquired) {
+            & (Get-SzaHarnessScript 'locks/exit-code-lock.ps1') -Name $domain | Out-Null
+        }
+    }
+}
+
 function Assert-ClosingGates {
     # Run every gate that guards a transition INTO a gated status, from the one place
     # all three status-change paths reach (update.ps1, close.ps1, bulk-update.ps1).
@@ -1099,15 +1200,25 @@ function Assert-ClosingGates {
     # project-wide run fails for whoever happens to run it - so it was cleaned three times in five
     # weeks (S2639, S2656, S2929) and refilled each time, because the symptom was what got fixed.
     #
-    # A refusal, not a deletion: removing the probes from here would make a catalog mutator write
-    # source, outside any code-domain lock and outside the closure that judges a source edit. The
-    # refusal prints probes.removeCommand instead, so the way out is one line.
+    # S4270 - the S2934 rule "a refusal, not a deletion" is withdrawn by owner ruling 2026-10-15. The
+    # refusal alone left 84 of 248 consumer runs red in one week (34%, against 22% the week before),
+    # and in 35 of them ticket-log-audit was the first gate to fail: the closing ticket's own probes
+    # were left for a human to clear by hand, and nothing else could clear them. With
+    # probes.removeOnExit true the remover runs here first, under the code lock of the files that
+    # carry those probes (Invoke-ProbeRemovalOnExit); check-probe-absent.ps1 then judges what the
+    # remover left, so a probe the remover could not own still refuses the transition. With the key
+    # false the path is exactly the S2934 one: refuse, and print the command.
     #
-    # archive.ps1 never calls this function and stays as it was. That is the path the release sweep
-    # takes, and it deletes the probes of everything it archives and proves it with the tree gate;
-    # gating the three mutators' Archived writes alone would lock the door nobody uses. A
-    # hand-written update.ps1 -Status Archived does come through here, like any other exit.
+    # The remover runs before the journal write. A refused removal or a refused check therefore
+    # leaves the status where it was. The probes it deleted are backed up by the remover itself.
+    #
+    # archive.ps1 does not come through here - it writes Archived inside its own catalog critical
+    # section, so it runs the same two steps itself, before that section is entered (see archive.ps1).
+    # A hand-written update.ps1 -Status Archived does come through here, like any other exit.
     if ($OldStatus -eq 'BlockNeedUserTest' -and $NewStatus -ne 'BlockNeedUserTest') {
+        if ([bool](Get-SzaProfileValue 'probes.removeOnExit')) {
+            Invoke-ProbeRemovalOnExit -Id $Id
+        }
         Invoke-SpecCheckers -Id $Id -NewStatus $NewStatus -Checkers @('check-probe-absent.ps1')
     }
 

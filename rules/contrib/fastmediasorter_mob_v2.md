@@ -2197,11 +2197,12 @@ The mechanism is owed to a canon session; its full design and acceptance cases a
   `scripts/utils/run-spec-queue.tests/Run-Tests.ps1` gains the cases named in the FMS spec section 5 and SKIPs against a harness that predates them.
 - Verify `--session-id` against the installed CLI's `--help` before the runner depends on it.
 
-## The runner backs off on a usage limit - the canon half landed in the working tree 2026-10-15 (source ticket S4265)
+## The runner backs off on a usage limit - the canon half shipped in plugin 2026.1015.3 on 2026-10-15 (source ticket S4265)
 
-The proposal above is built. Written by a canon session on the FMS session's hand-off; **not committed and not
-deployed** - the owner has not asked for either, and the deploy is what raises the plugin version, which is the
-only thing that delivers it. Until it runs, the consumer's forwarder keeps resolving the previous cached harness.
+The proposal above is built. Written by a canon session on the FMS session's hand-off, and shipped by the
+owner's deploy the same day: commit `e8bda91` on `main`, plugin version `2026.1015.3` (`CANON_VERSION`
+`2026.10.15.3`). A consumer's forwarder resolves the highest cached plugin version, so it picks the change up
+once `claude plugin update sza@sza-unified-rules` has put that directory in its cache.
 
 ### What landed
 
@@ -2272,8 +2273,8 @@ only thing that delivers it. Until it runs, the consumer's forwarder keeps resol
 
 ### Owed
 
-- **The owner's deploy** (`deploy.ps1`): it raises the version pair itself. Then, in the consumer,
-  `claude plugin update sza@sza-unified-rules` and read the installed version back.
+- **In the consumer:** `claude plugin update sza@sza-unified-rules`, then read the installed version back -
+  the cache directory `2026.1015.3` must exist and carry `tools/harness/batch/_limit-hold.ps1`.
 - **The consumer suite gains the block below** (paste before the closing summary of `Run-Tests.ps1`), and the
   idle-series passages of `docs/DEV_OPS.md` and `docs/SPEC_CATALOG_RATIONALE.md` gain `limit-hit` and its class.
 - **The consumer's monitor page** (`rmw`) renders `limitHold`; the text monitor already does.
