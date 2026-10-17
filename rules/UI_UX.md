@@ -6,7 +6,7 @@ same places, said in the same way. Where products cannot be identical, they must
 
 This page holds the **principles, the precedence and the tone**. The exact shapes - palette roles, glyph
 vocabulary, window behaviour, page layout - are shared contracts in the catalog (`APP-STYLE`,
-`APP-BEHAVIOUR`, `WINDOWS-UI`, `ICON-SET`, `ICON-RENDER`, `PAGE-STYLE`, `CONTEXT-HELP`; see [CONTRACTS.md](CONTRACTS.md)) and are cited
+`APP-BEHAVIOUR`, `WINDOWS-UI`, `BUTTONS`, `ICON-SET`, `ICON-RENDER`, `PAGE-STYLE`, `CONTEXT-HELP`; see [CONTRACTS.md](CONTRACTS.md)) and are cited
 there by id and section, never copied here. Platform specifics are marked *(overlay)*.
 
 ## 1. The reference is FastMediaSorter Android
@@ -37,11 +37,19 @@ vocabulary). Every other product listens to it:
   product: the same elements, smaller steps.
 - **Space is spent through a closed set of named tokens**, not literals: spacing 4 / 8 / 12 / 16 / 24 / 32,
   corner radii 8 / 12 / 16, icon tiers 16 / 20 / 24 / 32 / 40 / 48, a short list of elevations, a type scale
-  by role (title, subtitle, detail, badge). A value outside the set needs a decision, written down.
-- **Hit-target floor: 48 dp on Android; on Windows 28 px under a mouse or pen and 44 px under touch input**
-  (`ICON-RENDER` rule 5). The glyph tiers do not change; only the clickable area does.
+  by role (title, subtitle, detail, badge). Buttons use the binding geometry of `BUTTONS` section 3,
+  including its radius token. `UI-SIZING` governs values derived from shared size tokens; supported
+  scaled values do not need per-value exceptions. Other values need a written decision.
+- **Covered controls share `UI-SIZING` profiles:** ordinary targets use 32 logical units for pointer
+  and 48 for touch; explicit compact mode may reduce them within a product's declared and tested range.
+  These rules cover buttons, boolean options, group headers and settings navigation. Other controls
+  retain `ICON-RENDER` floors. The painted glyph and its clickable area are separate measurements.
 - **Reflow, do not fork.** One layout parametrised by width; a second layout only where the *structure*
   differs, not the size.
+- **Collapsible groups follow `COLLAPSIBLE-GROUP` 1.0 or later.** Group by topic, use a distinct header
+  with a current-state triangle, and expand in normal flow across the content region without losing
+  the viewport anchor. A single-topic page normally has no collapsible wrapper. Packing collapsed
+  headers into rows is a documented per-screen choice, not a universal requirement.
 - **No dead ends.** An empty state is a glyph, one sentence giving the reason, and an invitation to act. A
   loading state says what is loading. An error state offers Retry.
 
@@ -120,15 +128,28 @@ kit has none.
   a glyph carries an accessible name containing the meaning's name.
 - **A language is named in its own language, never by a flag** (`ICON-EXTERNAL`): "Русский", "Українська",
   "English". A flag denotes a country, not a language.
-- **Buttons are chosen by role, not by look:** primary (at most one per surface), tonal, outlined, text,
-  icon, destructive. The same role looks the same in every product.
-- **Every button carries a simple icon** *(overlay: Windows, a recommendation)*: a light glyph from the
-  vocabulary before the caption, instead of it only where the meaning is learned, so that narrow buttons
-  stand in one row. A dialog's answers draw the eye by colour on the glyph - OK green, Cancel red - and they
-  alone do (`WINDOWS-UI` section 11, `ICON-RENDER` section 14). A control with no meaning in the vocabulary
-  gets one added the way the last bullet of this section says.
+- **Buttons follow `BUTTONS` 2.0 or later on Windows, Android and the web.** This is mandatory, not an
+  opt-in recommendation. Behavior types, visual ranks, glyphs, palette, shape, density, content-fit widths,
+  grouping, stable order, wrapping, keyboard interaction and generated reference evidence have one home
+  in that contract. It takes precedence over the earlier Windows button recommendation and conflicting
+  platform button styling. Useful semantic glyphs are required; obvious answers may be text-only.
+  Buttons in one visual row share the tallest member's height; widths follow content and known states.
+  Permanent supported variants and temporary migration follow section 8.
+- **Buttons support variable interface sizes** (`BUTTONS` section 8): compact through very large,
+  with coherent shared geometry and vector scaling under `UI-SIZING`. Text-only accessibility enlargement
+  need not enlarge icons proportionally; compact mode may reduce declared hit targets.
+  Compact icon-only presentation follows command eligibility; large text and DPI never cause clipping,
+  bitmap enlargement or container-width stretching. Baseline tokens are not fixed sizes or upper limits.
+- **Boolean options follow `BOOLEAN-OPTION` 2.0 or later.** The compact checkbox, heading, explanation,
+  conditional local help and platform-specific activation regions have one mandatory cross-platform
+  contract. Checkbox, heading and glyph activate on every platform; recognized scrolling cancels taps.
+  Obvious options may omit redundant explanations. Hover/focus help is short; activation opens full help.
+- **Settings navigation follows `SETTINGS-NAVIGATION` 2.0 or later.** The compact page rail, one child
+  level, consistent glyph policy, main-to-advanced order, final About page and stable fast content
+  presentation are mandatory even for small settings surfaces. Every product owes the full About,
+  official-resource and diagnostic-export set. Existing commit and safety semantics remain in force.
 - **Destructive confirms:** the acting button is the red one; Escape is the one no-action way out; the safe
-  answer holds the default focus. On touch the confirm and cancel may differ in size, for the blind thumb.
+  answer holds the default focus. Button geometry and answer treatment follow `BUTTONS` sections 3 and 4.
 - **Three channels for a message:** a toast for one glance, an inline state for an error with Retry or Undo,
   a dialog for a confirm or a long error. One dialog factory per product, not one per screen.
 - **A thing the kit lacks is proposed to the catalog first,** then built: a missing role, a missing token.
@@ -173,6 +194,14 @@ holds the principles.
 
 ## 8. Making it hold
 
+- Approved permanent variants named by the shared UI contracts are recorded in the product's design
+  or profile, without expiring exceptions. Missing mandatory behavior is temporary migration debt:
+  maintain a dated plan with a deadline, referenced in that product's registry migration/exception row.
+  A plan is not conformance. New or substantially reworked surfaces follow current rules immediately;
+  existing surfaces are not permanently grandfathered. Never advance another product's implementation row.
+- Validation uses a mandatory baseline scenario set plus risk-selected combinations with recorded
+  coverage, not the full product of every locale, theme and scale on every edit. Runtime performance
+  and reference screenshots come from real controls and measurements, never inferred from document checks.
 - A principle nothing checks drifts. Each product names, in its agent-rules file, the gate that guards each
   rule that applies to it: literal colours and sizes, glyph names, locale parity, contrast, string
   boilerplate. A gate that counts a baseline may only lower it.
