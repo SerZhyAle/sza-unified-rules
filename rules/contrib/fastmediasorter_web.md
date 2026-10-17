@@ -181,3 +181,10 @@ version). No proposal filed yet; the parity proposals go through ticket S0010.
 ## In-app help (2026-10-16)
 
 - Ticket `PLAN/S0031_in-app-help-f1-and-button.md` (Draft), created by the canon session from the owner's request for F1 and a `?` button in every product ([UI_UX](../UI_UX.md) §7, contract `CONTEXT-HELP` 0.1). The surface list comes from the view registry that S0028 must expose. Found on the way: `capture-draft -DedupQuery` threw on an empty search result (an `if` expression yielding `@()` unrolls to `$null` under StrictMode) - fixed in the canon harness the same day.
+
+## Canon delivery reconciliation 2026-10-17 (S4307)
+
+- Installed plugin `2026.1017.1` from published canon `2026.10.17.1` (`d06a64a`). The harness counts Done and Skipped as finished and preserves the phase-counter suffix.
+- Re-read the changed canon guidance for delivery, documentation, localization, layout and sealed contracts. Existing product implementation and contract catch-up work remains owned by the recorded project tickets; this delivery check does not certify every product contract.
+- Re-stamped through `restamp-canon.ps1` against the installed plugin reader: version, freshly computed core digest and reconciledOn move together; adoptedOn and project-specific fields stay unchanged.
+- Compliance for FastMediaSorter_WEB: 0 error(s), 1 warning(s) before; 0 error(s), 0 warning(s) after; exit 0. Canon freshness findings cleared.

@@ -690,3 +690,12 @@ account-name redaction (catalog `CAPTURE-OUTPUT` proposal of 2026-10-01 and `DIA
 ## In-app help (2026-10-16)
 
 - Ticket `PLAN/S0075_in-app-help-f1-and-help-button.md` (Draft), created by the canon session from the owner's request for F1 and a `?` button in every product ([UI_UX](../UI_UX.md) §7, contract `CONTEXT-HELP` 0.1). 31 `Form` types (about 50 map rows); bare F1 must never become a global chord. Collision found: the About page draws `app.help` as the replay-the-tour button, which `CONTEXT-HELP` rule 2 reserves for help (see the iconography proposal of 2026-10-16). Id S0056 is used by two tickets.
+
+## Canon delivery reconciliation 2026-10-17 (S4307)
+
+- Installed plugin `2026.1017.1` from published canon `2026.10.17.1` (`d06a64a`). The harness counts Done and Skipped as finished and preserves the phase-counter suffix.
+- Re-read the changed canon guidance for delivery, documentation, localization, layout and sealed contracts. Existing product implementation and contract catch-up work remains owned by the recorded project tickets; this delivery check does not certify every product contract.
+- Re-stamped through `restamp-canon.ps1` against the installed plugin reader: version, freshly computed core digest and reconciledOn move together; adoptedOn and project-specific fields stay unchanged.
+- Compliance for CyrFlip: 2 error(s), 3 warning(s) before; 2 error(s), 2 warning(s) after; exit 1. Canon freshness findings cleared.
+- Carried baseline finding: SZA-SEC04 at tests/CyrFlip.Tests/DiagnosticRedactorTests.cs: live credential literal. No security exemption or product behavior change was introduced by this sync.
+- Carried baseline finding: SZA-SEC04 at tests/CyrFlip.Tests/SupportBundleTests.cs: live credential literal. No security exemption or product behavior change was introduced by this sync.

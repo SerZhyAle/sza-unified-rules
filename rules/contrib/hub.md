@@ -241,3 +241,10 @@ on the intent to monetise: a network-surface row for third-party scripts in SECU
 ## In-app help (2026-10-16)
 
 - Ticket `docs/PLAN-2026-10-16-in-app-help-hub-role.md` (OPEN - proposed), created by the canon session from the owner's request for F1 and a `?` button in every product ([UI_UX](../UI_UX.md) §7, contract `CONTEXT-HELP` 0.1). The hub draws no windows; the ticket carries its portfolio role: the family map linking each product's help index, and whether the help layer joins the web kit (a `PAGE-STYLE` amendment the hub owns). Finding: `PAGE-STYLE` section 11 cannot be passed by a help page; see `product-web-pages/PROPOSAL-2026-10-16-help-pages-are-not-site-pages.md`.
+
+## Canon delivery reconciliation 2026-10-17 (S4307)
+
+- Installed plugin `2026.1017.1` from published canon `2026.10.17.1` (`d06a64a`). The harness counts Done and Skipped as finished and preserves the phase-counter suffix.
+- Re-read the changed canon guidance for delivery, documentation, localization, layout and sealed contracts. Existing product implementation and contract catch-up work remains owned by the recorded project tickets; this delivery check does not certify every product contract.
+- Re-stamped through `restamp-canon.ps1` against the installed plugin reader: version, freshly computed core digest and reconciledOn move together; adoptedOn and project-specific fields stay unchanged.
+- Compliance for sites.google.comsiteszaodua: 0 error(s), 1 warning(s) before; 0 error(s), 0 warning(s) after; exit 0. Canon freshness findings cleared.

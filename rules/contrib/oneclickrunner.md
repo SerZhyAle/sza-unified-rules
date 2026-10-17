@@ -296,3 +296,10 @@ together with the re-sync so the record exists. Per the canon, committing is on 
 ## In-app help (2026-10-16)
 
 - Ticket `PLAN/T0029_in-app-help.md` (Draft, row in `PLAN/INDEX.md`), created by the canon session from the owner's request for F1 and a `?` button in every product ([UI_UX](../UI_UX.md) §7, contract `CONTEXT-HELP` 0.1). Four windows and a tray menu; the site guide carries web fonts and script language switching, so it is not reusable as a help page as it stands; how pages ship with a single-exe package is an owner question (T0024).
+
+## Canon delivery reconciliation 2026-10-17 (S4307)
+
+- Installed plugin `2026.1017.1` from published canon `2026.10.17.1` (`d06a64a`). The harness counts Done and Skipped as finished and preserves the phase-counter suffix.
+- Re-read the changed canon guidance for delivery, documentation, localization, layout and sealed contracts. Existing product implementation and contract catch-up work remains owned by the recorded project tickets; this delivery check does not certify every product contract.
+- Re-stamped through `restamp-canon.ps1` against the installed plugin reader: version, freshly computed core digest and reconciledOn move together; adoptedOn and project-specific fields stay unchanged.
+- Compliance for OneClickRunner: 0 error(s), 1 warning(s) before; 0 error(s), 0 warning(s) after; exit 0. Canon freshness findings cleared.

@@ -780,3 +780,12 @@ repo's specification 109, whose section 3 checklist carried this re-sync plus si
 ## In-app help (2026-10-16)
 
 - Ticket `docs/specifications/240_SPECIFICATION_IN_APP_HELP_F1_AND_HELP_BUTTON_ON_EVERY_WINDOW.md` (Draft; that folder is git-ignored), created by the canon session from the owner's request for F1 and a `?` button in every product ([UI_UX](../UI_UX.md) §7, contract `CONTEXT-HELP` 0.1). 63 `Form` classes (about 90-100 map rows); an F1 key card, 170 tooltips and the `app.help` glyph already exist. The modern viewer has no native caption (ticket 208), so its `?` goes on the reading-start side of its own caption buttons (`CONTEXT-HELP` rule 2). Nine owner questions are in the ticket.
+
+## Canon delivery reconciliation 2026-10-17 (S4307)
+
+- Installed plugin `2026.1017.1` from published canon `2026.10.17.1` (`d06a64a`). The harness counts Done and Skipped as finished and preserves the phase-counter suffix.
+- Re-read the changed canon guidance for delivery, documentation, localization, layout and sealed contracts. Existing product implementation and contract catch-up work remains owned by the recorded project tickets; this delivery check does not certify every product contract.
+- Re-stamped through `restamp-canon.ps1` against the installed plugin reader: version, freshly computed core digest and reconciledOn move together; adoptedOn and project-specific fields stay unchanged.
+- Compliance for FastMediaSorter_Lite: 2 error(s), 1 warning(s) before; 2 error(s), 0 warning(s) after; exit 1. Canon freshness findings cleared.
+- Carried baseline finding: SZA-SEC03 at exchange-server: 2 committed binary file(s) without a narrow negation carrying a why-comment: exchange-probe.exe, fms-exchange-server.exe. No security exemption or product behavior change was introduced by this sync.
+- Carried baseline finding: SZA-SEC04 at tests/Integration/CollectHostState.ps1: live credential literal. No security exemption or product behavior change was introduced by this sync.

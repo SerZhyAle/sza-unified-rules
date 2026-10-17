@@ -755,3 +755,10 @@ product asks.
 ## In-app help (2026-10-16)
 
 - Ticket `DEV/plan/118_2026-10-16_in-app-help-f1-and-help-button.md` (Draft, row at the end of package 3 of `RELEASE_QUEUE.md`), created by the canon session from the owner's request for F1 and a `?` button in every product ([UI_UX](../UI_UX.md) §7, contract `CONTEXT-HELP` 0.1). One embedded page in an `--app` window, so the ticket is sized as one page or layer with a section per region; 13 locales.
+
+## Canon delivery reconciliation 2026-10-17 (S4307)
+
+- Installed plugin `2026.1017.1` from published canon `2026.10.17.1` (`d06a64a`). The harness counts Done and Skipped as finished and preserves the phase-counter suffix.
+- Re-read the changed canon guidance for delivery, documentation, localization, layout and sealed contracts. Existing product implementation and contract catch-up work remains owned by the recorded project tickets; this delivery check does not certify every product contract.
+- Re-stamped through `restamp-canon.ps1` against the installed plugin reader: version, freshly computed core digest and reconciledOn move together; adoptedOn and project-specific fields stay unchanged.
+- Compliance for EPUB_2_HTML: 0 error(s), 3 warning(s) before; 0 error(s), 2 warning(s) after; exit 0. Canon freshness findings cleared.

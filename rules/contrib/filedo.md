@@ -750,3 +750,10 @@ The decision is the owner's: split now, or accept `SZA-RULES05` as a standing no
 ## In-app help (2026-10-16)
 
 - Ticket `PLAN/SP-0168 in-app-help-f1-and-help-pages.md` (Draft - not approved, not queued), created by the canon session from the owner's request for F1 and a `?` button in every product ([UI_UX](../UI_UX.md) §7, contract `CONTEXT-HELP` 0.1). The VB.NET shell has 36 rail destinations, two main windows and about 50 expected map rows; the Disk Manager already has a `?` button that opens a menu and an F1 that opens a different window, which `CONTEXT-HELP` rule 3 (the same answer for both) asks the owner to settle (O3). The CLI's `--help` is out of scope.
+
+## Canon delivery reconciliation 2026-10-17 (S4307)
+
+- Installed plugin `2026.1017.1` from published canon `2026.10.17.1` (`d06a64a`). The harness counts Done and Skipped as finished and preserves the phase-counter suffix.
+- Re-read the changed canon guidance for delivery, documentation, localization, layout and sealed contracts. Existing product implementation and contract catch-up work remains owned by the recorded project tickets; this delivery check does not certify every product contract.
+- Re-stamped through `restamp-canon.ps1` against the installed plugin reader: version, freshly computed core digest and reconciledOn move together; adoptedOn and project-specific fields stay unchanged.
+- Compliance for FileDo: 0 error(s), 1 warning(s) before; 0 error(s), 0 warning(s) after; exit 0. Canon freshness findings cleared.

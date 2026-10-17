@@ -683,3 +683,10 @@ Full canon reconciliation to **2026.10.02.5** (core digest `sha256:1a8cbbb109975
 ## In-app help (2026-10-16)
 
 - Ticket `PLAN/SP-0230_in_app_help_f1_and_a_help_button_on_every_window.md` (Draft), created by the canon session from the owner's request for F1 and a `?` button in every product ([UI_UX](../UI_UX.md) §7, contract `CONTEXT-HELP` 0.1). 18 `Window` classes and 6 Settings pages (about 24 map rows), no F1 handler yet, 13 locales; overlaps SP-0224 (portal links); five owner decisions are in the ticket.
+
+## Canon delivery reconciliation 2026-10-17 (S4307)
+
+- Installed plugin `2026.1017.1` from published canon `2026.10.17.1` (`d06a64a`). The harness counts Done and Skipped as finished and preserves the phase-counter suffix.
+- Re-read the changed canon guidance for delivery, documentation, localization, layout and sealed contracts. Existing product implementation and contract catch-up work remains owned by the recorded project tickets; this delivery check does not certify every product contract.
+- Re-stamped through `restamp-canon.ps1` against the installed plugin reader: version, freshly computed core digest and reconciledOn move together; adoptedOn and project-specific fields stay unchanged.
+- Compliance for Streams_Player: 0 error(s), 1 warning(s) before; 0 error(s), 0 warning(s) after; exit 0. Canon freshness findings cleared.

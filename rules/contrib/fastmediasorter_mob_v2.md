@@ -2604,3 +2604,12 @@ $out | ConvertTo-Json -Depth 5 -Compress
 ## In-app help (2026-10-16)
 
 - Ticket `PLAN/S4288_in-app-help-f1-button.md` (Draft, Tier 4, device), created by the canon session from the owner's request for F1 and a `?` button in every product ([UI_UX](../UI_UX.md) §7, contract `CONTEXT-HELP` 0.1). About 40 screens and 34 `DialogFragment` classes; an F1 shortcut dialog and Help menu items already exist. One conflict: S3506 decided that the Help menu entry opens the portal page directly, while `CONTEXT-HELP` rule 3 needs F1 and the button to give the same answer. The harness appended the queue row itself; the owner may re-home it.
+
+## Canon delivery reconciliation 2026-10-17 (S4307)
+
+- Installed plugin `2026.1017.1` from published canon `2026.10.17.1` (`d06a64a`). The harness counts Done and Skipped as finished and preserves the phase-counter suffix.
+- Re-read the changed canon guidance for delivery, documentation, localization, layout and sealed contracts. Existing product implementation and contract catch-up work remains owned by the recorded project tickets; this delivery check does not certify every product contract.
+- Re-stamped through `restamp-canon.ps1` against the installed plugin reader: version, freshly computed core digest and reconciledOn move together; adoptedOn and project-specific fields stay unchanged.
+- Compliance for FastMediaSorter_mob_v2: 1 error(s), 5 warning(s) before; 1 error(s), 4 warning(s) after; exit 1. Canon freshness findings cleared.
+- Carried baseline finding: SZA-SEC01 at app_v2/src/test/resources/device-exchange/tunnel-test.p12: secret or signing material is tracked. No security exemption or product behavior change was introduced by this sync.
+- Compliance for FastMediaSorter_release: 0 error(s), 4 warning(s) before; 0 error(s), 3 warning(s) after; exit 0. Canon freshness findings cleared.
