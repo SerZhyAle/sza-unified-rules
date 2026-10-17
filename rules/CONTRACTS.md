@@ -81,6 +81,18 @@ A product that finds a contract wrong, insufficient, or in the way does exactly 
 There is no third option, and "temporarily" is not one. A local fix that nothing records is invisible to
 every other product until the day their data disagrees, which is the failure the catalog exists to end.
 
+**Every project's right to exceptions and recommendations.** During synchronization a project may
+declare a justified exception in its own registry rows without prior approval from the contract owner,
+and recommend corrections, clarifications or additions. This right also applies to mandatory portfolio
+contracts and newly consolidated requirements. Record the clause, scope, concrete reason and evidence,
+user/data/security impact, compensating behavior and review condition. Temporary migration debt carries
+an `until` date and a remediation ticket; a permanent supported variant belongs in a dated design record
+linked from the registry, with an explicit review condition. An exception does not waive a separate legal,
+store, security or data-safety release blocker. A synchronization spec must offer these routes rather than
+require an unconditional compliance claim. For another owner's contract, recommendations are dated
+proposals; the owner accepts, partly accepts or rejects them with reasons in writing. Until acceptance,
+the current text applies and an exception records any justified local difference.
+
 Finding a defect creates an obligation, not a licence: whoever finds it writes the amendment, even when the
 defect belongs to another product's contract. Silence about a known defect is itself a violation.
 

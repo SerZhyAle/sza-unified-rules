@@ -88,6 +88,14 @@ is missing - that is a correct answer, and the registry is designed to carry it.
 
 ## Step 5 - Audit the consumer code against the compatibility law
 
+**Rights retained throughout synchronization.** The project may declare justified exceptions in its own
+registry rows without prior contract-owner approval and recommend corrections or additions. Record the
+clause, scope, evidence, impact, compensating behavior and review condition. Temporary debt needs an
+expiry and remediation ticket; a permanent supported variant needs a dated linked design record. For
+another owner's contract, file a dated proposal and retain an exception until its decision where needed.
+Do not equate synchronization with unconditional conformity or remove these rights from the final report.
+Independent legal, store, security and data-safety release blockers still apply (CONTRACTS section 4).
+
 `_meta\VERSIONING.md` §4, restated in [CONTRACTS.md](../../rules/CONTRACTS.md) §5. Read the code and answer
 each with a file and a line:
 
