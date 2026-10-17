@@ -237,3 +237,7 @@ on the intent to monetise: a network-surface row for third-party scripts in SECU
 ## Promotion campaign (2026-10-09)
 
 - Plan `docs/PLAN-2026-10-09-free-promotion-campaign.md` (new) - the **portfolio** ticket every product ticket depends on: host-root `robots.txt` and Search Console property through `SerZhyAle/SerZhyAle.github.io` (sourced from `github-root-redirect/`), the redirect http to https, the hub's own indexing, and the AdSense decision before any outreach - keep it as a declared non-intrusive slot or remove it (rule clarified 2026-10-09: no intrusive advertising and none dedicated to others' products); [PROMOTION](../PROMOTION.md).
+
+## In-app help (2026-10-16)
+
+- Ticket `docs/PLAN-2026-10-16-in-app-help-hub-role.md` (OPEN - proposed), created by the canon session from the owner's request for F1 and a `?` button in every product ([UI_UX](../UI_UX.md) §7, contract `CONTEXT-HELP` 0.1). The hub draws no windows; the ticket carries its portfolio role: the family map linking each product's help index, and whether the help layer joins the web kit (a `PAGE-STYLE` amendment the hub owns). Finding: `PAGE-STYLE` section 11 cannot be passed by a help page; see `product-web-pages/PROPOSAL-2026-10-16-help-pages-are-not-site-pages.md`.

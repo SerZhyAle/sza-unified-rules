@@ -110,3 +110,7 @@ New-repo adoption against canon **2026.10.02.3**, core digest `sha256:410463a9..
 ## Promotion campaign (2026-10-09)
 
 - Spec `PLAN/S0012_free-promotion-campaign.md` (Draft, created through the harness), pre-launch, blocked by S0010 decisions; [PROMOTION](../PROMOTION.md).
+
+## In-app help (2026-10-16)
+
+- Ticket `PLAN/S0014_in-app-help.md` (Draft), created by the canon session from the owner's request that every product with a user interface get F1 and a `?` button ([UI_UX](../UI_UX.md) §7, contract `CONTEXT-HELP` 0.1). No code yet, so the surface count (about 7 screens, 4 dialogs, 4 widgets) is provisional; blocked behind S0004 (app bar and F1 path); the watch is out of scope; owner decisions D1-D9 are in the ticket.

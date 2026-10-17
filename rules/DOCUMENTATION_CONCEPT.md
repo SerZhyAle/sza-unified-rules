@@ -109,6 +109,10 @@ For any product with a public site. The minimum set for a credible, store-linked
 Buttons point at durable URLs (`/releases/latest`, the package id, the store product page), never a
 hard-coded version, so the site never goes stale between releases.
 
+A product with a user interface also publishes, under its docs, the window help pages it ships
+([UI_UX.md](UI_UX.md) §7) - the same files, one source, never a second copy - and the how-to pages link down
+to them.
+
 ## 5. User support & friendliness
 
 The product's tone is a documented choice, not left to each writer:
@@ -122,7 +126,8 @@ The product's tone is a documented choice, not left to each writer:
 - **One friendly voice across surfaces.** Same phrasing for a feature in README, site, and listing, so
   a user who reads two of them isn't confused by three names for one thing.
 - **List the ship-together surfaces in one manifest.** Every user-facing surface a feature must touch
-  (README, site, each localized docs page, each listing, the in-app strings) goes in one authoritative
+  (README, site, each localized docs page, each listing, the in-app strings, each window's help page and
+  its screenshot - [UI_UX.md](UI_UX.md) §7) goes in one authoritative
   list - a `DOCS_SURFACES.md` driven by a `/docs-sync` skill, or the release skill's own checklist
   (reference: `CyrFlip`) - so a feature lands in *all* of them atomically, **every surface and every
   authored locale in one edit, not three follow-up requests**. The surface missing from the manifest is

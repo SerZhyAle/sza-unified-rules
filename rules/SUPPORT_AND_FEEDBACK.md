@@ -12,6 +12,9 @@ in `contrib/`. Platform specifics marked *(overlay)*.
   abandonment.
 - One voice: the support copy matches the product's friendly, task-first tone (see
   [AUTHOR.md](AUTHOR.md)).
+- **Help is one key from every window.** F1 and a `?` button explain the window the user is looking at, so
+  the question rarely has to leave the product ([UI_UX.md](UI_UX.md) §7); a help page ends in this support
+  path and nowhere else.
 
 ## 2. Failures help themselves
 

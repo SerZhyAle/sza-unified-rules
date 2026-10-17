@@ -589,12 +589,12 @@ if ($indexRowNumber -ge 0) {
         if ($rowCells.Count -lt 7) { continue }
         if ($rowCells[1].Trim() -notmatch '^\d{1,2}$') { continue }
         $phaseRows++
-        if ($rowCells[4] -match '✅') { $phaseRowsDone++ }
+        if ($rowCells[4] -match '✅|⏭') { $phaseRowsDone++ }
     }
 
     for ($i = 0; $i -lt $indexLines.Length; $i++) {
         if ($indexLines[$i] -match '^\*\*Phases:\*\*') {
-            $indexLines[$i] = "**Phases:** $phaseRowsDone / $phaseRows done"
+            $indexLines[$i] = $indexLines[$i] -replace '^\*\*Phases:\*\*\s*\d+\s*/\s*\d+\s+done', "**Phases:** $phaseRowsDone / $phaseRows done"
         } elseif ($indexLines[$i] -match '^\*\*Last updated:\*\*') {
             # Read mechanically by the drift check's tactical-index freshness proof. A batch
             # writer that stopped maintaining it would fix cost and break a gate.

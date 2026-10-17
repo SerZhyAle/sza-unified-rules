@@ -82,7 +82,8 @@ apply (a CLI tool has no site, a single-locale app skips localization).
 
 - **Has a user interface?** Build it against the family look and voice ([UI_UX.md](UI_UX.md)): the
   compact layout, no intrusive or dedicated advertising, the message formulas, and the shared palette,
-  glyphs and button roles.
+  glyphs and button roles. Give every window its help from the first window on: F1 and a `?` button, the
+  help map and its gate (`CONTEXT-HELP`, [UI_UX.md](UI_UX.md) §7).
 - **Multi-language?** Adopt the localization workflow ([LOCALIZATION.md](LOCALIZATION.md)): which
   surfaces localize, the parity-enforced string tool, the shipped locales.
 - **Store submission?** Fill the privacy/permissions posture

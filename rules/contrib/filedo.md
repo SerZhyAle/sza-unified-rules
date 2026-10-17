@@ -746,3 +746,7 @@ The decision is the owner's: split now, or accept `SZA-RULES05` as a standing no
 ## Promotion campaign (2026-10-09)
 
 - Ticket `PLAN/SP-0166 free-promotion-campaign.md` (Draft), aligned to canon [PROMOTION](../PROMOTION.md). It replaces the open draft that wrongly carried `SP-0149`, an id owned by the closed `done/SP-0149` disk-sharing spec; invented traffic, install and star figures were replaced by a measured baseline. Depends on the hub ticket for the host-root `robots.txt` and console property.
+
+## In-app help (2026-10-16)
+
+- Ticket `PLAN/SP-0168 in-app-help-f1-and-help-pages.md` (Draft - not approved, not queued), created by the canon session from the owner's request for F1 and a `?` button in every product ([UI_UX](../UI_UX.md) §7, contract `CONTEXT-HELP` 0.1). The VB.NET shell has 36 rail destinations, two main windows and about 50 expected map rows; the Disk Manager already has a `?` button that opens a menu and an F1 that opens a different window, which `CONTEXT-HELP` rule 3 (the same answer for both) asks the owner to settle (O3). The CLI's `--help` is out of scope.

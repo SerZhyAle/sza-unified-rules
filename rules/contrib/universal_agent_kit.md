@@ -675,3 +675,7 @@ notice's "now" column before the session ran and a version may not be pinned to 
   narrowed to the `?lang=` parameter name, until 2026-12-31.
 - **Not run.** No browser session: the `PAGE-STYLE` section 11 walk was against the source, and the
   rendered walk of 2026-09-23 was not repeated. The section 5 URL check was run (9/9 HTTP 200).
+
+## In-app help (2026-10-16)
+
+- Ticket `docs/specifications/SPECIFICATION_IN_APP_HELP.md` (Draft), created by the canon session from the owner's request for F1 and a `?` button in every product ([UI_UX](../UI_UX.md) §7, contract `CONTEXT-HELP` 0.1). The kit draws no user interface: slice A is the pointer and registry row, slice B is guidance for projects that have one, and `AUTHORING.md` requires an observed failure before any new rule.

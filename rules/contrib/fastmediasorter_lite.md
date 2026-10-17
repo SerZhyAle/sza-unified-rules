@@ -776,3 +776,7 @@ repo's specification 109, whose section 3 checklist carried this re-sync plus si
 ## Promotion campaign (2026-10-09)
 
 - Ticket `docs/specifications/186_SPECIFICATION_FREE_PROMOTION_CAMPAIGN.md` (new), positioning from `done/132`; [PROMOTION](../PROMOTION.md).
+
+## In-app help (2026-10-16)
+
+- Ticket `docs/specifications/240_SPECIFICATION_IN_APP_HELP_F1_AND_HELP_BUTTON_ON_EVERY_WINDOW.md` (Draft; that folder is git-ignored), created by the canon session from the owner's request for F1 and a `?` button in every product ([UI_UX](../UI_UX.md) §7, contract `CONTEXT-HELP` 0.1). 63 `Form` classes (about 90-100 map rows); an F1 key card, 170 tooltips and the `app.help` glyph already exist. The modern viewer has no native caption (ticket 208), so its `?` goes on the reading-start side of its own caption buttons (`CONTEXT-HELP` rule 2). Nine owner questions are in the ticket.

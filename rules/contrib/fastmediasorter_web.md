@@ -166,3 +166,18 @@ from this record and the three candidate core edits. Re-read the changed rule do
 INVARIANTS item 1, NEW_PROJECT_CHECKLIST step 0); nothing in the repository contradicted them - the dependencies are
 to be vendored (S0003) and every function names its engine floor (S0002). Stamp `canon.version`, `coreDigest` and
 `reconciledOn` moved together; `adoptedOn` unchanged. Gate on the repository itself: 0 errors, 0 warnings.
+
+## Product scope 2026-10-16 (S0002)
+
+The feature matrix (`docs/FEATURE_MATRIX.md`, 150 rows, sources dated 2026-10-16) and the owner's answers of the same
+day: the first release holds the exchange account, devices, directory, clipboard and diagnosis, operator
+administration, local browsing, player, images and slideshow, and the move to destination folder N (Chromium only,
+disabled with the reason elsewhere); the floor is the current and the previous major version of each browser, "IE"
+read as Microsoft Edge; the local and the exchange tracks run in parallel. Four more pending registry rows
+(`MEDIA-CLASSIFICATION`, `INPUT-PARITY`, `ICON-SET`, `ICON-RENDER`). `check-contracts.ps1` exit 1 with three errors that
+predate this product (FastMediaSorter_Lite's expired exception, the `broadcast-resource` header, the `clipboard-guard`
+version). No proposal filed yet; the parity proposals go through ticket S0010.
+
+## In-app help (2026-10-16)
+
+- Ticket `PLAN/S0031_in-app-help-f1-and-button.md` (Draft), created by the canon session from the owner's request for F1 and a `?` button in every product ([UI_UX](../UI_UX.md) §7, contract `CONTEXT-HELP` 0.1). The surface list comes from the view registry that S0028 must expose. Found on the way: `capture-draft -DedupQuery` threw on an empty search result (an `if` expression yielding `@()` unrolls to `$null` under StrictMode) - fixed in the canon harness the same day.

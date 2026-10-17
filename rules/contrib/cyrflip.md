@@ -686,3 +686,7 @@ account-name redaction (catalog `CAPTURE-OUTPUT` proposal of 2026-10-01 and `DIA
 ## Promotion campaign (2026-10-09)
 
 - Ticket `PLAN/S0024_free-promotion-campaign.md` (Partial) rewritten in English to the [PROMOTION](../PROMOTION.md) shape, stage-0 progress kept. Found: `punto-switcher-alternative` is a live GitHub topic and winget tag - a competitor name as a keyword, open question Q10. `RELEASE_QUEUE.md` still lists S0017 as Partial though it is Implemented.
+
+## In-app help (2026-10-16)
+
+- Ticket `PLAN/S0075_in-app-help-f1-and-help-button.md` (Draft), created by the canon session from the owner's request for F1 and a `?` button in every product ([UI_UX](../UI_UX.md) §7, contract `CONTEXT-HELP` 0.1). 31 `Form` types (about 50 map rows); bare F1 must never become a global chord. Collision found: the About page draws `app.help` as the replay-the-tour button, which `CONTEXT-HELP` rule 2 reserves for help (see the iconography proposal of 2026-10-16). Id S0056 is used by two tickets.

@@ -292,3 +292,7 @@ together with the re-sync so the record exists. Per the canon, committing is on 
 ## Promotion campaign (2026-10-09)
 
 - Ticket `PLAN/T0028_free-promotion-campaign.md` (new), positioning through T0026; [PROMOTION](../PROMOTION.md).
+
+## In-app help (2026-10-16)
+
+- Ticket `PLAN/T0029_in-app-help.md` (Draft, row in `PLAN/INDEX.md`), created by the canon session from the owner's request for F1 and a `?` button in every product ([UI_UX](../UI_UX.md) §7, contract `CONTEXT-HELP` 0.1). Four windows and a tray menu; the site guide carries web fonts and script language switching, so it is not reusable as a help page as it stands; how pages ship with a single-exe package is an owner question (T0024).

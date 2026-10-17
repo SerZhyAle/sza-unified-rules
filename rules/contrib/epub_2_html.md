@@ -751,3 +751,7 @@ product asks.
 
 - Ticket `DEV/plan/111_2026-10-09_free-promotion-campaign.md` (new; 110 was taken the same day by a parallel session), positioning from `docs/POSITIONING.md`; [PROMOTION](../PROMOTION.md).
 - 2026-10-09, state: ticket 111 In Progress. Phases 01-07 done as far as tag A allows (metrics script and baseline checkpoint, worksheet and research note, `docs/discoverability.json`, social card, page heads with sitemap `lastmod`, 13-locale winget, Store and extension fields, demo, AlternativeTo draft). Every outward step waits for a go in the ticket's go ledger; Q1, Q2 part 1 and Q4-Q6 are open.
+
+## In-app help (2026-10-16)
+
+- Ticket `DEV/plan/118_2026-10-16_in-app-help-f1-and-help-button.md` (Draft, row at the end of package 3 of `RELEASE_QUEUE.md`), created by the canon session from the owner's request for F1 and a `?` button in every product ([UI_UX](../UI_UX.md) §7, contract `CONTEXT-HELP` 0.1). One embedded page in an `--app` window, so the ticket is sized as one page or layer with a section per region; 13 locales.

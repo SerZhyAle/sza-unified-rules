@@ -221,3 +221,7 @@ the 2026-09-03 entry did. Owed:
 ## Promotion campaign (2026-10-09)
 
 - Internal tool with no remote: no promotion ticket, by canon [PROMOTION](../PROMOTION.md) section 8.
+
+## In-app help (2026-10-16)
+
+- Ticket `tasks/TASK-8-in-app-help.md` (Draft, priority 20), created by the canon session from the owner's request for F1 and a `?` button in every product ([UI_UX](../UI_UX.md) §7, contract `CONTEXT-HELP` 0.1). Two windows (`Form1`, `FormSettings`), English-only UI, no site: the layer form is the likely fit; five owner decisions are in the ticket.

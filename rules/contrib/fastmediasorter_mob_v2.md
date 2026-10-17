@@ -2600,3 +2600,7 @@ $out | ConvertTo-Json -Depth 5 -Compress
     }
 }
 ```
+
+## In-app help (2026-10-16)
+
+- Ticket `PLAN/S4288_in-app-help-f1-button.md` (Draft, Tier 4, device), created by the canon session from the owner's request for F1 and a `?` button in every product ([UI_UX](../UI_UX.md) §7, contract `CONTEXT-HELP` 0.1). About 40 screens and 34 `DialogFragment` classes; an F1 shortcut dialog and Help menu items already exist. One conflict: S3506 decided that the Help menu entry opens the portal page directly, while `CONTEXT-HELP` rule 3 needs F1 and the button to give the same answer. The harness appended the queue row itself; the owner may re-home it.

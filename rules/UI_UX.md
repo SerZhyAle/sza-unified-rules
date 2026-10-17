@@ -6,7 +6,7 @@ same places, said in the same way. Where products cannot be identical, they must
 
 This page holds the **principles, the precedence and the tone**. The exact shapes - palette roles, glyph
 vocabulary, window behaviour, page layout - are shared contracts in the catalog (`APP-STYLE`,
-`APP-BEHAVIOUR`, `WINDOWS-UI`, `ICON-SET`, `ICON-RENDER`, `PAGE-STYLE`; see [CONTRACTS.md](CONTRACTS.md)) and are cited
+`APP-BEHAVIOUR`, `WINDOWS-UI`, `ICON-SET`, `ICON-RENDER`, `PAGE-STYLE`, `CONTEXT-HELP`; see [CONTRACTS.md](CONTRACTS.md)) and are cited
 there by id and section, never copied here. Platform specifics are marked *(overlay)*.
 
 ## 1. The reference is FastMediaSorter Android
@@ -146,7 +146,32 @@ kit has none.
 - The locale set is declared once and its parity enforced ([LOCALIZATION.md](LOCALIZATION.md) §2); a
   missing translation falls back to the source language, never to a bare key.
 
-## 7. Making it hold
+## 7. Help: one key, one button, one answer per window
+
+A user who does not know what a window is for, or in what order to use what is on it, asks the window - never
+a search engine. The shape of the ask and of the answer is the shared contract `CONTEXT-HELP`; this section
+holds the principles.
+
+- **The ask is the same in every product.** F1 on a keyboard, and a `?` button (the `app.help` glyph) in the
+  top-right corner of the window, doing the same thing. The button **adds** to the corner; it never replaces,
+  covers or re-purposes a control already there - the close box, a search field and the rest keep their place.
+  F1 is never taken for anything else, and never captured system-wide.
+- **The answer is one of two, and the project decides per window which fits.** An explanation drawn over the
+  live window, naming every significant element; or an HTML page for the window - a screenshot with numbered
+  markers, the order to use the parts in and why, each element explained in full behind a click, and links
+  across to the help of the neighbouring windows, the site's guides and a sibling product where the function
+  is shared. Both speak in the user's language and in the voice of §4: what a thing does and why you would
+  want it, never a restated label.
+- **A help page is simple, and made from the kit.** Plain, readable, light and dark, working with no script
+  and no network, shipped inside the product and published from the same files on the site. A screenshot is a
+  render target: generated from the build in each language with demo content, regenerated in the same edit as
+  the window it shows, never touched by hand.
+- **A large number of windows, not all of them.** A one-question confirmation is its own help; a file picker
+  is the system's. Everything else has an entry. The product keeps one **help map** of its windows and a gate
+  that counts them against it, and a window with no help says why.
+- **Help is not promotion.** No tracker, no remote font or script on a help page, no upsell inside it (§3).
+
+## 8. Making it hold
 
 - A principle nothing checks drifts. Each product names, in its agent-rules file, the gate that guards each
   rule that applies to it: literal colours and sizes, glyph names, locale parity, contrast, string

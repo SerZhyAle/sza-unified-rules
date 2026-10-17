@@ -58,7 +58,7 @@ that sequences every doc below into one runbook.
 
 | File | Read it for |
 | --- | --- |
-| [UI_UX.md](UI_UX.md) | how every product looks, behaves and speaks: compact use of the screen, no intrusive or dedicated advertising, the friendly-and-clear voice, one kit of colours/icons/buttons, FastMediaSorter Android as the reference |
+| [UI_UX.md](UI_UX.md) | how every product looks, behaves and speaks: compact use of the screen, no intrusive or dedicated advertising, the friendly-and-clear voice, one kit of colours/icons/buttons, F1 and a `?` button on every window with a help page or layer, FastMediaSorter Android as the reference |
 | [LOCALIZATION.md](LOCALIZATION.md) | which surfaces translate, parity-enforced string workflow, shipped locales, text style |
 | [SECURITY_AND_PRIVACY.md](SECURITY_AND_PRIVACY.md) | secrets, signing/identity anchors, minimal permissions, the privacy promise, store declarations, the permission and network-surface inventories, hostile input (files and pages the user did not write) |
 | [SUPPORT_AND_FEEDBACK.md](SUPPORT_AND_FEEDBACK.md) | support path, diagnostic-log intake, feedback-to-ticket loop, answer-once-in-the-listing, the usage-counting boundary |

@@ -125,3 +125,7 @@ New-repo adoption against canon **2026.10.02.2**, core digest `sha256:410463a9..
 ## Promotion campaign (2026-10-09)
 
 - Spec `PLAN/S0014_free-promotion-campaign.md` (Draft, created through the harness), pre-launch, blocked by S0010 decisions; [PROMOTION](../PROMOTION.md).
+
+## In-app help (2026-10-16)
+
+- Ticket `PLAN/S0035_in-app-help-f1-and-help-button.md` (Draft, priority 40), created by the canon session from the owner's request for F1 and a `?` button in every product ([UI_UX](../UI_UX.md) §7, contract `CONTEXT-HELP` 0.1). About 20 phone surfaces and 7 Wear routes; `SupportDestination.HELP` still opens the FastMediaSorter docs; no site yet (decision 4.7). Eight owner questions are in the ticket.

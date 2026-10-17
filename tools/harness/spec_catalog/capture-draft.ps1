@@ -116,7 +116,9 @@ $pwshExe = (Get-Process -Id $PID).Path
 
 if ($DedupQuery) {
     $raw = (& $pwshExe -NoProfile -File (Join-Path $PSScriptRoot 'search.ps1') -Query $DedupQuery -IncludeArchived -Format json | Out-String).Trim()
-    $found = if ($raw) { @($raw | ConvertFrom-Json) } else { @() }
+    # The outer @() is what keeps an empty result an array: an `if` expression that yields @() unrolls to $null,
+    # and under StrictMode `$null.Count` below then throws (found by the FMS_Web help ticket, 2026-10-16).
+    $found = @(if ($raw) { $raw | ConvertFrom-Json })
     foreach ($hit in $found | Select-Object -First 5) { Write-Host ("dedup: {0}  {1,-12} {2}" -f $hit.id, $hit.status, $hit.name) }
     if ($found.Count -eq 0) { Write-Host "dedup: no hit for '$DedupQuery'" }
     # A closed hit means the symptom was already dealt with; the profile may name its own closed set.
