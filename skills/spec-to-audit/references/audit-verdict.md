@@ -69,7 +69,7 @@ audit file per run, which accumulates noise nobody reads.
 ```markdown
 ## Last Audit
 
-**Date:** <YYYY-MM-DD> | **Mode:** <static|re-audit|sweep> | **Outcome:** <Verified|Partial|Broken>
+**Date:** <YY-MM-DD HH:mm> | **Mode:** <static|re-audit|sweep> | **Outcome:** <Verified|Partial|Broken>
 **Counts:** PASS <n> | WARN <n> | FAIL <n> | MANUAL <n> | UNCHECKABLE <n> | EXEMPT <n>
 
 ### Action items

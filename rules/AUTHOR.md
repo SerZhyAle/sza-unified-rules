@@ -42,8 +42,10 @@ here.
 
 ## Portfolio defaults
 
-- **Time zone:** `Europe/Malta` (Central European Time / Central European Summer Time). All human-facing
-  project dates and times use local time in that zone, never an unlabelled host-local clock.
+- **Time zone:** product dates and times shown to a user use that user's time zone: an explicit user
+  preference, otherwise the device or browser time zone. Development records and the portfolio version
+  clock use `Europe/Malta` (Central European Time / Central European Summer Time); label the zone when
+  those timestamps are shown to product users.
 - **Date and time:** `YY-MM-DD HH:mm` (for example, `26-10-07 14:35`). A timestamp in a file name is
   `YY-MM-DD_HHm` (for example, `26-10-07_1435`).
 - **Currency:** euro. Use the `EUR` ISO code in technical fields and the appropriate localized euro

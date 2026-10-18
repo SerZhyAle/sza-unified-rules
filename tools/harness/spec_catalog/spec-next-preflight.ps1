@@ -12,21 +12,39 @@
 #     these to skip-cache itself - this script never mutates),
 #   - the selected ticket with its full preview.ps1 payload + drift-check verdict.
 #
-# READ-ONLY by contract: no writes to the catalog, the skip-cache, or any spec.
+# READ-ONLY by default: no writes to the catalog, the skip-cache, or any spec.
 # That keeps `/spec-next --dry` pure and leaves every mutation (skip-cache add,
 # status sync, status transitions) owned by the skill / by /spec-all.
+#
+# -Claim makes the pick and the reservation one step: the ticket lease is the only thing it writes.
+# A ranking that only READS the lease store cannot stop two pickers taking one ticket - both read
+# "free", both select it, and the claim made later by whoever acts on the pick decides the race
+# after the loser already spent its run. Measured 2026-10-18 over the runner journals: six pairs of
+# instances started the same ticket within a minute in fourteen days, every loser journalled as
+# no-progress-or-claim-lost or claim-lost-before-launch, which also counts toward its idle hold.
+# Under -Claim the walk claims each surviving candidate with ticket-lease.ps1 (an atomic create)
+# and a lost claim walks on to the next candidate, so the caller receives a ticket it already owns
+# and the loser of a race never sees the contested id at all. A caller that then decides not to work
+# the ticket releases it (ticket-lease.ps1 -Verb Release -Id <id>, with -Handoff
+# <selected.lease.handoff_path> in a runtime without a session id).
+#
+# -ClaimAs <id> claims for another identity - the queue runner reserving a ticket for the child it is
+# about to launch under that session id. It sets <envPrefix>_AGENT_ID for this process, so the lease
+# store's "mine" verdict and the claim both speak as that identity.
 #
 # Usage:
 #   pwsh -NoProfile -File scripts/spec_catalog/spec-next-preflight.ps1
 #   pwsh -NoProfile -File scripts/spec_catalog/spec-next-preflight.ps1 -Exclude S0506,S0508
 #   pwsh -NoProfile -File scripts/spec_catalog/spec-next-preflight.ps1 -Exclude S0506 S0508
 #   pwsh -NoProfile -File scripts/spec_catalog/spec-next-preflight.ps1 -Format table
+#   pwsh -NoProfile -File scripts/spec_catalog/spec-next-preflight.ps1 -Claim -Reason "spec-next"
 #
 # -Exclude carries the in-memory "processed this run" set so a follow-up call
 # returns the next candidate in one shot (no manual re-rank needed). CSV,
 # repeated values, and space-separated ids are normalized into one set.
 #
-# Exit codes: 0 always (no candidate is a valid state, reported as selected=null).
+# Exit codes: 0 always (no candidate is a valid state, reported as selected=null; under -Claim a
+#   claim that neither won nor lost is reported as selected.lease.outcome = 'claim-error').
 #   2 - usage error only.
 
 [CmdletBinding(PositionalBinding = $false)]
@@ -36,11 +54,23 @@ param(
     [ValidateSet('json', 'table')]
     [string]$Format = 'json',
     [int]$MaxScan = 25,
+    [switch]$Claim,
+    [string]$ClaimAs = '',
+    [string]$Reason = 'spec-next-preflight',
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$AdditionalExclude = @()
 )
 
 . (Join-Path $PSScriptRoot '..\_profile.ps1')
+
+if (-not [string]::IsNullOrWhiteSpace($ClaimAs)) {
+    if (-not $Claim) {
+        Write-Error 'spec-next-preflight: -ClaimAs names who the claim is made for and means nothing without -Claim.' -ErrorAction Continue
+        exit 2
+    }
+    # Process-scoped: the lease children inherit it, and it dies with this process.
+    Set-SzaEnv 'AGENT_ID' $ClaimAs.Trim()
+}
 
 . (Join-Path $PSScriptRoot '_lib.ps1')
 
@@ -227,9 +257,40 @@ foreach ($r in $ranked) {
     $rankedLive.Add($r)
 }
 
+function Invoke-CandidateClaim {
+    <#
+        One claim through ticket-lease.ps1, reduced to the three answers the walk branches on:
+        won (claimed / already-mine), lost (exit 3, a sibling holds it) and claim-error (anything
+        else - the store could not be written, or the lease script is missing).
+    #>
+    param([Parameter(Mandatory)][string]$Id)
+    if (-not (Test-Path -LiteralPath $leasePath)) {
+        return [PSCustomObject]@{ outcome = 'claim-error'; exit_code = $null; session_id = $null; handoff_path = $null; held_by = $null; detail = "lease script missing: $leasePath" }
+    }
+    $raw = @(& $pwshExe -NoProfile -File $leasePath -Verb Claim -Id $Id -Reason $Reason -Json 2>$null)
+    $code = $LASTEXITCODE
+    $payload = $null
+    $jsonLine = @($raw | ForEach-Object { [string]$_ } | Where-Object { $_.Trim().StartsWith('{') } | Select-Object -Last 1)
+    if ($jsonLine.Count -gt 0) {
+        try { $payload = $jsonLine[0] | ConvertFrom-Json } catch { $payload = $null }
+    }
+    $outcome = if ($code -eq 0) {
+        if ($payload -and $payload.outcome) { [string]$payload.outcome } else { 'claimed' }
+    } elseif ($code -eq 3) { 'claim-lost' } else { 'claim-error' }
+    return [PSCustomObject]@{
+        outcome      = $outcome
+        exit_code    = $code
+        session_id   = $(if ($payload -and $payload.PSObject.Properties.Name -contains 'sessionId') { [string]$payload.sessionId } else { $null })
+        handoff_path = $(if ($payload -and $payload.PSObject.Properties.Name -contains 'handoffPath') { [string]$payload.handoffPath } else { $null })
+        held_by      = $(if ($payload -and $payload.PSObject.Properties.Name -contains 'heldBy') { [string]$payload.heldBy } else { $null })
+        detail       = $(if ($outcome -eq 'claim-error') { "ticket-lease.ps1 -Verb Claim exited $code" } else { $null })
+    }
+}
+
 # 5. Walk down the live ranked list; preview each until one has auto_skip == null
 $autoSkipped = @()
 $malformed = @()
+$claimLost = @()
 $selected = $null
 $scan = 0
 foreach ($cand in $rankedLive) {
@@ -264,6 +325,18 @@ foreach ($cand in $rankedLive) {
             detail = $pv.auto_skip_reason
         }
         continue
+    }
+    if ($Claim) {
+        $lease = Invoke-CandidateClaim -Id ([string]$cand.id)
+        if ($lease.outcome -eq 'claim-lost') {
+            # The lease read above was a moment old; a sibling claimed in between. Normal, not a fault.
+            $claimLost += [PSCustomObject]@{ id = [string]$cand.id; held_by = $lease.held_by }
+            continue
+        }
+        # A claim-error still selects: "the store could not be written" is not evidence the ticket is
+        # taken, and stalling every picker behind a transient is worse than the caller's own claim,
+        # which still runs. The caller reads selected.lease.outcome to know it holds nothing yet.
+        Add-Member -InputObject $pv -NotePropertyName 'lease' -NotePropertyValue $lease -Force
     }
     $selected = $pv
     break
@@ -386,14 +459,19 @@ $result = [PSCustomObject]@{
     leased_ids     = @($leasedDetail)
     auto_skipped   = @($autoSkipped)
     malformed      = @($malformed)
+    # -Claim only: candidates a sibling claimed between this run's lease read and its own claim.
+    claim_lost     = @($claimLost)
+    claimed        = [bool]$Claim
     selected       = $selected
     # S1437: why nothing was selected, when nothing was. 'all-leased' means the queue is BUSY,
     # not finished - siblings hold every candidate and re-running later gets one. Reporting that
     # as plain exhaustion would tell the owner the work is done while three sessions are on it.
+    # A candidate lost to a sibling's claim during the walk is held just as surely as one the
+    # lease read already saw, so it counts toward the same verdict.
     selected_none_reason = $(
         if ($selected) { $null }
         elseif ($eligible.Count -eq 0) { 'queue-exhausted' }
-        elseif ($rankedLive.Count -eq 0 -and $leasedDetail.Count -gt 0) { 'all-leased' }
+        elseif ($rankedLive.Count -eq $claimLost.Count -and ($leasedDetail.Count + $claimLost.Count) -gt 0) { 'all-leased' }
         else { 'no-candidate' }
     )
 }
@@ -418,6 +496,9 @@ if ($Format -eq 'json') {
     foreach ($a in $autoSkipped) {
         Write-Host "  [auto-skip] $($a.id) - $($a.reason): $($a.detail)" -ForegroundColor Yellow
     }
+    foreach ($c in $claimLost) {
+        Write-Host "  [claim-lost] $($c.id) - claimed by session $($c.held_by) while this walk ran" -ForegroundColor DarkCyan
+    }
     if ($malformed.Count -gt 0) {
         Write-Host "  malformed (preview failed): $($malformed -join ', ')" -ForegroundColor Red
     }
@@ -429,6 +510,10 @@ if ($Format -eq 'json') {
         }
         if ($selected.drift) {
             Write-Host "    drift: $($selected.drift.verdict) (markers=$($selected.drift.markers_count))" -ForegroundColor DarkGray
+        }
+        if ($Claim -and $selected.lease) {
+            $leaseColour = if ($selected.lease.outcome -eq 'claim-error') { 'Red' } else { 'Green' }
+            Write-Host "    lease: $($selected.lease.outcome)$(if ($selected.lease.handoff_path) { " - handoff $($selected.lease.handoff_path)" })$(if ($selected.lease.detail) { " - $($selected.lease.detail)" })" -ForegroundColor $leaseColour
         }
     } else {
         switch ($result.selected_none_reason) {

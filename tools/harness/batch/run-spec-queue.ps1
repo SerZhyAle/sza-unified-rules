@@ -24,12 +24,24 @@
 
       - The ranking already skips a ticket a live sibling holds, because spec-next-preflight.ps1
         reads the lease store.
-      - The window between "I ranked it" and "my child claimed it" is closed from both sides. Before
-        the launch, the lease store is re-read: a ticket a sibling now holds is journalled
-        claim-lost-before-launch and the loop moves on, so a lost race costs one pwsh call and no
-        child at all. After the launch, the child is watched for -ClaimGraceSeconds: a lease whose
-        claimedAt predates the child's own start time was written by a sibling, so the child is
-        killed with its process tree and the run is journalled claim-lost.
+      - The pick and the reservation are one step. The session id the next child will run under is
+        chosen BEFORE the pick, and the queue ranking runs as spec-next-preflight.ps1 -Claim -ClaimAs
+        <that id>: the walk claims each candidate atomically and walks past one a sibling claimed a
+        moment earlier, so two instances ranking on the same instant come back with two different
+        tickets and the loser never journals the contested one. An explicit or relaunched id is
+        claimed the same way before the launch, and a lost claim there is journalled
+        claim-lost-before-launch with no child spent. The child is launched with
+        <envPrefix>_AGENT_ID set to that id, so its own /spec-all claim answers 'already-mine'.
+        Measured 2026-10-18 before this: six pairs of instances started one ticket within a minute
+        in fourteen days, every loser journalled as no-progress-or-claim-lost or
+        claim-lost-before-launch - outcomes that also count toward the ticket's idle hold.
+      - When the runner cannot name the child's session (the template resumes one, or the CLI does
+        not list --session-id), or the claim errored rather than lost, the older checks below still
+        guard the window. Before the launch, the lease store is re-read: a ticket a sibling now holds
+        is journalled claim-lost-before-launch and the loop moves on. After the launch, the child is
+        watched for -ClaimGraceSeconds: a lease whose claimedAt predates the child's own start time
+        was written by a sibling, so the child is killed with its process tree and the run is
+        journalled claim-lost.
       - Until 2026-09-05 this paragraph put the window at seconds and its cost at one CLI startup,
         and nothing enforced either number. Measured that day: instances a and b took S2578 thirty
         seconds apart, the loser ran 16 minutes of Opus, and its journal row claimed the winner's
@@ -474,10 +486,20 @@ function Get-TicketStatus {
 }
 
 function Get-NextQueuedTicket {
-    param([string[]] $Exclude)
+    param(
+        [string[]] $Exclude,
+        # The child's planned session id. Given, the ranking also reserves its pick for that identity
+        # (spec-next-preflight.ps1 -Claim -ClaimAs) and the returned record carries `lease`. Empty
+        # keeps the ranking read-only, which is what -DryRun and a runner that cannot name the
+        # child's session get.
+        [string] $ClaimAs = ''
+    )
     # Never name this $args - PowerShell owns that automatic variable inside every function.
     $pfArgs = @('-NoProfile', '-File', $preflight)
     if ($Exclude.Count -gt 0) { $pfArgs += @('-Exclude', ($Exclude -join ',')) }
+    if (-not [string]::IsNullOrWhiteSpace($ClaimAs)) {
+        $pfArgs += @('-Claim', '-ClaimAs', $ClaimAs, '-Reason', ("run-spec-queue {0}" -f $Instance))
+    }
     $raw = & pwsh @pfArgs 2>$null | Out-String
     if ([string]::IsNullOrWhiteSpace($raw)) { return $null }
     try {
@@ -717,6 +739,84 @@ function Get-LiveLeaseFor {
         return ($leases | Where-Object { [string]$_.id -eq $Id } | Select-Object -First 1)
     } catch {
         return $null
+    }
+}
+
+function Get-PlannedChildSessionId {
+    <#
+        The session id the next child will run under, decided BEFORE the pick so the ticket can be
+        reserved for that identity in the same step that picks it. $null when the runner cannot name
+        the child's session: the template resumes one (the CLI refuses --session-id beside --resume
+        or --continue), names a --session-id that is not a guid, or the CLI does not list the flag in
+        its --help (S4265). A template naming its own guid is obeyed.
+    #>
+    param([string[]] $Template)
+    $elements = @($Template | ForEach-Object { [string]$_ })
+    $own = [array]::IndexOf($elements, '--session-id')
+    if ($own -ge 0) {
+        $given = [guid]::Empty
+        if ($own + 1 -lt $elements.Count -and [guid]::TryParse($elements[$own + 1], [ref]$given)) { return $given.ToString() }
+        return $null
+    }
+    if (@($elements | Where-Object { $_ -in @('--resume', '-r', '--continue', '-c') }).Count -gt 0) { return $null }
+    if (-not (Test-ChildTakesSessionId)) { return $null }
+    return [guid]::NewGuid().ToString()
+}
+
+function Invoke-ChildLeaseClaim {
+    <#
+        Claim one ticket for the child about to be launched under -SessionId, for the picks that do
+        not come out of the claiming ranking (an explicit id, a context-handoff relaunch). Returns the
+        same shape spec-next-preflight.ps1 -Claim attaches as `lease`: outcome claimed / already-mine
+        / claim-lost / claim-error, plus the handoff path a later release can prove ownership with.
+    #>
+    param([string] $Id, [string] $SessionId)
+    $envName = Get-SzaEnvName 'AGENT_ID'
+    $prior = [System.Environment]::GetEnvironmentVariable($envName)
+    $raw = @()
+    $code = $null
+    try {
+        # The child pwsh inherits this process's environment at spawn, so the claim speaks as the
+        # child; the runner's own identity is restored at once.
+        [System.Environment]::SetEnvironmentVariable($envName, $SessionId)
+        $raw = @(& pwsh -NoProfile -File $leaseScript -Verb Claim -Id $Id -Reason ("run-spec-queue {0}" -f $Instance) -Json 2>$null)
+        $code = $LASTEXITCODE
+    } catch {
+        $code = $null
+    } finally {
+        [System.Environment]::SetEnvironmentVariable($envName, $prior)
+    }
+    $payload = $null
+    $jsonLine = @($raw | ForEach-Object { [string]$_ } | Where-Object { $_.Trim().StartsWith('{') } | Select-Object -Last 1)
+    if ($jsonLine.Count -gt 0) {
+        try { $payload = $jsonLine[0] | ConvertFrom-Json } catch { $payload = $null }
+    }
+    $outcome = if ($code -eq 0) {
+        if ($payload -and $payload.outcome) { [string]$payload.outcome } else { 'claimed' }
+    } elseif ($code -eq 3) { 'claim-lost' } else { 'claim-error' }
+    return [pscustomobject]@{
+        outcome      = $outcome
+        exit_code    = $code
+        session_id   = $SessionId
+        handoff_path = $(if ($payload -and $payload.PSObject.Properties.Name -contains 'handoffPath') { [string]$payload.handoffPath } else { $null })
+        held_by      = $(if ($payload -and $payload.PSObject.Properties.Name -contains 'heldBy') { [string]$payload.heldBy } else { $null })
+    }
+}
+
+function Undo-ChildLeaseClaim {
+    <#
+        Give back a reservation whose child will not be launched now (the usage-limit wait). The
+        handoff written by the claim is the ownership proof Release accepts from a caller that is not
+        the owner; -Force is the fallback when no handoff came back, and is honest here because the
+        owning process has never existed.
+    #>
+    param([string] $Id, $Lease)
+    if (-not (Test-Path -LiteralPath $leaseScript)) { return }
+    $relArgs = @('-NoProfile', '-File', $leaseScript, '-Verb', 'Release', '-Id', $Id)
+    if ($Lease -and $Lease.handoff_path) { $relArgs += @('-Handoff', [string]$Lease.handoff_path) } else { $relArgs += '-Force' }
+    & pwsh @relArgs *> $null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host ("  run-spec-queue: could not release the reservation on {0} - it expires on its own." -f $Id) -ForegroundColor DarkYellow
     }
 }
 
@@ -996,9 +1096,15 @@ while ($true) {
         break
     }
 
-    # --- pick the next id -----------------------------------------------------------------
+    # --- pick the next id, and reserve it for the child in the same step ---------------------
+    # The child's session id comes first: the reservation is made in that identity's name, so the
+    # child's own /spec-all claim finds the lease already its own instead of racing a sibling for it.
+    $plannedSessionId = Get-PlannedChildSessionId -Template $runnerArgsTemplate
     $id = $null
     $ticket = $null
+    # The lease this runner took for the child before launching it; $null when it took none, which
+    # puts the older pre-launch re-read and post-launch claim watch back in charge of the window.
+    $reservation = $null
     # Where this pick came from, so a ticket that is handed back unlaunched goes back the way it
     # came (the usage-limit wait below, and a limit hit after the launch).
     $pickedFrom = 'queue'
@@ -1014,7 +1120,7 @@ while ($true) {
         $explicitIndex++
         $ticket = Get-TicketRecord -Id $id
     } else {
-        $ticket = Get-NextQueuedTicket -Exclude $processed.ToArray()
+        $ticket = Get-NextQueuedTicket -Exclude $processed.ToArray() -ClaimAs $plannedSessionId
         if ($ticket -eq 'PARSE_ERROR') { break }
         if (-not $ticket) {
             Write-Host ''
@@ -1022,6 +1128,27 @@ while ($true) {
             break
         }
         $id = $ticket.id
+        if ($plannedSessionId -and ($ticket.PSObject.Properties.Name -contains 'lease')) { $reservation = $ticket.lease }
+    }
+
+    if ($plannedSessionId -and $pickedFrom -ne 'queue') {
+        $reservation = Invoke-ChildLeaseClaim -Id $id -SessionId $plannedSessionId
+        if ($reservation.outcome -eq 'claim-lost') {
+            Write-Host ''
+            Write-Host ("  {0}: held by session {1} - not launching a child." -f $id, $reservation.held_by) -ForegroundColor Yellow
+            $lostStatus = if ($ticket) { [string]$ticket.status } else { Get-TicketStatus -Id $id }
+            [void](Add-RunRecord -Id $id -ChildModel (Select-ModelFor -Ticket $ticket) -StatusBefore $lostStatus `
+                    -StatusAfter $lostStatus -Moved $false -Outcome 'claim-lost-before-launch' `
+                    -ExitCode $null -Minutes 0 -Complexity (Get-TicketComplexity -Ticket $ticket))
+            $processed.Add($id)
+            continue
+        }
+    }
+    if ($reservation -and $reservation.outcome -notin @('claimed', 'already-mine')) {
+        # claim-error: the store could not be written. Not evidence the ticket is taken, so the run
+        # goes ahead under the older checks rather than stalling the queue behind a transient.
+        Write-Host ("  {0}: reservation for the child failed ({1}) - falling back to the pre-launch lease checks." -f $id, $reservation.outcome) -ForegroundColor DarkYellow
+        $reservation = $null
     }
 
     # --- is the account under a usage limit? ----------------------------------------------
@@ -1034,6 +1161,9 @@ while ($true) {
     # a ranking taken before it is stale - the ticket may have been taken by a sibling or moved. The
     # ticket is therefore handed back untouched, the wait runs, and the loop picks again.
     if ((Get-LimitHoldState -Path $limitHoldPath).Active) {
+        # A wait can be days; a reservation held through it would hide the ticket from every
+        # sibling for nothing. The next pick reserves afresh.
+        if ($reservation) { Undo-ChildLeaseClaim -Id $id -Lease $reservation }
         if ($pickedFrom -eq 'relaunch') { $relaunchId = $id }
         elseif ($pickedFrom -eq 'explicit') { $explicitIndex-- }
         # False means a stop file appeared; the stop checks at the top of the loop act on it.
@@ -1046,15 +1176,18 @@ while ($true) {
     $childComplexity = Get-TicketComplexity -Ticket $ticket
 
     # --- is it still free? ----------------------------------------------------------------
-    # The ranking above read the lease store, but nothing reserves a ticket between that read and
-    # the launch below, and the gap is a cold CLI start plus /spec-all stage 0a - tens of seconds,
-    # not the "few seconds" this script used to claim. Re-read it here, where the answer is one
-    # pwsh call old instead of a whole ranking old.
+    # Only asked when the pick reserved nothing. A reservation IS the answer, and asking anyway
+    # would be wrong as well as wasted: the lease names the child, not this runner, so the store
+    # would report it as a sibling's and the ticket would be skipped for being ours.
+    #
+    # Without one, nothing reserves a ticket between the ranking and the launch below, and the gap
+    # is a cold CLI start plus /spec-all stage 0a - tens of seconds. Re-read it here, where the
+    # answer is one pwsh call old instead of a whole ranking old.
     #
     # A lease this instance already owns must NOT skip: it is usually what a killed child of ours
     # left behind, and skipping on it would hide the ticket from every later run. The child's own
     # claim answers 'already-mine' and carries on.
-    $preLaunchLease = Get-LiveLeaseFor -Id $id
+    $preLaunchLease = if ($reservation) { $null } else { Get-LiveLeaseFor -Id $id }
     if ($null -ne $preLaunchLease -and -not $preLaunchLease.mine) {
         Write-Host ''
         Write-Host ("  {0}: held by session {1} on {2} - not launching a child." -f `
@@ -1089,15 +1222,10 @@ while ($true) {
     # Appended AFTER the template is expanded, so every runner.instances.*.argsTemplate stays as its
     # owner wrote it. Not added when the template already names a session, or resumes one (the CLI
     # refuses --session-id beside --resume), or when the CLI does not list the flag in its --help.
-    $sessionId = $null
-    $ownSession = [array]::IndexOf($childArgs, '--session-id')
-    if ($ownSession -ge 0) {
-        $given = [guid]::Empty
-        if ($ownSession + 1 -lt $childArgs.Count -and [guid]::TryParse([string]$childArgs[$ownSession + 1], [ref]$given)) {
-            $sessionId = $given.ToString()
-        }
-    } elseif (-not ($childArgs | Where-Object { $_ -in @('--resume', '-r', '--continue', '-c') }) -and (Test-ChildTakesSessionId)) {
-        $sessionId = [guid]::NewGuid().ToString()
+    # The id itself was chosen before the pick (Get-PlannedChildSessionId), because the reservation
+    # above was made in its name.
+    $sessionId = $plannedSessionId
+    if ($sessionId -and [array]::IndexOf($childArgs, '--session-id') -lt 0) {
         $childArgs += @('--session-id', $sessionId)
     }
 
@@ -1111,6 +1239,13 @@ while ($true) {
     foreach ($a in $childArgs) { $psi.ArgumentList.Add([string]$a) }
     $psi.WorkingDirectory = $RepoRoot
     $psi.UseShellExecute = $false
+    if ($sessionId) {
+        # The identity chain reads <envPrefix>_AGENT_ID before the runtime's own session id, so this
+        # pins the child - and every subagent it starts - to the id the reservation was made for.
+        # It also stops an id leaked into this runner's environment from making every child one
+        # agent.
+        $psi.Environment[(Get-SzaEnvName 'AGENT_ID')] = $sessionId
+    }
 
     $logFile = $null
     if ($Quiet) {
@@ -1149,7 +1284,9 @@ while ($true) {
         # returns 'already-mine' without rewriting claimedAt, so there is nothing here to observe.
         $claimVerdict = 'none'
         $childExited = $false
-        if ($ClaimGraceSeconds -gt 0 -and $null -eq $preLaunchLease) {
+        # A reservation was claimed before the child started, so it would read as 'foreign' here
+        # and kill the child that owns it.
+        if ($ClaimGraceSeconds -gt 0 -and $null -eq $preLaunchLease -and -not $reservation) {
             # The process's own start time, not $started: the gap between them is where a sibling's
             # claim would land, and attributing it to the wrong side of the test is the whole bug.
             $childStart = $started

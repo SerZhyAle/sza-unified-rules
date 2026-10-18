@@ -650,6 +650,20 @@ function Update-LeaseHeartbeat {
         if (-not [string]::IsNullOrWhiteSpace($OnlyId) -and [string]$lease.id -ne $OnlyId) { continue }
         try {
             $lease | Add-Member -NotePropertyName 'lastSeenAt' -NotePropertyValue ([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()) -Force
+            # A lease claimed on an owner's behalf before the owner started (the queue runner
+            # reserving a ticket for the child it launches next, via spec-next-preflight -ClaimAs)
+            # is written while that session's transcript does not exist yet, so it records none.
+            # Liveness then stands on the heartbeat alone and a sibling's sweep drops the lease of a
+            # child that is working but quiet on lease verbs. The owner's first verb fills it in.
+            # Only a session guid names a transcript; a host- or pid- identity never will, and the
+            # lookup walks the whole projects tree on a miss, so it is not paid for those.
+            $hasTranscript = ($lease.PSObject.Properties.Name -contains 'transcriptPath') -and
+                -not [string]::IsNullOrWhiteSpace([string]$lease.transcriptPath)
+            $parsedGuid = [guid]::Empty
+            if (-not $hasTranscript -and [guid]::TryParse($SessionId, [ref]$parsedGuid)) {
+                $found = Get-AgentSessionTranscriptPath -SessionId $SessionId
+                if ($found) { $lease | Add-Member -NotePropertyName 'transcriptPath' -NotePropertyValue $found -Force }
+            }
             $staging = "$($file.FullName).tmp-$PID"
             Set-Content -LiteralPath $staging -Value ($lease | ConvertTo-Json -Depth 4 -Compress) -Encoding utf8NoBOM -ErrorAction Stop
             Move-Item -LiteralPath $staging -Destination $file.FullName -Force -ErrorAction Stop

@@ -204,7 +204,7 @@ This is the anti-loss phase and the reason this skill exists.
    work-remaining file are **reported** in the run plan and shipped by nothing - re-sorting them into a
    later package is the owner's call, not this skill's.
 2. **Cut the ledger** in whichever shape this repo uses: a root `CHANGELOG.md` moved from `[Unreleased]` to
-   `## [<version>] - <YYYY-MM-DD>` with a fresh empty `[Unreleased]`; a dev log distilled into curated notes;
+   `## [<version>] - <YY-MM-DD HH:mm>` with a fresh empty `[Unreleased]`; a dev log distilled into curated notes;
    a structured feature inventory; or no ledger at all, where auto-generated release notes plus **this skill's
    fan-out list is the ledger**.
 3. **Fan the same text into every listing surface this repo has.** The rule is hard: *the same notes in all N

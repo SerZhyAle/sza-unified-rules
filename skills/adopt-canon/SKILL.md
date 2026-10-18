@@ -64,7 +64,7 @@ say which root you used in the report.
   then re-mirror.
 
 ```
-<!-- Mirrored from Unified_Rules @ <canonVersion> digest:<first12> on <YYYY-MM-DD>. Edit the canonical copy, not this. -->
+<!-- Mirrored from Unified_Rules @ <canonVersion> digest:<first12> on <YY-MM-DD HH:mm>. Edit the canonical copy, not this. -->
 ```
 
 A repo that also copies kit documents stamps each copy with the kit date or version; the re-sync compares it.
@@ -211,7 +211,7 @@ Re-run the compliance gate and show the before/after counts.
 
 ## Step 9 - Record and commit
 
-- Append a dated `## Canon adoption <YYYY-MM-DD>` section to `rules/contrib/<repo>.md`: what changed, which
+- Append a dated `## Canon adoption <YY-MM-DD HH:mm>` section to `rules/contrib/<repo>.md`: what changed, which
   questions closed, which divergences are now recorded, what remains.
 - Commit **in the target repo** per its conventions - English message, co-author trailer. Push only if the
   repo's flow requires it.
