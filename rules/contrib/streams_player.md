@@ -690,3 +690,7 @@ Full canon reconciliation to **2026.10.02.5** (core digest `sha256:1a8cbbb109975
 - Re-read the changed canon guidance for delivery, documentation, localization, layout and sealed contracts. Existing product implementation and contract catch-up work remains owned by the recorded project tickets; this delivery check does not certify every product contract.
 - Re-stamped through `restamp-canon.ps1` against the installed plugin reader: version, freshly computed core digest and reconciledOn move together; adoptedOn and project-specific fields stay unchanged.
 - Compliance for Streams_Player: 0 error(s), 1 warning(s) before; 0 error(s), 0 warning(s) after; exit 0. Canon freshness findings cleared.
+
+## Exchange server mark (2026-10-19)
+
+- Ticket `PLAN/SP-0234_exchange_server_mark_in_the_product_ui_and_docs.md` (Draft, not queued), created by the canon session from the owner's order of 2026-10-19 for one shared sign of the exchange server in every product (contract `EXCHANGE-MARK` 0.1). 19 inventory rows (12 surfaces get or may get the mark, 7 recorded as none, absent or left without), two server-bays glyphs to replace (`source.exchange-server`, `feature.server-relay`), 17 system message boxes that cannot draw it, 13 locales; overlaps SP-0224 (the glyphs), SP-0230 (help pages) and SP-0222; nine conflicts for the catalog and six owner decisions are in the ticket.

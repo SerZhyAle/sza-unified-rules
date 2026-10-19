@@ -136,3 +136,7 @@ New-repo adoption against canon **2026.10.02.2**, core digest `sha256:410463a9..
 - Re-read the changed canon guidance for delivery, documentation, localization, layout and sealed contracts. Existing product implementation and contract catch-up work remains owned by the recorded project tickets; this delivery check does not certify every product contract.
 - Re-stamped through `restamp-canon.ps1` against the installed plugin reader: version, freshly computed core digest and reconciledOn move together; adoptedOn and project-specific fields stay unchanged.
 - Compliance for StreamsPlayer_mob: 0 error(s), 2 warning(s) before; 0 error(s), 1 warning(s) after; exit 0. Canon freshness findings cleared.
+
+## Exchange server mark (2026-10-19)
+
+- Ticket `PLAN/S0039_exchange-server-mark.md` (Draft, priority 45), created by the canon session from the owner's request for one shared mark of the exchange server in every product (contract `EXCHANGE-MARK` 0.1). 30 inventory rows: the exchange screen, its errors and certificate dialogs, the publish state line, the portal topic chooser and one docs row take the mark; the watch has no exchange surface yet (S0022) and the phone has no About, account list, source-kind row or site. Four findings for the catalog (no flat Android vector for 24 dp; the one-tone file's `?attr` tint cannot be a notification small icon; the portal's name differs; the check script walks `build/`). Four owner questions are in the ticket.
