@@ -793,3 +793,46 @@ repo's specification 109, whose section 3 checklist carried this re-sync plus si
 ## Exchange server mark (2026-10-19)
 
 - Ticket `docs/specifications/248_SPECIFICATION_EXCHANGE_SERVER_MARK_IN_PRODUCT_UI_AND_DOCUMENTATION.md` (Draft; that folder is git-ignored), created by the canon session from the owner's order of 2026-10-19 for one mark of the exchange server in every product (contract `EXCHANGE-MARK` 0.1). 42 inventory rows (23 with a mark to place): the server exe's PE icon (`IconPath` in `versioninfo.json`, `INCLUDE_EXCHANGE` still `false`), the Share Manager's exchange pages and dialogs, the viewer's account section and connect dialogs, 15 help surfaces in 13 locales, the landing card and the README rows. Eight conflicts for the catalog (DPI sizes against the set, installer and service cannot show a picture, plain-text package README, rules 10 and 11 on one page, placeholder help captures, glyph pins until the iconography proposal is folded in, the name beside the mark, fixed dialog layouts) and eight owner questions are in the ticket.
+
+## Three optional components (owner decision, 2026-10-20)
+
+FMS_Win is positioned as three independently optional product roles, in this family order:
+
+1. **Media viewer and sorter** - browse, play and organize media.
+2. **Local SFTP sharing service** - publish selected local folders to clients over SFTP.
+3. **Media Exchange Server** - the separate account/device exchange role implemented under
+   `exchange-server/`; availability is determined from the actual released artifacts.
+
+Two install intents present the same family: **viewer with optional server functions**, including
+its Microsoft Store distribution, and **server with an optional viewer**, obtained from the website.
+These are component and profile choices, not an assertion of three installers or three public editions.
+A server entry names which server it installs; neither server role is silently a requirement for the other.
+
+This supersedes the old FileDO third pillar, the claim that the viewer is the core of every package,
+and Q155-2's reservation-only placement restriction. FileDO disk hosting remains a supported optional
+sharing capability rather than a top-level product role. Changing the positioning does not certify
+that Media Exchange Server or any particular installer profile has shipped.
+
+The Windows repository owns the implementation source: `docs/guides/POSITIONING.md` and its checked
+machine facts in `tools/site-facts.json`. Update them, the local area rule and the positioning gate
+in one change, then derive product pages, listings, the shared portal and hub copy from them.
+The family order remains stable; focused installation pages lead with their visitor's intent.
+Documentation gives its own path first, with short, secondary links to alternative supported profiles.
+Store wording describes its actual artifact and permitted functions, without inheriting the separate
+server installer's Windows-service/elevation promises; verify current channel policy before linking
+alternate installers from a listing. Preserve frozen naming, package and protocol anchors.
+
+Canon S0010 delivered these registered Draft specifications:
+
+| Repository / surface | Ticket | Responsibility |
+| --- | --- | --- |
+| FMS_Win | 249, `docs/specifications/249_SPECIFICATION_FMS_WIN_THREE_COMPONENTS.md` | Positioning source, facts/gates, component/profile/channel matrix, packaging gaps, product pages, docs/help and listings. |
+| FastMediaSorter Android / shared portal | S4408, `PLAN/S4408_fms-win-three-components.md` | Portal entry and Windows guides, locale parity and source-derived install links. |
+| FMS_Web | S0037, `PLAN/S0037_fms-win-three-components.md` | Browser documentation and Windows dependencies; distinguish exchange from SFTP without requiring the Windows viewer. |
+| sza.od.ua hub | S0003, `PLAN/S0003_fms-win-three-components.md` | Three-role portfolio presentation, install links, inline plus EN/RU/UK copy, index/embed parity and family map. |
+
+Dispatch changes task stores only; product implementation, rendered acceptance and public publication
+remain the consuming tickets' work. SITE-REPRESENTATION rules 1-5 already support a single source,
+focused profiles and truthful limitations, so this decision does not amend the catalog or upgrade
+any implementation claim. General workflow: [PROMOTION.md](../PROMOTION.md) section 2 and
+[DOCUMENTATION_CONCEPT.md](../DOCUMENTATION_CONCEPT.md) sections 4 and 5.

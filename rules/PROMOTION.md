@@ -82,6 +82,19 @@ The internal **positioning statement** follows: *For [persona] who [need], [Prod
 [value]. Unlike [alternative], it [attribute].* It is never published verbatim; the "unlike" names a generic
 alternative in public copy ("unlike online converters"), never a brand.
 
+**Optional components and install intent.** When a product serves several independent jobs, the positioning
+source names each component, its purpose and its optional relationship to the others. Components, installer
+profiles and distribution channels are separate facts; three components do not imply three packages or three
+public editions. Declare the default family order and any focused server/viewer presentation in the same source.
+A focused page may lead with its install intent while retaining a short, secondary link to other supported
+profiles. A viewer listing must not imply that a server is required; a server page must state whether the viewer
+is optional. Claim availability, service hosting, elevation and defaults only for the actual artifact/channel.
+The product site, shared portal and portfolio hub consume that source, including its availability labels;
+repositioning alone never turns planned work into a shipped component.
+
+The per-product owner decision for FMS_Win is recorded in
+[contrib/fastmediasorter_lite.md](contrib/fastmediasorter_lite.md), under "Three optional components".
+
 **Derived fields** (limits read 2026-10-09):
 
 | Field | Rule | Limit |

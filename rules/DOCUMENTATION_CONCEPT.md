@@ -109,6 +109,15 @@ For any product with a public site. The minimum set for a credible, store-linked
 Buttons point at durable URLs (`/releases/latest`, the package id, the store product page), never a
 hard-coded version, so the site never goes stale between releases.
 
+For a product with optional components, installation documentation distinguishes the job a visitor came for,
+the components selected by that installer profile, and the capabilities permitted by that distribution channel.
+Show a concise component/profile/channel matrix from the product's positioning and packaging facts. Each
+focused guide gives its own complete path, then briefly links other supported installation profiles without
+implying that they are required. Server guides distinguish a local sharing service from a media exchange server
+when both exist, and state whether unattended hosting needs a different artifact or elevation. Store descriptions
+are checked against their own package; alternate install paths are mentioned only where channel policy permits.
+Apply the same facts to the product pages, shared portal and portfolio hub through the surface manifest (§5).
+
 A product with a user interface also publishes, under its docs, the window help pages it ships
 ([UI_UX.md](UI_UX.md) §7) - the same files, one source, never a second copy - and the how-to pages link down
 to them.
