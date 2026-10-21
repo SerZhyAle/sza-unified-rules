@@ -155,6 +155,45 @@ The product's tone is a documented choice, not left to each writer:
 - **Localize the user-facing surfaces** (README, site, store listing) to the audiences you actually
   have; keep the CHANGELOG English (it is the canonical technical ledger).
 
+### Published text is a shipped fact (the one home for this rule)
+
+Applies to every surface a user or a crawler can read - the README and its translations, the site, the
+listings, the in-app strings and window help, the ledger and release notes, and the links between them. Each
+is authored in the same edit that lands the feature and goes public with the release that carries it, so it is
+written for the moment it is read: a plain present-tense statement of what the product does. **Nothing
+published looks forward.**
+
+- **Banned on every published surface, in every locale:** "coming soon", "soon", "planned", "upcoming", "not
+  yet", "in development", "under construction", "work in progress", "will be added", "stay tuned", a published
+  roadmap - and the same in Russian and Ukrainian (`скоро`, `планируется`, `в разработке`, `пока нет`,
+  `ещё не`; `незабаром`, `планується`, `у розробці`, `ще не`). Banned without the word too: a disabled control
+  tagged "soon", a store badge or link for a channel the product is not on, a link to a page that does not
+  exist yet, a heading kept over an empty section, a ledger group named `Planned` or `Upcoming`.
+- **Why it is a rule and not a taste.** A promise is written once and then nobody owns it. The feature ships,
+  the edit that ships it never visits the line, and the site says "soon" for months about something the
+  product has long done - the cost lands on the product's name, not on the author. A present-tense fact cannot
+  go stale in that direction.
+- **Not built means not mentioned.** A feature that is not in the build appears on no surface - no teaser, no
+  roadmap line. The plan lives in `PLAN/` and the specs ([REPOSITORY_LAYOUT.md](REPOSITORY_LAYOUT.md)), which
+  are never published. When a feature slips out of a release, its text leaves every surface in the same edit
+  that pulls it.
+- **"As if shipped" never means "claimed without proof".** The sentence is written together with the code and
+  is true on the day the release goes out; the release pre-flight judges it against the build
+  ([TESTING_AND_QA.md](TESTING_AND_QA.md) §5). The author does not soften a sentence to cover the gap between
+  the commit and the release - the gate keeps unfinished work out, not a weaker sentence.
+- **A limitation is a fact, not a promise.** The rule above still requires every honest limitation up front, in
+  the present tense and with no forward look: "Audio files are not synced", never "audio sync is coming". When
+  the limitation is lifted, the edit that lifts it deletes the sentence.
+- **Two things stay.** A dated notice about something that exists - a deprecation with the version it ends
+  in - because a user acts on it; and an app state string that describes the screen at that moment ("No files
+  here yet") rather than the product.
+- **Two registers, never mixed.** The published surface speaks as a finished fact. The conversation with the
+  owner - chat, status reports, the closing summary of a task - speaks the plain truth about the work: what is
+  done and proven, what is not built, what is untested, what is planned or blocked. An agent never answers the
+  owner in the product's voice ("everything works", "ready") in place of a verified status
+  ([INVARIANTS.md](INVARIANTS.md) 7), and never puts its own status voice ("not ready yet", "next step") on a
+  published surface. Specs, tickets, the plan and contrib records are internal and use the honest register.
+
 ### House text style (the one home for this rule)
 
 Applies to documentation prose and user-visible UI text in any language. It does **not** apply to code,

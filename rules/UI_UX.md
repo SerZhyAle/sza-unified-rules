@@ -96,7 +96,9 @@ Friendly, clear, brief. This is the one voice of the app, the site, the listing 
   - *Success*: "Done." - not "The operation completed successfully."
   - *Destructive confirm*: what will happen and whether it can be undone. No jokes.
 - **Banned:** bureaucratic phrasing ("an error has occurred", "please be advised"), unexplained jargon,
-  emoji images, shouting capitals inside a sentence, "please" as padding.
+  emoji images, shouting capitals inside a sentence, "please" as padding, and any promise - "coming soon", "not
+  yet available", a greyed-out control tagged "soon". A feature that is not built has no control and no
+  string ([DOCUMENTATION_CONCEPT.md](DOCUMENTATION_CONCEPT.md) §5 is the rule).
 - **One name per concept**, with the forbidden synonyms listed, in a termbase the app, the docs and the site
   share. The same word names the same thing everywhere ([LOCALIZATION.md](LOCALIZATION.md) §5).
 - **The text must fit the narrowest layout without truncation** - check it before merging the string.

@@ -89,8 +89,10 @@ public editions. Declare the default family order and any focused server/viewer 
 A focused page may lead with its install intent while retaining a short, secondary link to other supported
 profiles. A viewer listing must not imply that a server is required; a server page must state whether the viewer
 is optional. Claim availability, service hosting, elevation and defaults only for the actual artifact/channel.
-The product site, shared portal and portfolio hub consume that source, including its availability labels;
-repositioning alone never turns planned work into a shipped component.
+The product site, shared portal and portfolio hub consume that source, including which artifact and channel
+carries each component today. A component with no released artifact is absent from every published surface -
+there is no "planned" label ([DOCUMENTATION_CONCEPT.md](DOCUMENTATION_CONCEPT.md) §5) - and repositioning alone
+never turns planned work into a shipped component.
 
 The per-product owner decision for FMS_Win is recorded in
 [contrib/fastmediasorter_lite.md](contrib/fastmediasorter_lite.md), under "Three optional components".

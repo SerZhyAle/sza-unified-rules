@@ -48,7 +48,11 @@ Ordered by cost of violation. The pointer after each line is the doc that expand
     ([DOCUMENTATION_CONCEPT](DOCUMENTATION_CONCEPT.md) §1)
 17. Land a user-facing change in **every surface and every authored locale in one edit**, driven by the
     ship-together surfaces manifest; the remaining declared locales fan out at the release boundary where one
-    exists. ([DOCUMENTATION_CONCEPT](DOCUMENTATION_CONCEPT.md) §5, [LOCALIZATION](LOCALIZATION.md))
+    exists. **Write every surface as a shipped, present-tense fact** - never "coming soon", "planned", "not
+    yet", "in development" (`скоро`, `планируется`, `ещё не`): it goes public with the release, and a promise
+    left in it outlives the feature by months. What is not built is not mentioned there - but the owner is
+    told the plain truth in chat, including what is not built or not proven.
+    ([DOCUMENTATION_CONCEPT](DOCUMENTATION_CONCEPT.md) §5, [LOCALIZATION](LOCALIZATION.md))
 18. **Commit or push only when asked**, never casually on the default branch (the site-publish flow is the one
     named exception), never `--no-verify` / `--force` / bypassed signing; agent commits carry the co-author
     trailer. ([GITHUB_INTERACTION](GITHUB_INTERACTION.md) §2-3)

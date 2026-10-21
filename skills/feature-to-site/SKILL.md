@@ -72,6 +72,15 @@ Draft the feature as one **task-first** user sentence, in English, in the produc
 open now (HEIC, HEIF, AVIF)"*, not *"added an ISO-BMFF decoder path"*. Check it against the repo's glossary if
 it has one. This sentence is the atom every later surface renders. **One name for the thing, everywhere.**
 
+**Write it as a shipped fact.** Every surface goes public with the release, so every sentence is present tense
+and true on release day: never "coming soon", "planned", "not yet", "in development" (`скоро`, `планируется`,
+`ещё не`). A feature that is not in the build is not mentioned at all - no teaser, no roadmap line. A limitation
+is stated as a fact ("Audio files are not synced"), never as a promise. The rule and its two exceptions:
+[DOCUMENTATION_CONCEPT.md](../../rules/DOCUMENTATION_CONCEPT.md) §5.
+
+**Two registers.** That voice is for the published surfaces only. The report to the owner in chat is the
+honest one: say plainly what is done and proven, what is not built, what is untested.
+
 ## Step 3 - In-app strings (if the feature has UI)
 
 Add or edit keys **through the repo's parity-enforcing tool**, every shipped locale in one edit. Then run the
@@ -105,6 +114,8 @@ The step everyone skips.
 - Keep the SEO block intact on any page touched: title, description, canonical, Open Graph, one `h1`, and an
   `hreflang` for each translated page.
 - Mandatory pages must stay reachable from the served index: privacy, how-to or guide, support or contact.
+- No placeholder: no "soon" button, no badge or link for a channel the product is not on, no link to a page
+  that does not exist, no heading over an empty section.
 
 ## Step 7 - Support surfaces (conditional)
 
@@ -186,6 +197,13 @@ persist the table as `DOCS_SURFACES.md` in the repo; that materializes the manif
 - [ ] The hub was touched only if positioning changed.
 - [ ] If touched: four edits per card, and `diff -q index.html embed.html` exits 0 before deploy.
 - [ ] New or renamed product: kit cross-link table, every sibling footer, and the hub README updated.
+
+**Tense**
+- [ ] Every touched surface, in every locale, reads as a shipped fact. Prove it: grep the diff and the touched
+      files for `soon|planned|upcoming|not yet|in development|under construction|will be added|скоро|
+      планируется|в разработке|ещё не|незабаром|планується|у розробці` and read each hit - a hit is removed or
+      rewritten as a present-tense fact, unless it is a dated deprecation notice or an app state string.
+- [ ] A line that was a promise about *this* feature in an earlier edit is gone from every surface.
 
 **Style**
 - [ ] House style on touched prose and UI lines only: `..` not `...`, plain hyphen, Russian `ё`. Never in
