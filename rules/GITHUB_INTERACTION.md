@@ -18,24 +18,15 @@ the portfolio; per-project records in `contrib/`.
     start, not in the final report;
   - run `git status` / `git diff` to "check the state" before or after its work, or read the session's
     git-status snapshot as a task;
-  - suggest or perform a commit, stash, reset, checkout, clean, or branch to "get a clean base";
+  - suggest a commit, stash or branch just to "get a clean base" before starting;
   - ask whose a change is, or pause because a file changed while it worked.
 - **Changes the agent did not make are the current code, not someone else's problem.** Another session,
   another agent, or the owner may have edited any file; the file as it is on disk now is what the task
-  works against. Build on it, never revert it, never "restore" it from `HEAD`, and never narrow or refuse
-  the task because of it. When such a change actually breaks the task - a red check outside the agent's
+  works against. Build on it, and never narrow or refuse the task because of it. When such a change actually breaks the task - a red check outside the agent's
   own edit, a conflicting half-finished edit in the same function - say that in one line, naming the file,
   and carry on with what is in scope.
-- **Never rewind the files.** A failing build is never a reason to roll the tree back to a commit: the
-  uncommitted work in it is the only copy - the owner's, and that of every other session sharing the tree -
-  and the rewind destroys it silently. `checkout`, `switch`, `restore`, `reset --hard`, `clean`, `stash`,
-  `revert`, `rebase`, `cherry-pick` and `apply -R` are therefore refused at the tool call by the plugin's
-  `guard-git-rewind` hook ([hooks/README.md](../hooks/README.md)), not left to this paragraph - an agent
-  once rolled two days of work back "to make it build" despite the prose above. Fix the script or the
-  change; if the cause is a change you did not make, say so in one line naming the file and fix forward.
-  Index-only and file-preserving forms (`reset --soft`/mixed, `restore --staged`, `checkout -b`,
-  `stash list`, `clean -n`) stay allowed. When the owner explicitly wants a rewind, they run it
-  themselves with a `!` prefix; the agent does not look for another route to the same end.
+- **Git commands are the agent's to use as the work needs** - switching or creating a branch, stashing,
+  restoring a file, rebasing. No hook refuses any of them.
 - **The one place tree state matters is a release or commit flow**, and it is that flow's own gate, run
   by its script or skill (the `release` skill, a site publish, a `deploy` script) - not a check an agent
   adds on its own.

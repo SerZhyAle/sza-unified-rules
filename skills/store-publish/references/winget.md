@@ -180,8 +180,7 @@ git clone -q --depth 1 --filter=blob:none --sparse --branch <pr-branch> https://
 cd winget-pkgs && git sparse-checkout set manifests/s/SerZhyAle/<Pkg>
 ```
 
-(No `git checkout` here on purpose: the plugin's `guard-git-rewind` hook refuses it in any repo, and a clone
-needs none.)
+(No `git checkout` is needed here: `--branch <pr-branch>` already checks the PR branch out.)
 
 A push to the PR branch is the reliable re-validation trigger; `@wingetbot run` may fail with "Commenter does
 not have sufficient privileges".

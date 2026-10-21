@@ -218,7 +218,7 @@ device), the command bodies in `.claude/commands/`, `migrate_from_log.ps1`, and 
 - **Stamp.** `.sza-canon.json` at each repo root (version, core digest, adoption date, consumption model, contrib
   record, role, overlay), written by the [adopt-canon](skills/adopt-canon/SKILL.md) skill.
 - **In session.** The SessionStart hook injects the 20 invariants where a stamp exists; 7 skills load on a task
-  match; the four guards and advisories run wherever the plugin is enabled, adopted or not.
+  match; the three guards and the advisories run wherever the plugin is enabled, adopted or not.
 - **Gates.** [check-rules.ps1](tools/check-rules.ps1) validates the canon's own docs;
   [check-compliance.ps1](tools/check-compliance.ps1) `-RepoRoot <path>` validates an adopting repo (rule ids such as
   SZA-RULES06 and SZA-HOOK01).

@@ -762,3 +762,10 @@ product asks.
 - Re-read the changed canon guidance for delivery, documentation, localization, layout and sealed contracts. Existing product implementation and contract catch-up work remains owned by the recorded project tickets; this delivery check does not certify every product contract.
 - Re-stamped through `restamp-canon.ps1` against the installed plugin reader: version, freshly computed core digest and reconciledOn move together; adoptedOn and project-specific fields stay unchanged.
 - Compliance for EPUB_2_HTML: 0 error(s), 3 warning(s) before; 0 error(s), 2 warning(s) after; exit 0. Canon freshness findings cleared.
+
+## Canon re-sync 2026-10-21 (ticket 122, section 2)
+
+- Reference model, stamp moved from canon `2026.10.17.1` to `2026.10.20.1` (the installed plugin still served `2026.10.17.2`; the gate was run from the canon repo, which is the newer source). Digest compared, `reconciledOn` moved with the version and the freshly computed core digest; `adoptedOn` unchanged.
+- Changed rule docs re-read: AUTHOR (product dates shown to a user use the user's time zone; the development record and the version clock stay on `Europe/Malta`), DOCUMENTATION_CONCEPT and PROMOTION (optional components, installer profiles and channels as separate facts). No repo change: the product shows no wall-clock date to a user outside the build stamp, and it has one component and no optional server.
+- SZA-CTR02 cleared in `DEV/CHANGELOG.md` (two ledger entries named the catalog by drive path; they cite it by name now). `tools/sitecheck/lib.mjs` follows in the same ticket.
+- Compliance for EPUB_2_HTML: 0 error(s), 3 warning(s) before; 0 error(s), 1 warning(s) after; exit 0.

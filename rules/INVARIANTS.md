@@ -51,10 +51,7 @@ Ordered by cost of violation. The pointer after each line is the doc that expand
     exists. ([DOCUMENTATION_CONCEPT](DOCUMENTATION_CONCEPT.md) §5, [LOCALIZATION](LOCALIZATION.md))
 18. **Commit or push only when asked**, never casually on the default branch (the site-publish flow is the one
     named exception), never `--no-verify` / `--force` / bypassed signing; agent commits carry the co-author
-    trailer. **Never rewrite files from git history** - no `checkout`, `restore`, `reset --hard`, `clean`,
-    `stash`, `revert`, `rebase` - to fix a build or for any other reason: uncommitted work is the only copy,
-    a red build is fixed forward, and a hook refuses these at the tool call.
-    ([GITHUB_INTERACTION](GITHUB_INTERACTION.md) §1-3)
+    trailer. ([GITHUB_INTERACTION](GITHUB_INTERACTION.md) §2-3)
 19. **Chat in Russian; write every artifact in English** - files, code, comments, script and console output,
     commit messages, PR titles and bodies. ([AUTHOR](AUTHOR.md) "Language", [DEVELOPMENT](DEVELOPMENT.md) §4)
 20. Apply the **house text style** to prose and UI only - `..` never `...`, plain hyphen, Russian `ё` - never in
@@ -65,7 +62,7 @@ Ordered by cost of violation. The pointer after each line is the doc that expand
 - **Work on the files as they are on disk; the git tree state is not your concern.** The owner works alone,
   without branches or merges, and uses git only to cut releases. Do not mention, warn about or list a
   dirty tree, uncommitted or untracked files, or changes you did not make; do not run `git status` to check
-  the state, and never commit, stash, reset or revert to get a clean base. A change someone else made is
+  the state, and never commit just to get a clean base. A change someone else made is
   the current code - build on it. Tree state is checked only by a release or commit flow's own gate.
   ([GITHUB_INTERACTION](GITHUB_INTERACTION.md) §1)
 
