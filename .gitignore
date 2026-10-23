@@ -17,3 +17,8 @@ tmp/
 # Build junk - deploy.ps1 stages everything, so this has to be excluded here or not at all.
 __pycache__/
 *.pyc
+
+PLAN/
+dev/DOCUMENT_REGISTRY.jsonl
+dev/DOCS_MAP.md
+dev/document-corpus.json

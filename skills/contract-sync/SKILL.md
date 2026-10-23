@@ -74,8 +74,8 @@ makes sense under the product's name, it is probably a private decision rather t
 ## Step 4 - Fill the registry
 
 In `P:\Contracts\_meta\REGISTRY.md`, for every contract this product produces or consumes: the version it
-**implements**, the range it **reads**, today's date as **verified**, a one-line note. Every deviation
-becomes a dated **exception** with a reason and an `until` date.
+**implements**, the range it **reads**, today's date as **verified**, a one-line note. Record deviations
+under the rights and evidence requirements in step 5; only temporary debt needs an `until` date.
 
 Write the cells in the format `REGISTRY.md` section 2 states, because a program reads them: **one** version
 (or `partial <version>`, or `-`) per cell, one contract id per row, `pending` or a date in `Verified`, and
@@ -122,7 +122,9 @@ so: the registry's artifacts column exists to make the gap visible, not comforta
 - contracts **moved** into the catalog, with ids and versions;
 - contracts **already there**, now pointed at correctly;
 - findings **left** as non-contracts, one line each;
-- registry rows **written**, exceptions **recorded** with expiry dates;
+- registry rows **written**, exceptions **recorded** with scope, impact, responsible project and review
+  condition; temporary debt with expiry/remediation ticket, permanent supported variants with a dated
+  linked design record;
 - the seven answers from step 5, with the tickets opened;
 - what could not be verified, and what it would take.
 

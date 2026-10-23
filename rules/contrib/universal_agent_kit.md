@@ -694,3 +694,7 @@ notice's "now" column before the session ran and a version may not be pinned to 
 - Not run: a `contract-sync` pass. `CONTRACTS.md` changed, but the change adds a route for exceptions and recommendations and no clause this repository must newly satisfy; the registry rows and the `docs/contracts/` pointers were left as they are. A full pass remains an open owner decision.
 - Gate: `check-compliance.ps1` `0 error(s), 1 warning(s)` (SZA-CANON03) before; `0 error(s), 0 warning(s)` after, exit 0.
 - Free-promotion campaign: this session continues the campaign specification (checkpoint, criteria audit, promise sweep, P6/P7 preparation); its outcome lives in `docs/specifications/SPECIFICATION_FREE_PROMOTION_CAMPAIGN.md` of this repository.
+
+## Test lab report (2026-10-23)
+
+- Specification `docs/specifications/SPECIFICATION_TEST_LAB_REPORT.md` (Draft; `docs/` is git-ignored), created by the canon session from the owner's order of 2026-10-23 to collect what every project knows about its hardware, emulators and test practice (contract `TEST-LAB` 0.1, draft). Documentation only: the product files one inventory report and a pointer; no code, test or harness changes. The kit has no equipment of its own; the open question is how a result names the machine it ran on. Reports to the owner of each platform it is used on.

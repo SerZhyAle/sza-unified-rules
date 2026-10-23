@@ -1,0 +1,63 @@
+{"path": "AGENTS.md", "topic": "Repository Guidelines", "area": "repository", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "CLAUDE.md", "topic": "CLAUDE.md - sza-unified-rules (the canon and its plugin)", "area": "repository", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "EXPERIENCE_MAP.md", "topic": "Experience map - sza-unified-rules", "area": "repository", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "README.md", "topic": "SZA Unified Rules", "area": "repository", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "docs/DOCS_MAP.md", "topic": "Documentation map", "area": "docs", "update_triggers": ["Changes to the documented interface or workflow"], "role": "render"}
+{"path": "docs/DOCUMENTATION.md", "topic": "Documentation maintenance", "area": "docs", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "docs/PROGRESS_CONTRACT-DELIVERY-S0012.md", "topic": "S0012 - Delivery replay and queue-runner evidence", "area": "docs", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "docs/PROGRESS_CONTRACT-READERS-S0011.md", "topic": "S0011 - Contract reader and documentation evidence", "area": "docs", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "docs/PROGRESS_CONTRACT-SYNC-S0008.md", "topic": "S0008 - Contract synchronization evidence", "area": "docs", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "docs/README.md", "topic": "docs", "area": "docs", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "docs/contracts/CHECK-VERDICT.md", "topic": "CHECK-VERDICT - pointer", "area": "docs", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "docs/contracts/DOC-EXTERNAL-QUALITY.md", "topic": "DOC-EXTERNAL-QUALITY - pointer", "area": "docs", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "docs/contracts/DOC-INTERNAL-QUALITY.md", "topic": "DOC-INTERNAL-QUALITY - pointer", "area": "docs", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "docs/contracts/HARNESS-PROFILE.md", "topic": "HARNESS-PROFILE - pointer", "area": "docs", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "docs/contracts/README.md", "topic": "Contract pointers", "area": "docs", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "docs/contracts/REPO-LAYOUT.md", "topic": "REPO-LAYOUT - pointer", "area": "docs", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "docs/contracts/REPO-STAMP.md", "topic": "REPO-STAMP - pointer", "area": "docs", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "docs/contracts/RULE-DELIVERY.md", "topic": "RULE-DELIVERY - pointer", "area": "docs", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "docs/contracts/TASK-FLOW.md", "topic": "TASK-FLOW - pointer", "area": "docs", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "hooks/README.md", "topic": "hooks/ - the canon's enforcement layer", "area": "hooks", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "memory/MEMORY.md", "topic": "Agent Memory Index", "area": "memory", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "rules/AI_USAGE.md", "topic": "AI Usage - how agents work on these projects", "area": "rules", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "rules/AUTHOR.md", "topic": "Author - who you are collaborating with", "area": "rules", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "rules/CHANNEL_MATRIX.md", "topic": "Channel Matrix - the per-channel publishing reference", "area": "rules", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "rules/CONTRACTS.md", "topic": "Shared contracts - what binds across products", "area": "rules", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "rules/DEVELOPMENT.md", "topic": "Development - the portable engineering discipline", "area": "rules", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "rules/DOCUMENTATION_CONCEPT.md", "topic": "Documentation Concept - how a product presents, indexes, and supports itself", "area": "rules", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "rules/GITHUB_INTERACTION.md", "topic": "GitHub Interaction - git, releases, and the working tree", "area": "rules", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "rules/INVARIANTS.md", "topic": "Hard invariants - the page that is always in context", "area": "rules", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "rules/LOCALIZATION.md", "topic": "Localization - which surfaces speak the user's language", "area": "rules", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "rules/NEW_PROJECT_CHECKLIST.md", "topic": "New Project Checklist - the front door", "area": "rules", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "rules/PLATFORM_OVERLAYS.md", "topic": "Platform Overlays - the concrete shape per project type", "area": "rules", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "rules/PROMOTION.md", "topic": "Promotion - how a finished product gets found without spending money", "area": "rules", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "rules/README.md", "topic": "Unified Rules - one convention across every project", "area": "rules", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "rules/RELEASE_AND_DISTRIBUTION.md", "topic": "Release & Distribution - the shipping runbook", "area": "rules", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "rules/REPOSITORY_LAYOUT.md", "topic": "Repository Layout - the universal core", "area": "rules", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "rules/SECURITY_AND_PRIVACY.md", "topic": "Security & Privacy - secrets, permissions, and the promise to the user", "area": "rules", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "rules/SITE_CONFIGURATION.md", "topic": "Site Configuration - hosting, domains, and deploy mechanics", "area": "rules", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "rules/SPREAD_BACK_PROMPT.md", "topic": "Spread-back prompt - superseded", "area": "rules", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "rules/SUPPORT_AND_FEEDBACK.md", "topic": "Support & Feedback - the loop back from users", "area": "rules", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "rules/TESTING_AND_QA.md", "topic": "Testing & QA - how a project proves it works", "area": "rules", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "rules/UI_UX.md", "topic": "UI & UX - one family: the same room, the same buttons, the same voice", "area": "rules", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "rules/WINDOWS_PACKAGING.md", "topic": "Windows Packaging - the delivery-shape decision guide", "area": "rules", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "skills/adopt-canon/SKILL.md", "topic": "---", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "skills/agent-cost/SKILL.md", "topic": "---", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "skills/caveman/SKILL.md", "topic": "---", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "skills/contract-sync/SKILL.md", "topic": "---", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "skills/feature-to-site/SKILL.md", "topic": "---", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "skills/promote/SKILL.md", "topic": "---", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "skills/release/SKILL.md", "topic": "---", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "skills/spec-to-audit/SKILL.md", "topic": "---", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "skills/spec-to-audit/references/audit-campaign.md", "topic": "The audit campaign - auditing a tree too large for one pass", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "skills/spec-to-audit/references/audit-verdict.md", "topic": "The audit verdict - vocabulary, scoring, and the output block", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "skills/store-publish/SKILL.md", "topic": "---", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "skills/store-publish/references/msix-store.md", "topic": "MSIX and the Microsoft Store - the full payload", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "skills/store-publish/references/winget.md", "topic": "winget - the full payload", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "skills/task-flow-init/SKILL.md", "topic": "---", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "templates/README.md", "topic": "templates", "area": "templates", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "tools/harness/README.md", "topic": "SZA harness - the development-process layer, shipped", "area": "tools", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "tools/harness/all_features/README.md", "topic": "ALL_FEATURES inventory - schema notes", "area": "tools", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "tools/harness/document_registry/README.md", "topic": "Document registry - how a page gets announced", "area": "tools", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "tools/harness/scaffold/templates/ticket-template.md", "topic": "{{ID}}_{{SLUG}}", "area": "tools", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "tools/harness/spec_catalog/SCHEMA.md", "topic": "Spec Catalog - Journal Schema", "area": "tools", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}

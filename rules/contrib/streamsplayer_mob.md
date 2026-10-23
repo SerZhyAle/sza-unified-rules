@@ -140,3 +140,7 @@ New-repo adoption against canon **2026.10.02.2**, core digest `sha256:410463a9..
 ## Exchange server mark (2026-10-19)
 
 - Ticket `PLAN/S0039_exchange-server-mark.md` (Draft, priority 45), created by the canon session from the owner's request for one shared mark of the exchange server in every product (contract `EXCHANGE-MARK` 0.1). 30 inventory rows: the exchange screen, its errors and certificate dialogs, the publish state line, the portal topic chooser and one docs row take the mark; the watch has no exchange surface yet (S0022) and the phone has no About, account list, source-kind row or site. Four findings for the catalog (no flat Android vector for 24 dp; the one-tone file's `?attr` tint cannot be a notification small icon; the portal's name differs; the check script walks `build/`). Four owner questions are in the ticket.
+
+## Test lab report (2026-10-23)
+
+- Ticket `PLAN/S0040_test-lab-report.md` (Draft, deliberately not queued: `release-queue -Validate` exits 1 until the owner places it), created by the canon session from the owner's order of 2026-10-23 to collect what every project knows about its hardware, emulators and test practice (contract `TEST-LAB` 0.1, draft). Documentation only: the product files one inventory report and a pointer; no code, test or harness changes. Reports to the Android profile owner (FMS_A).

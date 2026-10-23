@@ -8,8 +8,8 @@
     to answer with a literal: where the project root is, what the project's paths, vocabulary
     and lock domains are, which environment prefix the project uses, and how a harness script
     is invoked from that project. Every answer comes from <project root>/.sza-profile.json,
-    merged over the defaults below; a missing profile means the defaults, which describe the
-    canon's own conventions (PLAN/, temp/, dev/CHANGELOG.md, the SZA_ prefix).
+    merged over the defaults below; a missing profile means the defaults, including the dev-log
+    default derived from the stamp (HARNESS-PROFILE rule 2).
 
     The project root is resolved, in order, from:
       1. $env:SZA_PROJECT_ROOT - set by a project's forwarder or by a runner.
@@ -40,6 +40,7 @@ if (-not $Script:SzaHarnessRoot) { $Script:SzaHarnessRoot = Split-Path -Parent $
 $Script:SzaProfileFileName = '.sza-profile.json'
 $Script:SzaProjectRootCache = $null
 $Script:SzaProfileCache = $null
+. (Join-Path $Script:SzaHarnessRoot '../lib/schema-carrier.ps1')
 
 # Defaults describe the canon's own conventions. A project overrides any subset in its profile;
 # arrays replace, objects merge key by key.
@@ -302,7 +303,6 @@ function Merge-SzaProfileNode {
     # Defaults are ordered hashtables; the profile arrives as PSCustomObject from ConvertFrom-Json.
     # Objects merge key by key, everything else (arrays, scalars, null) replaces.
     param($Default, $Override)
-    if ($null -eq $Override) { return $Default }
     $defaultIsMap = ($Default -is [System.Collections.IDictionary])
     $overrideIsMap = ($Override -is [System.Collections.IDictionary]) -or ($Override -is [pscustomobject] -and -not ($Override -is [string]))
     if (-not ($defaultIsMap -and $overrideIsMap)) { return $Override }
@@ -358,14 +358,35 @@ function Get-SzaProfile {
         $path = $env:SZA_PROFILE_PATH
         if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "sza-profile: SZA_PROFILE_PATH points at '$path', which does not exist." }
     }
-    $merged = $Script:SzaProfileDefaults
+    # HARNESS-PROFILE rule 2 and the 2026-10-17 amendment: a dev-log must never
+    # inherit a root changelog or structured inventory's format by accident.
+    $changelog = 'dev/CHANGELOG.md'
+    $stampPath = Join-Path $root '.sza-canon.json'
+    if (Test-Path -LiteralPath $stampPath -PathType Leaf) {
+        try {
+            $stamp = Get-Content -LiteralPath $stampPath -Raw -Encoding utf8 | ConvertFrom-Json -AsHashtable
+            if ($stamp -isnot [System.Collections.IDictionary]) { throw 'expected a JSON object' }
+        } catch {
+            throw "sza-profile: stamp '$stampPath' is not valid JSON object data - $($_.Exception.Message)"
+        }
+        Assert-SzaSchemaCarrier $stamp 'schemaVersion' 'REPO-STAMP'
+        if ($stamp['ledgerShape'] -eq '2' -and -not [string]::IsNullOrWhiteSpace([string]$stamp['ledgerFile'])) {
+            $changelog = [string]$stamp['ledgerFile']
+        } elseif ($stamp['ledgerShape'] -in @('4', 'none')) {
+            $changelog = ''
+        }
+    }
+    $merged = Merge-SzaProfileNode -Default $Script:SzaProfileDefaults -Override ([pscustomobject]@{
+        paths = [pscustomobject]@{ changelog = $changelog }
+    })
     if (Test-Path -LiteralPath $path -PathType Leaf) {
         try {
             $json = Get-Content -LiteralPath $path -Raw -Encoding utf8 | ConvertFrom-Json
         } catch {
             throw "sza-profile: '$path' is not valid JSON - $($_.Exception.Message)"
         }
-        $merged = Merge-SzaProfileNode -Default $Script:SzaProfileDefaults -Override $json
+        Assert-SzaSchemaCarrier $json 'version' 'HARNESS-PROFILE'
+        $merged = Merge-SzaProfileNode -Default $merged -Override $json
     }
     $Script:SzaProfileCache = ConvertTo-SzaProfileObject $merged
     return $Script:SzaProfileCache

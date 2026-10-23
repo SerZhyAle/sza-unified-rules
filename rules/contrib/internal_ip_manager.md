@@ -232,3 +232,7 @@ the 2026-09-03 entry did. Owed:
 - Re-read the changed canon guidance for delivery, documentation, localization, layout and sealed contracts. Existing product implementation and contract catch-up work remains owned by the recorded project tickets; this delivery check does not certify every product contract.
 - Re-stamped through `restamp-canon.ps1` against the installed plugin reader: version, freshly computed core digest and reconciledOn move together; adoptedOn and project-specific fields stay unchanged.
 - Compliance for internal_IP_manager: 0 error(s), 1 warning(s) before; 0 error(s), 0 warning(s) after; exit 0. Canon freshness findings cleared.
+
+## Test lab report (2026-10-23)
+
+- Ticket `tasks/TASK-11-test-lab-report.md` (Draft, not queued), created by the canon session from the owner's order of 2026-10-23 to collect what every project knows about its hardware, emulators and test practice (contract `TEST-LAB` 0.1, draft). Documentation only: the product files one inventory report and a pointer; no code, test or harness changes. Reports to the Windows profile owner (FMS_Win). The repo's `CLAUDE.md` does not yet name the catalog; the first run that creates `docs/contracts/` adds that line.

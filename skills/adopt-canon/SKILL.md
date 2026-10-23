@@ -78,6 +78,8 @@ the pointer, or convert them into marked mirrors and re-sync. Record the choice 
 Copy [templates/.sza-canon.json](../../templates/.sza-canon.json) to the repo root and fill it against the
 live tree. This one file is what every other skill and the compliance gate read.
 
+- `schemaVersion` - `"1.0"`, REPO-STAMP's wire carrier. A missing carrier on an existing stamp
+  selects the retained legacy reader; never require a carrier by silently invalidating old stamps.
 - `canon.version` - from `CANON_VERSION` at the plugin root.
 - `canon.coreDigest` - recompute it; do not copy one from another repo.
   `pwsh -NoProfile -File "<plugin root>/tools/check-compliance.ps1" -PrintDigest`, with the plugin root
@@ -192,11 +194,11 @@ The staleness ladder, from the compliance gate:
 
 - Digest equal -> nothing to do, the stamp included: a version moved without a digest change is not written
   by hand (REPO-STAMP rule 8).
-- Digest differs, version within one minor -> **warn**, with the list of rule docs whose per-file digest
-  changed. Re-read exactly those, reconcile, then update `canon.version`, `canon.coreDigest` and
-  `canon.reconciledOn`.
-- Digest differs with a version gap of 2 or more, or the last reconciliation (`reconciledOn`, else
-  `adoptedOn`) older than 180 days -> **error**. Re-run this skill in full.
+- Digest differs, last reconciliation within 180 days -> **warn**. Re-read the changed rule docs,
+  reconcile, then write `canon.version`, `canon.coreDigest` and `canon.reconciledOn` through this run.
+- Digest differs, last reconciliation older than 180 days or unknown -> **error**. Re-run this skill
+  in full. Use a parseable `reconciledOn`, else a parseable `adoptedOn`; neither parseable means unknown.
+  A version gap alone does not decide the rung (RULE-DELIVERY rule 5).
 
 When `CONTRACTS.md` is among the changed docs, the re-sync includes a `contract-sync` run - a change
 there changes what the repo owes the catalog, and reading it is not the same as doing it.

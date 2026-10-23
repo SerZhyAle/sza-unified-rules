@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Contract | `HARNESS-PROFILE` |
-| Version | 0.10, draft |
+| Version | 0.13, draft; source reader verified |
 | Home | the shared contracts catalog, domain `rule-adoption/` (the path is in [CLAUDE.md](../../CLAUDE.md)) |
 | Role | **consumer**, and the schema's owner. Each repository running the harness writes its own profile |
 
@@ -15,5 +15,9 @@
 - **The merge rule is binding**: objects merge key by key, arrays and scalars replace. An empty array in a
   profile means "none", never "use the default" (rule 3).
 - **Lock domain ranks are acquired in order** and reordering them is a deadlock (rule 5).
-- One deviation is recorded in the catalog registry with an `until` date: `version` is declared in the file
-  and read by nothing, so rule 3 of the compatibility law is owed here.
+- Dev-log defaults, overrides and disabled tools follow rule 2 and the 2026-10-17 amendment;
+  `tools/tests/contract-sync.tests.ps1` exercises all ledger shapes without altering user ledgers.
+- Version dispatch follows the 2026-10-23 amendment before merge. Legacy absence and `"1"` remain
+  readable; higher MINOR and unknown keys are tolerated; unsupported MAJOR, null and malformed carriers
+  refuse cleanly. Catalog reader vectors and all existing merge/dev-log regressions are replayed.
+  Installed-consumer delivery remains unverified.

@@ -121,3 +121,7 @@ New-repo adoption against canon **2026.10.02.3**, core digest `sha256:410463a9..
 - Re-read the changed canon guidance for delivery, documentation, localization, layout and sealed contracts. Existing product implementation and contract catch-up work remains owned by the recorded project tickets; this delivery check does not certify every product contract.
 - Re-stamped through `restamp-canon.ps1` against the installed plugin reader: version, freshly computed core digest and reconciledOn move together; adoptedOn and project-specific fields stay unchanged.
 - Compliance for Tourist_mob: 0 error(s), 1 warning(s) before; 0 error(s), 0 warning(s) after; exit 0. Canon freshness findings cleared.
+
+## Test lab report (2026-10-23)
+
+- Ticket `PLAN/S0017_test-lab-report.md` (Draft; the harness placed it in package 1 of `RELEASE_QUEUE.md`), created by the canon session from the owner's order of 2026-10-23 to collect what every project knows about its hardware, emulators and test practice (contract `TEST-LAB` 0.1, draft). Documentation only: the product files one inventory report and a pointer; no code, test or harness changes. Reports to the Android profile owner (FMS_A).

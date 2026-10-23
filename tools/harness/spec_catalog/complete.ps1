@@ -51,8 +51,10 @@ if (-not $SkipValidate) {
 
 # 2. Dev-log check
 Write-Host "[2/3] dev log check..." -ForegroundColor Cyan
-$changelogPath = (Get-SzaPath 'changelog')
-if (Test-Path $changelogPath) {
+$changelog = [string](Get-SzaProfileValue 'paths.changelog')
+if ([string]::IsNullOrWhiteSpace($changelog)) {
+    Write-Host 'dev-log: NOT APPLICABLE (paths.changelog is empty; no dev-log is configured)'
+} elseif (Test-Path ($changelogPath = Get-SzaPath 'changelog')) {
     $hits = (Select-String -LiteralPath $changelogPath -Pattern ([regex]::Escape($Id)) -SimpleMatch).Count
     if ($hits -eq 0) {
         Write-Warning "No $(Get-SzaPath 'changelog' -Relative) entry found for $Id. Run add_to_dev_log.ps1 before closing."

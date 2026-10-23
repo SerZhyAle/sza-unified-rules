@@ -703,3 +703,7 @@ account-name redaction (catalog `CAPTURE-OUTPUT` proposal of 2026-10-01 and `DIA
 ## Exchange server mark (2026-10-19)
 
 - Ticket `PLAN/S0079_exchange-server-mark.md` (Draft), created by the canon session from the owner's order of 2026-10-19 for one mark of the exchange server in every product (contract `EXCHANGE-MARK` 0.1). CyrFlip only signs in, so it has no server-program row: 33 inventory rows, 11 of them marked places (the settings page head and its strip entry, the account dialog and entry, an About row, two help pages in 13 locales, the guide and README chapters). Conflicts found: rule 5 against a net48 app with no SVG renderer at 125 and 175 percent scale, `source.exchange-server` a generated record that still draws the two bays, the traffic light tile and kind picker with no free picture slot, rules 10 and 11 stacking on the help pages, an inline one-tone glyph in the guide that the vendoring check cannot see. Id S0079 was free; the ticket store is local-only.
+
+## Test lab report (2026-10-23)
+
+- Ticket `PLAN/S0080_test-lab-report.md` (Draft, not queued; `PLAN/` is git-ignored), created by the canon session from the owner's order of 2026-10-23 to collect what every project knows about its hardware, emulators and test practice (contract `TEST-LAB` 0.1, draft). Documentation only: the product files one inventory report and a pointer; no code, test or harness changes. Reports to the Windows profile owner (FMS_Win); the `docs/` site checked in headless Chrome is a web question for the owners.

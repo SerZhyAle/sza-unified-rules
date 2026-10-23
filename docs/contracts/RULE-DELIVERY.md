@@ -3,9 +3,9 @@
 | Field | Value |
 | --- | --- |
 | Contract | `RULE-DELIVERY` |
-| Version | 0.10, draft |
+| Version | 0.12, draft; reader verified, release delivery unverified |
 | Home | the shared contracts catalog, domain `rule-adoption/` (the path is in [CLAUDE.md](../../CLAUDE.md)) |
-| Role | **producer**, and the only one. Every adopting repository is the consumer |
+| Role | **producer and consumer**: this repository ships the version pair and implements the stamp reader |
 
 ## What this repo must do to stay conformant
 
@@ -17,5 +17,13 @@
   (rule 3). Changing what it covers changes when every repository is told it is stale.
 - **The ladder is judged from the digest**, never from a commit id, and a stamp ahead of the published
   version is corruption rather than staleness (rules 5, 6).
-- One deviation is recorded in the catalog registry with an `until` date: the `adopt-canon` skill promises
-  a third rung - a version gap of two or more - that the gate does not implement.
+- Rule 5 uses a parseable reconciliation date, else adoption date; unknown age with a differing digest
+  is past the window. The skill now follows the same ladder. Local reader tests do not prove delivery
+  to another repository's installed plugin; deploy remains a separate owner request.
+- `pwsh -NoProfile -File tools/tests/verify-delivery.ps1` judges the installed plugin copy against the source
+  and replays the reader tests with the installed tree as `-SourceRoot`. It reads, never writes. It says
+  DELIVERED only for the same version, a pair that derives, equal reader files and a passing replay; a
+  change under an unchanged version is reported as such (rule 1). Run it before a deploy and after
+  `claude plugin update` to get the two rows rung 4 asks for. Reader file hashes read CRLF as LF, because an
+  installed copy takes the machine's `autocrlf` setting. Record and limits:
+  [PROGRESS_CONTRACT-DELIVERY-S0012.md](../PROGRESS_CONTRACT-DELIVERY-S0012.md).

@@ -74,33 +74,27 @@ try {
 
     $contracts = @{}
     $rows = New-Object System.Collections.Generic.List[object]
-    $section = ''
-    $lines = Get-Content -LiteralPath $registryPath
-    for ($i = 0; $i -lt $lines.Count; $i++) {
-        $line = $lines[$i]
-        if ($line -match '^##\s+(\d+)\.\s*(.+)$') { $section = $Matches[2].Trim(); continue }
-        if ($line -notmatch '^\|') { continue }
-        $cells = @($line.Trim('|') -split '\|' | ForEach-Object { $_.Trim() })
-        if ($cells.Count -lt 3 -or $cells[0] -match '^-+$') { continue }
-
-        if ($section -like 'Contracts*') {
-            if ($cells[0] -notmatch '^`([A-Z][A-Z0-9-]*)`$') { continue }
+    . (Join-Path $PSScriptRoot 'lib/registry-tables.ps1')
+    foreach ($row in Read-SzaRegistryTables $registryPath) {
+        $cells = $row.cells
+        if ($row.section -like 'Contracts*') {
+            if ($cells['Id'] -notmatch '^`([A-Z][A-Z0-9-]*)`$') { continue }
             $id = $Matches[1]
             $folder = ''
-            if ($cells[1] -match '\[`([^`]+)`\]') { $folder = $Matches[1].Trim('/') }
+            if ($cells['Folder'] -match '\[`([^`]+)`\]') { $folder = $Matches[1].Trim('/') }
             $contracts[$id] = [pscustomobject]@{
-                version = $cells[2]; status = $cells[3]; folder = $folder
+                version = $cells['Version']; status = $cells['Status']; folder = $folder
             }
         }
-        elseif ($section -like 'Adoption*') {
-            $ids = @([regex]::Matches($cells[0], '`([A-Z][A-Z0-9-]*)`') | ForEach-Object { $_.Groups[1].Value })
-            if ($ids.Count -eq 0 -or $cells.Count -lt 6) { continue }
+        elseif ($row.section -like 'Adoption*') {
+            $ids = @([regex]::Matches($cells['Contract'], '`([A-Z][A-Z0-9-]*)`') |
+                ForEach-Object { $_.Groups[1].Value })
             for ($k = 0; $k -lt $ids.Count; $k++) {
                 $rows.Add([pscustomobject]@{
-                    contract = $ids[$k]; product = $cells[1]; role = $cells[2]
-                    implCell = (Get-CellFor $cells[3] $ids.Count $k)
-                    readsCell = (Get-CellFor $cells[4] $ids.Count $k)
-                    verified = $cells[5]; multiId = ($ids.Count -gt 1); line = $i + 1
+                    contract = $ids[$k]; product = $cells['Product']; role = $cells['Role']
+                    implCell = (Get-CellFor $cells['Implements'] $ids.Count $k)
+                    readsCell = (Get-CellFor $cells['Reads'] $ids.Count $k)
+                    verified = $cells['Verified']; multiId = ($ids.Count -gt 1); line = $row.line
                 })
             }
         }
@@ -174,7 +168,7 @@ try {
     function Get-Owed {
         param([string]$Kind)
         switch -Regex ($Kind.Trim().ToLower()) {
-            '^breaking'                                  { return 'MUST adapt - an implementation on the older shape does something wrong against this one' }
+            '^breaking'                                  { return 'MUST adapt or declare a justified scoped exception - the older implementation disagrees with this contract' }
             '^(additive|amendment|artifact|adoption)'    { return 'Review - adopt it, or record a dated exception saying why not' }
             default                                      { return 'Read - code changes only if it relied on the older wording' }
         }
@@ -208,7 +202,7 @@ try {
         $null = $sb.AppendLine('## What is owed')
         $null = $sb.AppendLine()
         if ($behind.Count -eq 0) {
-            $null = $sb.AppendLine('Nothing is behind. Every readable row is on the contract''s current version.')
+            $null = $sb.AppendLine('No behind or partial rows were found. Pending, unreadable, ahead and not-applicable rows still require the inventory below.')
         }
         else {
             $null = $sb.AppendLine('| Contract | Surface | Synchronized with | Current | State | Verified |')
@@ -271,11 +265,24 @@ try {
             $null = $sb.AppendLine()
         }
 
+        $null = $sb.AppendLine('## Complete adoption inventory')
+        $null = $sb.AppendLine()
+        $null = $sb.AppendLine('Read every pointer and own adoption/exception row, including current, pending, partial, unreadable, ahead and not-applicable entries.')
+        $null = $sb.AppendLine('Determine newly applicable contracts from actual surfaces; a missing row is not proof of conformity or non-applicability.')
+        $null = $sb.AppendLine('Correlate existing tickets before implementation. Do not edit another product''s tree or registry claims.')
+        $null = $sb.AppendLine()
+        $null = $sb.AppendLine('| Contract | Surface | State | Recorded version | Current | Verified |')
+        $null = $sb.AppendLine('| --- | --- | --- | --- | --- | --- |')
+        foreach ($r in ($Rows | Sort-Object contract, product)) {
+            $null = $sb.AppendLine(('| `{0}` | {1} | {2} | {3} | {4} | {5} |' -f $r.contract, $r.product, $r.state, $r.raw, $r.current, $r.verified))
+        }
+        $null = $sb.AppendLine()
         $null = $sb.AppendLine('## Definition of done')
         $null = $sb.AppendLine()
         $null = $sb.AppendLine('1. Each contract above is read at its current version and cited by id and section, never by catalog path.')
         $null = $sb.AppendLine('2. The implementation matches it, or the project declares a justified exception in its own REGISTRY section 3 row')
         $null = $sb.AppendLine('   without prior owner approval: clause, scope, evidence, impact, compensating behavior and review condition.')
+        $null = $sb.AppendLine('   Name the responsible project. These rights apply to mandatory, active and draft contracts; no unconditional compliance claim is required.')
         $null = $sb.AppendLine('   Temporary debt has an `until` date and remediation ticket; a permanent supported variant has a linked design record.')
         $null = $sb.AppendLine('3. The product''s own suite runs the catalog''s conformance vectors at the current version; the command and')
         $null = $sb.AppendLine('   its exit code are cited.')
@@ -285,6 +292,9 @@ try {
         $null = $sb.AppendLine('6. The project may recommend corrections and additions at any point. It amends contracts it owns; for another owner,')
         $null = $sb.AppendLine('   it files `PROPOSAL-<date>-<topic>.md` with evidence and compatibility consequences, retaining an exception where needed.')
         $null = $sb.AppendLine('   Only its own implementation rows advance after fresh proof; another product''s rows remain untouched.')
+        $null = $sb.AppendLine('7. The final audit distinguishes proven conformance, exceptions, recommendations and unverified work.')
+        $null = $sb.AppendLine('   Record missing vectors or runtime evidence explicitly; retain partial claims for unresolved gaps.')
+        $null = $sb.AppendLine('   An exception does not waive independent legal, store, security or data-safety release blockers.')
         return $sb.ToString()
     }
 

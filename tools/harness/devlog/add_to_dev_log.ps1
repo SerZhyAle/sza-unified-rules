@@ -24,8 +24,8 @@
 
 .NOTES
     Exit codes:
-    0 - the entry was appended, or skipped as a recent duplicate (both are success: the row the
-        caller asked for is present either way).
+    0 - the entry was appended, skipped as a recent duplicate, or explicitly not applicable
+        because paths.changelog is empty (no file is created).
     1 - the changelog lock could not be taken within the timeout, so nothing was written. A row
         that was silently dropped reads exactly like a closure that never ran, so this fails loud.
 #>
@@ -50,6 +50,11 @@ param(
 . (Join-Path $PSScriptRoot '..\_profile.ps1')
 
 $ErrorActionPreference = "Stop"
+
+if ([string]::IsNullOrWhiteSpace([string](Get-SzaProfileValue 'paths.changelog'))) {
+    Write-Host 'dev-log: NOT APPLICABLE (paths.changelog is empty; no dev-log is configured)'
+    exit 0
+}
 
 # Detect current git branch for changelog context
 if ([string]::IsNullOrEmpty($Branch)) {

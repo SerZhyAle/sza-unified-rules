@@ -57,6 +57,7 @@ if ($PSVersionTable.PSVersion.Major -lt 7 -and -not $PrintDigest) {
 }
 
 try {
+    . (Join-Path $PSScriptRoot 'lib/schema-carrier.ps1')
     # ---------------------------------------------------------------- setup
 
     if (-not $CanonRoot) { $CanonRoot = Split-Path $PSScriptRoot -Parent }
@@ -177,20 +178,41 @@ try {
 
     $stampPath = Join-RepoPath '.sza-canon.json'
     $stamp = $null
+    $stampParsed = $false
     if (-not (Test-Path -LiteralPath $stampPath)) {
         Add-Finding -Id 'SZA-CANON01' -Severity 'error' -Path '.sza-canon.json' `
             -Message 'no canon adoption stamp' `
             -Fix 'Run the adopt-canon skill, or copy <canon>/templates/.sza-canon.json and fill it.'
     }
     else {
-        try { $stamp = Get-Content -LiteralPath $stampPath -Raw | ConvertFrom-Json }
+        try { $stamp = Get-Content -LiteralPath $stampPath -Raw | ConvertFrom-Json; $stampParsed = $true }
         catch {
             Add-Finding -Id 'SZA-CANON02' -Severity 'error' -Path '.sza-canon.json' `
                 -Message "stamp is not valid JSON: $_" -Fix 'See <canon>/templates/.sza-canon.json.'
         }
+        if ($stampParsed) {
+            try { Assert-SzaSchemaCarrier $stamp 'schemaVersion' 'REPO-STAMP' }
+            catch {
+                Add-Finding -Id 'SZA-CANON02' -Severity 'error' -Path '.sza-canon.json' -Message $_.Exception.Message
+                if ($Json) {
+                    [pscustomobject]@{
+                        repo = $RepoRoot; canonVersion = $canonVersion; canonDigest = $canonDigest; fileSet = $fileSet
+                        errors = 1; warnings = 0; findings = $findings
+                    } | ConvertTo-Json -Depth 6
+                } else { $_.Exception.Message }
+                exit 1
+            }
+        }
     }
 
     if ($stamp) {
+        if ($null -ne $stamp.PSObject.Properties['role'] -and
+                $stamp.role -notin @('product', 'canon-home', 'portfolio', 'internal')) {
+            Add-Finding -Id 'SZA-CANON08' -Severity 'warn' -Path '.sza-canon.json' `
+                -Message "unknown stamp role '$($stamp.role)'; treating it as product with strict product checks" `
+                -Fix 'Use a documented REPO-STAMP role.'
+            $stamp.role = 'product'
+        }
         if ($stamp.exemptions) { $script:Exemptions = @($stamp.exemptions) }
         foreach ($key in @('canon', 'overlay', 'ledgerShape')) {
             if ($null -eq $stamp.$key) {
@@ -215,13 +237,28 @@ try {
             $parsed = $false
             # Age runs from the last reconciliation when the stamp records one, else from first adoption
             # (REPO-STAMP rule 4): a repo reconciled last month is not "old" because it was adopted in March.
-            $ageFrom = if ($stamp.canon.reconciledOn) { $stamp.canon.reconciledOn } else { $stamp.canon.adoptedOn }
-            if ($ageFrom) { $parsed = [datetime]::TryParse($ageFrom, [ref]$adopted) }
-            $ageDays = if ($parsed) { ((Get-Date) - $adopted).Days } else { 0 }
-            $sev = if ($ageDays -gt 180) { 'error' } else { 'warn' }
+            $ageSource = 'unknown'
+            foreach ($dateKey in @('reconciledOn', 'adoptedOn')) {
+                $dateText = [string]$stamp.canon.$dateKey
+                if ([datetime]::TryParseExact($dateText, 'yyyy-MM-dd',
+                        [Globalization.CultureInfo]::InvariantCulture,
+                        [Globalization.DateTimeStyles]::None, [ref]$adopted)) {
+                    $parsed = $true
+                    $ageSource = "canon.$dateKey"
+                    break
+                }
+            }
+            $ageDays = if ($parsed) { ((Get-Date) - $adopted).Days } else { $null }
+            $sev = if (-not $parsed -or $ageDays -gt 180) { 'error' } else { 'warn' }
+            $ageDetail = if ($parsed) { "$ageDays days from $ageSource" } else { 'unknown age, treated as past 180 days' }
+            $remedy = if ($sev -eq 'error') {
+                'Run adopt-canon in full; the stamp is past the reconciliation window or its age is unknown.'
+            } else {
+                'Re-read the changed rule docs, reconcile, then update canon.version, canon.coreDigest and canon.reconciledOn through adopt-canon.'
+            }
             Add-Finding -Id 'SZA-CANON03' -Severity $sev -Path '.sza-canon.json' `
-                -Message "adoption is stale: stamp digest $($stamp.canon.coreDigest) vs canon $canonDigest (canon $canonVersion, adopted $($stamp.canon.adoptedOn), reconciled $($stamp.canon.reconciledOn))" `
-                -Fix 'Re-read the changed rule docs, reconcile, then update canon.version, canon.coreDigest and canon.reconciledOn.'
+                -Message "adoption is stale: stamp digest $($stamp.canon.coreDigest) vs canon $canonDigest (canon $canonVersion; $ageDetail)" `
+                -Fix $remedy
         }
 
         # SZA-CANON07 - the stamp names a canon version NEWER than the canon's own. That is not

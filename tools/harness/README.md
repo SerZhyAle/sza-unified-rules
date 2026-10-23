@@ -14,6 +14,13 @@ capability ledger's dimension, the site's locales, and the entry-point map used 
 A key the profile omits keeps the default in `_profile.ps1`, and those defaults are the canon's own
 conventions - `PLAN/`, `temp/`, `dev/CHANGELOG.md`, the `SZA_` environment prefix.
 
+The dev-log default follows `HARNESS-PROFILE` rule 2 and its 2026-10-17 amendment. Without an explicit
+`paths.changelog`, ledger shape `2` uses the stamp's `ledgerFile` or `dev/CHANGELOG.md`; shapes `4` and
+`none` disable the log. Shapes `1` and `3` keep a separate optional `dev/CHANGELOG.md`, never the
+stamp's root changelog or structured inventory. An explicit path wins; an empty path disables the
+writer and completion's dev-log check, which report `NOT APPLICABLE` and create no log. Invalid stamp
+JSON is refused. A repository not using the harness is not bound merely because it has no profile.
+
 Copy `templates/.sza-profile.json` to the project root and edit it. Nothing else is edited: a script
 body carrying a project's path, prefix or vocabulary is a value the profile can no longer override,
 which is what `assert-portable.ps1` refuses.
@@ -53,3 +60,14 @@ rehearsal; the rules are the `TASK-FLOW` contract in the shared catalog.
   that has one.
 - **Command bodies.** `.claude/commands/*.md` are a product's pipeline, not a shared mechanism; the
   alias generator ships, the commands it aliases do not.
+
+Portable reader regressions live outside the shipped harness: run
+`pwsh -NoProfile -File tools/tests/contract-sync.tests.ps1` from the canon checkout. The suite generates
+throwaway projects under `temp/S0008_contract-sync-implementation/`; it is not a catalog vector set or
+proof that a cached plugin has received these changes.
+
+The profile's optional `version` carrier and the stamp's optional `schemaVersion` are validated before
+use, per the 2026-10-23 owned contract amendment. Absent carriers retain legacy wire 1.0. Unknown
+MINOR additions remain readable; unsupported MAJOR values require updated tooling and refuse before
+merge. Catalog reader artifacts are generated with `tools/tests/export-contract-vectors.ps1` and
+replayed with `tools/tests/contract-reader.tests.ps1 -CatalogRoot <catalog>`.

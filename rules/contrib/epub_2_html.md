@@ -769,3 +769,7 @@ product asks.
 - Changed rule docs re-read: AUTHOR (product dates shown to a user use the user's time zone; the development record and the version clock stay on `Europe/Malta`), DOCUMENTATION_CONCEPT and PROMOTION (optional components, installer profiles and channels as separate facts). No repo change: the product shows no wall-clock date to a user outside the build stamp, and it has one component and no optional server.
 - SZA-CTR02 cleared in `DEV/CHANGELOG.md` (two ledger entries named the catalog by drive path; they cite it by name now). `tools/sitecheck/lib.mjs` follows in the same ticket.
 - Compliance for EPUB_2_HTML: 0 error(s), 3 warning(s) before; 0 error(s), 1 warning(s) after; exit 0.
+
+## Test lab report (2026-10-23)
+
+- Ticket `DEV/plan/123_2026-10-23_test-lab-inventory-report.md` (Draft, not queued; `next-ticket-number` moved to 124), created by the canon session from the owner's order of 2026-10-23 to collect what every project knows about its hardware, emulators and test practice (contract `TEST-LAB` 0.1, draft). Documentation only: the product files one inventory report and a pointer; no code, test or harness changes. Reports to the Windows profile owner (FMS_Win) and, for the Chrome/Edge extension and the site, to the web profile owner (the hub).

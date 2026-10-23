@@ -836,3 +836,7 @@ remain the consuming tickets' work. SITE-REPRESENTATION rules 1-5 already suppor
 focused profiles and truthful limitations, so this decision does not amend the catalog or upgrade
 any implementation claim. General workflow: [PROMOTION.md](../PROMOTION.md) section 2 and
 [DOCUMENTATION_CONCEPT.md](../DOCUMENTATION_CONCEPT.md) sections 4 and 5.
+
+## Test lab report (2026-10-23)
+
+- Ticket `docs/specifications/255_SPECIFICATION_TEST_LAB_REPORT_AND_WINDOWS_PROFILE.md` (Draft; that folder is git-ignored), created by the canon session from the owner's order of 2026-10-23 to collect what every project knows about its hardware, emulators and test practice (contract `TEST-LAB` 0.1, draft). Documentation only: the product files one inventory report and a pointer; no code, test or harness changes. Owner of the Windows profile `TEST-LAB-WINDOWS`; Streams_Player, CyrFlip, OneClickRunner, FileDO, doc-html-translate and internal_IP_manager report to it.

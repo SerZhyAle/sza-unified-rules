@@ -25,3 +25,11 @@
   version bump.
 - `batch/run-spec-queue.ps1` is the full-featured form of rules 21-29. Neither it nor the launcher may drift
   from rules 21-27 without the catalog moving first.
+- S0011 re-read section 5 and the partial adoption row without advancing its 2026-10-07 verification.
+  S0012 owns remaining harness/runtime evidence. Reader and completion tests certify no live-agent flow.
+- `tools/tests/batch-runner.tests.ps1` drives the full runner, the rendered launcher and (with a catalog)
+  the reference R0 with fake children: argument vector, journal row, timeout kill of the whole tree, stop
+  files, exit codes, R0's start step. It starts no agent, so it is regression evidence and not the live rung.
+  It records one place where the full runner differs from rule 24 (a ticket that moved is not offered again
+  in the same run) as a GAP and a dated exception; whether the runner or the rule moves is the owner's
+  decision. Details: [PROGRESS_CONTRACT-DELIVERY-S0012.md](../PROGRESS_CONTRACT-DELIVERY-S0012.md).

@@ -694,3 +694,7 @@ Full canon reconciliation to **2026.10.02.5** (core digest `sha256:1a8cbbb109975
 ## Exchange server mark (2026-10-19)
 
 - Ticket `PLAN/SP-0234_exchange_server_mark_in_the_product_ui_and_docs.md` (Draft, not queued), created by the canon session from the owner's order of 2026-10-19 for one shared sign of the exchange server in every product (contract `EXCHANGE-MARK` 0.1). 19 inventory rows (12 surfaces get or may get the mark, 7 recorded as none, absent or left without), two server-bays glyphs to replace (`source.exchange-server`, `feature.server-relay`), 17 system message boxes that cannot draw it, 13 locales; overlaps SP-0224 (the glyphs), SP-0230 (help pages) and SP-0222; nine conflicts for the catalog and six owner decisions are in the ticket.
+
+## Test lab report (2026-10-23)
+
+- Ticket `PLAN/SP-0242_report_the_test_lab_to_the_portfolio.md` (Draft, not queued; `PLAN/` is git-ignored), created by the canon session from the owner's order of 2026-10-23 to collect what every project knows about its hardware, emulators and test practice (contract `TEST-LAB` 0.1, draft). Documentation only: the product files one inventory report and a pointer; no code, test or harness changes. Reports to the Windows profile owner (FMS_Win).

@@ -1,4 +1,5 @@
 {
+  "schemaVersion": "1.0",
   "$comment": "Copy to the target repo root as .sza-canon.json and fill against the live tree. Every value is looked up, never assumed. The release, store-publish and feature-to-site skills and tools/check-compliance.ps1 all read this file.",
 
   "canon": {

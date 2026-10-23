@@ -78,43 +78,39 @@ try {
     $adoptionPending = 0
     $adoptionRows = 0
     if (Test-Path -LiteralPath $registryPath) {
-        $lines = Get-Content -LiteralPath $registryPath
-        $section = ''
-        for ($i = 0; $i -lt $lines.Count; $i++) {
-            $line = $lines[$i]
-            if ($line -match '^##\s+(\d+)\.\s*(.+)$') { $section = $Matches[2].Trim(); continue }
-            if ($line -notmatch '^\|') { continue }
-            $cells = @($line.Trim('|') -split '\|' | ForEach-Object { $_.Trim() })
-            if ($cells.Count -lt 3) { continue }
-            if ($cells[0] -match '^-+$') { continue }
-
-            switch -Regex ($section) {
+        . (Join-Path $PSScriptRoot 'lib/registry-tables.ps1')
+        foreach ($row in Read-SzaRegistryTables $registryPath) {
+            $cells = $row.cells
+            switch -Regex ($row.section) {
                 '^Contracts' {
-                    if ($cells[0] -notmatch '^`([A-Z][A-Z0-9-]*)`$') { break }
+                    if ($cells['Id'] -notmatch '^`([A-Z][A-Z0-9-]*)`$') { break }
                     $id = $Matches[1]
                     $folder = ''
-                    if ($cells[1] -match '\[`([^`]+)`\]') { $folder = $Matches[1].Trim('/') }
+                    if ($cells['Folder'] -match '\[`([^`]+)`\]') { $folder = $Matches[1].Trim('/') }
                     $registry[$id] = [pscustomobject]@{
-                        version = $cells[2]; status = $cells[3]; folder = $folder; line = $i + 1
+                        version = $cells['Version']; status = $cells['Status']; folder = $folder; line = $row.line
                     }
                 }
                 '^Adoption' {
-                    if ($cells[0] -notmatch '^`([A-Z][A-Z0-9-]*)`$') { break }
-                    $adoptionRows++
-                    if ($cells.Count -ge 6 -and $cells[5] -eq 'pending') { $adoptionPending++ }
-                    if (-not $registry.ContainsKey($Matches[1])) {
-                        Add-Finding -Id 'CTR-REG' -Severity 'error' -Path '_meta/REGISTRY.md' -Line ($i + 1) `
-                            -Message "adoption row for '$($Matches[1])', which has no contract row"
+                    $ids = @([regex]::Matches($cells['Contract'], '`([A-Z][A-Z0-9-]*)`') |
+                        ForEach-Object { $_.Groups[1].Value })
+                    foreach ($id in $ids) {
+                        $adoptionRows++
+                        if ($cells['Verified'] -eq 'pending') { $adoptionPending++ }
+                        if (-not $registry.ContainsKey($id)) {
+                            Add-Finding -Id 'CTR-REG' -Severity 'error' -Path '_meta/REGISTRY.md' -Line $row.line `
+                                -Message "adoption row for '$id', which has no contract row"
+                        }
                     }
                 }
-                '^Exceptions' {
-                    if ($cells.Count -lt 5) { break }
-                    $until = $cells[4]
-                    $parsed = [datetime]::MinValue
-                    if ([datetime]::TryParse($until, [ref]$parsed) -and (Get-Date) -gt $parsed) {
-                        Add-Finding -Id 'CTR-EXPIRE' -Severity 'error' -Path '_meta/REGISTRY.md' -Line ($i + 1) `
-                            -Message "exception expired on $until - $($cells[0]) / $($cells[1])"
-                    }
+            }
+            # Extension tables with an Until column also carry expiring exceptions.
+            if ($cells.ContainsKey('Until')) {
+                $until = $cells['Until']
+                $parsed = [datetime]::MinValue
+                if ([datetime]::TryParse($until, [ref]$parsed) -and (Get-Date).Date -gt $parsed.Date) {
+                    Add-Finding -Id 'CTR-EXPIRE' -Severity 'error' -Path '_meta/REGISTRY.md' -Line $row.line `
+                        -Message "exception expired on $until - $($cells['Contract']) / $($cells['Product'])"
                 }
             }
         }
@@ -307,6 +303,6 @@ try {
     exit 0
 }
 catch {
-    Write-Error "check-contracts: $_"
+    Write-Error "check-contracts: $_" -ErrorAction Continue
     exit 2
 }
