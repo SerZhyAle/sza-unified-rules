@@ -1,6 +1,6 @@
 ---
 name: feature-to-site
-description: Propagate a finished feature to every user-facing surface - in-app strings, the ledger, README and its translations, the product site, support pages, listing sources, and the sza.od.ua hub - each locale in one edit, so nothing goes stale. This is the canon's ship-together surfaces manifest, the /docs-sync slot. Use after implementing a user-visible change, or when asked to "update the docs", "propagate this feature", "the site is out of date", "did I forget anything", "docs-sync", "update the README and the page".
+description: Propagate a finished feature to every user-facing surface - in-app strings, the ledger, README and its translations, the product site, support pages, listing sources, and the sza.od.ua hub - each locale in one edit, so nothing goes stale. This is the canon's ship-together surfaces manifest, the /docs-sync slot. Use after implementing a user-visible change, or when asked to "update the docs", "propagate this feature", "the site is out of date", "did I forget anything", "docs-sync", "update the README and the page", "write the help for", "напиши справку", "обнови документацию". Also at the start of an ordered feature - the text is written with the feature, not after it, and without checking how far the code has got.
 ---
 
 # Feature to site - the ship-together fan-out
@@ -73,8 +73,12 @@ open now (HEIC, HEIF, AVIF)"*, not *"added an ISO-BMFF decoder path"*. Check it 
 it has one. This sentence is the atom every later surface renders. **One name for the thing, everywhere.**
 
 **Write it as a shipped fact.** Every surface goes public with the release, so every sentence is present tense
-and true on release day: never "coming soon", "planned", "not yet", "in development" (`скоро`, `планируется`,
-`ещё не`). A feature that is not in the build is not mentioned at all - no teaser, no roadmap line. A limitation
+and written as if the feature were complete and working. **Do not look at what is already implemented and do
+not let it shape the text**: an ordered feature is released together with its help, so the order (the request,
+the ticket, the spec) is the only input, and the state of the code is none. Never "coming soon", "planned",
+"not yet", "in development" (`скоро`, `планируется`, `ещё не`) and never a readiness hedge: "experimental",
+"beta", "not fully tested" (`экспериментально`, `бета`). The ordered feature is described as done; only what
+was not ordered is not mentioned - no teaser, no roadmap line. A limitation
 is stated as a fact ("Audio files are not synced"), never as a promise. The rule and its two exceptions:
 [DOCUMENTATION_CONCEPT.md](../../rules/DOCUMENTATION_CONCEPT.md) §5.
 
@@ -200,9 +204,10 @@ persist the table as `DOCS_SURFACES.md` in the repo; that materializes the manif
 
 **Tense**
 - [ ] Every touched surface, in every locale, reads as a shipped fact. Prove it: grep the diff and the touched
-      files for `soon|planned|upcoming|not yet|in development|under construction|will be added|скоро|
-      планируется|в разработке|ещё не|незабаром|планується|у розробці` and read each hit - a hit is removed or
-      rewritten as a present-tense fact, unless it is a dated deprecation notice or an app state string.
+      files for `soon|planned|upcoming|not yet|in development|under construction|will be added|experimental|
+      beta|not fully tested|скоро|планируется|в разработке|ещё не|экспериментальн|бета|незабаром|планується|
+      у розробці|експериментальн` and read each hit - a hit is removed or rewritten as a present-tense fact,
+      unless it is a dated deprecation notice or an app state string.
 - [ ] A line that was a promise about *this* feature in an earlier edit is gone from every surface.
 
 **Style**

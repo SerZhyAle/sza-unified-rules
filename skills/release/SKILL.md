@@ -216,8 +216,9 @@ This is the anti-loss phase and the reason this skill exists.
    where the canon requires it.
 5. Update README/site/privacy if user-visible behaviour changed - but **do not hardcode a version on the
    site**: CTAs point at `/releases/latest` and the package id precisely so they never go stale.
-   **Sweep every released surface for promises** - "coming soon", "planned", "not yet", `скоро`,
-   `планируется`, `ещё не` - and for placeholders (a "soon" button, a link to a page that does not exist). A
+   **Sweep every released surface for promises and hedges** - "coming soon", "planned", "not yet",
+   "experimental", "beta", `скоро`, `планируется`, `ещё не`, `экспериментально`, `бета` - and for placeholders
+   (a "soon" button, a link to a page that does not exist). A
    feature shipped by this release loses its promise line everywhere; a feature not in this release is not
    mentioned ([DOCUMENTATION_CONCEPT.md](../../rules/DOCUMENTATION_CONCEPT.md) §5).
 6. **Commit and push these doc changes to `main` first** (free), so the tag ships them.

@@ -161,7 +161,8 @@ Applies to every surface a user or a crawler can read - the README and its trans
 listings, the in-app strings and window help, the ledger and release notes, and the links between them. Each
 is authored in the same edit that lands the feature and goes public with the release that carries it, so it is
 written for the moment it is read: a plain present-tense statement of what the product does. **Nothing
-published looks forward.**
+published looks forward, and nothing published hedges.** The text describes the feature as complete and
+working - from the first edit, whether or not the code is finished, and whether or not it has been tested yet.
 
 - **Banned on every published surface, in every locale:** "coming soon", "soon", "planned", "upcoming", "not
   yet", "in development", "under construction", "work in progress", "will be added", "stay tuned", a published
@@ -169,18 +170,34 @@ published looks forward.**
   `ещё не`; `незабаром`, `планується`, `у розробці`, `ще не`). Banned without the word too: a disabled control
   tagged "soon", a store badge or link for a channel the product is not on, a link to a page that does not
   exist yet, a heading kept over an empty section, a ledger group named `Planned` or `Upcoming`.
+- **Banned just as hard: a readiness hedge** - any wording that tells the reader the feature is not fully
+  done or not fully proven. "Experimental", "beta", "preview", "early access", "not fully tested", "may not
+  work", "might be unstable", "partially implemented", "being tested" (`экспериментально`, `бета`,
+  `в тестовом режиме`, `не до конца протестировано`; `експериментально`, `у тестовому режимі`), and the same as a
+  badge or a tag on a control, a help page or a tooltip. A hedge is a promise in the other direction: it
+  announces a gap, then outlives it. (The name of a store track the owner really runs, such as a Play beta
+  track, is a channel name and not covered; a real, standing limitation is a fact and stays - see below.)
 - **Why it is a rule and not a taste.** A promise is written once and then nobody owns it. The feature ships,
   the edit that ships it never visits the line, and the site says "soon" for months about something the
   product has long done - the cost lands on the product's name, not on the author. A present-tense fact cannot
   go stale in that direction.
-- **Not built means not mentioned.** A feature that is not in the build appears on no surface - no teaser, no
-  roadmap line. The plan lives in `PLAN/` and the specs ([REPOSITORY_LAYOUT.md](REPOSITORY_LAYOUT.md)), which
-  are never published. When a feature slips out of a release, its text leaves every surface in the same edit
-  that pulls it.
-- **"As if shipped" never means "claimed without proof".** The sentence is written together with the code and
-  is true on the day the release goes out; the release pre-flight judges it against the build
-  ([TESTING_AND_QA.md](TESTING_AND_QA.md) §5). The author does not soften a sentence to cover the gap between
-  the commit and the release - the gate keeps unfinished work out, not a weaker sentence.
+- **The order decides what is written, never the state of the code.** A feature the owner has ordered - in a
+  request, a ticket, a spec - is released together with its text: the feature and its help are one
+  deliverable, finished and published at the same moment. So the writer does not check what is already
+  implemented, wired up or tested, does not adapt a sentence to it, and does not mention it; the progress of
+  the code is not an input to the text at all. Every ordered feature is documented on every surface (README,
+  site, help pages, listing, in-app strings, tooltips, labels, About, release notes) as fully working and
+  ready, in the same plain present tense as a feature shipped years ago - no "soon", no hedge, no readiness
+  label, and no silent omission of something that was ordered. Only what was not ordered appears on no
+  surface - no teaser, no roadmap line. The plan lives in `PLAN/` and the specs
+  ([REPOSITORY_LAYOUT.md](REPOSITORY_LAYOUT.md)), which are never published. When an ordered feature is
+  pulled from a release by the owner, its text leaves every surface in the same edit that pulls it.
+- **The text does not wait for the build; the build is judged elsewhere.** The sentence is written complete
+  from the first edit, before the code works and before any test has run. Whether it is true on the day the
+  release goes out is the release pre-flight's question ([TESTING_AND_QA.md](TESTING_AND_QA.md) §5) and the
+  owner's report in chat - never the sentence's. The author does not soften a sentence to cover the gap
+  between the commit and the release; the gate keeps unfinished work out of the release, not a weaker
+  sentence in the docs.
 - **A limitation is a fact, not a promise.** The rule above still requires every honest limitation up front, in
   the present tense and with no forward look: "Audio files are not synced", never "audio sync is coming". When
   the limitation is lifted, the edit that lifts it deletes the sentence.

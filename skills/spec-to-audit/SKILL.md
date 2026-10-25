@@ -222,7 +222,9 @@ and archive paths.
   **before the final response**, consult the project's document registry for the touched area and state which
   records are affected versus unchanged. A registered document that changes is re-validated by its tool.
 - **Ship-together surfaces**: every user-facing surface lands **atomically, every locale in one edit**. This
-  is [feature-to-site](../feature-to-site/SKILL.md) - invoke it rather than improvising a surface list.
+  is [feature-to-site](../feature-to-site/SKILL.md) - invoke it rather than improvising a surface list. The
+  text is written from the order, as a finished fact, with no regard to how much of the feature is implemented
+  or tested yet; the feature ships with its text.
 - **One source of truth per fact**: what the product does lives in the README; what changed lives in the
   ledger; the version is derived mechanically. Anything appearing twice is a render target - regenerate it,
   never hand-edit it.

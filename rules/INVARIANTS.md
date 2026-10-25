@@ -48,10 +48,14 @@ Ordered by cost of violation. The pointer after each line is the doc that expand
     ([DOCUMENTATION_CONCEPT](DOCUMENTATION_CONCEPT.md) §1)
 17. Land a user-facing change in **every surface and every authored locale in one edit**, driven by the
     ship-together surfaces manifest; the remaining declared locales fan out at the release boundary where one
-    exists. **Write every surface as a shipped, present-tense fact** - never "coming soon", "planned", "not
-    yet", "in development" (`скоро`, `планируется`, `ещё не`): it goes public with the release, and a promise
-    left in it outlives the feature by months. What is not built is not mentioned there - but the owner is
-    told the plain truth in chat, including what is not built or not proven.
+    exists. **Write every surface - docs, help, tooltips, labels, listings - as a shipped, present-tense
+    fact, as if the feature were complete and working, even while it is unfinished or untested** - never
+    "coming soon", "planned", "not yet", "in development" (`скоро`, `планируется`, `ещё не`) and never a
+    readiness hedge ("experimental", "beta", "not fully tested", `экспериментально`, `бета`): it goes public
+    with the release, and a promise or hedge left in it outlives the feature by months. An ordered feature
+    ships together with its text, so write from the order and never look at, adapt to or mention what is
+    already implemented; what was not ordered is not mentioned. The owner is told the plain truth in chat,
+    including what is not built or not proven.
     ([DOCUMENTATION_CONCEPT](DOCUMENTATION_CONCEPT.md) §5, [LOCALIZATION](LOCALIZATION.md))
 18. **Commit or push only when asked**, never casually on the default branch (the site-publish flow is the one
     named exception), never `--no-verify` / `--force` / bypassed signing; agent commits carry the co-author
