@@ -41,7 +41,7 @@ Block states (any active spec may transition into one of these and back):
 
 - `BlockByOtherTask`  - depends on another spec; record the dependency in the ticket body.
 - `BlockNeedUserTest` - implementation done, awaiting hands-on verification.
-- `BlockQuestions`    - awaiting clarification from the user.
+- `BlockQuestions`    - awaiting clarification from the user. Left only through the `spec-to-audit` skill's Quiz mode: answers written into the ticket first, then a restore to the inferred pre-block status.
 - `BlockExternal`     - waiting on an external dependency (library release, hardware, third party).
 
 Terminal:

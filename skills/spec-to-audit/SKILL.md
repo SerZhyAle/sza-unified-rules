@@ -1,6 +1,6 @@
 ---
 name: spec-to-audit
-description: Run a task through the full SZA lifecycle - triage, spec, plan, implement, evidence, self-audit, documentation, commit - with a named gate at every boundary that refuses to advance when its preconditions are missing. Use when asked to implement a specification, "do this properly", "сделай по спецификации", to check whether something is actually implemented, to audit your own work before committing, to proceed to the next phase, or to sweep the tickets waiting on a manual check. Free and reversible: it never tags, publishes, or releases.
+description: Run a task through the full SZA lifecycle - triage, spec, plan, implement, evidence, self-audit, documentation, commit - with a named gate at every boundary that refuses to advance when its preconditions are missing. Use when asked to implement a specification, "do this properly", "сделай по спецификации", to check whether something is actually implemented, to audit your own work before committing, to proceed to the next phase, to sweep the tickets waiting on a manual check, or to unstick the tickets waiting on the owner's answers - "this spec is stuck", "decide the open questions", "задай мне вопросы по тикетам", "разблокируй задачи". Free and reversible: it never tags, publishes, or releases.
 ---
 
 # Spec to audit - the lifecycle and its gates
@@ -90,7 +90,8 @@ Status vocabulary, identical across the portfolio:
 `Draft -> Approved -> Tactical -> In Progress -> Implemented -> Verified`, plus `Partial`, `Broken`,
 `Archived`, and the `Block*` family (`BlockNeedUserTest`, `BlockByOtherTask`, `BlockQuestions`,
 `BlockExternal`). **Every transition into a `Block*` status carries a one-line reason note**, cleared by
-removing the condition and advancing exactly one level.
+removing the condition and advancing exactly one level. `BlockQuestions` is the one whose condition only
+the owner can remove; its exit is [Quiz mode](#quiz-mode---draining-the-owners-questions).
 
 **Two literal tokens, because direction is not recoverable from prose.** A ticket's "related tickets"
 section names blockers, successors, consumers and neighbours in one breath and is equally happy to *deny*
@@ -132,7 +133,8 @@ An unchecked blocker is the encoded stop.
 1. Re-read the step; verify its declared dependency step is done.
 2. Confirm every symbol the step references **actually exists at the stated path**. If not, abort - never
    invent a path.
-3. Ambiguity check: any `<TODO>`, `<choose..>` or `???` is a hard stop. Set `BlockQuestions`. Do not guess.
+3. Ambiguity check: any `<TODO>`, `<choose..>` or `???` is a hard stop. Set `BlockQuestions` with the open
+   question as its reason note. Do not guess - the answer arrives through Quiz mode, not from you.
 4. Pre-edit guards: read-only zones; back up an oversized file into `temp/<ticket>/`; refuse an edit projected
    past the file-size ceiling; paired-file guard.
 5. Flip the step in-progress.
@@ -283,6 +285,53 @@ state exists.
 This is also where the pre-release sweep hooks in: clean install over nothing **and** over a prior version,
 resources, first success with zero configuration, the core scenario end to end, performance - ending in a
 written PASS/FAIL verdict where FAIL blocks the release.
+
+## Quiz mode - draining the owner's questions
+
+A ticket enters `BlockQuestions` in one line; this is how it leaves. Like Sweep mode it is a **sitting, not
+an interruption**: the block exists so the questions wait for an owner who is ready to answer them.
+
+1. **Resolve each ticket from its authoritative record**, never from a filename. Only `BlockQuestions`
+   clears here. `BlockNeedUserTest` needs a run (Sweep mode), `BlockExternal` needs the outside party, and
+   `BlockByOtherTask` clears on its blocker's status - unless the owner picks a fallback that removes the
+   dependency, which is a question like any other. Report the rest and mutate nothing.
+2. **Extract the decision points**: the questions in the block's reason note, plus every open research
+   item and unfilled owner input that note points at.
+3. **Research each one before asking.** Whatever the architecture, the code, a contract or a decision
+   already recorded settles is **not asked**: fill it in and list it in the report as *resolved without
+   asking*, with what settled it ([AI_USAGE.md](../../rules/AI_USAGE.md) §1). Only a genuine owner call -
+   scope, product intent, priority, wording, platform reach, build versus buy - becomes a question. In the
+   reference sitting this settled 5 of 20 decision points without a word to the owner. Nothing left to
+   ask -> write the fills and go to step 6.
+4. **Ask multiple choice.** Each question specific, 2-4 options, each with its one-line consequence, the
+   researched recommendation **listed first** and marked recommended. Most-blocking first, in rounds where
+   the runtime caps a round, never more than unblocking needs. **The recommendation does not replace the
+   question**: in the reference sitting the owner chose something other than the default in 3 of 15
+   answers - an agent that applied its own recommendation would have been wrong on one decision in five.
+5. **Write back before any status move.** Each answer goes into the ticket's own record - the input
+   filled, the research item resolved - plus a dated decisions block: question, chosen answer, one-line
+   reason. The order is the point: an interrupted sitting then leaves answered tickets still blocked,
+   never moved tickets whose answers exist nowhere.
+6. **Restore one level.** The ticket returns to the status it would have had without the block, inferred
+   from what exists: a plan with progress -> `In Progress`; a plan without progress -> `Tactical`; settled
+   owner inputs and no plan -> `Approved`; otherwise `Draft`. Two equally plausible -> ask one more
+   question. The move goes through the ticket's tool and runs whatever gate guards the restored status; a
+   refusal keeps the block and names the residue. Then stop - continuing the pipeline is a separate,
+   explicit request, and a quiz writes no code and runs no build.
+7. **A skipped answer is never invented.** The input stays unfilled, the gate that needs it stays closed,
+   the ticket stays in `BlockQuestions` with its reason note narrowed to what is still open. The answers
+   that did arrive are still written back.
+8. **Report per ticket**: start -> end status; asked (question -> answer); resolved without asking
+   (decision -> value -> what settled it); outstanding.
+
+**Several tickets in one sitting are allowed - with one write-back and one status move per ticket.** What
+the block defers is the owner's attention, and that is paid per sitting, not per ticket: the reference
+sitting cleared three tickets with 15 questions in 5 rounds, where three single-ticket sittings would have
+cost three context loads and three interruptions for the same answers. What stays per ticket is what makes
+a ticket auditable on its own - its decisions live in its own record, its move is judged on its own
+evidence, and a question two tickets share is asked once and written into both. Rounds may mix tickets;
+each question names the ticket it settles. "One ticket at a time" confuses the unit of conversation with
+the unit of record.
 
 ## Campaign mode - auditing code that did not change
 

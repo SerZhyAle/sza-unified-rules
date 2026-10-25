@@ -2618,3 +2618,16 @@ $out | ConvertTo-Json -Depth 5 -Compress
 ## Test lab report (2026-10-23)
 
 - Ticket `PLAN/S4426_test-lab-equipment-report.md` (Draft, Tier 3, auto-added to the end of package 47 by `capture-draft`), created by the canon session from the owner's order of 2026-10-23 to collect what every project knows about its hardware, emulators and test practice (contract `TEST-LAB` 0.1, draft). Documentation only: the product files one inventory report and a pointer; no code, test or harness changes. Owner of the Android profile `TEST-LAB-ANDROID`; StreamsPlayer_mob and Tourist_mob report to it.
+
+## BlockQuestions exit - lifted into the canon 2026-10-25 (source: the overlay's `/spec-quiz`)
+
+- The canon defined how a ticket enters `BlockQuestions` (spec-to-audit Stage 3 step 3) and nothing about how it leaves. The overlay's `.claude/commands/spec-quiz.md` is the **reference implementation** of the exit; its universal part now lives in the `spec-to-audit` skill as "Quiz mode - draining the owner's questions", with a pointer from `tools/harness/spec_catalog/SCHEMA.md`. No rule doc changed: the "do not ask what the architecture answers" rule already exists in AI_USAGE.md section 1, so the digest is unchanged.
+- Kept in the overlay, not lifted: the command name and its aliases, the catalog script paths, the one-runtime cap of four questions per call, the template's section numbers, the `Verify:` / `Complexity:` header lines, `--chain` / `--dry` / `--here`, the dev-log line.
+- Field measurement behind it, 2026-10-25: one sitting over S4247, S4248 and S4430 - 15 questions in 5 multiple-choice rounds, 5 decision points settled from architecture and code without asking, 3 tickets advanced (2 to `Approved`, 1 parked capture to `Draft` through triage). The owner's answer differed from the recommended default in 3 of 15, which is why the canon says the recommendation does not replace the question.
+- CORRECT (batching): the overlay contradicted itself. `.claude/rules/spec-catalog.md` queue order rule 6 says to batch every ticket waiting on an owner answer into one `/spec-quiz`; `spec-quiz.md` says "Exactly one ticket id. No batch mode" and repeats it in the hard rule "One spec, one level. No batch". The owner batched and it worked. The canon settles it: several tickets per sitting are allowed, with one write-back and one status move per ticket, because the owner's attention is paid per sitting while the record stays per ticket. Rule 6 is right; the two `spec-quiz.md` lines are wrong.
+
+### Owed (an FMS_A session, not the canon session)
+
+- [ ] `spec-quiz.md`: replace "Exactly one ticket id. No batch mode" and the hard rule "One spec, one level. No batch" with "one or more ticket ids; one write-back and one status move per ticket, each question naming its ticket; a question two tickets share is asked once and written into both". "One level" stays.
+- [ ] `spec-quiz.md` Stage 2: allow a round to mix tickets; Stage 6 report becomes one block per ticket.
+- [ ] Re-read `spec-quiz.md` against the canon's Quiz mode steps 5 and 7 (write-back before the move; a skipped answer narrows the reason note and keeps the block) and record any remaining divergence here.
