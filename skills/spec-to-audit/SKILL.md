@@ -260,6 +260,11 @@ older file while staying green. Above all, **wire it into every mutator that can
 path is actually used** - a gate wired into one of several equivalent paths guards the path used least,
 and the reference instance sat on the wrong one for weeks and almost never fired.
 
+**Resuming a ticket, moving it out of a `Block*` status, writing its audit block, deduping a symptom, or
+working beside a sibling session on one ticket?** Load
+[references/ticket-lifecycle-traps.md](references/ticket-lifecycle-traps.md) first - each trap there closed
+a ticket wrongly at least once.
+
 **Attribute a failure before fixing it.** On a multi-writer tree a red check may belong to a sibling's
 in-flight edit; confirm the failure is inside your diff first. The working tree, not git history, is the
 authority for current state.
@@ -308,6 +313,9 @@ an interruption**: the block exists so the questions wait for an owner who is re
    the runtime caps a round, never more than unblocking needs. **The recommendation does not replace the
    question**: in the reference sitting the owner chose something other than the default in 3 of 15
    answers - an agent that applied its own recommendation would have been wrong on one decision in five.
+   **After each round, re-apply the owner's own standing rules to the chosen option.** Where one of them
+   contradicts the choice, show the collision once, with both outcomes, and let the owner pick - the menu
+   was at fault, not the answer.
 5. **Write back before any status move.** Each answer goes into the ticket's own record - the input
    filled, the research item resolved - plus a dated decisions block: question, chosen answer, one-line
    reason. The order is the point: an interrupted sitting then leaves answered tickets still blocked,

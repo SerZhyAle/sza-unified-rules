@@ -44,6 +44,26 @@ on one release sweep in the reference project:
   eighteen false ones" is the failure stated exactly: the check kept running, kept reporting, and had
   become unreadable. Precision is not a nicety on a check whose output a human must triage.
 
+**A green that observed nothing is not a pass.** The shapes that produce one:
+
+- **A tool's exit code is not its verdict** when the tool can print FAILED and exit 0 - a validator, a
+  headless page, an advisory-by-default gate run without its gating switch. Gate on the verdict text plus
+  zero error lines, and never write a done criterion as "exits 0".
+- **Name the state each criterion needs, and prove it existed.** A zero count is unproven. A filtered test
+  run that matches nothing exits green, so count the executed cases from that run's own report against the
+  declared count. Prove a widened gate on a throwaway violation before trusting its silence.
+- **The verdict-bearing command is the last on its line.** Never pipe a gate, a test, a lock or a lease call
+  into `tail`, `head` or `grep`, and never judge it by a trailing `echo $?` - both report the pipe, not the
+  command. Redirect to a file and require the positive string (`acquired`, `PASS`) before acting.
+- **A comparison gate proves agreement, not validity.** Two mirrored files broken the same way compare
+  equal; after a bulk write into mirrored files - locales above all - prove each one parses or renders
+  before quoting the mirror's PASS.
+- **A predicate must not match itself.** A "zero hits for X" check is neither satisfied nor violated by the
+  text that explains X, and a counter that reads command lines counts its own.
+- **Bound the wait, not only the work.** A child's own timeout does not bound the caller that joins it
+  (PowerShell's `Receive-Job` has no timeout - use `Wait-Job -Timeout`), and an expired wait is "could not
+  verify".
+
 **The machine-readable interface of a check is already specified - a new gate adopts it.** The exit-code
 vocabulary and the one verdict line are `CHECK-VERDICT`, the baseline file shape is `CHECK-BASELINE`, the
 placement record is `CHECK-PLACEMENT`, and the artifact and subject evidence is `BUILD-EVIDENCE`, all in the
@@ -103,7 +123,8 @@ For anything a user sees or touches, drive it on real hardware or an emulator, n
   (unindexed media store, untappable bottom-sheet items, touch wedges) - they cause false FAILs.
 - **Before diagnosing "the fix does not work" on a device, confirm the device runs the new build.** Read
   the installed version back from the device; a same-version debug build can silently keep the old code,
-  and the old behaviour then looks like a failed fix.
+  and the old behaviour then looks like a failed fix. Prove it positively, with a build-unique marker read
+  from the running thing (a stamped version or constant) - never from a log line that is missing.
 - Desktop/CLI: run the built artifact on a clean machine/VM; verify install, first-run, and uninstall.
   **A check that drives the real app on the owner's machine works on a copy where it can** (a sandboxed
   data folder). Where it cannot, it backs up the real state first, refuses to start if the backup fails,
@@ -205,6 +226,10 @@ as a point fix, and a third service in the same repo was never looked at - it cr
 was reported by remote diagnostics **three hours after the release shipped**, and cost a same-day
 fix-release. Two paid fixes were, between them, the map of every place to look.
 
+**A change to stored user data is the one irreversible class.** A schema or format change is proven by
+upgrading data the previous version wrote, never by "it loads" on fresh data, and a migration defect once
+caught is fixed, never baselined.
+
 ## 8. Gate cost - keep the machinery cheap without weakening it
 
 A mature project accumulates mechanical gates, and they start costing real waiting time. The instinct
@@ -251,9 +276,16 @@ worth carrying everywhere.
 - **A recorded step duration usually includes waiting for the lock, not just the work.** The same gate
   measured 152 s averaged across recorded runs and 25 s when invoked directly on a warm daemon. Both
   are true; they answer scheduling cost and compute cost. State which one you mean.
-- **Never disable a check to make the loop faster.** Speed comes from not repeating work whose inputs
-  did not change, not from checking less. If a gate is genuinely too slow, cache it, narrow its trigger
-  or move it off the hot path - do not silence it.
+- **Never disable a check on the product to make the loop faster.** Speed comes from not repeating work
+  whose inputs did not change, not from checking less. If such a gate is genuinely too slow, cache it,
+  narrow its trigger or move it off the hot path - do not silence it.
+- **A check on our own tooling is the opposite case: deletion comes first.** Asked to make the loop faster,
+  rank the measured time sinks, ask of each "does this check the product or our tooling", and offer to
+  delete the tooling checks, with the minutes each one saves. Caches and parallelism come after deletion was
+  offered and refused.
+- **A gate whose refusals are mostly false is removed, not tuned** - a false finding costs as much as a
+  miss (§1). A failure mechanism fires at the moment of refusal and names the one command to run now; never
+  propose a periodic digest of failures instead.
 
 ## 9. Applying to a new project
 

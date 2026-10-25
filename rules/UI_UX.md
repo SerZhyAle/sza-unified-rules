@@ -103,6 +103,10 @@ Friendly, clear, brief. This is the one voice of the app, the site, the listing 
   ([DOCUMENTATION_CONCEPT.md](DOCUMENTATION_CONCEPT.md) §5 is the rule).
 - **One name per concept**, with the forbidden synonyms listed, in a termbase the app, the docs and the site
   share. The same word names the same thing everywhere ([LOCALIZATION.md](LOCALIZATION.md) §5).
+- **The screen never claims more than is delivered.** A wrong-display defect closes by restoring the
+  capability or by saying so on the screen, next to the wrong thing - a log line or a doc sentence does not
+  close it. A setting whose label promises "no X" while any path still does X is a defect, fixed by gating
+  every entry point.
 - **The text must fit the narrowest layout without truncation** - check it before merging the string.
 - **House text style applies** (`..`, plain hyphen, `ё`): [DOCUMENTATION_CONCEPT.md](DOCUMENTATION_CONCEPT.md)
   §5 is its one home.
@@ -154,6 +158,10 @@ kit has none.
   official-resource and diagnostic-export set. Existing commit and safety semantics remain in force.
 - **Destructive confirms:** the acting button is the red one; Escape is the one no-action way out; the safe
   answer holds the default focus. Button geometry and answer treatment follow `BUTTONS` sections 3 and 4.
+- **Owner rulings on layout.** A value stays beside its caption, never right-aligned to the row's edge. A
+  card that shrinks scales its lines and keeps its format; it never hides a line. Narrowing a list rewrites
+  its empty-state text. A defect in a shared component is fixed in the component, after a grep of its
+  family. Before adding a toggle, reuse the setting that already governs the capability.
 - **Three channels for a message:** a toast for one glance, an inline state for an error with Retry or Undo,
   a dialog for a confirm or a long error. One dialog factory per product, not one per screen.
 - **A thing the kit lacks is proposed to the catalog first,** then built: a missing role, a missing token.

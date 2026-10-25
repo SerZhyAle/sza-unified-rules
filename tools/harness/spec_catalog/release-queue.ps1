@@ -13,7 +13,11 @@
 #
 # Actions:
 #   -Reconcile            Force a sync against the catalog now (the automatic path, on demand).
-#   -Validate             Report drift: unknown tickets, duplicates, status mismatches.
+#   -Validate             Report drift: unknown tickets, duplicates, status mismatches. It compares
+#                         the file with the catalog, and the catalog does not know packages, so a
+#                         clean -Validate says nothing about package membership: a row moved to the
+#                         wrong package validates clean. Before a queue mutator, copy the file; after
+#                         it, diff membership against the copy (PLAN/ is often outside git).
 #   -List [-Release N] [-WithLeases]
 #                         Print the queue, optionally one release block. -WithLeases marks each
 #                         taken row inline and appends the holder detail block.

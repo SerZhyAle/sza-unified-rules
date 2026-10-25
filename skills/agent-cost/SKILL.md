@@ -86,7 +86,7 @@ A baseline recorded after the change is not a baseline.
 
 ## Step 4 - Read the result against what it can actually prove
 
-Two traps, both of which produced a confident wrong answer in the reference project:
+Three traps, each of which produced a confident wrong answer in the reference project:
 
 - **A window that mostly predates the change measures nothing.** Re-run no sooner than two weeks after
   the change is live. A one-day delta is the old corpus plus one day, and that day is usually the work
@@ -94,6 +94,20 @@ Two traps, both of which produced a confident wrong answer in the reference proj
   the full window - do not present a carry-forward as an effect.
 - **A number that did not move can still be the right number.** If nothing has landed that would move
   it, an unchanged metric is evidence the metric is measuring the right thing.
+- **A before/after split needs a placebo.** Run the same split at a fake change date inside the
+  pre-window; a delta that appears there too is drift, not the change. And a rate measured over a window
+  the runner's own mode selected (only the tickets it chose to pick, only the runs it chose to retry) is
+  that mode's rate, not the process's.
+
+**Rank by the median and by median x count, never by the mean or the sum.** A per-item cost distribution
+is skewed by a few stalled runs; the mean and the total rank the stalls. A total far above median x count
+says the harness hung on that item, not that the item is expensive - read the outlier runs before blaming
+the step.
+
+**Wall time is not context.** Measured over 31 tickets, agent wall time tracked output tokens
+(r = +0.681) and barely tracked context size (r = +0.065). Trimming always-loaded preamble cuts the token
+bill; it does not make a run faster. Argue a speed change from output volume and tool waits, a bill change
+from context.
 
 ## Step 5 - Decide gate, compress, or nothing
 

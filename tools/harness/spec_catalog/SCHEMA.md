@@ -92,7 +92,7 @@ The CLI computes "days since `updated`" for the report (`a.ps1 ss`):
 
 All fields below are optional. Absence in any record - old or new - is valid and passes `validate.ps1` without error.
 
-- `title` (string) - human-readable display name; free text; used by `search.ps1` for substring matching alongside `name`.
+- `title` (string) - human-readable display name; free text; used by `search.ps1` for substring matching alongside `name` (`-Body` adds the spec file's text; the archive is searched only with `-IncludeArchived`).
 - `tags` (string array) - thematic labels, e.g. `["tooling","scripts"]`; filterable by `search.ps1 -Tag`.
 - `type` (string) - work kind; one of `feature`, `bugfix`, `tooling`, `research`; filterable by `search.ps1 -Type`.
 - `blocked_by` (string array) - ids of tickets this one depends on, e.g. `["S0099"]`; informational, not enforced by `validate.ps1`.

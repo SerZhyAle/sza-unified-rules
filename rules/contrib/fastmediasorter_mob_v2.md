@@ -2631,3 +2631,25 @@ $out | ConvertTo-Json -Depth 5 -Compress
 - [ ] `spec-quiz.md`: replace "Exactly one ticket id. No batch mode" and the hard rule "One spec, one level. No batch" with "one or more ticket ids; one write-back and one status move per ticket, each question naming its ticket; a question two tickets share is asked once and written into both". "One level" stays.
 - [ ] `spec-quiz.md` Stage 2: allow a round to mix tickets; Stage 6 report becomes one block per ticket.
 - [ ] Re-read `spec-quiz.md` against the canon's Quiz mode steps 5 and 7 (write-back before the move; a skipped answer narrows the reason note and keeps the block) and record any remaining divergence here.
+
+## Agent-memory candidates - lifted into the canon 2026-10-26 (source: `temp/scratch/canon-candidates-20261026.md`)
+
+- An FMS_A session classified all 669 agent-memory files against canon `2026.10.25.2` and proposed 73 universal items. The file promised a per-item canon verdict and carried none; the canon session judged each against the live rule text. The owner approved the plan and settled the four conflicts on 2026-10-26.
+- Owner decisions on the conflicts:
+  - Item 8 (owner-only reports): an audit or findings list that lives only in chat is chat, so Russian, `Сейчас -> Предлагается`; saved to a file it is an artifact and English. Home: AUTHOR.md "Language". Invariant 19 unchanged.
+  - Item 9 (make it faster): split by subject - a check on our tooling may be offered for deletion first, with the minutes saved; a check on the product is never disabled for speed. Item 10 (a mostly-false gate is removed, not tuned) joined it. Home: TESTING_AND_QA.md section 8.
+  - Item 58 (memory expiry): a memory records its own expiry condition; ticket liveness is not grounds to prune (269 of 342 flagged, 3 dead). Index overflow splits into `INDEX_<topic>.md`. Home: AI_USAGE.md section 4.
+  - Item 45 (parallel writer subagents): disjoint file lists, no git, no shared-state run, one central verification per wave. Home: GITHUB_INTERACTION.md section 1 carve-out.
+- Landed in `rules/` (digest moves): 1, 3, 4, 5, 7, 11 (AI_USAGE section 1); 17+25, 19, 24 (section 2); 13, 61 (section 3); 12 (section 5); 2 (section 7); 66 (AUTHOR "Portfolio defaults"); 14, 15, 16, 20, 21, 23 (TESTING section 1), 30 (section 4), 62 (section 7); 42, 44, 47 (DEVELOPMENT section 10), 22 (section 15); 49-52, 54, 55 (GITHUB_INTERACTION section 6); 64, 65 (UI_UX sections 4-5); 63 (SECURITY_AND_PRIVACY section 4); 27 (RELEASE_AND_DISTRIBUTION section 6).
+- Landed in skills and hooks (no digest change): 6, 18, 31-41, 43 in `spec-to-audit` (Quiz mode and the new `references/ticket-lifecycle-traps.md`); 26, 28, 29 in `agent-cost`; 48 in `contract-sync`; 46 in `task-flow-init`; 56, 57, 59 in `hooks/README.md`, with 16 recorded there as a candidate hook (not shipped).
+- Dropped: 53 (PowerShell language semantics - knowledge of the language, not a portfolio rule; StrictMode and tests catch it), 60 (`ScheduleWakeup` is `/loop`-only - the harness's own tool description already says so).
+- Harness (block H): 67 fixed (both probe libraries walk `probes.sourceExtensions`); 68 fixed (`check-owner-inputs.ps1` finds the section by heading text); 69 fixed (`search.ps1 -Body` searches ticket text, the table output names what was not searched); 73 documented in `select.ps1` (`'[]'` is valid empty JSON - parse the count). Not reproduced on the current code in a sandbox catalog: 70 (`archive.ps1` refuses a missing artefact with exit 1, fixed by S2617), 71 (`-Reconcile` moved no row and deleted no comment; the `-Validate` caveat is now in the script header), 72 (`update.ps1` has `PositionalBinding = $false`, fixed by S1504).
+
+### Owed (an FMS_A session, not the canon session)
+
+- [ ] Once the plugin carrying this delivery is installed, replace the memory files behind the lifted items with pointers to their canon homes, or delete them where the canon now says the same; keep only the FMS-specific detail.
+- [ ] Drop the local overrides that the canon now carries (the Russian owner-report carve-out, the "delete first" speed rule) from the overlay's rules files, leaving pointers.
+
+### Owed (an FMS_Web session)
+
+- [ ] `CLAUDE.md` section 6 and `.claude/rules/*.md` carry web-adapted copies of most items: replace each lifted one with a pointer to its canon home.

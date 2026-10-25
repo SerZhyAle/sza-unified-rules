@@ -144,7 +144,7 @@ if ($Tier -ge 0) {
 }
 
 # Owner-Inputs gate: any transition INTO Approved requires the spec file's
-# §3.3 "Owner inputs (Approval gate)" subsection to be present and every bullet
+# "Owner inputs (Approval gate)" subsection (found by heading text) to be present and every bullet
 # inside it to carry a concrete value. The set of bullets is decided by /spec
 # at draft time based on the spec's detected character (relevance-driven; not
 # a hardcoded list). Universally required: 'Related tickets'.
@@ -158,7 +158,7 @@ if ($PSBoundParameters.ContainsKey('Status') -and $Status -eq 'Approved' -and $o
             Write-Host "Owner-Inputs gate blocked promotion of $Id -> Approved:" -ForegroundColor Yellow
             $checkerOutput | ForEach-Object { Write-Host $_ }
             Write-Host ""
-            throw ("Cannot promote '{0}' to Approved: §3.3 Owner inputs incomplete. Fill every bullet present in §3.3 with a concrete value (placeholders in square brackets are rejected), ensure 'Related tickets' is present, then re-run update.ps1." -f $Id)
+            throw ("Cannot promote '{0}' to Approved: the Owner inputs section is incomplete. Fill every bullet present in it with a concrete value (placeholders in square brackets are rejected), ensure 'Related tickets' is present, then re-run update.ps1." -f $Id)
         }
     }
 }

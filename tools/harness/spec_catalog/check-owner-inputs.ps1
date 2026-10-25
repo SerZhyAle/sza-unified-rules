@@ -8,17 +8,22 @@ param(
 # Gate for Draft -> Approved transition of strategic specs.
 #
 # Contract (relevance-driven, no hardcoded field list):
-#   - A strategic spec must contain a "### 3.3 Owner inputs (Approval gate)" subsection.
-#   - The set of bullets inside §3.3 is decided by /spec at draft time, based on
+#   - A strategic spec must contain an "Owner inputs (Approval gate)" subsection
+#     (the template emits it as "### 3.3 Owner inputs (Approval gate)").
+#   - The section is located by its heading TEXT, never by its number: numbers shift
+#     when the template gains a section, and a gate reading by number then judges the
+#     wrong part of every older file while its verdict stays green (canon DEVELOPMENT.md
+#     section 8). Any heading level 2-4, with or without a leading section number.
+#   - The set of bullets inside the section is decided by /spec at draft time, based on
 #     the spec's detected character (UI / data / flavor / executable scope).
-#   - The gate validates only what is actually present in §3.3 - every bullet
+#   - The gate validates only what is actually present in the section - every bullet
 #     must carry a concrete value (not a bracketed placeholder, not empty).
 #     "n/a - <reason>" counts as a concrete value.
-#   - This gate judges §3.3 and nothing else. The house text style does not apply
+#   - This gate judges that section and nothing else. The house text style does not apply
 #     to specification files - the canon's scope list excludes specs by name, next
 #     to code, commands and logs - so a spec's punctuation is not gated here or at
 #     any other transition (S1543). The earlier version of this gate scanned the
-#     whole file for an ellipsis, which reached §0 verbatim owner capture and
+#     whole file for an ellipsis, which reached the verbatim owner capture and
 #     twice forced an edit inside material /spec-draft guarantees untouched.
 #   - Universally required: 'Related tickets'. This is the only field that
 #     must be present regardless of spec scope. It encodes dependency chains
@@ -51,24 +56,32 @@ if (-not (Test-Path $specPath)) {
 }
 
 $lines = @(Get-Content $specPath)
+$headingPattern = '^(?<hashes>#{2,4})\s+(\d+(\.\d+)*\.?\s+)?Owner inputs\b'
 $start = -1
 $end = -1
+$level = 0
 for ($i = 0; $i -lt $lines.Count; $i++) {
-    if ($start -lt 0 -and $lines[$i] -match '^###\s+3\.3\s+Owner inputs') {
-        $start = $i
+    if ($start -lt 0) {
+        $m = [regex]::Match($lines[$i], $headingPattern, 'IgnoreCase')
+        if ($m.Success) {
+            $start = $i
+            $level = $m.Groups['hashes'].Value.Length
+        }
         continue
     }
-    if ($start -ge 0 -and ($lines[$i] -match '^##\s+' -or $lines[$i] -match '^###\s+(?!3\.3)')) {
+    # The section ends at the next heading of the same or a higher level.
+    $h = [regex]::Match($lines[$i], '^(#{1,6})\s+')
+    if ($h.Success -and $h.Groups[1].Value.Length -le $level) {
         $end = $i
         break
     }
 }
 if ($start -lt 0) {
     Write-Output "FAIL $Id"
-    Write-Output "Missing section: '### 3.3 Owner inputs (Approval gate)' in $specPath"
+    Write-Output "Missing section: an 'Owner inputs (Approval gate)' heading in $specPath"
     Write-Output "Strategic specs without this section cannot transition Draft -> Approved."
     Write-Output "At minimum the section must contain a 'Related tickets' bullet."
-    Write-Output "/spec auto-emits §3.3 with only the fields relevant to the spec's"
+    Write-Output "/spec auto-emits the section with only the fields relevant to the spec's"
     Write-Output "detected character (UI / data / flavor / executable scope)."
     exit 1
 }
@@ -94,7 +107,7 @@ foreach ($line in $section) {
 
 # Universal requirement: 'Related tickets' must be a present, filled bullet.
 if (-not $found.ContainsKey('Related tickets')) {
-    $blockers.Add("Missing required field: 'Related tickets' (universally required in §3.3 regardless of scope; use 'none' if no dependencies)")
+    $blockers.Add("Missing required field: 'Related tickets' (universally required in Owner inputs regardless of scope; use 'none' if no dependencies)")
 }
 
 if ($blockers.Count -gt 0) {
@@ -102,14 +115,14 @@ if ($blockers.Count -gt 0) {
     foreach ($b in $blockers) { Write-Output "- $b" }
     Write-Output ""
     Write-Output "Spec '$Id' cannot transition Draft -> Approved until:"
-    Write-Output "  1. every bullet present in §3.3 carries a concrete value, and"
+    Write-Output "  1. every bullet present in Owner inputs carries a concrete value, and"
     Write-Output "  2. 'Related tickets' is present (use 'none' if no dependencies)."
-    Write-Output "The gate validates only what /spec emitted into §3.3 - it does not"
+    Write-Output "The gate validates only what /spec emitted into Owner inputs - it does not"
     Write-Output "require fields irrelevant to the spec's detected scope."
     exit 1
 }
 
 Write-Output "PASS $Id"
 $count = $found.Keys.Count
-Write-Output ("All $count Owner Input field(s) in §3.3 are filled. Spec is eligible for Draft -> Approved promotion.")
+Write-Output ("All $count Owner Input field(s) are filled. Spec is eligible for Draft -> Approved promotion.")
 exit 0

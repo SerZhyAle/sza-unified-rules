@@ -31,6 +31,10 @@ here.
 ## Language
 
 - **Chat in the owner's language (Russian); code, docs, logs, and commits in international English.**
+- **A report whose only reader is the owner is chat, not an artifact.** An audit, a findings list or a
+  review that lives in the chat and nowhere else is written in Russian, each item `Сейчас -> Предлагается`
+  with its evidence, numbered and grouped by root cause. Saved to a file, it is an artifact and English
+  again (owner decision 2026-08-27).
 - **English is the source language for documentation.** Translations render from that source; they are
   never independent specifications.
 - **Ukrainian is supported everywhere a product exposes localizable text.** Ship it alongside English and
@@ -56,6 +60,9 @@ here.
   timestamp is generated mechanically in the portfolio time zone. A released stream keeps its established
   version shape, because changing it can break updates; platform-specific channel versions derive from the
   authoritative value.
+- **No paid or keyed third-party services by default.** Use a keyless free endpoint behind a
+  one-interface seam, with an ordered list of fallbacks; a paid or keyed service is the owner's decision,
+  never a default. Never label something free with a bare "cost" word.
 
 ## Working style
 

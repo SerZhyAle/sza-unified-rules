@@ -26,6 +26,24 @@ shares. Reconciled against the portfolio; per-project records in `contrib/`.
 - **Don't ask what the architecture already answers.** If a convention, flavor hierarchy, or contract
   decides the question, research it and recommend - don't kick it back to the owner. Reserve questions
   for genuine forks the owner must own (scope, product intent, UI ambiguity).
+- **Never ask the owner about bookkeeping** - a ticket's status, a carrier token, archival, a queue
+  position. Decide, report it in one line, and show that the work is scheduled (package number, row
+  position). Questions are for decisions that change code or product behaviour.
+- **The owner's statement of fact is a fact.** What the owner states about project state - a session is
+  dead, a ticket has a status, a device is free, a build passed - is acted on at once, with no verifying
+  script or read and no question back. Two limits: a gate that refuses is quoted verbatim, and a
+  contradiction met while doing the work gets one line after the request is done. `Finish <ticket>` on a
+  ticket another session holds means take it over, with no liveness check.
+- **The owner's symptom is a fact; the owner's proposed remedy is a hypothesis.** Trace the real mechanism
+  before implementing the suggested fix; when it differs, say so plainly and put the sharp choice to the
+  owner.
+- **A named deliverable comes first.** When the owner names a concrete artifact ("create a ticket"),
+  produce it first, from the owner's words; research and measurement nobody asked for wait until it exists.
+- **A sweeping phrase never widens an itemised scope.** "The rest too" over an agreed list means: write the
+  concrete list out before acting. An item nobody has researched needs its own decision.
+- **Never put an agent inference in the owner's voice.** Only the owner's verbatim words are attributed to
+  the owner; everything else is labelled a hypothesis. An inference the owner denies is retracted with "do
+  not re-derive this".
 - **Surface UI placement/visibility/fallback ambiguity before implementing** - don't guess a
   user-facing decision.
 - **Push back once, then obey.** If the owner's call looks wrong, argue the case once with evidence;
@@ -38,6 +56,17 @@ shares. Reconciled against the portfolio; per-project records in `contrib/`.
   self-report is not evidence - re-verify.
 - Verify a memory/assumption against the live tree before acting on it - files get renamed and removed;
   a remembered path or symbol is a claim to re-check, not a fact.
+- **A recorded claim is a premise, not evidence.** A draft's capture, a quoted code comment, a log older
+  than a day, a research item marked resolved, a recommended default taken as a quiz answer, a "cannot be
+  automated" or "tool absent" note, an exemption row resting on one failed probe, a documented invariant:
+  re-run its measurement or reproduction before building on it. When it is refuted, fix the stale text and
+  record the refutation.
+- **Read a subagent's report by its parts.** The PASS/FAIL it observed is evidence; its "because X" is a
+  lead; a cited `file:line` proves the line exists, not the control flow; "no test found" describes the
+  sweep, not the tree. Delegate driving, not measurement.
+- **An empty search can mean "not searched".** The editor's content search and `rg` honour `.gitignore`,
+  so they skip `temp/` and any other ignored tree, and an empty root-scoped result says nothing about it.
+  Run a control query that must hit, or name the ignored path explicitly.
 - **Three invariants bind whatever script closes a change** - the checker, the gate battery, the closure
   facade, whatever the project calls it. One: **the verdict covers every file in the change**, not the
   one file that happened to be named. Two: **PASS is printed only when every gate passed** - a green
@@ -67,7 +96,9 @@ shares. Reconciled against the portfolio; per-project records in `contrib/`.
 - **Session boundaries are the primary lever, and the agent cannot pull it alone.** An agent cannot
   execute its own context reset - that is a harness command the human types - so any design that
   assumes self-reset is unbuildable. What an agent *can* do is stop at a threshold and hand back a
-  resume handle. Build the halt, not the reset.
+  resume handle. Build the halt, not the reset. The threshold is a number the harness reports, not a
+  feeling: an agent has no meter of its own, so a batch never ends on a guess that context is running out -
+  only when nothing eligible is left or the measured warning fires.
 - **For an unattended batch, make the PROCESS boundary the reset.** The halt above still depends on an
   agent noticing a threshold and on a human restarting it afterwards. A driver script outside the session
   removes both: it takes the next work item off the queue, runs it in a **fresh headless process**, and
@@ -134,6 +165,9 @@ shares. Reconciled against the portfolio; per-project records in `contrib/`.
   four plugins and two connectors had zero calls in three weeks while each session still started their
   processes. Removing them is small next to session hygiene, so do it for the tidiness, and do not
   mistake it for the fix.
+- **The owner's usage limit is shared by every subagent.** Default to low parallelism; a fan-out above
+  about six to eight agents needs the owner's explicit go, stating the count. Stage an expensive pipeline:
+  find, report, and verify only behind a go.
 - Prefer an inline lookup over spawning a subagent for a single fact (a few targeted tool calls).
   Reach for a subagent when the work is a real fan-out or would flood context with raw output.
 - Offload raw artifacts (logs, captures, dumps) to `temp/<ticket>/` instead of holding them in the
@@ -166,11 +200,15 @@ shares. Reconciled against the portfolio; per-project records in `contrib/`.
   the rules file bills the same instruction twice per turn, forever. Measured across the portfolio,
   committed memory indexes run 11-90 lines; the one that reached 1274 lines (115 KB, roughly 25-30k
   tokens) held its entry bodies inline and is billed to every session that opens it. Cap the index and
-  move the bodies to topic files.
-- **Expire memory by work-item liveness, not by age.** A memory anchored to a ticket that no longer
-  exists is dead weight; a three-month-old trap that cost real turns to discover is not. Prune by
-  "never opened" and by dead anchor, and flag a memory whose named paths have disappeared - that one
-  guards trust rather than bytes, since a memory naming a vanished file will eventually be believed.
+  move the bodies to topic files. When the index outgrows its cap, **split it, never truncate it**:
+  second-level `INDEX_<topic>.md` files, each new pointer routed to the index that owns its topic, only
+  preconditions at the top level, and no hook cut off mid-phrase.
+- **A memory that records a moment writes its own expiry condition, and pruning reads that condition -
+  not age, and not the liveness of the ticket it came from.** A trap found on a ticket outlives the ticket:
+  measured on the reference project, a dead-ticket-anchor rule flagged 269 of 342 memory files, and 3 of
+  them were actually dead. Prune by an expired condition and by "never opened", and flag a memory whose
+  named paths have disappeared - that one guards trust rather than bytes, since a memory naming a vanished
+  file will eventually be believed.
 - Memory is **written far more often than it is read**. Before writing, ask whether a future session
   would open this file - most of the corpus never is.
 
@@ -258,6 +296,11 @@ shares. Reconciled against the portfolio; per-project records in `contrib/`.
   cannot read that registration. Judge each home by what is readable, and degrade rather than guess.
   **Test the registered pre-filter, not only the hook**: a pre-filter that matches nothing leaves a
   correct hook that simply never runs, and it looks exactly like a hook that was never needed.
+- **A project's agent-facing files are dry.** The rules file, an agent definition and a hook's refusal
+  text state the condition, the remedy and the escape hatch; incident narrative, dates and ticket ids live
+  in the ticket or the script header. An always-loaded file carries no ticket tags, and new rule prose goes
+  path-scoped where the harness supports it. When a size budget refuses a rule the owner asked for, raise
+  the limit by one slack unit with a dated reason - do not drop the rule.
 - Prefer **a skill loaded on demand over a rule read on every turn**, and one method that travels over
   ten copies of a script. A command or skill body is injected in full and stays for the rest of the
   session, so a large one is paid for long after the paragraph that mattered - split it into a driver
@@ -280,6 +323,10 @@ shares. Reconciled against the portfolio; per-project records in `contrib/`.
   and paid tokens for being wrong. Print a real time only when it carries information *and* comes from a
   command that just ran: a build verdict, a log line, a hand-off. This supersedes the earlier rule to
   timestamp from the prompt.
+- **No self-cost estimates.** No time, effort or predicted-size figure in a spec, a plan, a phase table or
+  a reply. Measured sizes of real files are fine. A claim that a package of work is or is not feasible
+  rests on a measured closure rate from the catalog - a 30-day window, against the creation rate - never
+  on feel.
 - **Brevity is a mode the owner asks for, not a saving.** When the owner asks for terse output - "кратко",
   "be brief", `/caveman` - load the `caveman` skill: it compresses prose only and carries the
   never-compress list (security warnings, destructive confirmations, ordered steps, every exact string).

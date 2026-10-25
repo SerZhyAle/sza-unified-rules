@@ -86,6 +86,13 @@ written proposal, never by edit. Every contract is sealed (since 2026-10-07), dr
 edits it, so a draft this product merely consumes is not this product's to supplement. A row you cannot verify honestly stays `pending` with a note naming what
 is missing - that is a correct answer, and the registry is designed to carry it.
 
+**The registry is a hand-edited file with many writers and no lock.** Copy it to `temp/` before the first
+edit; change it with exact-string replacements only, never a whole-file rewrite or a line-ending
+normalisation; and expect the diff against the copy to be pure addition or a change inside this product's
+own rows. A hunk you did not write belongs to a sibling session - read it before calling it yours or
+reverting it. The same goes for any edit outside this repo: re-grep its anchors in the step that writes the
+verdict, not from memory of the edit.
+
 ## Step 5 - Audit the consumer code against the compatibility law
 
 **Rights retained throughout synchronization.** The project may declare justified exceptions in its own

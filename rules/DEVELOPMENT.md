@@ -208,6 +208,15 @@ compile-only -> targeted tests -> minified release variant -> device) lives in
 - **In a multi-worktree checkout, resolve the lock path from the shared git directory**, so every linked
   worktree contends for one lock rather than holding one each. A per-worktree lock serializes nothing,
   silently.
+- **Taking a lock or a lease is a tool call of its own.** Never chain it with `;`, `&&` or a pipe to the
+  edit it guards, and never send it in the same parallel message as that edit - a refusal does not stop the
+  rest of the line or the batch. In a multi-line batch a refused acquisition stops the batch, and a waiter's
+  "your turn" is not the lock: acquire it.
+- **Locks do not see every lost update.** Draft-then-copy-back reverts a sibling's edit, so copy back only
+  files you created; a write tool reporting "updated" where you expected "created" has overwritten someone
+  else's file; a compile does not prove that a shared-file entry survived - re-run the gate that reads it.
+- **Never stop processes by image name** - keep the PID from the start call. Judge a quiet agent's
+  liveness by its artifacts' modification times, not by its silence.
 - **Fix the project's own scripts** when they are buggy or insufficient - don't work around them.
 
 ## 11. Phase-boundary audits
@@ -335,7 +344,9 @@ The machinery that makes the hygiene rules (§9) and the parity gates (§12) run
   four-part test.
 - **One closure facade, not N rituals.** Mechanical closure (dev-log + index/catalog sync + gates) runs as
   a single command (reference: a `post-change` facade), so "I changed a file, now what" has one answer and
-  no step is forgotten.
+  no step is forgotten. **A gate is wired only when its label appears in that facade's printed gate
+  list** - wiring it into a fast batch alone is not wiring it into the closure - and before adding one,
+  check that an umbrella gate does not already run it.
 - **A closure that prints a fix command and then fails is a ritual.** When the repair is deterministic and
   local (regenerate a derived file, register a new file) the closure performs it and says `REPAIRED`, while
   staying a pure check on the release path. A cached verdict's fingerprint covers everything the gate loads,

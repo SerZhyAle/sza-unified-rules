@@ -106,9 +106,16 @@ a ticket costs. To stop: create the file named by the launcher's `-StopFile` def
 ticket in hand, consumes the file and exits 0. Do not kill the process to stop it - a killed child leaves a half-written
 status.
 
+**Start the runner with a clean agent environment.** A runner launched from an agent session's tool shell
+inherits that session's runtime variables (`CLAUDECODE`, `CLAUDE_CODE_*`), and every child then claims the
+parent's identity - its locks, leases and chat lines all read as the parent's. Strip that family before
+spawning each child, so each child gets its own agent id; check it once by seeing distinct nicknames in the
+project chat (or the run rows) for two children.
+
 A second parallel runner (R1..Rn) is added only when the journal shows the single runner's idle time is the
 constraint (`TASK-FLOW rule 40`); it needs a per-ticket lease and its own agent identity, which this scaffold
-does not create.
+does not create. Lease timing, once it exists, is in spec-to-audit's
+[ticket-lifecycle-traps](../spec-to-audit/references/ticket-lifecycle-traps.md).
 
 ## Step 6 - Write it down where the next session will read it
 

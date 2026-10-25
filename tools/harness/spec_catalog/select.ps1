@@ -5,6 +5,10 @@
   -Query is the canonical free-text parameter shared by the catalog and registry
   query CLIs; -Name / -Text / -Search are accepted as aliases so older callers work.
   Exit codes: 0 ok (including zero matches - an empty result is a normal answer).
+  A miss is not an error, so the exit code cannot tell hit from miss. With -Format json a miss
+  prints the string '[]' - non-empty, so truthy - and a single hit prints one object, not an
+  array. A caller (a cleanup check, "is S1234 gone?") parses the output and tests the count:
+  `@(& select.ps1 -Id S1234 -Format json | ConvertFrom-Json).Count -eq 0`.
 #>
 [CmdletBinding()]
 param(

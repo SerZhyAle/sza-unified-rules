@@ -237,7 +237,9 @@ release ZIP *and* the store package must carry `THIRD-PARTY-NOTICES.txt` (see
 A release is not "done" until proven live:
 
 - The versioned asset is downloadable and its checksum matches.
-- The listing / store page renders the new version and notes.
+- The listing / store page renders the new version and notes - **checked at the public address**, not
+  through the publishing API: an API readback proves the submission, not what a visitor sees. Fetch the
+  public page and compare the version, the first lines of the text and the image bytes.
 - Durable-URL CTAs on the site resolve (`/releases/latest`, package id, store page).
 - **The update path works from a real prior install** - a frozen-anchor mistake (changed package id /
   identity / signing key) orphans existing users and only shows up here. Verify an update, not just a

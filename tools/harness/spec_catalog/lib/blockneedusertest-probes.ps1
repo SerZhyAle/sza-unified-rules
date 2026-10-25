@@ -96,12 +96,16 @@ function Get-SanitizedTimberCallSpan {
 }
 
 function Get-ProbeSourceFile {
-    # Kotlin sources under the given roots, excluding build output. Shared so the two gates
-    # cannot disagree about which files even count as source.
+    # Sources under the given roots, excluding build output. Shared so the two gates cannot
+    # disagree about which files even count as source. The file types are the project's
+    # (probes.sourceExtensions), as in drift-check and unverified-backlog: a hard '*.kt' let a
+    # JS/Go/VB repo's probe gates pass vacuously.
     param([Parameter(Mandatory)][string[]] $SourceRoots)
+    $extensions = @((Get-SzaProfileValue 'probes.sourceExtensions') | ForEach-Object { ([string]$_).ToLowerInvariant() })
     foreach ($root in $SourceRoots) {
         if (-not (Test-Path -LiteralPath $root)) { continue }
-        Get-ChildItem -LiteralPath $root -Recurse -File -Filter '*.kt' -ErrorAction SilentlyContinue |
+        Get-ChildItem -LiteralPath $root -Recurse -File -ErrorAction SilentlyContinue |
+            Where-Object { $extensions -contains $_.Extension.ToLowerInvariant() } |
             Where-Object { $_.FullName -notmatch '[\\/](build|\.gradle|\.kotlin)[\\/]' }
     }
 }

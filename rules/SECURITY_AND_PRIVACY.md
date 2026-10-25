@@ -64,6 +64,9 @@ leak globs; a real build secret goes in the CI secrets store, referenced by name
 - **User data belongs to the user**: app-level credentials/keys live in the OS secret store at runtime,
   not in the build, not in plain files.
 - Network calls are named and bounded; nothing silently uploads user content.
+- **A public capture never comes from a shared test corpus unchecked.** A test corpus holds private and
+  copyrighted material: pick files by name, prefer the owner's own photography and public-domain media,
+  and look at every capture before it goes into a listing, a site or a README.
 - **A secret handed between processes travels by environment-variable *name*, never by value** (never in
   argv, history or a run report); the receiver deletes it from its own environment on read, so a process it
   launches never inherits it, and an empty value is an error, not an empty secret. Every surface that writes

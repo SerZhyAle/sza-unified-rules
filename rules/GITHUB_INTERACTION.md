@@ -26,7 +26,9 @@ the portfolio; per-project records in `contrib/`.
   own edit, a conflicting half-finished edit in the same function - say that in one line, naming the file,
   and carry on with what is in scope.
 - **Git commands are the agent's to use as the work needs** - switching or creating a branch, stashing,
-  restoring a file, rebasing. No hook refuses any of them.
+  restoring a file, rebasing. No hook refuses any of them. One carve-out: **parallel writer subagents in
+  one shared tree** get disjoint file lists by name and run no git command and no shared-state run (a
+  build, a catalog mutator, a closure); the dispatching session runs one central verification per wave.
 - **The one place tree state matters is a release or commit flow**, and it is that flow's own gate, run
   by its script or skill (the `release` skill, a site publish, a `deploy` script) - not a check an agent
   adds on its own.
@@ -131,6 +133,28 @@ versioned op that may cost money or become public) has one home:
   quotes**, so a Ukrainian word with the real apostrophe (`прев’ю`) inside a quoted string is a parse
   error: keep such text in a data file or build it with `[char]0x2019`. A negative `-split` limit splits
   from the end; use `[regex]::Split`.
+- **The Bash and PowerShell tools resolve different PATHs.** A per-user install (`node`, `gh`, `rg`,
+  `ffmpeg`, `claude` on the reference machine) may resolve only in the PowerShell tool, and a `pwsh` started
+  from Bash inherits the short PATH. A "tool present?" branch gives the same verdict from either shell, or
+  prints "cannot verify". `C:\WINDOWS\system32\bash.exe` is WSL, not Git Bash. A tool shell's environment is
+  a snapshot taken at session start: an installer run since (a new `JAVA_HOME`) stays invisible until the
+  session restarts.
+- **Arguments through `pwsh -File` bind as strings.** A `[string[]]` parameter receives a comma list as one
+  element, so split it inside; a `[bool]` refuses the string, so declare a `[switch]`; `-X:$false` arrives as
+  two arguments through a forwarder that re-splats; an array splatted at a forwarder binds positionally.
+  Non-ASCII text in a Bash-to-pwsh argument can silently do nothing - pass it through a file.
+- **Bash quoting corrupts text without failing.** Backticks inside a quoted argument run as command
+  substitution; `\$VAR` and `$false` inside a double-quoted `pwsh -Command` are expanded by Bash first; a
+  heredoc collapses a doubled backslash, turns `\a` into BEL, breaks on an apostrophe and mangles Cyrillic.
+  Author a file with the editor's write tool, not a heredoc.
+- **Encoding across the shell boundary.** A child `pwsh`'s console output is cp866 while its arguments
+  arrive intact, so verify text on disk, never from the echo; a script whose stdout is parsed as JSON writes
+  raw UTF-8 bytes; in Git Bash `grep -c $'\r'` counts every line, and `grep -i` does not fold Cyrillic case.
+- **A read-modify-write over real files never runs as an inline `pwsh -Command`.** Write a wrapper `.ps1`
+  with `Set-StrictMode` and `$ErrorActionPreference = 'Stop'`, and run it with `-File`.
+- **Never learn a script's interface by calling it.** A script with a write verb has no dry path; read the
+  `param(` block of the copy that actually runs, resolving any forwarder first. A closure facade is never a
+  probe: what it writes is permanent.
 - Prefer the project's own wrapper scripts over hand-rolled git/gh invocations with fragile nested
   quoting.
 - **This whole family ships as hooks with the `sza` plugin**, in [`hooks/`](../hooks/README.md) - the

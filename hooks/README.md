@@ -78,6 +78,9 @@ is "here is context you did not ask for", which none of the other six describes.
   search unscoped and spoke only because the wider run found something. If the wider run also finds
   nothing it stays silent and the original verdict stands. Nobody audits a hook that is merely usually
   right.
+- **`PostToolUse` never fires on a failed tool call**, and the Bash `tool_response` carries no exit code -
+  so an observing hook cannot count failures. Observe them from a `Stop` hook that reads the session's
+  `transcript_path`, where the failed calls and their error flags are recorded.
 - **Arming** is a `SessionStart` shape that resets a marker so a companion pre-tool gate starts each
   session requiring one fresh action before it stands down. Trivial mechanically, worth naming because it
   is how a gate becomes "once per session" rather than "always" or "never" - and because the pair breaks
@@ -103,6 +106,27 @@ is "here is context you did not ask for", which none of the other six describes.
     recognises that marker and steps aside. Without such a path, a turn-refusing hook is a trap.
 - **Every escape hatch is unconditional.** `guard-uncapped-read` never touches a Read carrying an explicit
   `limit` or `offset`, however large, because auditing an implementation end to end is legitimate work.
+
+## Harness facts a hook design depends on
+
+Established by probe; read the vendor's hooks and memory docs page before designing a context change on
+top of any of them.
+
+- **`.claude/rules/*.md` with `paths:` frontmatter is injected only when a matching file is read.**
+  Unscoped rule files and `@import` lines load at launch and are billed on every turn. New rule prose goes
+  path-scoped unless every session needs it.
+- **A subagent without a `tools:` allowlist inherits every MCP server**, and a "do not use tool X" line in
+  its prompt is not enforcement. A measured with-versus-without comparison runs a headless child with
+  `--disallowedTools`, never two prompted subagents.
+
+## Candidate hooks - not shipped
+
+- **A verdict piped into a filter.** A gate, test, lock or lease call followed by `| tail`, `| head` or
+  `| grep`, or judged by a trailing `; echo $?`, reports the filter's exit code, not its own - a refused
+  lock or a red gate reads green. A `PreToolUse` (Bash) refusal could catch the shape when the head of a
+  pipeline names a known verdict-bearing script; the remedy it names is to redirect to a file, then read
+  the exit code and require the positive verdict string (`acquired`, `PASS`) before acting. Not shipped
+  until the pre-filter is proven against the real corpus at a near-zero false-positive rate.
 
 ## Two scopes, on purpose
 

@@ -97,10 +97,13 @@ function Get-TimberProbeTemplates {
     # S2402: both shapes are the project's (probes.openerRegex / probes.templateRegex).
     $opener = [regex]([string](Get-SzaProfileValue 'probes.openerRegex'))
     $ticketPrefix = [regex]([string](Get-SzaProfileValue 'probes.templateRegex'))
+    # The file types are the project's too (probes.sourceExtensions), never a hard '*.kt'.
+    $extensions = @((Get-SzaProfileValue 'probes.sourceExtensions') | ForEach-Object { ([string]$_).ToLowerInvariant() })
     $results = [System.Collections.Generic.List[object]]::new()
 
     foreach ($root in $SourceRoots | Where-Object { Test-Path -LiteralPath $_ }) {
-        $files = Get-ChildItem -LiteralPath $root -Recurse -File -Filter '*.kt' |
+        $files = Get-ChildItem -LiteralPath $root -Recurse -File |
+            Where-Object { $extensions -contains $_.Extension.ToLowerInvariant() } |
             Where-Object { $_.FullName -notmatch '[\\/](build|\.gradle|\.kotlin)[\\/]' }
         foreach ($file in $files) {
             $content = Get-Content -LiteralPath $file.FullName -Raw
