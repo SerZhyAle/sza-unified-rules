@@ -222,9 +222,8 @@ try {
         $r = Invoke-Tool $p 'spec_catalog/spec-next-preflight.ps1' @('-Format', 'table', '-NoDrift')
         Assert-That ($r.output -match 'status mismatch: catalog=Approved file=Tactical') "the mismatch was not reported: $($r.output)"
         Assert-That ((Get-Row $p 'S0001').status -eq 'Approved') 'the picker rewrote the ledger'
-        if ($r.output -match 'file authoritative') {
-            Write-Gap 'rule 4: the picker reports the mismatch and calls the FILE authoritative; the rule says the reader trusts the ledger'
-        }
+        Assert-That ($r.output -match 'catalog authoritative') "the picker did not call catalog authoritative: $($r.output)"
+        Assert-That ($r.output -notmatch 'file authoritative') "the picker called file authoritative: $($r.output)"
     }
 
     Test-Case 'rule 6: the vocabulary is closed - update refuses an undeclared status and validate refuses a ledger that holds one' {
@@ -263,16 +262,15 @@ try {
         Assert-Tool $p 'spec_catalog/validate.ps1' | Out-Null
     }
 
-    Test-Case 'rules 6 and 7: leaving a Block* status clears its note, and the one-level exit is only a convention' {
+    Test-Case 'rules 6 and 7: leaving a Block* status clears its note, and a Block* ticket may leave to any active status' {
         $p = New-Project 'a-block' @('b')
         Move-Ticket $p 'S0001' 'BlockExternal' 'waiting for a vendor'
         Assert-That ((Get-Row $p 'S0001').statusNote -eq 'waiting for a vendor') 'the note was not kept'
         Assert-That ((Get-SpecText $p 'S0001') -match '(?m)^\*\*Status note:\*\*\s*waiting for a vendor') 'the note is not mirrored under the status line'
         $r = Invoke-Tool $p 'spec_catalog/update.ps1' @('-Id', 'S0001', '-Status', 'Implemented')
-        if ($r.code -eq 0) {
-            Assert-That (-not (Get-Row $p 'S0001').PSObject.Properties.Name.Contains('statusNote') -or -not (Get-Row $p 'S0001').statusNote) 'the note outlived the Block* status'
-            Write-Gap 'rule 6: a Block* ticket leaves to any status (Draft -> BlockExternal -> Implemented was accepted); the rule says it advances exactly one level, and the ledger keeps no record of the level it left'
-        }
+        Assert-That ($r.code -eq 0) "update refused leaving Block* to Implemented: $($r.output)"
+        Assert-That (-not (Get-Row $p 'S0001').PSObject.Properties.Name.Contains('statusNote') -or -not (Get-Row $p 'S0001').statusNote) 'the note outlived the Block* status'
+        Assert-That ((Get-Row $p 'S0001').status -eq 'Implemented') 'the status was not updated to Implemented'
     }
 
     Test-Case 'rule 9: direction is read from literal tokens, never from prose' {
@@ -553,14 +551,14 @@ exit /b %ERRORLEVEL%
             Assert-That ($c.args -match "--session-id $($c.agent)") "the child of $($c.id) was not started under the id it was given"
         }
         Assert-That ((@($children | ForEach-Object { $_.agent } | Sort-Object -Unique)).Count -eq $children.Count) 'two children shared one agent id'
-        # A CLI that does not list --session-id gets no identity from the runner, so a leaked id reaches the child.
+        # A CLI that does not list --session-id still gets its own agent id in its environment,
+        # so an id leaked into the launcher's environment never reaches the child.
         $q = New-RunnerProject 'd-identity-plain' @('one')
         $r = Invoke-Runner $q @{ SZA_AGENT_ID = 'launcher-leaked-id' }
         $plain = @(Get-Children $q)
         Assert-That ($plain.Count -ge 1) "no child ran under a CLI without --session-id: $($r.output)"
-        if ($plain[0].agent -eq 'launcher-leaked-id') {
-            Write-Gap 'rule 29: for a CLI whose --help does not list --session-id the runner gives the child no identity, so an id leaked into the launcher''s environment is the child''s; the identity half of the rule holds for the CLI that lists the flag'
-        }
+        Assert-That ($plain[0].agent -ne 'launcher-leaked-id') "the leaked agent id reached the child: $($plain[0].agent)"
+        Assert-That ($plain[0].agent -match '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$') "child did not get its own uuid agent id: $($plain[0].agent)"
     }
 
     Test-Case 'rule 32: the prompt names the project''s pipeline with its mono flag and the id reaches the agent in the case the template writes it' {

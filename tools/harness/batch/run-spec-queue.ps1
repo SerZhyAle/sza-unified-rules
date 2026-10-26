@@ -760,7 +760,7 @@ function Get-PlannedChildSessionId {
         return $null
     }
     if (@($elements | Where-Object { $_ -in @('--resume', '-r', '--continue', '-c') }).Count -gt 0) { return $null }
-    if (-not (Test-ChildTakesSessionId)) { return $null }
+    # S0014: rule 29 requires an agent id of its own even when the CLI does not list --session-id
     return [guid]::NewGuid().ToString()
 }
 
@@ -1233,7 +1233,7 @@ while ($true) {
     # The id itself was chosen before the pick (Get-PlannedChildSessionId), because the reservation
     # above was made in its name.
     $sessionId = $plannedSessionId
-    if ($sessionId -and [array]::IndexOf($childArgs, '--session-id') -lt 0) {
+    if ($sessionId -and (Test-ChildTakesSessionId) -and [array]::IndexOf($childArgs, '--session-id') -lt 0) {
         $childArgs += @('--session-id', $sessionId)
     }
 
@@ -1253,6 +1253,8 @@ while ($true) {
         # It also stops an id leaked into this runner's environment from making every child one
         # agent.
         $psi.Environment[(Get-SzaEnvName 'AGENT_ID')] = $sessionId
+    } elseif ($psi.Environment.ContainsKey((Get-SzaEnvName 'AGENT_ID'))) {
+        $psi.Environment.Remove((Get-SzaEnvName 'AGENT_ID'))
     }
 
     $logFile = $null

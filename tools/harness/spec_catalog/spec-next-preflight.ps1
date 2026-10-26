@@ -506,7 +506,7 @@ if ($Format -eq 'json') {
         $selRel = if ($queueRel.ContainsKey($selected.id)) { $queueRel[$selected.id] } else { 'not in queue' }
         Write-Host "  SELECTED: $($selected.id) (rel $selRel, $($selected.status), pri $($selected.priority), tier $($selected.tier)) - $($selected.name)" -ForegroundColor Green
         if ($selected.status_mismatch) {
-            Write-Host "    status mismatch: catalog=$($selected.status_mismatch.catalog) file=$($selected.status_mismatch.file) (file authoritative)" -ForegroundColor Yellow
+            Write-Host "    status mismatch: catalog=$($selected.status_mismatch.catalog) file=$($selected.status_mismatch.file) (catalog authoritative)" -ForegroundColor Yellow
         }
         if ($selected.drift) {
             Write-Host "    drift: $($selected.drift.verdict) (markers=$($selected.drift.markers_count))" -ForegroundColor DarkGray

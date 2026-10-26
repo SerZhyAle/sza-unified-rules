@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Contract | `TASK-FLOW` |
-| Version | 0.5, draft |
+| Version | 0.6, draft |
 | Home | the shared contracts catalog, domain `task-flow/` (the path is in [CLAUDE.md](../../CLAUDE.md)) |
 | Role | **shared implementation, partial**: `tools/harness/` is the ticket tool and the full runner every adopting repository uses, and `tools/harness/scaffold/` stands up day 0 of a new project. The owner is `shared`, so this repository edits the contract only through the canon session |
 
@@ -23,10 +23,11 @@
   plans directory, `release-queue.ps1 -List` lists a missing plan file as empty, and the launcher's start
   step drops leftover lock files and lock-wait entries (rule 31 no longer asks R0 for the origin's
   shared-history read and journal note). Each closure is a harness change and ships with the plugin version
-  bump. G7, G8 and G9 (0.5) are open differences found by the ledger suite: the picker calls the spec file
-  authoritative where rule 4 trusts the ledger, a `Block*` ticket may leave to any status, and a CLI that does
-  not list `--session-id` gives the child no agent id of its own. Each is a `GAP` line in the suite and the
-  owner's to settle by changing the tool or the rule (ticket S0014).
+  bump. G7, G8 and G9 are closed by ticket S0014 (0.6): the picker calls the catalog authoritative (rule 4),
+  rule 6 is relaxed to permit leaving `Block*` to any active status matching `update.ps1`, and the batch runner
+  sets `SZA_AGENT_ID` and isolates the child environment regardless of CLI `--session-id` support (rule 29).
+  The GAP lines in `tools/tests/ledger-rules.tests.ps1` became ordinary assertions (PASS, run=24 skipped=0
+  gaps=0). REPO-LAYOUT rule 3, in-flight rule 28 and real agent past Approved are accepted conduct boundaries.
 - `batch/run-spec-queue.ps1` is the full-featured form of rules 21-29. Neither it nor the launcher may drift
   from rules 21-27 without the catalog moving first.
 - S0011 re-read section 5 and the partial adoption row without advancing its 2026-10-07 verification.
