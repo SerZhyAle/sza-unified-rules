@@ -1,6 +1,48 @@
 # S0012 - Delivery replay and queue-runner evidence
 
-Verified source-side scope on 2026-10-23 with PowerShell 7.6.6 and Python 3.12.10 (`py -3`). The
+## Delivery follow-up, 2026-10-26
+
+The already published release was installed with `claude plugin update sza@sza-unified-rules`:
+`Plugin "sza" updated from 2026.1021.2 to 2026.1026.1 for scope user`, exit 0. No new deploy,
+version cut, commit or push was needed or performed in this follow-up. The installed release is
+commit `d4d69229511e2069d7d65ae592f971cd257221da`; the source reader changes first shipped in
+`5bc65a5` (`2026.10.23.1` / `2026.1023.1`) and remain in the installed release.
+
+| Observation | CANON_VERSION | Plugin version | Core digest | Reader equality | Replay / verdict |
+| --- | --- | --- | --- | --- | --- |
+| Installed before update | `2026.10.21.2` | `2026.1021.2` | `sha256:a68993630be3f1748d7d9be44540c2b2301dc5bd737e8ec1e058dfcc1b3c5d35` | 0 of 8 | reader exit 2; NOT DELIVERED, exit 1 |
+| Source and installed after update | `2026.10.26.1` | `2026.1026.1` | `sha256:bfa85c0bf9bdb08e8d1d1aa6f2d12904b3ea2a745e9ba05df30aea1014b8a071` | 8 of 8 | reader PASS (44 cases); batch PASS (24 cases, 4 GAP); DELIVERED, exit 0 |
+
+Both observed version pairs derive correctly. Before the update, 11 payload files existed only in
+the source and 47 differed. After it, no payload files were missing or extra; one differed (the
+historical project contrib record, outside the reader set and digest). The delivery command's
+whole-tree count is informational; it does not certify equality of every payload file.
+
+Fresh commands, run from the repository root:
+
+| Command | Actual output | Exit |
+| --- | --- | --- |
+| `pwsh -NoProfile -File tools/tests/verify-delivery.ps1` before update | NOT DELIVERED; reader replay COULD NOT VERIFY (0 cases) | 1 |
+| `claude plugin update sza@sza-unified-rules` | Updated `2026.1021.2` to `2026.1026.1` | 0 |
+| `pwsh -NoProfile -File tools/tests/verify-delivery.ps1 -IncludeHarness` after update | DELIVERED; reader PASS (44); batch PASS (24, gaps=4) | 0 |
+| `pwsh -NoProfile -File tools/tests/contract-reader.tests.ps1 -CatalogRoot <catalog>` | PASS (run=44 skipped=0) | 0 |
+| `pwsh -NoProfile -File tools/tests/verify-delivery.tests.ps1` | PASS (run=7 skipped=0), including missing/changed/older/non-derived copies and missing-tree exit 2 | 0 |
+| `pwsh -NoProfile -File <catalog>/task-flow/reference/day0-rehearsal.ps1 -Harness <absolute-source-root>/tools/harness` | Every check passed | 0 |
+
+The first day-0 invocation used relative `-Harness tools/harness`: after changing into its throwaway
+project the rehearsal could not locate `update.ps1`, and reported four failures (exit 1). The corrected
+absolute-path invocation above passed. Neither the harness nor the catalog reference was changed to
+obtain that result.
+
+This closes the real installed-reader delivery observation for this release, including rung 4's
+before/after pair and digest. It does not certify a future source change, a real agent child, wider
+layout/writer fixtures or full TASK-FLOW conformance. The TASK-FLOW partial 0.2 adoption and its
+2026-10-07 date remain unchanged. Rule 24 and the live-agent authorization remain owner decisions;
+the original 2026-12-31 review dates remain in force.
+
+## Historical source-side record, 2026-10-23
+
+Verified source-side scope on 2026-10-23 with PowerShell 7.6.6 and Python 3.12.10 (`py -3`). At that time the
 delivery itself and a real agent child are NOT claimed: both need a separate owner request, and none
 was made. No deploy, version cut, plugin update, consuming-repository edit or live-agent run took place.
 The S0011 results stay as recorded in [PROGRESS_CONTRACT-READERS-S0011.md](PROGRESS_CONTRACT-READERS-S0011.md),
@@ -109,12 +151,21 @@ rules 1, 3, 4, 6, 9, 11, 13, 15-17, 19-20 and 38-40. The batch cases need Window
 
 ## Still owed, and why
 
-- **Delivery.** `verify-delivery.ps1` must say DELIVERED after an owner-requested deploy, the plugin
+- **Delivery (closed by the 2026-10-26 follow-up above).** `verify-delivery.ps1` must say DELIVERED after an owner-requested deploy, the plugin
   update and a check that the new version directory exists under the plugin cache. Record the real
   version pair and both rows. `deploy.ps1` stages everything with `git add .` and pushes the current
   branch, while the plugin follows `main`; run `deploy.ps1 -DryRun` and read the file list first.
 - **A real agent child.** One supervised ticket, `-MaxTickets 1`, in a throwaway project: it spends
-  quota and runs with `bypassPermissions`, so it waits for the owner. Until then the TASK-FLOW adoption
-  row is neither advanced nor rewritten.
+  quota and runs with `bypassPermissions`, so it waited for the owner.
 - **The rule-24 decision** above, and the open G1, G3 and G6 of the harness.
 - **Review before 2026-12-31** of both own exception rows; neither deadline was extended.
+
+## Closed on 2026-10-26, remainder carried
+
+The owner answered on 2026-10-26: change the runner (rule 24 stands as written), close G1, G3 and G6, run
+one supervised real child now, and close S0012 with a successor. S0012 is Verified for the delivery of the
+rule-adoption readers and moved to `PLAN/DONE`. The four bullets above, the wider layout/writer fixtures and
+the unexercised TASK-FLOW rules are carried by S0013 (`PLAN/S0013_taskflow-harness-gaps-and-live-child.md`);
+its evidence is [PROGRESS_CONTRACT-TASKFLOW-S0013.md](PROGRESS_CONTRACT-TASKFLOW-S0013.md). The rule-24
+exception row of the catalog registry is closed there, and the 2026-12-31 review of the other one is not
+extended.

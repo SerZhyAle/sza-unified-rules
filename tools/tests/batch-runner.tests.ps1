@@ -9,9 +9,11 @@
     What it does not prove: anything a real agent does. No `claude` process is ever started, no model is
     billed, so this is not the live rung of TASK-FLOW section 4 and does not certify the lifecycle.
 
-    A line `GAP` records a place where a shipped tool differs from the contract's text: rule 24 in the batch
-    runner, and the section 5 gaps G1, G3 and G6 of the harness. It never fails the run; the case flips to
-    PASS the day the tool changes, so the claim cannot go stale in either direction.
+    Rule 24 in the batch runner and the section 5 gaps G1, G3 and G6 of the harness were recorded here as
+    `GAP` lines (a place where a shipped tool differs from the contract's text) until the tools changed;
+    they are ordinary cases now, and a regression in any of them fails the run. The `GAP` mechanism stays
+    for the next difference found: such a line never fails the run and the case flips to PASS the day the
+    tool changes, so the claim cannot go stale in either direction.
 
     Windows only: the batch runner terminates trees with taskkill and lists agent processes through CIM.
     Takes about two minutes, almost all of it three one-minute timeouts running side by side.
@@ -376,34 +378,38 @@ try {
         Assert-That (-not (Test-Path (Join-Path $p 'children.log'))) 'a child was started with nothing to pick'
     }
 
-    # --- section 5 of TASK-FLOW: the recorded gaps, read again. Each is a GAP while it holds and a PASS the day
-    # --- the shipped tool changes, so the claim in the contract cannot go stale in either direction.
+    # --- section 5 of TASK-FLOW: the gaps found on 2026-10-07 and closed in the harness, kept as regression cases.
 
-    Test-Case 'gap G1 (rule 35): the bare insert in a project with no PLAN/ directory' {
+    Test-Case 'G1 (rule 35): the bare insert in a project with no PLAN/ directory creates its own store' {
         $bare = Join-Path $scratch 'bare-insert'
         New-Item -ItemType Directory -Path $bare | Out-Null
         '{ "version": "1", "projectName": "bare" }' | Set-Content (Join-Path $bare '.sza-profile.json') -Encoding utf8
         $r = Invoke-Tool $bare 'spec_catalog/insert.ps1' @('-Name', 'probe', '-Slug', 'probe')
-        if ($r.code -ne 0) { Write-Gap 'G1, rule 35: the bare insert.ps1 still fails in a project with no PLAN/ (the scaffold works around it)' }
-        else { 'the bare insert creates its own stores' }
+        Assert-That ($r.code -eq 0) "the bare insert.ps1 exited $($r.code): $($r.output)"
+        Assert-That (@(Get-Ledger $bare).Count -eq 1) 'the bare insert wrote no ledger row'
     }
-    Test-Case 'gap G3 (rule 15): the bare queue listing in a project with no plan files' {
+    Test-Case 'G3 (rule 15): the bare queue listing in a project with no plan files lists nothing and exits 0' {
         $bare = Join-Path $scratch 'bare-list'
         New-Item -ItemType Directory -Path $bare | Out-Null
         '{ "version": "1", "projectName": "bare" }' | Set-Content (Join-Path $bare '.sza-profile.json') -Encoding utf8
         $r = Invoke-Tool $bare 'spec_catalog/release-queue.ps1' @('-List')
-        if ($r.code -ne 0) { Write-Gap "G3, rule 15: the bare release-queue.ps1 -List still exits $($r.code) when RELEASE_QUEUE.md is absent (the scaffold writes the plan files)" }
-        else { 'the bare queue listing treats a missing plan file as empty' }
+        Assert-That ($r.code -eq 0) "release-queue.ps1 -List exited $($r.code): $($r.output)"
+        Assert-That ($r.output -match '--- 0 ticket') "the listing was not empty: $($r.output)"
+        $v = Invoke-Tool $bare 'spec_catalog/release-queue.ps1' @('-Validate')
+        Assert-That ($v.code -eq 2) "-Validate of a missing queue must stay 'cannot verify' (2), got $($v.code)"
     }
-    Test-Case 'gap G6 (rule 31): a lock file a dead session left behind, at R0''s start' {
+    Test-Case 'G6 (rule 31): a lock file and a lock-wait entry a dead session left behind are gone at R0''s start' {
         $p = New-Project 'r-locks' @{ S0001 = 'idle' } 'mono' @('only')
         Set-R0Wrapper $p (Join-Path $p 'r0.ps1')
         Set-Content (Join-Path $p 'temp/CODE.LOCK') 'left by a dead session'
+        New-Item -ItemType Directory -Path (Join-Path $p 'temp/CODE.QUEUE') -Force | Out-Null
+        Set-Content (Join-Path $p 'temp/CODE.QUEUE/0001__dead.json') '{}'
         $r = Invoke-Proc $p @((Join-Path $p 'invoke-r0.ps1'), '-MaxTickets', '1')
         Assert-That ($r.code -eq 0) "expected exit 0, got $($r.code): $($r.output)"
         $snap = Get-Content (Join-Path $p 'startstate.json') -Raw | ConvertFrom-Json
-        if ($snap.locks -gt 0) { Write-Gap 'G6, rule 31: the rendered launcher''s start step drops stop files and leases but leaves a leftover lock file in place' }
-        else { 'the start step drops a leftover lock file' }
+        Assert-That ($snap.locks -eq 0) "$($snap.locks) leftover lock file(s) were still there at the first child"
+        Assert-That (-not (Test-Path (Join-Path $p 'temp/CODE.QUEUE/0001__dead.json'))) 'the lock-wait entry survived the start step'
+        Assert-That ($r.output -match 'leftover lock was removed') 'the start step did not say it removed a lock'
     }
 
     # --- the long cases, now that their runs have had time ----------------------------------------------------
@@ -427,7 +433,9 @@ try {
     }
     Test-Case 'batch: the queue is worked in the plan''s order and an unmoved ticket is dropped for the rest of the run' {
         $order = @(Get-Content (Join-Path $bMain 'children.log') | ForEach-Object { $_.Split(' ')[0] })
-        Assert-That (($order | Select-Object -First 4) -join ',' -eq 'S0001,S0002,S0003,S0004') "launch order: $($order -join ',')"
+        # A ticket that moved is offered again at once, so the first launches are compared by distinct id.
+        $firstSeen = @($order | Select-Object -Unique) -join ','
+        Assert-That ($firstSeen -eq 'S0001,S0002,S0003,S0004') "launch order: $($order -join ',')"
         Assert-That ((Get-Launches $bMain 'S0003') -eq 1) 'an unmoved ticket was launched again in the same run'
     }
     Test-Case 'batch: the prompt reaches the child as one argument with spaces and quotes intact (rule 22)' {
@@ -446,14 +454,21 @@ try {
         Assert-That ($status -eq 'In Progress') "the status the child wrote before it was killed was lost: $status"
         Assert-That ($bResult.seconds -lt 200) "the run took $([int]$bResult.seconds) s; the kill did not fire near the ceiling"
     }
-    Test-Case 'batch: a ticket whose child failed but moved the status is offered again (rule 24)' {
-        $moved = @(Read-Jsonl (Join-Path $bMain 'temp/spec-queue/runs-a.jsonl') | Where-Object { $_.moved -and $_.outcome -ne 'timeout' } | Select-Object -ExpandProperty id -Unique)
-        $again = @($moved | Where-Object { (Get-Launches $bMain $_) -gt 1 })
-        if ($again.Count -eq 0) {
-            Write-Gap "rule 24: the batch runner never offers a ticket again in the same run, though $($moved -join ', ') moved - run-spec-queue.ps1 adds every finished ticket to the excluded list, moved or not; the contract (and R0) re-offer a ticket that advanced"
-        } else {
-            'the batch runner re-offers a ticket that moved'
-        }
+    Test-Case 'batch: a child that failed but moved is offered again; the run that no longer moves it drops it (rule 24)' {
+        $rows = Read-Jsonl (Join-Path $bMain 'temp/spec-queue/runs-a.jsonl')
+        Assert-That ((Get-Launches $bMain 'S0001') -ge 2) 'S0001 moved (Draft to In Progress) and was not offered again'
+        Assert-That ((Get-Launches $bMain 'S0002') -ge 2) 'S0002 failed but moved and was not offered again'
+        $lastS2 = @($rows | Where-Object { $_.id -eq 'S0002' })[-1]
+        Assert-That (-not $lastS2.moved) 'the last S0002 run still moved, so the loop ended before it was dropped'
+        Assert-That ((Get-Launches $bMain 'S0003') -eq 1) 'S0003 did not move and was launched again'
+    }
+    Test-Case 'batch: -MaxTickets counts finished picks, a moved ticket offered again included (rule 24)' {
+        $max = New-Project 'b-max' @{ S0001 = 'advance'; S0002 = 'idle' } 'a' @('one', 'two')
+        Set-BatchProfile $max
+        $m = Invoke-Proc $max @($batch, '-TimeoutMinutes', '1', '-ClaimGraceSeconds', '3', '-MaxTickets', '1')
+        Assert-That ($m.code -eq 0) "expected exit 0, got $($m.code): $($m.output)"
+        Assert-That ((Get-Launches $max 'S0001') -eq 1 -and (Get-Launches $max 'S0002') -eq 0) "-MaxTickets 1 launched S0001 $((Get-Launches $max 'S0001'))x and S0002 $((Get-Launches $max 'S0002'))x"
+        Assert-That ($m.output -match 'reached -MaxTickets 1') 'the run did not say it reached -MaxTickets'
     }
 
     $rResult = Wait-Proc $rMainRun

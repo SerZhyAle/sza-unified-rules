@@ -264,6 +264,10 @@ function Write-JsonlFile {
     )
     $payload = (@($Lines) -join "`n")
     if ($payload.Length -gt 0) { $payload += "`n" }
+    # TASK-FLOW rule 35: the first write into a project with no PLAN/ creates the directory; failing on
+    # the .tmp path below named a file nobody asked for and told the caller nothing about the cause.
+    $dir = Split-Path -Parent $Path
+    if ($dir -and -not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
     $tmp = "$Path.tmp"
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
     [System.IO.File]::WriteAllText($tmp, $payload, $utf8NoBom)

@@ -1,6 +1,6 @@
 ---
-# Contribution: FastMediaSorter_Lite (overlay A; single product; dual-runtime "two exes one source tree" + co-shipped sibling program) -> Unified_Rules
-Source repo: p:\WINDOWS\FastMediaSorter_Lite | Date: 2026-07-23
+# Contribution: FastMediaSorter_Lite - Fast Media Sorter & Sharing for Windows (FMS_Win): a media and file manager, a local sharing and scheduling service and a Media Exchange Server, three optional parts of one product (overlay A; dual-runtime "two exes one source tree" + co-shipped Share Manager) -> Unified_Rules
+Source repo: p:\WINDOWS\FastMediaSorter_Lite | Date: 2026-07-23 (header and "Overlay facts" corrected in place 2026-10-26, FMS_Win ticket 273; every dated section below is history and is not rewritten)
 Read: README, NEW_PROJECT_CHECKLIST, REPOSITORY_LAYOUT, DOCUMENTATION_CONCEPT, PLATFORM_OVERLAYS,
 RELEASE_AND_DISTRIBUTION, CHANNEL_MATRIX, DEVELOPMENT, TESTING_AND_QA, GITHUB_INTERACTION, AI_USAGE,
 AUTHOR, LOCALIZATION, SECURITY_AND_PRIVACY, SUPPORT_AND_FEEDBACK, SITE_CONFIGURATION; contrib/epub_2_html.md,
@@ -15,34 +15,63 @@ winget + Store, MSIX `YY.(M*100+D).HHmm.0` remap, build-vs-release wall, committ
 co-ships a **separate companion program** in every channel, and it is where the concrete **winget
 failure-mode list** and the **frozen-anchor-vs-visible-name decoupling** were learned.
 
-## Overlay facts (verified against this repo)
+## Overlay facts (verified against this repo; corrected in place 2026-10-26, ticket 273)
 
+- **What the product is.** *Fast Media Sorter & Sharing for Windows* (FMS_Win; repository
+  `FastMediaSorter_Lite`) is one product of **three optional parts, always in this order** (owner decision
+  2026-10-26; machine source `tools/site-facts.json` `positioning`, human source `docs/guides/POSITIONING.md`):
+  (1) a **media and file manager** - views and sorts photos and videos with one key per file and manages
+  files in local folders, on SFTP and SMB servers and on the devices of an exchange account (the file
+  manager mode of the Grid panel, F3); (2) a **local sharing and scheduling service** - the Share Manager and
+  its Go SFTP worker share folders over SFTP (QR pairing for Android; FileDO disk hosting is a capability of
+  sharing, never a part of its own), run file operations on a schedule and connect this PC to an exchange
+  account; (3) the **Media Exchange Server** - a server the user runs, to which their devices enroll in an
+  account and through which they reach each other. Each part is optional and none is the core of another.
+  The words photo sorter, image viewer and video player are search keywords only (`discoverability`), never
+  the definition. The register of what the product does, with a state and evidence per row, is
+  `capabilities` in the same data file; the retired definitions are its `retiredPhrases`.
 - **Source root & release-mechanics.** `src/` (VB.NET, three `.vbproj` in one `FastMediaSorter.sln`) +
-  `publishing/{installer,winget,msix,store}/` umbrella + `tools/` automation. Pure Overlay A, no Go body
-  (evidence: `ls src/*.vbproj src/Modern/ src/FastMediaSorterCompanion/`, `ls publishing/`).
-- **Version shape (+ padding choice).** Dotted **`YY.M.D.HHmm`** (e.g. `26.7.23.1127`), the core's primary
-  example. **Two exes carry the same stamp from two toolchains**: net10 via MSBuild `AutoVersion` property
-  (`FastMediaSorter.Modern.vbproj:66-70`), net48 via an `UpdateVersion` target that rewrites
-  `My Project\VersionInfo.vb` before compile (`FastMediaSorter.vbproj:471-481`); both accept
-  `-p:ReleaseVersion=`. Store remap `YY.(M*100+D).HHmm.0` (already core).
-- **Channels + listing files.** GitHub Release (`FastMediaSorter-<ver>-windows-x64-setup.exe` + `.zip`, each
-  `.sha256`); winget `publishing/winget/*.yaml` -> microsoft/winget-pkgs; Microsoft Store MSIX from
-  `publishing/msix/build-msix.ps1`, listing `publishing/store/listingData.csv`, **manual** Partner Center
-  upload (evidence: `.github/workflows/release.yml`, the three `winget/*.yaml`).
+  `publishing/{installer,winget,msix,store}/` umbrella + `tools/` automation, **and two Go bodies that are
+  parts of the same tree, not a second overlay**: the Media Exchange Server in `exchange-server/` (own
+  `go.mod`, `cmd/`, `internal/`; its release step is held shut by `INCLUDE_EXCHANGE: 'false'` in
+  `.github/workflows/release.yml`, so no package carries it) and the SFTP worker, built in the sibling
+  repository `fms_companion` and vendored as `payload/companion/fms-share-worker.exe`. Overlay A (evidence:
+  `ls src/*.vbproj src/Modern/ src/FastMediaSorterCompanion/ exchange-server/ payload/companion/`,
+  `ls publishing/`).
+- **Version shape (+ padding choice).** Dotted **`YY.M.D.HHmm`** (e.g. `26.10.25.1830`, the published tag
+  `v26.10.25.1830`), the core's primary example. **Two exes carry the same stamp from two toolchains**: net10
+  via MSBuild `AutoVersion` property (`FastMediaSorter.Modern.vbproj`, `AutoVersion`, lines 65-68), net48 via
+  an `UpdateVersion` target that rewrites `My Project\VersionInfo.vb` before compile
+  (`FastMediaSorter.vbproj`, target `UpdateVersion`, line 1128); both accept `-p:ReleaseVersion=`. Store
+  remap `YY.(M*100+D).HHmm.0` (already core).
+- **Channels + listing files.** GitHub Release (`FastMediaSorter-<ver>-windows-x64-setup.exe`, the `.zip`
+  and the Server edition's `FastMediaSorter-<ver>-windows-x64-server-setup.exe`, each `.sha256`); winget
+  `publishing/winget/*.yaml` and `publishing/winget/server/*.yaml` (two packages) -> microsoft/winget-pkgs;
+  Microsoft Store MSIX from `publishing/msix/build-msix.ps1` (two `<Application>` entries: the viewer and the
+  Share Manager), listing `publishing/store/listingData.csv` (13 locales, written by `Build-ListingData.ps1`),
+  **manual** Partner Center upload; the Inno installers under `publishing/installer/`. The Media Exchange
+  Server has no channel: its packaging cell reads "Not in this package" (evidence:
+  `.github/workflows/release.yml`, the `winget/*.yaml` files, `tools/site-facts.json` `availability`).
 - **Frozen anchors.** winget `PackageIdentifier: SerZhyAle.FastMediaSorter` **and `PackageName:
   FastMediaSorter LITE`** (frozen because it must equal the installed ARP DisplayName for `winget upgrade`
-  to correlate - `locale.en-US.yaml:10-11`); Inno `AppId {7371E7F1-..}`, `UninstallDisplayName`
-  (`= AppNameArp "FastMediaSorter LITE"`), `DefaultDirName FastMediaSorter_LITE`, `OutputBaseFilename`
-  (`installer/FastMediaSorter.iss:21,35,42,47,51`); MSIX Identity `Name`/`Publisher` + reserved Store
-  `DisplayName`; the frozen **exe name `FastMediaSorter_LITE.exe`**, the mutex
+  to correlate - `locale.en-US.yaml`, `PackageName`, line 17); Inno `AppId {7371E7F1-..}`,
+  `UninstallDisplayName` (`= AppNameArp "FastMediaSorter LITE"`), `DefaultDirName FastMediaSorter_LITE`,
+  `OutputBaseFilename` (`installer/FastMediaSorter.iss:41,55,62,67,79`); MSIX Identity `Name`/`Publisher` +
+  reserved Store `DisplayName`; the frozen **exe name `FastMediaSorter_LITE.exe`**, the mutex
   `FastMediaSorterSingleInstanceMutex`, the registry hive `SZA\FastMediaSorter`, ProgIDs `FastMediaSorter.*`.
-- **Editions + parity mechanism.** **None (single edition, shared source).** But it ships a **dual-runtime
-  flavor**: `FastMediaSorter_LITE.exe` (net10 x64, `dotnet publish` single-file) **and**
-  `FastMediaSorter_x86.exe` (net48 x86, MSBuild) side by side in one install folder, from the *same* `.vb`
-  sources. Parity is enforced by **compile-time seams** (`#If NETFRAMEWORK`), not a `PARITY.md` (evidence:
-  `FastMediaSorter.Modern.vbproj:13` vs `FastMediaSorter.vbproj:19,53,62`, `CLAUDE.md` "Two builds, one
-  source tree"). It also **co-ships a separate program** (`FastMediaSorterCompanion.exe`, its own `.vbproj`,
-  own mutex, tray host) as a sibling in every channel - a second product in one release.
+  The visible product name is `Fast Media Sorter & Sharing for Windows` (`#define AppName`, line 16); only
+  the visible name moves, never an anchor.
+- **Editions + parity mechanism.** **One public edition besides the full package: the Server edition**
+  (the local sharing and scheduling service as a Windows service; own installer `FastMediaSorterServer.iss`,
+  own winget package `SerZhyAle.FastMediaSorter.Server`, own Inno `AppId`); it is a packaging and host-mode
+  variant of the same source tree, ships off the same `v*` tag and carries no tag prefix of its own, and it
+  never installs the Media Exchange Server. The product also ships a **dual-runtime flavor**:
+  `FastMediaSorter_LITE.exe` (net10 x64, `dotnet publish` single-file) **and** `FastMediaSorter_x86.exe`
+  (net48 x86, MSBuild) side by side in one install folder, from the *same* `.vb` sources. Parity is enforced
+  by **compile-time seams** (`#If NETFRAMEWORK`), not a `PARITY.md` (evidence: `FastMediaSorter.Modern.vbproj:13`
+  vs `FastMediaSorter.vbproj:19,53,62`, `CLAUDE.md` "Two builds, one source tree"). It also **co-ships a
+  separate program** (the Share Manager, `FastMediaSorterCompanion.exe`: its own `.vbproj`, own mutex, tray
+  host) as a sibling in the full package - the host of part 2.
 
 ## Channel-matrix rows (this project)
 Format: Channel | Trigger | Cost | Auth | Signer | Listing source | Frozen anchor | Verify live
@@ -840,3 +869,18 @@ any implementation claim. General workflow: [PROMOTION.md](../PROMOTION.md) sect
 ## Test lab report (2026-10-23)
 
 - Ticket `docs/specifications/255_SPECIFICATION_TEST_LAB_REPORT_AND_WINDOWS_PROFILE.md` (Draft; that folder is git-ignored), created by the canon session from the owner's order of 2026-10-23 to collect what every project knows about its hardware, emulators and test practice (contract `TEST-LAB` 0.1, draft). Documentation only: the product files one inventory report and a pointer; no code, test or harness changes. Owner of the Windows profile `TEST-LAB-WINDOWS`; Streams_Player, CyrFlip, OneClickRunner, FileDO, doc-html-translate and internal_IP_manager report to it.
+
+## 2026-10-26 - Product identity revision (FMS_Win ticket 273)
+
+- **Why.** The product outgrew "a viewer and sorter of pictures": it also manages files on local, remote and device places, runs scheduled operations, shares folders, joins an exchange account and carries a Media Exchange Server that the user runs. Ticket `docs/specifications/273_SPECIFICATION_PRODUCT_IDENTITY_REVISION_ACROSS_ALL_SURFACES.md` (task T-8, the canon's card of the product; owner decisions Q273-1..Q273-8 of 2026-10-26) rewrote the one source and every surface that says what the product is. This section supersedes in part "Three optional components (owner decision, 2026-10-20)" above: the order and the packaging model stay, the words for parts 1 and 2 and the way part 3 is described change. That section is history and is not rewritten.
+- **The new statement** (`tools/site-facts.json` `positioning.lead`, verbatim): "Three optional parts: a media and file manager that views and sorts photos and videos with one key and manages files in local folders, on servers and on connected devices; a local sharing and scheduling service that shares folders over SFTP, runs file operations on a schedule and connects this PC to an exchange account; and a Media Exchange Server that you run yourself, through which your devices reach each other - start with the manager or with the folder-sharing server, and add the rest only if you want it."
+- **The three parts.** (1) *Media and file manager* (was: media viewer and sorter): the viewer and sorter with one key per file, remote SFTP and SMB resources, the file manager mode of the Grid panel (F3), secure `.fd-sec` containers and document previews. (2) *Local sharing and scheduling* (was: local SFTP sharing service): the Share Manager and its SFTP worker, QR pairing, FileDO disk hosting as a capability of sharing, scheduled file operations, live broadcast and the exchange account of this PC; the Server edition is its Windows-service package. (3) *Media Exchange Server*: unchanged as a part, described as what it does. The category noun is "media and file manager"; photo sorter, image viewer and video player stay as search keywords only.
+- **The capability register and the retired-phrase gate.** `capabilities` in `tools/site-facts.json` holds one row per capability: a state from a closed set of five (`released`, `built`, `gated` and two states for capabilities that have no shipped code), the release that brought it, evidence, and the surface classes A-H of the ticket that may name it. `retiredPhrases` holds the old definitions in EN, RU and UK and every promise marker in 13 languages; the scan covers every published surface, with a path allow-list and a reason per entry for history. `tools/Test-SitePositioning.ps1` holds both, and a seeded negative fixture proves that the gate fails on a violating sentence. A capability that has no code in the tree is named on no published surface; the shipped document previews are described as previews. Changing a capability's state is a one-line edit that makes the gate list exactly the surfaces that still lack the sentence.
+- **Owner ruling: no surface carries a development marker** (Q273-4; canon invariant 17 and `DOCUMENTATION_CONCEPT` section 5). The Media Exchange Server is described in the present tense as what it does: a server the user runs, to which their devices enroll in an account and through which they reach each other. Its shipping gate is shut (`INCLUDE_EXCHANGE: 'false'` in `release.yml`), so no package carries it; the one packaging phrase is the availability matrix label "Not in this package" in 13 languages. It is never linked to a download, an installer, a release, a store, a winget command or a server page, never carries a date, and its door has no call to action. This retires the development marker of ticket 249 and the shape of the local exception filed with the catalog on 2026-10-21.
+- **Divergence recorded (DIVERGE delta).** `PROMOTION.md` ("Optional components and install intent") says that a component with no released artifact is absent from every published surface. This product names the Media Exchange Server, in the present tense and with "Not in this package" in its matrix cell, by the ruling above. Reason: the family is described as it is, and a standing limitation is a fact, not a promise (`DOCUMENTATION_CONCEPT` section 5). Compensation: no link, date, call to action or install wording near it, held by the gate. The same difference is this product's local exception to `SITE-REPRESENTATION` rule 4. Review condition: the owner's reading of the catalog proposal below and of the canon change asked for in the next item.
+- **What this pass changed in the card.** (a) The header line and "Overlay facts" were corrected in place: what the product is; the Go bodies (the earlier "no Go body" fact was wrong: `exchange-server/` and the vendored worker); the Server edition (the earlier "no editions" fact was wrong); channels and listing files; the frozen-anchor citations re-pointed to the lines they stand on today. (b) The product's row in `EXPERIENCE_MAP.md`: only the role cell; its dated counts stay. (c) The stamp: `canon.version`, `canon.coreDigest` and `canon.reconciledOn` were written together (re-sync, 2026.10.17.1 -> 2026.10.26.1; `adoptedOn` untouched) and the stamp `$comment` records the identity. `shapes`, `editions`, `channels`, `site` and `contribRecord` were re-read against the tree and stay as they were, because the revision changed how the product is described, not what ships or where (evidence: three `.vbproj`, `exchange-server/` with the shut gate, `publishing/winget/server/`, `FastMediaSorterServer.iss`, the root `index.html`).
+- **Rule documents.** The eleven rule documents that cite the product were classified. Each names it as a reference attribution or as a technical example (the dual-runtime exes, the co-shipped Share Manager, the winget failure modes, the gated folder-share server, the Overlay A reference); none states what the product is, so none was edited and the core digest is not moved by this pass.
+- **Canon changes found, not applied from here.** (1) `PROMOTION.md`, "Optional components and install intent": the sentence "A component with no released artifact is absent from every published surface" conflicts with the ruling above - amend it so that a built part held out of every package may be named in the present tense, or confirm the DIVERGE above as the standing answer. (2) The same paragraph's pointer ends "under 'Three optional components'": add this section. (3) The ship-together surfaces manifest (`DOCUMENTATION_CONCEPT` section 5, "List the ship-together surfaces in one manifest", and steps 3-9 of the `feature-to-site` skill) names the README and its translations, the site and its localized pages, the listings, the in-app strings, each window's help and screenshot, the ledger and the hub. Against the eight classes of ticket 273: covered are C (in-app strings; not About, the installer wizard and component text, the tray, file-type descriptions, assembly metadata), D (window help), E (the site; not the search index, the sitemap or the social card) and F (the README and listings; not the repository About text and social preview, and winget descriptions only as a locale set). Missing are A (the positioning source and its data file), B (the internal and agent documents that define the product: the agent-rules file, the rule files, the registry), G (this card: record header and facts, the map row, the stamp) and H (sibling products' pages: step 9 names the hub and the "More tools by SZA" footers only for a new, renamed or retired product, never for a change of what a product is).
+- **Catalog.** Three proposals were filed on 2026-10-26 and nothing in the catalog was edited: `product-site/PROPOSAL-2026-10-26-gated-component-named-in-present-tense.md` (successor of the 2026-10-21 proposal; `SITE-REPRESENTATION` rule 4); `product-web-pages/PROPOSAL-2026-10-26-windows-row-type-media-and-file-manager.md` (the family map's Windows row type "Windows media sorter" and the `PAGE-STYLE` example); `device-exchange/PROPOSAL-2026-10-26-fms-win-descriptions-in-catalog-readme-and-registry.md` (the README's "proposed producer and receiver", the registry sentence "shipped inside the FMS_Win package", the old-name label in 16 of the product's own rows).
+- **Evidence.** `check-compliance.ps1` against this repository: before 2 error(s), 1 warning(s), exit 1 (the warning is SZA-CANON03, stale digest); after 2 error(s), 0 warning(s), exit 1. The re-sync cleared the warning. The two errors are SZA-SEC03 at `exchange-server`: committed binaries `exchange-probe.exe` and `fms-exchange-server.exe`, plus a third copy of the latter in `exchange-server/exchange-server/`. They were there before this pass (the carried baseline finding of 2026-10-17), are not caused by this ticket and received no exemption here: the owner chooses between taking the binaries out of the index with an ignore rule and a dated exception.
+- **Re-read scope.** The rule documents changed between 2026.10.17.1 and 2026.10.26.1 were read for what they say about published text, optional components and install documentation (`INVARIANTS` 17, `DOCUMENTATION_CONCEPT` section 5 and its install-documentation paragraph, `PROMOTION` "Optional components"). The changes to `UI_UX` (buttons, size profiles, collapsible groups), `GITHUB_INTERACTION`, `AI_USAGE` and `TESTING_AND_QA` were not reconciled against the product in this pass; the product's own tickets carry them.

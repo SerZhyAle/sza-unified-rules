@@ -48,7 +48,7 @@ the other stamped repos         universal-agent-kit (public, for the community)
 | --- | --- | --- | --- | --- | --- |
 | FastMediaSorter_mob_v2 | product, B Android | 956 (2026-09-20) | 1,880 | 2026.09.06.1 | [fastmediasorter_mob_v2.md](rules/contrib/fastmediasorter_mob_v2.md) (1,331, 52 of them uncommitted) |
 | FastMediaSorter_release | second checkout of the same remote | 952 (2026-09-19) | 0 | 2026.09.06.1 | shared with mob_v2 |
-| FastMediaSorter_Lite | product, A Windows desktop | 210 (2026-09-20) | 16 | 2026.09.06.1 | [fastmediasorter_lite.md](rules/contrib/fastmediasorter_lite.md) (579) |
+| FastMediaSorter_Lite | product, A Windows desktop: Fast Media Sorter & Sharing for Windows (FMS_Win), three optional parts - a media and file manager, a local sharing and scheduling service, a Media Exchange Server (identity of 2026-10-26) | 210 (2026-09-20) | 16 | 2026.09.06.1 | [fastmediasorter_lite.md](rules/contrib/fastmediasorter_lite.md) (579) |
 | FileDo | product, C Go CLI | 82 (2026-09-20) | 14 | 2026.09.06.1 | [filedo.md](rules/contrib/filedo.md) (540) |
 | Streams_Player | product, A | 104 (2026-09-19) | 10 | 2026.09.06.1 | [streams_player.md](rules/contrib/streams_player.md) (520) |
 | CyrFlip | product, A | 97 (2026-09-16) | 7 | 2026.09.06.1 | [cyrflip.md](rules/contrib/cyrflip.md) (483) |

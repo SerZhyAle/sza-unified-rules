@@ -160,7 +160,8 @@ param(
     # Explicit ticket list, comma-separated, run in the order given. Omit to take them from the queue.
     [string] $Ids = '',
 
-    # Stop after this many tickets. 0 means "until the queue is exhausted".
+    # Stop after this many finished picks - a ticket that moved and is offered again counts each time
+    # (TASK-FLOW rule 24). 0 means "until the queue is exhausted".
     [int] $MaxTickets = 0,
 
     # Hard ceiling per ticket. The child is killed with its whole process tree when it overruns.
@@ -1064,7 +1065,12 @@ if (-not $KeepSkipCache) {
     Write-Host "run-spec-queue: skip-cache reset for this run (-KeepSkipCache to skip)." -ForegroundColor DarkGray
 }
 
+# $processed is the drop list (TASK-FLOW rule 24): a ticket that came back with the status it started
+# with has no autonomous next step left, so the ranking never offers it again this run. A ticket that
+# moved is NOT in it - it advanced, so it is ranked again. $handled counts the finished picks instead,
+# which is what -MaxTickets and the "ticket N of M" line count: a moved ticket offered again is a pick.
 $processed = New-Object System.Collections.Generic.List[string]
+$handled = 0
 $results = New-Object System.Collections.Generic.List[object]
 $explicitIndex = 0
 $ranAny = $false
@@ -1090,7 +1096,7 @@ while ($true) {
         break
     }
 
-    if ($MaxTickets -gt 0 -and $processed.Count -ge $MaxTickets) {
+    if ($MaxTickets -gt 0 -and $handled -ge $MaxTickets) {
         Write-Host ''
         Write-Host ("run-spec-queue: reached -MaxTickets {0}." -f $MaxTickets) -ForegroundColor Yellow
         break
@@ -1141,6 +1147,7 @@ while ($true) {
                     -StatusAfter $lostStatus -Moved $false -Outcome 'claim-lost-before-launch' `
                     -ExitCode $null -Minutes 0 -Complexity (Get-TicketComplexity -Ticket $ticket))
             $processed.Add($id)
+            $handled++
             continue
         }
     }
@@ -1199,6 +1206,7 @@ while ($true) {
                 -StatusAfter $statusBefore -Moved $false -Outcome 'claim-lost-before-launch' `
                 -ExitCode $null -Minutes 0 -Complexity $childComplexity)
         $processed.Add($id)
+        $handled++
         continue
     }
 
@@ -1206,7 +1214,7 @@ while ($true) {
 
     Write-Host ''
     Write-Host ('=' * 78) -ForegroundColor DarkGray
-    Write-Host ("  {0}  [{1}]   ticket {2} of {3}" -f $id, $statusBefore, ($processed.Count + 1), $(if ($MaxTickets -gt 0) { $MaxTickets } else { '?' })) -ForegroundColor Cyan
+    Write-Host ("  {0}  [{1}]   ticket {2} of {3}" -f $id, $statusBefore, ($handled + 1), $(if ($MaxTickets -gt 0) { $MaxTickets } else { '?' })) -ForegroundColor Cyan
     Write-Host ("  started {0}   model {1}{2}   fresh context - this is a new process" -f `
             $started.ToString('HH:mm:ss'), $(if ($childModel) { $childModel } else { 'CLI default' }),
             $(if ($childComplexity) { " ($childComplexity)" } else { '' })) -ForegroundColor DarkGray
@@ -1447,8 +1455,9 @@ while ($true) {
     # for the rules and the measurements behind each of them (S2873).
     #
     # A ticket handed back with the status it started with has no autonomous next step; it goes into
-    # $processed, so the re-ranking below never offers it again this run. The one exception is a
-    # context handoff under the cap: the child stopped on purpose with work left, so it is relaunched.
+    # $processed, so the re-ranking below never offers it again this run. A ticket that moved - whatever
+    # way the child ended - is left out of it and ranked again, because it advanced (TASK-FLOW rule 24).
+    # A context handoff under the cap is relaunched: the child stopped on purpose with work left.
     $verdict = Resolve-RunOutcome -Outcome $outcome -ExitCode $exitCode `
             -StatusBefore $statusBefore -StatusAfter $statusAfter -ElapsedSeconds $elapsedSeconds `
             -LimitHit:($null -ne $limitSignal)
@@ -1481,7 +1490,8 @@ while ($true) {
     } elseif ($relaunch) {
         $relaunchId = $id
     } else {
-        $processed.Add($id)
+        $handled++
+        if (-not $moved) { $processed.Add($id) }
     }
 
     $runRecord = Add-RunRecord -Id $id -ChildModel $childModel -StatusBefore $statusBefore `

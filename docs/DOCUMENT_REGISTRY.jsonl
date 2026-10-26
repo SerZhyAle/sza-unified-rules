@@ -7,6 +7,7 @@
 {"path": "docs/PROGRESS_CONTRACT-DELIVERY-S0012.md", "topic": "S0012 - Delivery replay and queue-runner evidence", "area": "docs", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "docs/PROGRESS_CONTRACT-READERS-S0011.md", "topic": "S0011 - Contract reader and documentation evidence", "area": "docs", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "docs/PROGRESS_CONTRACT-SYNC-S0008.md", "topic": "S0008 - Contract synchronization evidence", "area": "docs", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "docs/PROGRESS_CONTRACT-TASKFLOW-S0013.md", "topic": "S0013 - TASK-FLOW harness gaps and the first real agent child", "area": "docs", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "docs/README.md", "topic": "docs", "area": "docs", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "docs/contracts/CHECK-VERDICT.md", "topic": "CHECK-VERDICT - pointer", "area": "docs", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "docs/contracts/DOC-EXTERNAL-QUALITY.md", "topic": "DOC-EXTERNAL-QUALITY - pointer", "area": "docs", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
@@ -51,6 +52,7 @@
 {"path": "skills/spec-to-audit/SKILL.md", "topic": "---", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "skills/spec-to-audit/references/audit-campaign.md", "topic": "The audit campaign - auditing a tree too large for one pass", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "skills/spec-to-audit/references/audit-verdict.md", "topic": "The audit verdict - vocabulary, scoring, and the output block", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "skills/spec-to-audit/references/ticket-lifecycle-traps.md", "topic": "Ticket lifecycle traps", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "skills/store-publish/SKILL.md", "topic": "---", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "skills/store-publish/references/msix-store.md", "topic": "MSIX and the Microsoft Store - the full payload", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "skills/store-publish/references/winget.md", "topic": "winget - the full payload", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}

@@ -213,6 +213,7 @@ $render = [ordered]@{
     idRegex        = ConvertTo-Literal (Get-SzaTicketIdFragment)
     workStatuses   = ($workStatuses | ForEach-Object { ConvertTo-Literal $_ }) -join ', '
     clearOnStart   = ConvertTo-Literal (Get-SzaPath 'leasesDir' -Relative)
+    locksDir       = ConvertTo-Literal (Get-SzaPath 'locksDir' -Relative)
 }
 $launcher = [IO.File]::ReadAllText((Join-Path $templatesDir 'r0-runner.ps1.tpl'))
 foreach ($k in $render.Keys) { $launcher = $launcher.Replace("{{$k}}", $render[$k]) }

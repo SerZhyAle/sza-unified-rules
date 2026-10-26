@@ -35,7 +35,8 @@
 # Exit codes:
 #   0  success (for -Validate: no drift).
 #   1  error, or -Validate found drift.
-#   2  cannot verify - PLAN/RELEASE_QUEUE.md is missing (seed it before using the queue).
+#   2  cannot verify - PLAN/RELEASE_QUEUE.md is missing (seed it before using the queue). -List is
+#      the exception: a missing plan file lists as empty and exits 0.
 [CmdletBinding(DefaultParameterSetName = 'List')]
 param(
     [Parameter(ParameterSetName = 'Reconcile')][switch] $Reconcile,
@@ -65,7 +66,10 @@ trap {
 }
 
 $queuePath = Get-ReleaseQueuePath
-if (-not (Test-Path $queuePath)) {
+# A listing of a plan file that does not exist yet is an empty listing (TASK-FLOW rules 15 and 35), the
+# way every write path already treats it. The other actions need the file to act on or to compare with,
+# so they keep saying "cannot verify".
+if (-not (Test-Path $queuePath) -and $PSCmdlet.ParameterSetName -ne 'List') {
     Write-Error "Release queue not found: $queuePath" -ErrorAction Continue
     exit 2
 }

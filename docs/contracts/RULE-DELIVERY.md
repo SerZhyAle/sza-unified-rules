@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Contract | `RULE-DELIVERY` |
-| Version | 0.12, draft; reader verified, release delivery unverified |
+| Version | 0.12, draft; installed reader delivery verified on 2026-10-26 |
 | Home | the shared contracts catalog, domain `rule-adoption/` (the path is in [CLAUDE.md](../../CLAUDE.md)) |
 | Role | **producer and consumer**: this repository ships the version pair and implements the stamp reader |
 
@@ -27,3 +27,7 @@
   `claude plugin update` to get the two rows rung 4 asks for. Reader file hashes read CRLF as LF, because an
   installed copy takes the machine's `autocrlf` setting. Record and limits:
   [PROGRESS_CONTRACT-DELIVERY-S0012.md](../PROGRESS_CONTRACT-DELIVERY-S0012.md).
+- The published `2026.1026.1` release was installed and replayed on 2026-10-26: DELIVERED, exit 0,
+  all 8 reader files equal, reader PASS (44 cases), harness PASS (24 cases, 4 known gaps). This is
+  evidence for that installed release; wider layout/writer fixtures and full harness conformance
+  remain outside the delivery claim.

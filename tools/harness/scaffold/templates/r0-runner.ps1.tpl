@@ -13,7 +13,7 @@
     R0 is the mono runner: the owner declares that nobody else works on this tree, so it makes no
     coordination call. It never claims a lease, takes a lock, waits for a sibling or checks that one is
     alive. The one start step drops what a previous run left behind (stale stop files, the directories in
-    -ClearOnStart). A second runner that shares the tree is a different tool: it adds a per-ticket lease
+    -ClearOnStart, leftover locks and lock-wait entries in -LocksDir). A second runner that shares the tree is a different tool: it adds a per-ticket lease
     and a distinct agent identity, and nothing else.
 
     The loop: rank the open tickets, take the first one not already dropped, run ONE child for it in a
@@ -50,6 +50,10 @@
 .PARAMETER ClearOnStart
     Directories whose CONTENTS are removed once at start. Pass an empty array when the project keeps none.
 
+.PARAMETER LocksDir
+    The directory holding `<NAME>.LOCK` files and `<NAME>.QUEUE` wait directories. Their leftovers are
+    removed once at start. Pass an empty string when the project keeps none.
+
 .PARAMETER DryRun
     Print the order and the child command and launch nothing; the start step does not run either.
 
@@ -82,6 +86,7 @@ param(
     [string]   $IdRegex        = {{idRegex}},
     [string[]] $WorkStatuses   = @({{workStatuses}}),
     [string[]] $ClearOnStart   = @({{clearOnStart}}),
+    [string]   $LocksDir       = {{locksDir}},
     [int]      $MaxTickets     = 0,
     [int]      $TimeoutMinutes = 90,
     [switch]   $DryRun
@@ -164,6 +169,18 @@ foreach ($sp in $stopPaths | Where-Object { Test-Path -LiteralPath $_ }) {
 foreach ($dir in $ClearOnStart) {
     $p = Join-Path $Root $dir
     if (Test-Path -LiteralPath $p) { Get-ChildItem -LiteralPath $p -Force | Remove-Item -Recurse -Force }
+}
+# Leftover locks and lock-wait entries, dropped without judging whether the holder is alive (rule 31):
+# every <NAME>.LOCK file in the locks directory and the contents of every <NAME>.QUEUE directory.
+$locksPath = if ($LocksDir) { Join-Path $Root $LocksDir } else { '' }
+if ($locksPath -and (Test-Path -LiteralPath $locksPath)) {
+    foreach ($lock in Get-ChildItem -LiteralPath $locksPath -File -Filter '*.LOCK' -Force) {
+        Write-Host "r0: a leftover lock was removed: $($lock.Name)" -ForegroundColor Yellow
+        Remove-Item -LiteralPath $lock.FullName -Force
+    }
+    foreach ($waitDir in Get-ChildItem -LiteralPath $locksPath -Directory -Filter '*.QUEUE' -Force) {
+        Get-ChildItem -LiteralPath $waitDir.FullName -Force | Remove-Item -Recurse -Force
+    }
 }
 New-Item -ItemType Directory -Path $runsPath -Force | Out-Null
 
