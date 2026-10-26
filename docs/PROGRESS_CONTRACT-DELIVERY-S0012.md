@@ -165,7 +165,7 @@ rules 1, 3, 4, 6, 9, 11, 13, 15-17, 19-20 and 38-40. The batch cases need Window
 The owner answered on 2026-10-26: change the runner (rule 24 stands as written), close G1, G3 and G6, run
 one supervised real child now, and close S0012 with a successor. S0012 is Verified for the delivery of the
 rule-adoption readers and moved to `PLAN/DONE`. The four bullets above, the wider layout/writer fixtures and
-the unexercised TASK-FLOW rules are carried by S0013 (`PLAN/S0013_taskflow-harness-gaps-and-live-child.md`);
+the unexercised TASK-FLOW rules are carried by S0013 (`PLAN/DONE/S0013_taskflow-harness-gaps-and-live-child.md`);
 its evidence is [PROGRESS_CONTRACT-TASKFLOW-S0013.md](PROGRESS_CONTRACT-TASKFLOW-S0013.md). The rule-24
 exception row of the catalog registry is closed there, and the 2026-12-31 review of the other one is not
 extended.

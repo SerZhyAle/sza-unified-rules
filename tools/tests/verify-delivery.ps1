@@ -39,7 +39,8 @@
     installed_plugins.json. Default: ~/.claude/plugins/installed_plugins.json.
 
 .PARAMETER IncludeHarness
-    Also replay tools/tests/batch-runner.tests.ps1 against the installed tree (about two minutes).
+    Also replay tools/tests/batch-runner.tests.ps1, ledger-rules.tests.ps1 and layout-gate.tests.ps1 against
+    the installed tree (about eight minutes).
 
 .EXAMPLE
     pwsh -NoProfile -File tools/tests/verify-delivery.ps1
@@ -161,7 +162,11 @@ try {
     Write-Output ''
 
     $replays = @(@{ name = 'contract-reader'; script = 'contract-reader.tests.ps1'; extra = @('-CatalogRoot', $CatalogRoot) })
-    if ($IncludeHarness) { $replays += @{ name = 'batch-runner'; script = 'batch-runner.tests.ps1'; extra = @('-CatalogRoot', $CatalogRoot) } }
+    if ($IncludeHarness) {
+        $replays += @{ name = 'batch-runner'; script = 'batch-runner.tests.ps1'; extra = @('-CatalogRoot', $CatalogRoot) }
+        $replays += @{ name = 'ledger-rules'; script = 'ledger-rules.tests.ps1'; extra = @() }
+        $replays += @{ name = 'layout-gate'; script = 'layout-gate.tests.ps1'; extra = @() }
+    }
     foreach ($replay in $replays) {
         $script = Join-Path $SourceRoot "tools/tests/$($replay.script)"
         $out = & pwsh -NoProfile -File $script -SourceRoot $InstalledRoot @($replay.extra) 2>&1 | Out-String

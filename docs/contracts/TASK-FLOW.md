@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Contract | `TASK-FLOW` |
-| Version | 0.4, draft |
+| Version | 0.5, draft |
 | Home | the shared contracts catalog, domain `task-flow/` (the path is in [CLAUDE.md](../../CLAUDE.md)) |
 | Role | **shared implementation, partial**: `tools/harness/` is the ticket tool and the full runner every adopting repository uses, and `tools/harness/scaffold/` stands up day 0 of a new project. The owner is `shared`, so this repository edits the contract only through the canon session |
 
@@ -23,7 +23,10 @@
   plans directory, `release-queue.ps1 -List` lists a missing plan file as empty, and the launcher's start
   step drops leftover lock files and lock-wait entries (rule 31 no longer asks R0 for the origin's
   shared-history read and journal note). Each closure is a harness change and ships with the plugin version
-  bump.
+  bump. G7, G8 and G9 (0.5) are open differences found by the ledger suite: the picker calls the spec file
+  authoritative where rule 4 trusts the ledger, a `Block*` ticket may leave to any status, and a CLI that does
+  not list `--session-id` gives the child no agent id of its own. Each is a `GAP` line in the suite and the
+  owner's to settle by changing the tool or the rule (ticket S0014).
 - `batch/run-spec-queue.ps1` is the full-featured form of rules 21-29. Neither it nor the launcher may drift
   from rules 21-27 without the catalog moving first.
 - S0011 re-read section 5 and the partial adoption row without advancing its 2026-10-07 verification.
@@ -35,3 +38,9 @@
   The full runner now offers a ticket that moved again, as rule 24 says (the owner chose to change the
   runner, not the rule, on 2026-10-26), so `-MaxTickets` counts finished picks and not distinct tickets.
   Details: [PROGRESS_CONTRACT-DELIVERY-S0012.md](../PROGRESS_CONTRACT-DELIVERY-S0012.md).
+- `tools/tests/ledger-rules.tests.ps1` drives the shipped ledger, plan-file, evidence and runner-coordination
+  tools in throwaway projects (rules 1-4, 6, 9-11, 14-17, 19-20, 28-29, 32, 34, 38) and
+  `tools/tests/layout-gate.tests.ps1` builds fixture repositories for REPO-LAYOUT rules 1, 2, 4, 5 and 6; both
+  replay against the installed plugin under `verify-delivery.ps1 -IncludeHarness`. Rules 13 and 40 and the
+  habit half of rule 20 bind conduct, and no command exercises them (the contract's section 4 says so).
+  Details: [PROGRESS_CONTRACT-TASKFLOW-S0013.md](../PROGRESS_CONTRACT-TASKFLOW-S0013.md).

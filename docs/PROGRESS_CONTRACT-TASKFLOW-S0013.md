@@ -1,8 +1,9 @@
 # S0013 - TASK-FLOW harness gaps and the first real agent child
 
-Recorded 2026-10-26 with PowerShell 7.6.6 on Windows. Everything below was verified in the canon working
-tree before the owner asked for the deploy; the deploy and what the installed plugin then said are recorded
-in "Delivery" at the end. The previous record, which carried this work, is
+Recorded 2026-10-26 with PowerShell 7.6.6 on Windows. Everything from "What changed" to "The first real
+agent child" was verified in the canon working tree before the owner asked for the first deploy; that
+deploy and what the installed plugin then said are recorded in "Delivery". The owner then asked to finish the
+ticket and deploy again: item 5, the adoption row and the second delivery follow. The previous record, which carried this work, is
 [PROGRESS_CONTRACT-DELIVERY-S0012.md](PROGRESS_CONTRACT-DELIVERY-S0012.md).
 
 ## What changed
@@ -72,20 +73,107 @@ Observations, not defects claimed:
 
 ## TASK-FLOW adoption row
 
-Left at **partial 0.2, dated 2026-10-07**. One Draft to Approved step of one cheap-model child touches the
-launcher side of rules 21-23, 27 and 30 and rules 33 and 39. Of the rules S0012 listed as unexercised by the
-fake-child suite (1, 3, 4, 6, 9, 11, 13, 15-17, 19-20, 28-29, 32-34 and 38-40) it touches only 33 and 39. The
-row text gained a dated addendum so it no longer says that no real child ever ran and that G1 and G3 are
-open; the row's own sentences stay as written on 2026-10-07 and the addendum says which ones it supersedes.
+First left at **partial 0.2, dated 2026-10-07**: one Draft to Approved step of one cheap-model child touches
+the launcher side of rules 21-23, 27 and 30 and rules 33 and 39, and of the rules S0012 listed as unexercised
+(1, 3, 4, 6, 9, 11, 13, 15-17, 19-20, 28-29, 32-34 and 38-40) it touches only 33 and 39. The row text gained
+a dated addendum so it no longer said that no real child ever ran and that G1 and G3 are open.
+
+Advanced the same day, after item 5 below, to **partial 0.5, dated 2026-10-26**, because the condition the
+ticket set (the row advances only as far as the new evidence covers its outstanding rules) is now met: every
+rule on that list is either exercised by a command or classified as conduct. The row stays *partial* for
+what the evidence does not cover, and says what that is. The 2026-10-07 sentences stay in the row as
+history, under a lead sentence that supersedes the ones about unexercised rules, G1, G3, G6 and real children.
+
+## Item 5 - the remaining rules and the layout fixtures
+
+Asked for on 2026-10-26 ("finish S0013, and deploy after"). Two new suites, both started from the repository
+root with `pwsh -NoProfile -File`:
+
+| Command | Actual output | Exit |
+| --- | --- | --- |
+| `tools/tests/ledger-rules.tests.ps1` | `ledger-rules-tests: PASS (run=24 skipped=0 gaps=3)`, about five minutes | 0 |
+| `tools/tests/layout-gate.tests.ps1` | `layout-gate-tests: PASS (run=15 skipped=0)`, 20 s | 0 |
+| `tools/tests/batch-runner.tests.ps1 -CatalogRoot <catalog>` (unchanged, rerun) | `batch-runner-tests: PASS (run=25 skipped=0 gaps=0)` | 0 |
+| the ledger suite against a copy of `tools/` with the blocker resolver scraping every id and the evidence relocation step replaced by `exit 0`, `-Case 'rule 9\|rule 19'` (negative control) | `FAIL rule 9 ... ids in prose were read as blockers: S0007,S0008,S0009`; `FAIL rule 19 ... update.ps1 -Id S0001 -Status Implemented exited 1`; `FAIL (run=2 failed=2)` | 1 |
+
+**The ledger suite** drives the shipped tools in throwaway projects: the three files and their paths and an
+absent archive (rule 1); five creators started at once (2, 38); spent and burned ids (2, 11); the record and
+a writer that keeps a field it does not know (3); header and ledger written together, and a hand-edited
+header (4); the closed vocabulary, `Archived` from every status and a revival (6); the blocker tokens read
+and prose not (9); ten ways a ledger fails validation and an id gap that the burned list accounts for (10);
+the plan files, their order, the move to the ready file and back, the ship step and the soft archive
+(14-17); evidence cited from `temp/` and the refusal of what cannot move (19); the step markers and the
+refusal to guess (20); a ticket a sibling holds, and the agent id of each child (28, 29); the prompt (32);
+and the shape of R0 against the full runner (34). Each rule that forbids something has a command that is
+refused.
+
+**Three differences between the text and the tools** came out of it. Each is a `GAP` line that flips to PASS
+the day the tool changes, and a row in section 5 of the contract (0.5) and in the catalog's exceptions:
+
+- **G7, rule 4.** `spec-next-preflight.ps1` reports a spec header that differs from the ledger and then calls
+  the *file* authoritative; the rule says the reader trusts the ledger.
+- **G8, rule 6.** `update.ps1` lets a `Block*` ticket leave to any status (`Draft`, `BlockExternal`,
+  `Implemented` was accepted). The ledger records no level to leave from, so the tool cannot enforce "advancing
+  exactly one level".
+- **G9, rule 29.** The full runner gives a child its own agent id only as `--session-id`, and only when the
+  CLI's `--help` lists the flag. For a CLI that does not, an id leaked into the launcher's environment is the
+  child's. Against a CLI that lists the flag every child got a distinct id and the leaked one reached none.
+
+Neither the tool nor the rule was changed for these: which side moves is the owner's call, as it was for rules
+24 and 31, so they are carried by S0014.
+
+**What no command exercises**, and the contract now says so (0.5, section 4): rule 13 (park, do not fix),
+rule 40 (grow a runner against a measurement) and the habit half of rule 20 bind the conduct of an agent or of
+the owner. Also not exercised: the in-flight half of rule 28 (a `claim-lost` child killed after launch) and
+any lifecycle step past `Approved` with a real agent.
+
+**The layout fixtures** build throwaway repositories and run `tools/check-compliance.ps1` on them: REPO-LAYOUT
+rule 4 (README and LICENSE, in three spellings), rule 5 (shapes 1 to 4, each with a passing and a failing
+repository, and no shape declared), the docs index, rule 1 (a root agent-rules file in each of the three
+names, and a same-named file below the root counting for nothing), rule 2 (a pointer, the older
+`CONTRACT_<ID>.md` spelling, a long file with no id, the index exempt) and rule 6 (the harness archive step
+moves a spec file with its text unchanged beyond the status line the ledger owns, and a revival leaves it
+readable at the path its row names). Rule 3, the type prefix, is checked by nothing and stays unexercised, as
+the adoption row says.
+
+**Not part of this change:** the suites do not run in any gate of the deploy. They are replayed against the
+installed plugin by `verify-delivery.ps1 -IncludeHarness`, which now takes about eight minutes.
+
+**A catalog incident found on the way.** Between 16:44 and 17:12 the catalog's `_meta/REGISTRY.md` lost its
+last 758 lines (the exceptions, the planned and reserved section and the campaign sections), apparently when
+another session saved the file after changing one `INPUT-PARITY` row for Tourist Android. A copy this session
+had kept at 16:44 held them; they were appended back without changing a byte of what was there, and
+`check-contracts.ps1` says 0 errors. What the other session wrote between 16:44 and the cut is not in the
+copy, so a change made to those 758 lines in that window would be missing; nobody has been asked.
+
+## Delivery
+
+Requested by the owner on 2026-10-26 after reading `deploy.ps1 -DryRun` (exit 0: 16 changes on `main`, pair
+`2026.10.26.1` / `2026.1026.1` to `2026.10.26.2` / `2026.1026.2`).
+
+- Before the deploy `tools/tests/verify-delivery.ps1` said DELIVERED (exit 0, 8 of 8 reader files equal)
+  while the installed tree still carried the old runner: the verdict judges the reader set and these
+  changes are outside it. Its whole-tree line said 7 files differ, six of them these changes. Read that
+  line, not the verdict, to see that a harness change has not arrived.
+- `pwsh -NoProfile -File deploy.ps1 -Message <msg> -Yes`: gate OK, `bump-canon-version` wrote the new pair,
+  commit `2f1801f` (`Canon update 2026-10-26: TASK-FLOW 0.4, batch runner rule 24, G1/G3/G6 closed`, with the
+  co-author trailer), pushed `d4d6922..2f1801f` to `origin/main`, exit 0.
+- `claude plugin update sza@sza-unified-rules`: `Plugin "sza" updated from 2026.1026.1 to 2026.1026.2 for
+  scope user`, exit 0; the cache directory `2026.1026.2` exists. A session needs a restart to load it.
+- `pwsh -NoProfile -File tools/tests/verify-delivery.ps1 -IncludeHarness`: installed and source both
+  `2026.10.26.2` / `2026.1026.2`, both pairs derive, digests equal, 8 of 8 reader files equal, whole tree
+  0 only in source, 0 only in installed, 0 differ; reader replay PASS (44), batch replay against the
+  installed tree PASS (25, gaps=0); `DELIVERED`, exit 0.
+
+This section was written after the commit, so it is the one change not in `2f1801f`.
 
 ## Not done
 
-- **No commit, version bump, deploy or plugin update.** Until the owner asks, the installed plugin
-  (`2026.1026.1`) still has the old runner and the old tools: the same version carries different content.
-  `tools/tests/verify-delivery.ps1` still says DELIVERED (exit 0, 8 of 8 reader files equal, reader replay
-  PASS 44) because it judges the reader set, and these changes are outside it; its informational whole-tree
-  count shows 7 files that differ, six of them these changes. Read the whole-tree line, not the verdict, to
-  see that this release has not arrived. `deploy.ps1 -DryRun` (exit 0) lists 16 changes on `main` and would
-  move the pair to `2026.10.26.2` / `2026.1026.2`; `deploy.ps1` stages the whole working tree and pushes
-  the current branch.
-- Wider layout/writer fixtures of the rule-adoption reader set, and the unexercised TASK-FLOW rules.
+All of it is carried by S0014 (review due 2026-12-31, not extended):
+
+- G7, G8 and G9: for each, change the tool or change the rule.
+- Whether TASK-FLOW leaves draft. It is `0.5, draft`. `1.0` is the promise that the shape will not change;
+  the shape changed four times in 19 days, a second adopter has not run the lifecycle, and three differences
+  are open. The owner asked on 2026-10-26; no decision was given.
+- REPO-LAYOUT rule 3 (the type prefix), which nothing checks.
+- The in-flight half of rule 28, and a real agent past `Approved`.
