@@ -167,6 +167,27 @@ Requested by the owner on 2026-10-26 after reading `deploy.ps1 -DryRun` (exit 0:
 
 This section was written after the commit, so it is the one change not in `2f1801f`.
 
+### Second delivery (item 5)
+
+Requested by the owner on 2026-10-26 with the request to finish the ticket ("and deploy after"). The dry run
+(exit 0) showed 7 changes on `main` and the pair `2026.10.26.2` / `2026.1026.2` moving to `2026.10.26.3` /
+`2026.1026.3`.
+
+- `pwsh -NoProfile -File deploy.ps1 -Message <msg> -Yes`: `check-rules` OK (22 core docs, 14 contrib docs),
+  the catalog check 0 errors, `bump-canon-version` wrote the new pair, commit `a83f3a2`
+  (`Canon update 2026-10-26: TASK-FLOW 0.5, ledger and layout suites, S0013 closed`), pushed
+  `2f1801f..a83f3a2` to `origin/main`, exit 0.
+- `claude plugin update sza@sza-unified-rules`: `Plugin "sza" updated from 2026.1026.2 to 2026.1026.3 for
+  scope user`, exit 0. A session needs a restart to load it.
+- `pwsh -NoProfile -File tools/tests/verify-delivery.ps1 -IncludeHarness` (474 s): installed and source both
+  `2026.10.26.3` / `2026.1026.3`, both pairs derive, digests equal, 8 of 8 reader files equal, whole trees
+  0 only in source, 0 only in installed, 0 differ; replays against the installed tree: `contract-reader-tests:
+  PASS (run=44 skipped=0)`, `batch-runner-tests: PASS (run=25 skipped=0 gaps=0)`, `ledger-rules-tests: PASS
+  (run=24 skipped=0 gaps=3)`, `layout-gate-tests: PASS (run=15 skipped=0)`; `DELIVERED`, exit 0.
+
+This second section is again written after the commit; it went in with a documentation-only commit that
+moves no version.
+
 ## Not done
 
 All of it is carried by S0014 (review due 2026-12-31, not extended):
