@@ -690,6 +690,17 @@ function Get-CurrentRelease {
 # Test-ReleaseReadyStatus and Test-BlockerReleasedStatus now live in _status-sets.ps1,
 # dot-sourced above (S1864).
 
+function Sync-PortfolioProjection {
+    # The catalog remains authoritative. A failed portfolio projection must not undo a status write.
+    $pqSync = Join-Path $libDir '../portfolio/sync-project.ps1'
+    if (Test-Path -LiteralPath $pqSync) {
+        $syncOutput = & (Get-Process -Id $PID).Path -NoProfile -File $pqSync -ProjectRoot $script:RepoRoot 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "  portfolio queue not refreshed: $($syncOutput -join ' '); restore and reconcile the local release queue if missing, then run pq sync -Path `"$script:RepoRoot`"" -ForegroundColor DarkYellow
+        }
+    }
+}
+
 function Sync-ReleaseQueue {
     # Reconcile BOTH release files against the catalog and move tickets between them by status.
     #
@@ -711,7 +722,7 @@ function Sync-ReleaseQueue {
     param([Parameter(Mandatory)][AllowEmptyCollection()][object[]] $Records)
 
     if ((Get-SzaEnv 'SKIP_RELEASE_QUEUE')) { return }
-    if (-not (Test-Path $script:ReleaseQueuePath)) { return }
+    if (-not (Test-Path $script:ReleaseQueuePath)) { Sync-PortfolioProjection; return }
 
     $script:ReleaseQueueDuplicatesDropped = 0
 
@@ -752,6 +763,7 @@ function Sync-ReleaseQueue {
     if (Test-Path $script:ReleaseReadyPath) {
         Write-ReleaseFile -Path $script:ReleaseReadyPath -Lines $keptReady
     }
+    Sync-PortfolioProjection
 }
 
 function Select-ReleaseLines {

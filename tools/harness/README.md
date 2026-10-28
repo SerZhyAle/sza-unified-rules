@@ -97,8 +97,17 @@ prints recent events across writers in timestamp order. Both support `-Json`; `l
 `-Repo <key>` and `-Ev <name>`. One row per pass goes to the portfolio's `runs.jsonl`, alongside the
 repository runner's own `runs-pq<slot>.jsonl`. Dispatcher code never writes ticket status directly.
 
-The operator's instruction is [portfolio/README.md](portfolio/README.md). `portfolio/install-shortcuts.ps1`
-puts a `PQ ...` shortcut for each everyday command on the Desktop (`-Remove` takes them off).
+The operator steers two plain text files: `PORTFOLIO_QUEUE.md` in the portfolio root orders the projects
+(`pq queue` opens it), and each repository's own `PLAN/RELEASE_QUEUE.md` orders its tickets
+(`pq tickets <key>` opens it). The operator's instruction is [portfolio/README.md](portfolio/README.md).
+`portfolio/install-shortcuts.ps1` puts a `PQ ...` shortcut for each everyday command, and one `PQ Tickets`
+shortcut per registered repository, on the Desktop and in the canon working tree root (`-Remove` takes
+them off).
+
+`portfolio/spec-draft.ps1` is the mechanical half of the `spec-draft` skill: it captures a task into any
+registered project and reports, read only, whether `pq` will work the ticket and at which position in the
+project's own queue (a hold, a disabled project or a missing registration is reported, never undone).
+`pwsh -NoProfile -File tools/tests/spec-draft.tests.ps1` checks it over throwaway repositories.
 
 Check this flow with `pwsh -NoProfile -File tools/tests/smoke-portfolio-runner.ps1` from the canon root.
 It uses throwaway repositories and fake children; it starts no agent.

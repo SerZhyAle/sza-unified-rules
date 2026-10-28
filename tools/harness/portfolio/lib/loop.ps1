@@ -4,11 +4,13 @@
 #
 #   Get-PqNextRank              ranks repositories and tickets across the portfolio, returning the same rank
 #                               result as pq dry-run.
+#   Get-PqStoppedRepos          keys of enabled repositories whose shared queue stop file exists (rule 26).
 #   Get-PqOccupiedRepos         checks run\repo-*.lock; returns keys of non-concurrent repositories held by live PIDs.
 #   Get-PqWorkerSlot            reserves the first available worker slot k in 1..maxWorkers.
 #   Set-PqWorkerState           updates run\worker-<k>.json with the worker's current repository and ticket.
 #   Remove-PqWorkerState        removes run\worker-<k>.json.
 #   Lock-PqRepo                 takes run\repo-<key>.lock for a non-concurrent repository pass.
+#   Set-PqRepoLockPass          records the pass's runner process on that lock, so an orphaned pass keeps it held.
 #   Unlock-PqRepo               releases run\repo-<key>.lock.
 #   Start-PqLoop                the main execution loop of pq start (V1-V9).
 
@@ -46,7 +48,22 @@ function Get-PqNextRank {
     }
 
     $n = if ($Slots -ge 0) { $Slots } else { [int](Get-PqValue $Registry 'maxWorkers' 1) }
-    return (Get-PqRank -Registry $Registry -Queue $queue -HeadProvider $provider -Slots $n -Exclude $Exclude -Occupied $Occupied)
+    return (Get-PqRank -Registry $Registry -Queue $queue -HeadProvider $provider -Slots $n -Exclude $Exclude -Occupied $Occupied -Stopped (Get-PqStoppedRepos $Registry))
+}
+
+# Keys of enabled repositories whose shared queue stop file (rule 26, paths.queueStopFile) exists: the owner's `rs`, or
+# a release freeze that stopped the queue. It is read before a ticket is offered, because the runner a pass starts
+# treats a shared stop with no live child as left over from a finished run and deletes it - a portfolio pass would
+# cancel the owner's stop within one poll. Only the shared file counts: an instance's own stop file is that instance's.
+# A repository whose paths cannot be read is left to the picker, which reports it.
+function Get-PqStoppedRepos($Registry) {
+    $stopped = [Collections.Generic.List[string]]::new()
+    foreach ($r in @($Registry.repos)) {
+        if ((Get-PqValue $r 'enabled' $false) -ne $true) { continue }
+        try { if ([IO.File]::Exists((Get-PqRepoPaths -RepoPath ([string]$r.path)).StopFile)) { $stopped.Add([string]$r.key) } }
+        catch { }
+    }
+    return [string[]]@($stopped)
 }
 
 # Serialize short state-file transactions across terminals; a dead process releases the mutex.
@@ -67,13 +84,20 @@ function Invoke-PqStateLock([scriptblock]$Body) {
     }
 }
 
+function Test-PqProcessAlive([int]$ProcessId, $StartedAt) {
+    if ($ProcessId -le 0) { return $false }
+    $p = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
+    if ($null -eq $p) { return $false }
+    return (-not $StartedAt -or $p.StartTime.ToUniversalTime().ToString('o') -ceq $StartedAt)
+}
+
+# The owners of these files are processes, not agent sessions: the dispatcher lives for the whole run, and the pass it
+# started lives for the whole pass, so a process test is the right one here (unlike a lease or a code lock). A repository
+# lock also names its pass: a dispatcher ended on its own leaves its runner running, and the repository stays occupied
+# until that pass ends too (rule 60).
 function Test-PqStateOwner($State) {
-    $ownerPid = [int](Get-PqValue $State 'pid' 0)
-    if ($ownerPid -le 0) { return $false }
-    $owner = Get-Process -Id $ownerPid -ErrorAction SilentlyContinue
-    if ($null -eq $owner) { return $false }
-    $startedAt = Get-PqValue $State 'startedAt'
-    return (-not $startedAt -or $owner.StartTime.ToUniversalTime().ToString('o') -ceq $startedAt)
+    if (Test-PqProcessAlive ([int](Get-PqValue $State 'pid' 0)) (Get-PqValue $State 'startedAt')) { return $true }
+    return (Test-PqProcessAlive ([int](Get-PqValue $State 'passPid' 0)) (Get-PqValue $State 'passStartedAt'))
 }
 
 function Read-PqState([string]$Path) {
@@ -178,6 +202,26 @@ function Lock-PqRepo([string]$RepoKey) {
     }
 }
 
+# Records the runner process of the pass on the repository lock this dispatcher holds.
+function Set-PqRepoLockPass([string]$LockFile, [int]$PassPid) {
+    Invoke-PqStateLock {
+        $state = Read-PqState $LockFile
+        if ($null -eq $state -or (Get-PqValue $state 'pid' 0) -ne $PID) { return }
+        $p = Get-Process -Id $PassPid -ErrorAction SilentlyContinue
+        if ($null -eq $p) { return }
+        $obj = [ordered]@{
+            pid = $state.pid
+            startedAt = $state.startedAt
+            since = $state.since
+            passPid = $PassPid
+            passStartedAt = $p.StartTime.ToUniversalTime().ToString('o')
+        }
+        $tmp = "$LockFile.$PID.tmp"
+        [IO.File]::WriteAllText($tmp, (($obj | ConvertTo-Json -Compress)), [Text.Encoding]::UTF8)
+        [IO.File]::Move($tmp, $LockFile, $true)
+    }
+}
+
 function Unlock-PqRepo([string]$LockFile) {
     Invoke-PqStateLock {
         if ($LockFile -and (Get-PqValue (Read-PqState $LockFile) 'pid' 0) -eq $PID) {
@@ -186,17 +230,32 @@ function Unlock-PqRepo([string]$LockFile) {
     }
 }
 
-# Session and runtime variables of the agent that started the dispatcher. A pass child that inherits them speaks as
-# that agent (its leases, locks and chat lines) and a nested agent CLI takes itself for a sub-session; the owner's
-# desktop shortcut carries none of them, an agent's shell carries all. Credentials and provider settings
-# (CLAUDE_CODE_OAUTH_TOKEN, CLAUDE_CODE_USE_*, CLAUDE_CODE_GIT_BASH_PATH, ANTHROPIC_*) are not session state and stay.
-$script:PqAgentSessionEnvPattern = '^(CLAUDECODE|CLAUDE_PID|CLAUDE_AGENT_SDK_[A-Z0-9_]+|CLAUDE_CODE_(SESSION_[A-Z0-9_]+|CHILD_SESSION|ENTRYPOINT|MESSAGING_[A-Z0-9_]+|SSE_PORT|ENABLE_SDK_FILE_CHECKPOINTING|ENABLE_TASKS|EMIT_STARTUP_TIMING|QUESTION_PREVIEW_FORMAT|IDE_[A-Z0-9_]+))$'
+# A pass child is stripped of the starting agent's session by Remove-PqAgentSessionEnv (picker.ps1), as every other
+# repository child is.
 
-function Remove-PqAgentSessionEnv {
-    param([Parameter(Mandatory)]$Environment)
-    foreach ($name in @($Environment.Keys)) {
-        if ($name -cmatch '^[A-Z0-9]+_AGENT_ID$' -or $name -match $script:PqAgentSessionEnvPattern) { [void]$Environment.Remove($name) }
+# A pass the dispatcher killed never reaches the runner's own finally block, which releases the lease the runner took
+# for its child (run-spec-queue.ps1, "Release the lease the child claimed"). The dispatcher started that runner and
+# watched it die, so the release is its to make - and only for a lease this pass itself made, whose reason is
+# 'run-spec-queue <instance>'. Left alone, the ticket stays leased for the shared liveness window (45 minutes) and the
+# rank skips the very ticket the owner just stopped. Returns $true when a lease was released. Never throws.
+function Remove-PqKilledPassLease {
+    param(
+        [Parameter(Mandatory)][string]$RepoPath,
+        [Parameter(Mandatory)][string]$TicketId,
+        [Parameter(Mandatory)][string]$Instance,
+        [string]$HarnessRoot
+    )
+    try {
+        $paths = Get-PqRepoPaths -RepoPath $RepoPath
+        $file = Join-Path $paths.LeasesDir "$TicketId.json"
+        if (-not [IO.File]::Exists($file)) { return $false }
+        $lease = ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($file))
+        if ([string]$lease.reason -cne "run-spec-queue $Instance") { return $false }
+        $script = Join-Path (Get-PqHarnessRoot $HarnessRoot) 'locks\ticket-lease.ps1'
+        $r = Invoke-PqRepoChild -RepoPath $RepoPath -Script $script -Arguments @('-Verb', 'Release', '-Id', $TicketId, '-Force') -TimeoutSeconds 60
+        return (-not $r.timedOut -and $r.code -eq 0)
     }
+    catch { return $false }
 }
 
 function Invoke-PqPassChild {
@@ -241,9 +300,11 @@ function Invoke-PqPassChild {
     }
     finally {
         if ($null -ne $proc) {
-            if (-not $proc.HasExited) { $proc.Kill($true); $null = $proc.WaitForExit(10000) }
+            if (-not $proc.HasExited) { $proc.Kill($true); $null = $proc.WaitForExit(10000); $killed = $true }
             $proc.Dispose()
         }
+        # Covers both ways a pass is cut short: a kill-level stop and an interrupted dispatcher (Ctrl+C).
+        if ($killed) { $null = Remove-PqKilledPassLease -RepoPath $RepoPath -TicketId $TicketId -Instance $Instance }
     }
 }
 
@@ -287,7 +348,8 @@ function Read-PqPassOutcome {
     if ($null -ne $rec) { $statusAfter = [string]$rec.status }
     $moved = ($statusAfter -cne $StatusBefore)
     $outcome = [string](Get-PqValue $journalRow 'outcome' '')
-    if ($ChildExitCode -ne 0 -and $outcome -cnotin @('limit-hit', 'killed', 'halted', 'timeout', 'launch-failed')) {
+    # A runner whose claim was lost to a sibling launched nothing and exits 3 (rule 27); its row says so (rule 46).
+    if ($ChildExitCode -ne 0 -and $outcome -cnotin @('limit-hit', 'killed', 'halted', 'timeout', 'launch-failed', 'claim-lost', 'claim-lost-before-launch')) {
         $outcome = 'child-failed'
     }
     elseif (-not $outcome -or $outcome -ceq 'ok') { $outcome = if ($moved) { 'ok' } else { 'no-progress' } }
@@ -402,6 +464,14 @@ function Start-PqLoop {
             foreach ($r in @($Registry.repos)) { $byKey[[string]$r.key] = $r }
             $occupied = Get-PqOccupiedRepos $Registry
 
+            # New tickets of every repository join the bottom of PORTFOLIO_QUEUE.md before the rank reads it. A failed
+            # sync (the owner saving the file at that moment) is retried on the next turn and never stops the loop.
+            try {
+                $qpSync = Get-PqQueuePath $Registry
+                if ([IO.File]::Exists($qpSync)) { $null = Sync-PqRegisteredQueues -Path $qpSync -Registry $Registry -Log }
+            }
+            catch { }
+
             # 4. Rank
             $rank = Get-PqNextRank -Registry $Registry -HarnessRoot $harness -Exclude $exclude -Occupied $occupied -Slots 1
             foreach ($e in @($rank.events)) {
@@ -488,6 +558,7 @@ function Start-PqLoop {
                     statusBefore = $statusBefore
                     pid = $childPid
                 })
+                if ($currentRepoLock) { Set-PqRepoLockPass -LockFile $currentRepoLock -PassPid $childPid }
             }
 
             $actualRunner = if ($RunnerScript) { $RunnerScript } elseif ($env:SZA_PQ_RUNNER_SCRIPT) { $env:SZA_PQ_RUNNER_SCRIPT } else { Join-Path $harness 'batch\run-spec-queue.ps1' }

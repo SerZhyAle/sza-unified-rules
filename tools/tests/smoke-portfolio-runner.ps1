@@ -13,10 +13,19 @@
       5. pq stop writes <root>\STOP, which is reported by status and cleared by the next start.
       6. V3/V4: Repo lock exclusion and worker slot assignment.
       7. V5: Unmoved ticket exclusion.
-      8. The desktop shortcuts: install-shortcuts writes the PQ set into a scratch folder, repeats as a
-         no-op, removes only its own files and leaves a foreign shortcut of the same name alone.
+      8. The shortcuts: install-shortcuts writes the PQ set (one `PQ Tickets <key>` per registered repository)
+         into a scratch Desktop and a scratch root, repeats as a no-op, drops its own stale files, removes only
+         its own files and leaves a foreign shortcut of the same name alone. `pq tickets` lists and opens each
+         repository's own ticket queue file and follows the profile's paths.releaseQueue.
+      10. V7: a pass the dispatcher kills releases the lease its runner made (reason run-spec-queue <instance>)
+         and no other, so the rank does not skip the stopped ticket for the 45-minute liveness window.
       9. V14: a pass child does not inherit the starting agent's session variables (CLAUDECODE, the
-         CLAUDE_CODE session and messaging family, *_AGENT_ID) but keeps credentials and settings.
+         CLAUDE_CODE session and messaging family, *_AGENT_ID) but keeps credentials and settings; nor does any
+         read-only repository child (picker, ticket record, lease release), whose picker would otherwise keep the
+         starting agent's own leases in the ranking.
+      11. V7: stop -Kill kills the pass tree and leaves a headless agent of another repository alive.
+      12. Rule 26: a repository whose shared queue stop file exists is skipped as stopped, and the file stays.
+      13. Rule 46: a runner that lost the claim before launch (exit 3) is recorded claim-lost, not child-failed.
 #>
 [CmdletBinding()]
 param(
@@ -267,7 +276,7 @@ exit 0
     }
 
     Run-SmokeCase 'Phase 05: pq log filters by -Last, -Ev, -Repo, -Json' {
-        $all = Invoke-SmokePq @('log', '-Last', '10')
+        $all = Invoke-SmokePq @('log', '-Ev', 'pass.launch', '-Last', '10')
         Assert-That ($all.code -eq 0) "log exited $($all.code): $($all.output)"
         Assert-That ($all.stdout -match 'pass\.launch') "log output does not contain pass.launch"
 
@@ -404,7 +413,7 @@ exit 0
         }
     }
 
-    Run-SmokeCase 'V7: stop -Kill delegates to the runner and terminates the pass process tree' {
+    Run-SmokeCase 'V7: stop -Kill terminates the pass process tree and no other agent on the machine' {
         $sleepRunner = Join-Path $scratch 'sleep-runner.ps1'
         @'
 param($RepoRoot, $Ids, $MaxTickets, $ModelPolicy, $Instance, $PermissionMode)
@@ -413,14 +422,26 @@ foreach ($a in @('-NoProfile', '-Command', 'Start-Sleep -Seconds 90')) { $psi.Ar
 $psi.UseShellExecute = $false
 $child = [Diagnostics.Process]::Start($psi)
 @{ runner = $PID; child = $child.Id } | ConvertTo-Json | Set-Content (Join-Path $RepoRoot 'temp/sleep-pids.json')
+# The claim the real runner makes for its child, in the shape ticket-lease.ps1 writes.
+$leases = Join-Path $RepoRoot 'temp/SPEC-TICKET.LEASES'
+New-Item -ItemType Directory -Path $leases -Force | Out-Null
+$now = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+[ordered]@{ schema = 1; id = $Ids; sessionId = [guid]::NewGuid().ToString(); host = $env:COMPUTERNAME; pid = $PID; reason = "run-spec-queue $Instance"
+    claimedAt = $now; lastSeenAt = $now; transcriptPath = $null } | ConvertTo-Json -Compress | Set-Content (Join-Path $leases "$Ids.json")
 $child.WaitForExit()
 '@ | Set-Content $sleepRunner
-        # Stop mode of the real runner resolves this harmless command but never launches an agent.
+        # The real runner's own -Stop -Kill terminates every process named in locks.agentProcessNames whose command line
+        # matches the headless flag, on the whole machine. Here that name is a harmless copy of Windows PowerShell, and a
+        # process of that name runs as a local runner's child in ANOTHER repository: a portfolio kill must not reach it.
         $profilePath = Join-Path $repoADir '.sza-profile.json'
         $profile = Get-Content -Raw $profilePath | ConvertFrom-Json
         $profile.runner | Add-Member -NotePropertyName command -NotePropertyValue pwsh -Force
-        $profile.runner | Add-Member -NotePropertyName headlessMatch -NotePropertyValue 'pq-smoke-never-match' -Force
+        $profile | Add-Member -NotePropertyName locks -NotePropertyValue ([pscustomobject]@{ agentProcessNames = @('pqsmoke-agent.exe') }) -Force
         $profile | ConvertTo-Json -Depth 32 | Set-Content $profilePath
+        $fakeAgent = Join-Path $scratch 'bin\pqsmoke-agent.exe'
+        New-Item -ItemType Directory -Path (Split-Path $fakeAgent) -Force | Out-Null
+        Copy-Item -LiteralPath (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -Destination $fakeAgent
+        $foreign = Start-Process -FilePath $fakeAgent -ArgumentList '-NoProfile', '-Command', '"Start-Sleep 120 # -p S0009 local r1 child"' -WorkingDirectory $repoBDir -WindowStyle Hidden -PassThru
         $pidMarker = Join-Path $repoADir 'temp/sleep-pids.json'
         $worker = Start-SmokePq @('start', '-MaxTickets', '1', '-RunnerScript', $sleepRunner)
         $pids = $null
@@ -432,14 +453,30 @@ $child.WaitForExit()
             $ended = Complete-SmokePq $worker 15
             Assert-That ($ended.code -eq 0) "killed worker failed: $($ended.output)"
             Assert-That (-not (Get-Process -Id $pids.runner, $pids.child -ErrorAction SilentlyContinue)) 'pass or descendant survived kill'
-            Assert-That (Test-Path (Join-Path $repoADir 'temp/STOP-SPEC-QUEUE-pq1')) 'runner stop was not invoked with the worker instance'
+            $foreign.Refresh()
+            Assert-That (-not $foreign.HasExited) 'pq stop -Kill killed a headless agent that is not a portfolio pass (another repository''s runner child)'
             $lastRow = Get-Content (Join-Path $portfolioRoot 'runs.jsonl') -Tail 1 | ConvertFrom-Json
             Assert-That ($lastRow.outcome -ceq 'killed') 'killed pass was not journalled as killed'
+            Assert-That (-not (Test-Path (Join-Path $repoADir 'temp/SPEC-TICKET.LEASES/S0001.json'))) 'the killed pass left its own lease behind, so the rank would skip the ticket for 45 minutes'
         }
         finally {
             if (-not $worker.process.HasExited) { $worker.process.Kill($true); $null = $worker.process.WaitForExit(10000) }
             if ($pids) { Stop-Process -Id $pids.runner, $pids.child -Force -ErrorAction SilentlyContinue }
+            if (-not $foreign.HasExited) { Stop-Process -Id $foreign.Id -Force -ErrorAction SilentlyContinue }
+            $null = $foreign.WaitForExit(5000)
         }
+    }
+
+    Run-SmokeCase 'Rule 26: a repository whose shared queue stop file exists is not offered (owner rs, release freeze)' {
+        $repoStop = Join-Path $repoBDir 'temp/STOP-SPEC-QUEUE'
+        Set-Content -LiteralPath $repoStop -Value 'stop requested by the owner'
+        try {
+            $dr = Invoke-SmokePq @('dry-run')
+            Assert-That ($dr.code -eq 0 -and $dr.stdout -match 'skip repo-b - stopped') "a stopped repository was ranked: $($dr.stdout)"
+            Assert-That ($dr.stdout -notmatch 'slot \d+: repo-b:') "a stopped repository got a slot: $($dr.stdout)"
+            Assert-That (Test-Path -LiteralPath $repoStop) 'the rank removed the owner''s stop file'
+        }
+        finally { Remove-Item -LiteralPath $repoStop -Force -ErrorAction SilentlyContinue }
     }
 
     # Exercise the shared mechanisms directly without starting an agent or modifying real repositories.
@@ -475,6 +512,14 @@ $child.WaitForExit()
         Assert-That ($outcome.moved -and $outcome.outcome -ceq 'ok' -and $outcome.limits -eq 1 -and $outcome.launches -eq 3) 'limit or handoff was lost inside the pass'
         $failedPass = Read-PqPassOutcome -RepoPath $repoADir -Instance pq1 -TicketId S0001 -StatusBefore Draft -ChildExitCode 7 -HarnessRoot $harness -JournalOffset $offset
         Assert-That ($failedPass.outcome -ceq 'child-failed') 'runner failure was hidden by a successful journal row'
+    }
+
+    Run-SmokeCase 'Rule 46: a pass whose runner lost the claim before launch (exit 3) is claimLost, not child-failed' {
+        $journal = Join-Path $repoADir 'temp/spec-queue/runs-pq1.jsonl'
+        $offset = [IO.FileInfo]::new($journal).Length
+        Add-Content $journal '{"id":"S0001","outcome":"claim-lost-before-launch","model":"haiku","complexity":"light","moved":false,"exitCode":null}'
+        $lost = Read-PqPassOutcome -RepoPath $repoADir -Instance pq1 -TicketId S0001 -StatusBefore Verified -ChildExitCode 3 -HarnessRoot $harness -JournalOffset $offset
+        Assert-That ($lost.outcome -ceq 'claim-lost-before-launch' -and (ConvertTo-PqPassEndOutcome $lost.outcome) -ceq 'claimLost') "a lost claim was journalled as $($lost.outcome)"
     }
 
     Run-SmokeCase 'V3/V4: simultaneous processes reserve distinct slots and only one repository lock' {
@@ -529,37 +574,112 @@ elseif ($value) { Unlock-PqRepo $value }
         Unlock-PqRepo $taken
     }
 
-    Run-SmokeCase 'Shortcuts: the PQ set is written, repeatable, removable, and a foreign file is left alone' {
+    Run-SmokeCase 'V3/rule 60: a pass that outlives its killed dispatcher keeps the repository occupied' {
+        # The dispatcher alone was ended (Task Manager, Stop-Process): its runner is not in a job and runs on.
+        $own = (Get-Process -Id $PID).StartTime.ToUniversalTime().ToString('o')
+        $lockFile = Join-Path $portfolioRoot 'run/repo-orphan.lock'
+        [ordered]@{ pid = 2147483647; startedAt = 'dead'; passPid = $PID; passStartedAt = $own } | ConvertTo-Json -Compress | Set-Content $lockFile
+        Assert-That ($null -eq (Lock-PqRepo 'orphan')) 'a second robot took a repository whose pass is still running'
+        $occ = Get-PqOccupiedRepos @{ repos = @(@{ key = 'orphan'; path = $scratch }) }
+        Assert-That (@($occ) -ccontains 'orphan' -and (Test-Path $lockFile)) 'a repository with a live orphaned pass was reported free'
+        [ordered]@{ pid = 2147483647; startedAt = 'dead'; passPid = 2147483646; passStartedAt = 'dead' } | ConvertTo-Json -Compress | Set-Content $lockFile
+        $taken = Lock-PqRepo 'orphan'
+        Assert-That ($null -ne $taken) 'a lock whose dispatcher and pass are both gone was not reclaimed'
+        Unlock-PqRepo $taken
+    }
+
+    Run-SmokeCase 'Tickets verb: lists every repository with its ticket queue file, opens one by key, follows the profile' {
+        $list = Invoke-SmokePq @('tickets')
+        Assert-That ($list.code -eq 0) "tickets exited $($list.code): $($list.output)"
+        Assert-That ($list.stdout -match 'repo-a\s+file\s+.*RELEASE_QUEUE\.md' -and $list.stdout -match 'repo-b\s+file\s+.*RELEASE_QUEUE\.md') "unexpected listing: $($list.stdout)"
+        $one = Invoke-SmokePq @('tickets', 'repo-a', '-NoOpen')
+        Assert-That ($one.code -eq 0 -and $one.stdout.Trim() -ceq [IO.Path]::GetFullPath((Join-Path $repoADir 'PLAN/RELEASE_QUEUE.md'))) "wrong path: $($one.stdout)"
+        $bad = Invoke-SmokePq @('tickets', 'nope', '-NoOpen')
+        Assert-That ($bad.code -eq 2 -and $bad.stderr -match 'UnknownRepoKey') "unknown key was not refused: $($bad.output)"
+        $profileFile = Join-Path $repoBDir '.sza-profile.json'
+        $original = [IO.File]::ReadAllText($profileFile)
+        try {
+            $prof = $original | ConvertFrom-Json
+            $paths = if ($prof.PSObject.Properties['paths']) { $prof.paths } else { $null }
+            if ($null -eq $paths) { $paths = [pscustomobject]@{}; $prof | Add-Member -NotePropertyName paths -NotePropertyValue $paths }
+            $paths | Add-Member -NotePropertyName releaseQueue -NotePropertyValue 'PLAN/OTHER_QUEUE.md' -Force
+            [IO.File]::WriteAllText($profileFile, ($prof | ConvertTo-Json -Depth 20))
+            $missing = Invoke-SmokePq @('tickets', 'repo-b', '-NoOpen')
+            Assert-That ($missing.code -eq 2 -and $missing.stderr -match 'TicketQueueMissing' -and $missing.stderr -match 'OTHER_QUEUE\.md') "profile path was ignored: $($missing.output)"
+        }
+        finally { [IO.File]::WriteAllText($profileFile, $original) }
+    }
+
+    Run-SmokeCase 'Shortcuts: the PQ set (one tickets shortcut per repository) goes to the Desktop and the root, repeatably, removably, foreign files left alone' {
         $installer = Join-Path $harness 'portfolio\install-shortcuts.ps1'
         $desk = Join-Path $scratch 'desktop'
-        New-Item -ItemType Directory -Path $desk | Out-Null
+        $root = Join-Path $scratch 'rootdir'
+        New-Item -ItemType Directory -Path $desk, $root | Out-Null
         $shell = New-Object -ComObject WScript.Shell
         $foreignPath = Join-Path $desk 'PQ Status.lnk'
         $foreign = $shell.CreateShortcut($foreignPath)
         $foreign.TargetPath = Join-Path $env:SystemRoot 'System32\notepad.exe'
         $foreign.Save()
+        # Ours but out of date: the former projects shortcut, and a tickets shortcut of a repository that is not registered.
+        foreach ($stale in 'PQ Queue', 'PQ Tickets gone') {
+            $l = $shell.CreateShortcut((Join-Path $root ($stale + '.lnk')))
+            $l.TargetPath = Join-Path $PSHOME 'pwsh.exe'
+            $l.Arguments = "-NoExit -NoProfile -File `"$harness\portfolio\pq.ps1`" queue"
+            $l.Save()
+        }
 
-        $out = & pwsh -NoProfile -File $installer -Desktop $desk | Out-String
+        $out = & pwsh -NoProfile -File $installer -Desktop $desk -RootDir $root | Out-String
         Assert-That ($LASTEXITCODE -eq 0) "installer exited $LASTEXITCODE"
-        Assert-That ($out -match '10 created, 0 updated, 0 unchanged, 0 removed, 1 foreign') "unexpected first summary: $out"
-        Assert-That (@(Get-ChildItem -LiteralPath $desk -Filter '*.lnk').Count -eq 11) 'expected 10 PQ shortcuts plus the foreign one'
+        Assert-That ($out -match '(?m)^install-shortcuts: 13 created, 0 updated, 0 unchanged, 0 removed, 1 foreign in .*desktop') "unexpected desktop summary: $out"
+        Assert-That ($out -match '(?m)^install-shortcuts: 14 created, 0 updated, 0 unchanged, 2 removed, 0 foreign in .*rootdir') "unexpected root summary: $out"
+        Assert-That (@(Get-ChildItem -LiteralPath $desk -Filter '*.lnk').Count -eq 14) 'desktop: expected 13 PQ shortcuts plus the foreign one'
+        Assert-That (@(Get-ChildItem -LiteralPath $root -Filter '*.lnk').Count -eq 14) 'root: expected 14 PQ shortcuts and neither stale one'
+        Assert-That (-not (Test-Path -LiteralPath (Join-Path $root 'PQ Queue.lnk')) -and -not (Test-Path -LiteralPath (Join-Path $root 'PQ Tickets gone.lnk'))) 'a stale shortcut of ours survived the refresh'
         $one = $shell.CreateShortcut((Join-Path $desk 'PQ Start 1 ticket.lnk'))
         Assert-That ($one.Arguments -match '-NoExit' -and $one.Arguments -match 'portfolio\\pq\.ps1" start -MaxTickets 1$') "bad arguments: $($one.Arguments)"
+        $drain = $shell.CreateShortcut((Join-Path $root 'PQ Start Drain.lnk'))
+        Assert-That ($drain.Arguments -match 'portfolio\\pq\.ps1" start -Drain$') "bad arguments: $($drain.Arguments)"
         $kill = $shell.CreateShortcut((Join-Path $desk 'PQ Stop Kill.lnk'))
         Assert-That ($kill.Arguments -match 'portfolio\\pq\.ps1" stop -Kill$') "bad arguments: $($kill.Arguments)"
+        $projects = $shell.CreateShortcut((Join-Path $desk 'PQ Projects.lnk'))
+        Assert-That ($projects.Arguments -match 'portfolio\\pq\.ps1" queue$') "bad arguments: $($projects.Arguments)"
+        $tickets = $shell.CreateShortcut((Join-Path $root 'PQ Tickets repo-a.lnk'))
+        Assert-That ($tickets.Arguments -match 'portfolio\\pq\.ps1" tickets repo-a$') "bad arguments: $($tickets.Arguments)"
+        Assert-That (Test-Path -LiteralPath (Join-Path $root 'PQ Tickets repo-b.lnk')) 'no tickets shortcut for repo-b'
         $guide = $shell.CreateShortcut((Join-Path $desk 'PQ Guide.lnk'))
         Assert-That ($guide.TargetPath -ieq (Join-Path $harness 'portfolio\README.md') -and (Test-Path -LiteralPath $guide.TargetPath)) "guide points at $($guide.TargetPath)"
         Assert-That ($shell.CreateShortcut($foreignPath).TargetPath -imatch 'notepad\.exe$') 'the foreign shortcut was overwritten'
 
-        $again = & pwsh -NoProfile -File $installer -Desktop $desk | Out-String
-        Assert-That ($again -match '0 created, 0 updated, 10 unchanged') "second run was not a no-op: $again"
+        $again = & pwsh -NoProfile -File $installer -Desktop $desk -RootDir $root | Out-String
+        Assert-That ($again -match '0 created, 0 updated, 13 unchanged, 0 removed, 1 foreign' -and $again -match '0 created, 0 updated, 14 unchanged, 0 removed, 0 foreign') "second run was not a no-op: $again"
 
-        $gone = & pwsh -NoProfile -File $installer -Desktop $desk -Remove | Out-String
-        Assert-That ($gone -match '10 removed, 1 foreign') "unexpected remove summary: $gone"
+        $only = & pwsh -NoProfile -File $installer -Where Root -RootDir $root -DryRun | Out-String
+        Assert-That ($only -notmatch 'desktop' -and $only -match '14 unchanged|would update') "-Where Root touched the desktop: $only"
+
+        $gone = & pwsh -NoProfile -File $installer -Desktop $desk -RootDir $root -Remove | Out-String
+        Assert-That ($gone -match '13 removed, 1 foreign' -and $gone -match '14 removed, 0 foreign') "unexpected remove summary: $gone"
         Assert-That (@(Get-ChildItem -LiteralPath $desk -Filter '*.lnk').Count -eq 1 -and (Test-Path -LiteralPath $foreignPath)) 'remove touched more than the PQ set'
+        Assert-That (@(Get-ChildItem -LiteralPath $root -Filter '*.lnk').Count -eq 0) 'remove left shortcuts in the root'
+    }
+
+    Run-SmokeCase 'V7: a killed pass releases only the lease it made, never one with another reason' {
+        $leaseDir = Join-Path $repoBDir 'temp/SPEC-TICKET.LEASES'
+        New-Item -ItemType Directory -Path $leaseDir -Force | Out-Null
+        $leaseFile = Join-Path $leaseDir 'S0001.json'
+        $now = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+        foreach ($case in @(@{ reason = 'spec-picker'; gone = $false }, @{ reason = 'run-spec-queue pq2'; gone = $false }, @{ reason = 'run-spec-queue pq1'; gone = $true })) {
+            [ordered]@{ schema = 1; id = 'S0001'; sessionId = [guid]::NewGuid().ToString(); host = $env:COMPUTERNAME; pid = 2147483646; reason = $case.reason
+                claimedAt = $now; lastSeenAt = $now; transcriptPath = $null } | ConvertTo-Json -Compress | Set-Content $leaseFile
+            $released = Remove-PqKilledPassLease -RepoPath $repoBDir -TicketId 'S0001' -Instance 'pq1'
+            Assert-That ($released -eq $case.gone) "reason '$($case.reason)': released=$released, expected $($case.gone)"
+            Assert-That ((Test-Path $leaseFile) -eq (-not $case.gone)) "reason '$($case.reason)': the lease file state does not match"
+        }
+        Assert-That (-not (Remove-PqKilledPassLease -RepoPath $repoBDir -TicketId 'S0001' -Instance 'pq1')) 'no lease at all must be a quiet no-op'
     }
 
     Run-SmokeCase 'V14: a pass child does not inherit the starting agent''s session, only its credentials and settings' {
+        # Earlier stop/kill cases leave their stop request in this throwaway portfolio.
+        Remove-Item -LiteralPath (Join-Path $portfolioRoot 'STOP') -Force -ErrorAction SilentlyContinue
         $dumper = Join-Path $scratch 'env-dumper.ps1'
         @'
 param($RepoRoot, $Ids, $MaxTickets, $ModelPolicy, $Instance, $PermissionMode)
@@ -592,6 +712,26 @@ $seen | ConvertTo-Json | Set-Content (Join-Path $RepoRoot 'temp/env-dump.json')
         foreach ($n in 'CLAUDE_CODE_OAUTH_TOKEN', 'CLAUDE_CODE_GIT_BASH_PATH', 'CLAUDE_CODE_USE_VERTEX') {
             Assert-That ($seen.$n -ceq $set[$n]) "$n was stripped but is a credential or setting"
         }
+    }
+
+    Run-SmokeCase 'Rule 29: the read-only children (picker, ticket record, lease release) do not speak as the starting agent' {
+        # spec-next-preflight.ps1 keeps a lease whose holder is "mine" in the ranking, so a picker that inherits the
+        # launching session's CLAUDE_CODE_SESSION_ID offers the very ticket that session holds.
+        $dumper = Join-Path $scratch 'env-dumper-child.ps1'
+        @'
+$seen = [ordered]@{}
+foreach ($n in 'CLAUDECODE', 'CLAUDE_CODE_SESSION_ID', 'PQSMOKE_AGENT_ID', 'CLAUDE_CODE_OAUTH_TOKEN') { $seen[$n] = [Environment]::GetEnvironmentVariable($n) }
+$seen | ConvertTo-Json -Compress
+'@ | Set-Content $dumper
+        $set = [ordered]@{ CLAUDECODE = '1'; CLAUDE_CODE_SESSION_ID = 'parent-session'; PQSMOKE_AGENT_ID = 'parent'; CLAUDE_CODE_OAUTH_TOKEN = 'keep-token' }
+        $before = @{}
+        foreach ($k in $set.Keys) { $before[$k] = [Environment]::GetEnvironmentVariable($k); [Environment]::SetEnvironmentVariable($k, $set[$k]) }
+        try { $r = Invoke-PqRepoChild -RepoPath $repoADir -Script $dumper -Arguments @() -TimeoutSeconds 60 }
+        finally { foreach ($k in $set.Keys) { [Environment]::SetEnvironmentVariable($k, $before[$k]) } }
+        Assert-That ($r.code -eq 0) "the dumping child failed: $($r.stderr)"
+        $seen = ConvertFrom-Json ([string]$r.stdout).Trim()
+        foreach ($n in 'CLAUDECODE', 'CLAUDE_CODE_SESSION_ID', 'PQSMOKE_AGENT_ID') { Assert-That ($null -eq $seen.$n) "$n reached a read-only repository child" }
+        Assert-That ($seen.CLAUDE_CODE_OAUTH_TOKEN -ceq 'keep-token') 'a credential was stripped from a repository child'
     }
 }
 finally {

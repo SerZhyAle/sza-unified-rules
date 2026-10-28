@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Contract | `TASK-FLOW` |
-| Version | 0.7, draft |
+| Version | 0.8, draft |
 | Home | the shared contracts catalog, domain `task-flow/` (the path is in [CLAUDE.md](../../CLAUDE.md)) |
 | Role | **shared implementation, partial**: `tools/harness/` supplies the ticket tools, repository runner and day-0 scaffold; `tools/harness/portfolio/` supplies the S0015 dispatcher, registry, queue, rank and event log. Remaining portfolio features belong to S0016. The owner is `shared`, so this repository edits the contract only through the canon session |
 
@@ -64,6 +64,10 @@
 - A change to the registry file and its agent records (rules 41-42), the queue-file grammar (rule 44), the
   run row (rule 46), the stop files (rule 47), the hold file (rule 48) or the event envelope (rule 53) is a
   **contract change**: the catalog moves first.
+- `pq rank` writes the registry's `rank` and `pq arrange` sorts each scheduled package of the queue file by it
+  (0.8, rule 44's writer table). `pq arrange` moves only row lines and only inside their own package; `--` and
+  `hold` are not touched. Covered by `portfolio-queue.tests.ps1` (cases `registry: Set-PqRepoRank ..` and
+  `queue-write: arrange ..`).
 - Rule 52, the qualified token `Blocker: <repoKey>:<id>`, is enforced by the dispatcher only. The local
   picker, the closing gate and a manual session ignore it; the ledger suite case `rule 9 and 52` in
   `tools/tests/ledger-rules.tests.ps1` is what proves the local readers ignore it and never read it as a

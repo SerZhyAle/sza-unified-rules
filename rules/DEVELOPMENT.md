@@ -72,6 +72,11 @@ compile-only -> targeted tests -> minified release variant -> device) lives in
   keeping a scheme of its own; an existing repository's own scheme survives only as a **dated exception**
   in the shared contracts registry ([CONTRACTS.md](CONTRACTS.md) §4). The discipline is the same
   everywhere: one authoritative ticket record, mutated through its tool, status synced into the file.
+- **The portfolio queue follows the project ledger.** Register each project with `pq`; every ticket creation
+  and status transition reconciles its local release plan and then its portfolio projection. Central capture
+  writes the same project ledger and local plan. Implemented work leaves the active queue; reopened work returns.
+  Preserve the owner's ordering and holds. Report a failed projection and repair it with `pq sync -Path <project>`;
+  never claim that an unregistered or unreachable project is synchronized.
 - **Out-of-scope findings are parked, not fixed inline** when they are unrelated, non-trivial, and need
   their own research: dedup by symptom first, capture the symptom/evidence in a fresh draft ticket,
   report it, and resume the original task. Never switch the active ticket for a parked finding. Trivial

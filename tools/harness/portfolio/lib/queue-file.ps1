@@ -22,16 +22,44 @@
 #       Every write goes through Write-PqQueueText: one read, the edit, a temp file in the same directory, the
 #       re-hash of the target, the rename. The file's BOM and line ending are kept; no other line moves.
 #
+#   Sort-PqQueueByRank -Path -ProjectOrder <string[]> [-Log] [-BeforeRename <sb>]
+#       pq arrange: inside every scheduled package (the implicit one and each numbered one) the rows are put in
+#       project order - the keys as given, which pq takes from the registry (Get-PqRepoOrder: rank ascending, equal
+#       ranks in array order) - and a project's own rows keep their order. Only row lines move, and only among the row positions of their own package: headings, comments, blank
+#       lines and unparsable lines stay where they are; '--' and everything under hold are not touched. An unknown
+#       key sorts after every known one. @{ ok; changed; moved; error; message; hash }.
+#
 #   Initialize-PqQueueFile -Path -Registry [-Log]
 #       writes a first file only when none exists (rule 64): the comment header, package 1, one row per registered
 #       repository in rank ascending then array order, each '<key>  # role: <role>'. @{ ok; changed; status
 #       (written|exists); hash }.
+#
+#   Get-PqTicketQueuePath -Repo <registry record>
+#       a repository's own ticket queue file: its profile's paths.releaseQueue, PLAN/RELEASE_QUEUE.md by default.
+#   Read-PqTicketQueueRows -Path <file>
+#       that file's ticket rows in file order, each @{ id; token; tail; unscheduled } (token: the id with its slug;
+#       tail: changed, status and any note, as written; unscheduled: under its '--'); $null when the file is absent or
+#       unreadable.
+#   Get-PqQueueSources -Registry
+#       [ordered] key -> Read-PqTicketQueueRows of every registered repository, in registry order.
+#   Sync-PqQueueFile -Path -Sources <IDictionary> [-Log] [-BeforeRename <sb>]
+#       keeps the file the way a repository's plan tool keeps its RELEASE_QUEUE.md: a <repo>:<id> row whose ticket is
+#       still in its repository's queue gets that ticket's slug, changed time and status (an owner's # comment stays);
+#       a row whose ticket has left that queue (closed, or waiting for the owner's test) is removed; a queued ticket
+#       the file names nowhere, active or held, is added at the bottom of the active part, above the hold heading, in
+#       Sources order then queue order. No line moves. A repository whose rows are $null, and a key Sources
+#       does not name, are left as they are. @{ ok; changed; added; updated; removed; error; message; hash }.
+#
+# A row may carry its ticket's slug and columns, as the sync writes it: 'fms-web:S0033_contract-sync  26-10-19 11:51
+# In Progress'. The id ends at the first '_'; the rest of the line is a comment. The column header line
+# 'ticket  changed  status' is skipped.
 
 . (Join-Path $PSScriptRoot 'paths.ps1')
 . (Join-Path $PSScriptRoot 'events.ps1')
 
-$script:PqQueueRowPattern = '^(?<repo>[a-z][a-z0-9-]*)(?::(?<id>\*|[^\s:#]+))?$'
+$script:PqQueueRowPattern = '^(?<repo>[a-z][a-z0-9-]*)(?::(?<id>\*|[^\s:#_]+)(?:_[^\s#]*)?)?$'
 $script:PqQueueUnscheduled = [long]::MaxValue
+$script:PqQueueTicketWidth = 74
 
 function Get-PqQueueHash([byte[]]$Bytes) {
     return [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($Bytes)).ToLowerInvariant()
@@ -80,6 +108,7 @@ function Get-PqQueueLine([string]$Line) {
     }
     if ($body -ceq '--') { return @{ type = 'heading'; package = $script:PqQueueUnscheduled; packageText = '--' } }
     if ($body -ieq 'hold') { return @{ type = 'hold' } }
+    if ($body -cmatch '^ticket\s+changed\s+status$') { return @{ type = 'skip' } }
     $token = ($body -split '\s+', 2)[0]
     $m = [regex]::Match($token, $script:PqQueueRowPattern)
     if (-not $m.Success) { return @{ type = 'unparsable'; token = $token } }
@@ -237,6 +266,18 @@ function Add-PqQueuePin {
     $rowText = "$($t.repo):$($t.id)"
     return (Write-PqQueueText -Path $Path -Log:$Log -BeforeRename $BeforeRename -Edit {
             param($lines)
+            # The ticket's own active row, when the file has one, is what moves to the top: no second row appears.
+            $inHold = $false
+            for ($i = 0; $i -lt $lines.Count; $i++) {
+                $p = Get-PqQueueLine $lines[$i]
+                if ($p.type -eq 'heading') { $inHold = $false }
+                elseif ($p.type -eq 'hold') { $inHold = $true }
+                elseif (-not $inHold -and $p.type -eq 'row' -and $null -ne $p.id -and (Test-PqQueueMatch $p $t)) {
+                    $rowText = $lines[$i].Trim()
+                    $lines.RemoveAt($i)
+                    break
+                }
+            }
             $best = -1; $bestValue = [long]::MaxValue
             for ($i = 0; $i -lt $lines.Count; $i++) {
                 $p = Get-PqQueueLine $lines[$i]
@@ -308,6 +349,49 @@ function Remove-PqQueueHold {
         })
 }
 
+function Sort-PqQueueByRank {
+    param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][AllowEmptyCollection()][string[]]$ProjectOrder, [switch]$Log, [scriptblock]$BeforeRename)
+    $order = [Collections.Generic.Dictionary[string, int]]::new([StringComparer]::Ordinal)
+    foreach ($k in $ProjectOrder) { if (-not $order.ContainsKey($k)) { $order[$k] = $order.Count } }
+    $script:PqArrangeMoved = 0
+    $r = Write-PqQueueText -Path $Path -Log:$Log -BeforeRename $BeforeRename -Edit {
+        param($lines)
+        # Row positions per scheduled package, in file order; a heading closes the group, hold and '--' open none.
+        $groups = [Collections.Generic.List[object]]::new()
+        $current = [Collections.Generic.List[int]]::new()
+        $sortable = $true
+        for ($i = 0; $i -lt $lines.Count; $i++) {
+            $p = Get-PqQueueLine $lines[$i]
+            if ($p.type -eq 'heading' -or $p.type -eq 'hold') {
+                if ($current.Count -gt 1) { $groups.Add($current) }
+                $current = [Collections.Generic.List[int]]::new()
+                $sortable = $p.type -eq 'heading' -and $p.packageText -cne '--'
+            }
+            elseif ($sortable -and $p.type -eq 'row') { $current.Add($i) }
+        }
+        if ($current.Count -gt 1) { $groups.Add($current) }
+        $moved = 0
+        foreach ($g in $groups) {
+            $j = 0
+            $rows = @(foreach ($at in $g) {
+                    $key = (Get-PqQueueLine $lines[$at]).repo
+                    $rank = if ($order.ContainsKey($key)) { $order[$key] } else { [int]::MaxValue }
+                    [pscustomobject]@{ text = $lines[$at]; rank = $rank; pos = $j }
+                    $j++
+                })
+            $sorted = @($rows | Sort-Object -Stable -Property rank, pos)
+            for ($k = 0; $k -lt $g.Count; $k++) {
+                if ($sorted[$k].pos -ne $k) { $moved++ }
+                $lines[$g[$k]] = $sorted[$k].text
+            }
+        }
+        $script:PqArrangeMoved = $moved
+        return ($moved -gt 0)
+    }
+    $r.moved = $script:PqArrangeMoved
+    return $r
+}
+
 function Initialize-PqQueueFile {
     param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)]$Registry, [switch]$Log)
     if ([IO.File]::Exists($Path)) { return @{ ok = $true; changed = $false; status = 'exists'; hash = (Get-PqQueueHash (Read-PqQueueBytes $Path)) } }
@@ -345,4 +429,147 @@ function Initialize-PqQueueFile {
         $null = Write-PqEvent -Ev 'queue.edited' -D ([ordered]@{ hash = $hash; rows = $repos.Count; hold = 0 })
     }
     return @{ ok = $true; changed = $true; status = 'written'; hash = $hash }
+}
+
+# ---- the repositories' own ticket queues, and the sync from them ----
+
+function Get-PqTicketQueuePath($Repo) {
+    $rel = 'PLAN/RELEASE_QUEUE.md'
+    $profileFile = Join-Path ([string]$Repo.path) '.sza-profile.json'
+    if ([IO.File]::Exists($profileFile)) {
+        try {
+            $prof = ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($profileFile)) -DateKind String
+            $paths = $prof.PSObject.Properties['paths']
+            if ($null -ne $paths -and $null -ne $paths.Value) {
+                $v = $paths.Value.PSObject.Properties['releaseQueue']
+                if ($null -ne $v -and $v.Value) { $rel = [string]$v.Value }
+            }
+        }
+        catch { }
+    }
+    return [IO.Path]::GetFullPath((Join-Path ([string]$Repo.path) $rel))
+}
+
+function Read-PqTicketQueueRows([string]$Path) {
+    if (-not [IO.File]::Exists($Path)) { return $null }
+    try { $split = Split-PqQueueText (Read-PqQueueBytes $Path) } catch { return $null }
+    $out = [Collections.Generic.List[object]]::new()
+    $unscheduled = $false
+    $hasCurrent = $false
+    $hasSection = $false
+    foreach ($line in $split.lines) {
+        $t = $line.Trim()
+        if ($t -cmatch '^current-next-release:\s*\d+\s*$') { $hasCurrent = $true; continue }
+        if ($t -ceq '--') { $unscheduled = $true; $hasSection = $true; continue }
+        if ($t -cmatch '^\d+$') { $unscheduled = $false; $hasSection = $true; continue }
+        # Rows live under a package heading; the notes above the first one are prose, even a line that starts with an id.
+        if (-not $hasSection) { continue }
+        $m = [regex]::Match($t, '^(?<token>(?<id>(?:S\d{4,}|[A-Z][A-Z0-9]*-\d+))(?:_\S*)?)(?:\s+(?<tail>.*))?$')
+        if (-not $m.Success) {
+            # A ticket-shaped row with an unsupported id must not be mistaken for a completed ticket.
+            if ($t -cmatch '^\S+\s+\d{2}-\d{2}-\d{2}\s+\d{2}:\d{2}\s+') { return $null }
+            continue
+        }
+        $out.Add([ordered]@{ id = $m.Groups['id'].Value; token = $m.Groups['token'].Value; tail = $m.Groups['tail'].Value.Trim(); unscheduled = $unscheduled })
+    }
+    # A truncated or missing file is unknown, but a complete empty plan is authoritative.
+    if ($out.Count -eq 0 -and -not ($hasCurrent -and $hasSection)) { return $null }
+    return , $out.ToArray()
+}
+
+function Get-PqQueueSources($Registry) {
+    $sources = [ordered]@{}
+    foreach ($r in @($Registry.repos)) { $sources[[string]$r.key] = Read-PqTicketQueueRows (Get-PqTicketQueuePath $r) }
+    return $sources
+}
+
+# Serialize source reads and projection writes across catalog writers and portfolio workers. Otherwise a
+# worker could read an old local queue, wait for a newer status to be published, then overwrite it.
+function Sync-PqRegisteredQueues {
+    param([string]$Path, $Registry, [string]$Key, [switch]$Log)
+    $bytes = [Text.Encoding]::UTF8.GetBytes([IO.Path]::GetFullPath($Path).ToLowerInvariant())
+    $name = 'sza-pq-sync-' + [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes))
+    $mutex = [Threading.Mutex]::new($false, $name)
+    $locked = $false
+    try {
+        try { $locked = $mutex.WaitOne([TimeSpan]::FromSeconds(15)) }
+        catch [Threading.AbandonedMutexException] { $locked = $true }
+        if (-not $locked) { return @{ ok = $false; error = 'QueueSyncBusy'; message = 'portfolio synchronization timed out' } }
+        for ($attempt = 0; $attempt -lt 3; $attempt++) {
+            if ($Key) {
+                $repo = @($Registry.repos | Where-Object { [string]$_.key -ceq $Key }) | Select-Object -First 1
+                if ($null -eq $repo) { return @{ ok = $false; error = 'UnknownRepoKey'; message = "no repository '$Key' in the registry" } }
+                $rows = Read-PqTicketQueueRows (Get-PqTicketQueuePath $repo)
+                if ($null -eq $rows) { return @{ ok = $false; error = 'TicketQueueUnreadable'; message = "cannot read a complete ticket queue for $Key" } }
+                $sources = [ordered]@{}; $sources[$Key] = $rows
+            } else { $sources = Get-PqQueueSources $Registry }
+            $unreadable = @($sources.Keys | Where-Object { $null -eq $sources[$_] })
+            $result = Sync-PqQueueFile -Path $Path -Sources $sources -Log:$Log
+            $result.unreadable = $unreadable
+            if ($result.ok -or $result.error -cne 'QueueChangedOnDisk') { return $result }
+        }
+        return $result
+    } finally {
+        if ($locked) { $mutex.ReleaseMutex() }
+        $mutex.Dispose()
+    }
+}
+
+# One ticket row as the sync writes it: '<repo>:<token>', padded, then the tail, then the owner's comment if any.
+function Format-PqQueueTicketLine([string]$Repo, $Row, [string]$Comment) {
+    $line = "$($Repo):$($Row.token)"
+    if ($Row.tail) { $line = $line.PadRight([Math]::Max($script:PqQueueTicketWidth, $line.Length + 2)) + $Row.tail }
+    if ($Comment) { $line += '  ' + $Comment }
+    return $line
+}
+
+function Sync-PqQueueFile {
+    param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][Collections.IDictionary]$Sources, [switch]$Log, [scriptblock]$BeforeRename)
+    $stats = @{ added = 0; updated = 0; removed = 0 }
+    $queued = [ordered]@{}
+    foreach ($k in $Sources.Keys) {
+        if ($null -eq $Sources[$k]) { continue }
+        $rows = @($Sources[$k] | Where-Object { $null -ne $_ })
+        $map = [ordered]@{}
+        foreach ($row in $rows) { if (-not $map.Contains($row.id)) { $map[$row.id] = $row } }
+        $queued[[string]$k] = $map
+    }
+    $r = Write-PqQueueText -Path $Path -Log:$Log -BeforeRename $BeforeRename -Edit {
+        param($lines)
+        $named = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+        $changed = $false
+        for ($i = 0; $i -lt $lines.Count; $i++) {
+            $p = Get-PqQueueLine $lines[$i]
+            if ($p.type -ne 'row' -or $null -eq $p.id -or -not $queued.Contains($p.repo)) { continue }
+            $map = $queued[$p.repo]
+            if (-not $map.Contains($p.id)) {
+                $lines.RemoveAt($i); $i--
+                $stats.removed++; $changed = $true
+                continue
+            }
+            $null = $named.Add("$($p.repo):$($p.id)")
+            $at = $lines[$i].IndexOf('#')
+            $comment = if ($at -ge 0) { $lines[$i].Substring($at).TrimEnd() } else { $null }
+            $new = Format-PqQueueTicketLine $p.repo $map[$p.id] $comment
+            if ($new -cne $lines[$i]) { $lines[$i] = $new; $stats.updated++; $changed = $true }
+        }
+        $add = [Collections.Generic.List[string]]::new()
+        foreach ($k in $queued.Keys) {
+            foreach ($id in $queued[$k].Keys) {
+                if (-not $named.Contains("${k}:$id")) { $add.Add((Format-PqQueueTicketLine $k $queued[$k][$id] $null)) }
+            }
+        }
+        if ($add.Count -gt 0) {
+            # The bottom of the active part: right after its last non-blank line, so the blank lines above hold stay.
+            $end = $lines.Count
+            for ($i = 0; $i -lt $lines.Count; $i++) { if ((Get-PqQueueLine $lines[$i]).type -eq 'hold') { $end = $i; break } }
+            $at = $end
+            while ($at -gt 0 -and $lines[$at - 1].Trim().Length -eq 0) { $at-- }
+            $lines.InsertRange($at, [string[]]$add.ToArray())
+            $stats.added += $add.Count; $changed = $true
+        }
+        return $changed
+    }
+    $r.added = $stats.added; $r.updated = $stats.updated; $r.removed = $stats.removed
+    return $r
 }

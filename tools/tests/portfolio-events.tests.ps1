@@ -495,12 +495,13 @@ function Get-TestActor($LivePasses, $Rows, $Transition = $null) {
     return (Resolve-PqActor -Transition $Transition -Repo 'fms' -LivePasses $LivePasses -RepoRunnerRows $Rows -WindowStart $LedgerT0 -WindowEnd $LedgerT0.AddMinutes(5))
 }
 
-# The ten profile path keys Get-PqRepoPaths answers, each with the property that holds it. The eight of the 01.14
+# The eleven profile path keys Get-PqRepoPaths answers, each with the property that holds it. The eight of the 01.14
 # drift guard (journal journalArchive releaseQueue releaseReady releaseQueueDone leasesDir queueRunsDir specsDir) plus
-# tempDir and commandsDir, which Phase 06 names in the same result.
+# tempDir and commandsDir, which Phase 06 names in the same result, and queueStopFile, the repository stop the rank
+# honours (TASK-FLOW rule 26).
 $RepoPathKeys = [ordered]@{ journal = 'Ledger'; journalArchive = 'Archive'; releaseQueue = 'Queue'; releaseReady = 'Ready'
     releaseQueueDone = 'Done'; leasesDir = 'LeasesDir'; queueRunsDir = 'RunsDir'; specsDir = 'SpecsDir'; tempDir = 'TempDir'
-    commandsDir = 'CommandsDir' }
+    commandsDir = 'CommandsDir'; queueStopFile = 'StopFile' }
 
 # The drift-guard child, written once into the suite scratch: it dot-sources the REAL tools/harness/_profile.ps1 under
 # SZA_PROJECT_ROOT and prints, as one JSON object, Get-SzaPath of every key, envPrefix, the project root and the lease
@@ -3036,11 +3037,11 @@ $after = & $prefs
             $before = Get-Listing $repo
             $p = Get-PqRepoPaths -RepoPath $repo
             Assert-That (((Get-Listing $repo) -join ';') -ceq ($before -join ';')) 'Get-PqRepoPaths created something'
-            Assert-That ((Get-Keys $p) -ceq 'Root EnvPrefix Ledger Archive Queue Ready Done LeasesDir RunsDir SpecsDir TempDir CommandsDir') "the result has the keys [$(Get-Keys $p)]"
+            Assert-That ((Get-Keys $p) -ceq 'Root EnvPrefix Ledger Archive Queue Ready Done LeasesDir RunsDir SpecsDir TempDir CommandsDir StopFile') "the result has the keys [$(Get-Keys $p)]"
             Assert-That ($p.Root -ceq $repo -and $p.EnvPrefix -ceq 'SZA') "Root '$($p.Root)' EnvPrefix '$($p.EnvPrefix)', expected '$repo' and SZA"
             $want = [ordered]@{ Ledger = 'PLAN/spec-catalog.jsonl'; Archive = 'PLAN/spec-catalog-archive.jsonl'; Queue = 'PLAN/RELEASE_QUEUE.md'
                 Ready = 'PLAN/RELEASE_READY.md'; Done = 'PLAN/RELEASE_QUEUE_DONE.md'; LeasesDir = 'temp/SPEC-TICKET.LEASES'; RunsDir = 'temp/spec-queue'
-                SpecsDir = 'PLAN'; TempDir = 'temp'; CommandsDir = '.claude/commands' }
+                SpecsDir = 'PLAN'; TempDir = 'temp'; CommandsDir = '.claude/commands'; StopFile = 'temp/STOP-SPEC-QUEUE' }
             foreach ($k in $want.Keys) {
                 $expected = $repo + $sep + $want[$k].Replace('/', $sep)
                 Assert-That ($p.$k -ceq $expected) "$k is '$($p.$k)', expected '$expected'"

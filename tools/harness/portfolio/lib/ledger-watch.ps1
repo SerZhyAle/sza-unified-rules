@@ -9,8 +9,8 @@
 #
 #   Get-PqRepoPaths -RepoPath <dir>
 #       -> [pscustomobject] Root, EnvPrefix, Ledger, Archive, Queue, Ready, Done, LeasesDir, RunsDir, SpecsDir,
-#          TempDir, CommandsDir. Each path is the profile's paths.<key> (journal, journalArchive, releaseQueue,
-#          releaseReady, releaseQueueDone, leasesDir, queueRunsDir, specsDir, tempDir, commandsDir) over the shipped
+#          TempDir, CommandsDir, StopFile. Each path is the profile's paths.<key> (journal, journalArchive, releaseQueue,
+#          releaseReady, releaseQueueDone, leasesDir, queueRunsDir, specsDir, tempDir, commandsDir, queueStopFile) over the shipped
 #          default, resolved as Get-SzaPath resolves it: a relative value joined onto Root with the OS separator, an
 #          absolute one as given. LeasesDir follows Get-LeaseStoreDir of batch/run-spec-queue.ps1: when the variable
 #          <envPrefix>_TICKET_LEASE_ROOT is set it replaces Root as the base of the relative leasesDir. Profile keys
@@ -100,6 +100,7 @@ $script:PqRepoPathMap = [ordered]@{
     SpecsDir    = 'specsDir'
     TempDir     = 'tempDir'
     CommandsDir = 'commandsDir'
+    StopFile    = 'queueStopFile'
 }
 
 # ---- helpers ----

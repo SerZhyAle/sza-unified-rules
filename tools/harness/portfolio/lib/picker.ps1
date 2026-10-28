@@ -3,8 +3,9 @@
 # Dot-source this file; it defines functions only, sets no preference and prints nothing. State: none.
 # Everything here is read-only: the shipped picker runs with -NoDrift and never with its claim switch (a dispatcher
 # worker claims through the repository's own runner), in a child process whose environment alone carries
-# SZA_PROJECT_ROOT and from which every <NAME>_AGENT_ID is removed (rule 29: a dispatcher started from an agent
-# session must not make that session's leases look like its own).
+# SZA_PROJECT_ROOT and from which every <NAME>_AGENT_ID and the starting agent's session variables are removed
+# (Remove-PqAgentSessionEnv; rule 29: a dispatcher started from an agent session must not make that session's leases
+# look like its own).
 #
 #   Invoke-PqPicker -RepoPath <dir> [-Exclude <string[]>] [-TimeoutSeconds <int>] [-HarnessRoot <dir>]
 #                   [-ScriptPath <file>]
@@ -25,6 +26,21 @@ function Get-PqHarnessRoot([string]$HarnessRoot) {
     return [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 }
 
+# Session and runtime variables of the agent that started the dispatcher. A child that inherits them speaks as that
+# agent (rule 29): a pass child takes its leases, locks and chat lines, a nested agent CLI takes itself for a
+# sub-session, and the read-only picker keeps that agent's own leases in the ranking (spec-next-preflight.ps1 skips
+# only leases that are not "mine"), so it offers the ticket the agent is on. The owner's desktop shortcut carries none
+# of them, an agent's shell carries all. Credentials and provider settings (CLAUDE_CODE_OAUTH_TOKEN, CLAUDE_CODE_USE_*,
+# CLAUDE_CODE_GIT_BASH_PATH, ANTHROPIC_*) are not session state and stay.
+$script:PqAgentSessionEnvPattern = '^(CLAUDECODE|CLAUDE_PID|CLAUDE_AGENT_SDK_[A-Z0-9_]+|CLAUDE_CODE_(SESSION_[A-Z0-9_]+|CHILD_SESSION|ENTRYPOINT|MESSAGING_[A-Z0-9_]+|SSE_PORT|ENABLE_SDK_FILE_CHECKPOINTING|ENABLE_TASKS|EMIT_STARTUP_TIMING|QUESTION_PREVIEW_FORMAT|IDE_[A-Z0-9_]+))$'
+
+function Remove-PqAgentSessionEnv {
+    param([Parameter(Mandatory)]$Environment)
+    foreach ($name in @($Environment.Keys)) {
+        if ($name -cmatch '^[A-Z0-9]+_AGENT_ID$' -or $name -match $script:PqAgentSessionEnvPattern) { [void]$Environment.Remove($name) }
+    }
+}
+
 # Runs `pwsh -NoProfile -File <Script> @Arguments` for one repository. Returns @{ code; stdout; stderr; timedOut; ms }.
 function Invoke-PqRepoChild {
     param([string]$RepoPath, [string]$Script, [string[]]$Arguments, [int]$TimeoutSeconds = 300)
@@ -37,9 +53,7 @@ function Invoke-PqRepoChild {
     $psi.WorkingDirectory = $RepoPath
     $psi.Environment['SZA_PROJECT_ROOT'] = $RepoPath
     [void]$psi.Environment.Remove('SZA_PROFILE_PATH')
-    foreach ($name in @($psi.Environment.Keys)) {
-        if ($name -cmatch '^[A-Z0-9]+_AGENT_ID$') { [void]$psi.Environment.Remove($name) }
-    }
+    Remove-PqAgentSessionEnv $psi.Environment
     $sw = [Diagnostics.Stopwatch]::StartNew()
     $proc = [Diagnostics.Process]::Start($psi)
     $out = $proc.StandardOutput.ReadToEndAsync()

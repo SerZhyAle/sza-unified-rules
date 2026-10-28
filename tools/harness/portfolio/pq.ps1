@@ -4,18 +4,35 @@
     pq - work the portfolio queue, inspect its logs and manage its repositories.
 
 .DESCRIPTION
-    pq register -Path <dir> [-Key <k>] [-Enable]   add a repository to the registry (repos.json in the portfolio
-                                                   root); it joins disabled, with maxWorkers 1 and concurrent false
+    pq register -Path <dir> [-Key <k>] [-Enable] [-PermissionMode <mode>]
+                                                   add a repository to the registry (repos.json in the portfolio
+                                                   root); it joins disabled unless -Enable, with maxWorkers 1 and
+                                                   concurrent false; -PermissionMode (acceptEdits, auto,
+                                                   bypassPermissions, manual, dontAsk, plan) is written on its record
     pq list [-Json]                                 the registered repositories
     pq dry-run [-Slots <n>] [-Json]                 the global order and the slot plan; launches and writes nothing
-    pq queue [-Init] [-NoOpen]                      open PORTFOLIO_QUEUE.md; -Init writes a first one when none exists
+    pq queue [-Init] [-NoOpen]                      open PORTFOLIO_QUEUE.md, synced first: every registered
+                                                   repository's queued tickets, new ones added at the bottom, changed
+                                                   and status refreshed, closed ones removed, no line moved; -Init
+                                                   writes a first one when none exists
+    pq tickets [<repo>] [-NoOpen]                   open a repository's own ticket queue file (PLAN/RELEASE_QUEUE.md
+                                                   unless its profile says otherwise); without a key, list every
+                                                   registered repository with that file's path
+    pq rank [<repo> -Rank <n>] [-Order <k1,k2,..>]  the project order (registry rank ascending, equal ranks in
+                                                   array order); with <repo> -Rank set one repository's rank; with
+                                                   -Order put the listed projects first in that order, the rest
+                                                   after them, and write ranks 10, 20, 30, ..; bare, list it
+    pq arrange                                      sort every scheduled package of PORTFOLIO_QUEUE.md by project
+                                                   order; a project's own rows keep their order; '--' and hold are
+                                                   not touched, and only row lines move
     pq pin <repo:id>                                put a ticket at the top of the first numbered package
+    pq sync [-Path <repository>]                    refresh the portfolio projection, optionally for one repository
     pq hold <repo[:id]>                             move a row under the hold heading
     pq release <repo[:id]>                          remove a row from under hold; a bare key also clears the
                                                     registry hold of that repository (TASK-FLOW rule 41)
     pq doctor [-All]                                check the enabled repositories (all with -All); writes nothing
     pq start [-Drain] [-MaxTickets <n>]             run one worker; wait when empty, or exit with -Drain
-    pq stop [-Kill]                                 stop after current passes; -Kill terminates runner children
+    pq stop [-Kill]                                 stop after current passes; -Kill kills each worker's own pass tree
     pq status [-Json]                              workers, today's pass outcomes, next ticket and STOP
     pq log [-Last <n>] [-Repo <key>] [-Ev <name>] [-Json]  recent events across all writers (default 40)
 
@@ -32,6 +49,7 @@ param(
     [string]$Target,
     [string]$Path,
     [string]$Key,
+    [string]$PermissionMode,
     [int]$Slots = -1,
     [switch]$Enable,
     [switch]$All,
@@ -46,6 +64,8 @@ param(
     [int]$Last = 40,
     [string]$Repo,
     [string]$Ev,
+    [string]$Rank,
+    [string[]]$Order,
     [switch]$Help
 )
 
@@ -118,11 +138,37 @@ function Read-PqRegistryIfAny {
 
 # ---- verbs ----
 
+function Invoke-PqSync {
+    $read = Get-PqRegistryOrFail
+    if ($null -eq $read) { return 2 }
+    $registry = $read.registry
+    $syncKey = ''
+    if ($Path) {
+        $full = [IO.Path]::GetFullPath($Path)
+        $repo = @($registry.repos | Where-Object { (ConvertTo-PqPathKey ([IO.Path]::GetFullPath([string]$_.path))) -ceq (ConvertTo-PqPathKey $full) }) | Select-Object -First 1
+        if ($null -eq $repo) { Write-PqError 'UnknownRepoPath' "repository '$full' is not registered"; return 2 }
+        $syncKey = [string]$repo.key
+    }
+    $qp = Get-PqQueuePath $registry
+    $result = Sync-PqRegisteredQueues -Path $qp -Registry $registry -Key $syncKey
+    if ($result.ok) {
+        "pq sync: $($result.added) added, $($result.updated) updated, $($result.removed) removed"
+        if (@($result.unreadable).Count -gt 0) {
+            Write-PqError 'TicketQueueUnreadable' "no complete ticket queue for: $($result.unreadable -join ', ')"
+            return 2
+        }
+        return 0
+    }
+    Write-PqError $result.error $result.message
+    return 2
+}
+
 function Invoke-PqRegister {
     if (-not $Path) { Write-PqError 'ArgumentMissing' 'register needs -Path <dir>'; return 2 }
     $full = if ([IO.Path]::IsPathFullyQualified($Path)) { $Path } else { [IO.Path]::GetFullPath((Join-Path (Get-Location).Path $Path)) }
     $a = @{ Path = $full; Enable = $Enable; Log = $true }
     if ($Key) { $a.Key = $Key }
+    if ($PermissionMode) { $a.PermissionMode = $PermissionMode }
     $null = Initialize-PqRoot
     $r = Add-PqRepo @a
     if (-not $r.ok) { Write-PqError $r.error $r.message; return 2 }
@@ -179,6 +225,53 @@ function Invoke-PqQueueWriter([string]$Which) {
     return 0
 }
 
+function Invoke-PqRank {
+    $read = Get-PqRegistryOrFail
+    if ($null -eq $read) { return 2 }
+    $keys = @(@($Order) | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    if ($keys.Count -gt 0 -and ($Target -or $Rank)) { Write-PqError 'ArgumentConflict' 'rank takes either <repo> -Rank <n> or -Order, not both'; return 2 }
+    $r = $null
+    if ($keys.Count -gt 0) {
+        $r = Set-PqRepoOrder -Keys $keys -Log
+    }
+    elseif ($Target -or $Rank) {
+        $value = [long]0
+        if (-not $Target -or -not [long]::TryParse($Rank, [ref]$value)) { Write-PqError 'ArgumentMissing' 'rank needs <repo> -Rank <integer>'; return 2 }
+        $r = Set-PqRepoRank -Key $Target -Rank $value -Log
+    }
+    if ($null -ne $r) {
+        if (-not $r.ok) { Write-PqError $r.error $r.message; return 2 }
+        if ($r.changed) { Write-PqOwnerAction 'rank' }
+        $read = Get-PqRegistryOrFail
+        if ($null -eq $read) { return 2 }
+    }
+    $i = 0
+    foreach ($o in (Get-PqRepoOrder $read.registry)) {
+        $i++
+        '{0,2}. {1}  rank={2}' -f $i, $o.key, $o.rank
+    }
+    if ($i -eq 0) { 'no repositories registered' }
+    if ($null -ne $r -and -not $r.changed) { 'rank - no change' }
+    return 0
+}
+
+function Invoke-PqArrange {
+    $read = Get-PqRegistryOrFail
+    if ($null -eq $read) { return 2 }
+    $qp = Get-PqQueuePath $read.registry
+    $null = Open-PqLog -Writer cli
+    $keys = [string[]]@(Get-PqRepoOrder $read.registry | ForEach-Object { $_.key })
+    $r = Sort-PqQueueByRank -Path $qp -ProjectOrder $keys -Log
+    if (-not $r.ok) {
+        $message = if ($r.message) { $r.message } else { $r.error }
+        Write-PqError $r.error $message
+        return 2
+    }
+    if ($r.changed) { "arrange - $($r.moved) rows moved"; Write-PqOwnerAction 'arrange' }
+    else { 'arrange - no change' }
+    return 0
+}
+
 function Invoke-PqQueue {
     $registry = Read-PqRegistryIfAny
     $qp = Get-PqQueuePath $registry
@@ -196,6 +289,13 @@ function Invoke-PqQueue {
         return 0
     }
     if (-not [IO.File]::Exists($qp)) { Write-PqError 'QueueFileMissing' "run 'pq queue -Init'"; return 2 }
+    # Bring the file up to date before the owner sees it: new tickets at the bottom, changed and status current.
+    if ($null -ne $registry) {
+        $null = Open-PqLog -Writer cli
+        $s = Sync-PqRegisteredQueues -Path $qp -Registry $registry -Log
+        if (-not $s.ok) { Write-PqError $s.error "sync skipped: $($s.message)" }
+        elseif ($s.changed) { "synced $qp - $($s.added) added, $($s.updated) updated, $($s.removed) removed" }
+    }
     if ($NoOpen) { $qp; return 0 }
     Open-PqEditor $qp
     return 0
@@ -204,6 +304,29 @@ function Invoke-PqQueue {
 function Open-PqEditor([string]$File) {
     $editor = if ($env:EDITOR) { $env:EDITOR } else { 'notepad' }
     Start-Process -FilePath $editor -ArgumentList @("`"$File`"") | Out-Null
+}
+
+# A repository's own ticket queue (TASK-FLOW rule 14), where its plan tool adds new tickets; the sync carries them into
+# PORTFOLIO_QUEUE.md. Get-PqTicketQueuePath is in lib/queue-file.ps1.
+function Invoke-PqTickets {
+    $read = Get-PqRegistryOrFail
+    if ($null -eq $read) { return 2 }
+    $repos = @($read.registry.repos)
+    if (-not $Target) {
+        foreach ($r in $repos) {
+            $qp = Get-PqTicketQueuePath $r
+            '{0}  {1}  {2}' -f $r.key, $(if ([IO.File]::Exists($qp)) { 'file   ' } else { 'MISSING' }), $qp
+        }
+        if ($repos.Count -eq 0) { 'no repositories registered' }
+        return 0
+    }
+    $repo = @($repos | Where-Object { [string]$_.key -ceq $Target }) | Select-Object -First 1
+    if ($null -eq $repo) { Write-PqError 'UnknownRepoKey' "no repository '$Target' in the registry"; return 2 }
+    $qp = Get-PqTicketQueuePath $repo
+    if (-not [IO.File]::Exists($qp)) { Write-PqError 'TicketQueueMissing' "no ticket queue file at $qp"; return 2 }
+    if ($NoOpen) { $qp; return 0 }
+    Open-PqEditor $qp
+    return 0
 }
 
 function Invoke-PqDryRun {
@@ -342,46 +465,23 @@ function Invoke-PqStop {
         at = [DateTimeOffset]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
         reason = 'owner'
     }
-    $workers = @(Invoke-PqStateLock {
+    # The kill is the dispatcher's own: every live worker reads STOP on its pass tick and kills the process tree of the
+    # pass it started (Invoke-PqPassChild), then releases that pass's lease. The runner's own -Stop -Kill is never
+    # called from here: it terminates every headless agent process on the machine, whichever repository or instance
+    # started it, so it would also kill the local runners' children and every other portfolio pass.
+    $inFlight = @(Invoke-PqStateLock {
         $runDir = Join-Path $root 'run'
-        if ($Kill -and [IO.Directory]::Exists($runDir)) {
+        if ([IO.Directory]::Exists($runDir)) {
             foreach ($wf in [IO.Directory]::GetFiles($runDir, 'worker-*.json')) {
                 $worker = Read-PqState $wf
-                if ((Get-PqValue $worker 'repository') -and (Test-PqStateOwner $worker)) {
-                    @{ slot = [IO.Path]::GetFileNameWithoutExtension($wf).Substring('worker-'.Length); repository = $worker.repository }
-                }
+                if ((Get-PqValue $worker 'repository') -and (Test-PqStateOwner $worker)) { "$($worker.repository):$($worker.ticket)" }
             }
         }
-        # Capture targets before publishing STOP: workers may exit and remove their state immediately.
         [IO.File]::WriteAllText($stopFile, (($stopObj | ConvertTo-Json)), [Text.Encoding]::UTF8)
     })
-    $failed = $false
-
-    if ($Kill) {
-        $harness = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-        foreach ($worker in $workers) {
-            try {
-                $k = $worker.slot
-                $reg = Read-PqRegistryIfAny
-                $repoRec = if ($null -ne $reg) { @($reg.repos) | Where-Object key -CEQ $worker.repository | Select-Object -First 1 } else { $null }
-                if ($null -eq $repoRec) { throw 'worker repository is no longer registered' }
-                $rPath = [string]$repoRec.path
-                $runner = Join-Path $harness 'batch\run-spec-queue.ps1'
-                $result = Invoke-PqRepoChild -RepoPath $rPath -Script $runner -Arguments @('-Stop', '-Kill', '-Instance', "pq$k") -TimeoutSeconds 30
-                if ($result.timedOut -or $result.code -ne 0) {
-                    $failed = $true
-                    Write-PqError 'KillFailed' "runner stop failed for worker $k"
-                }
-            }
-            catch {
-                $failed = $true
-                Write-PqError 'KillFailed' "cannot stop worker $($worker.slot)"
-            }
-        }
-    }
     Write-PqOwnerAction 'stop'
     "stop requested ($level)"
-    if ($failed) { return 2 }
+    foreach ($p in $inFlight) { if ($Kill) { "  killing the pass on $p" } else { "  finishing the pass on $p" } }
     return 0
 }
 
@@ -527,7 +627,8 @@ $verbs = [ordered]@{
     start = { Invoke-PqStart }; stop = { Invoke-PqStop }; status = { Invoke-PqStatus }; log = { Invoke-PqLog }
     watch = $null; tail = $null; page = $null; pause = $null; resume = $null
     hold = { Invoke-PqQueueWriter 'hold' }; release = { Invoke-PqQueueWriter 'release' }; pin = { Invoke-PqQueueWriter 'pin' }
-    queue = { Invoke-PqQueue }; register = { Invoke-PqRegister }; list = { Invoke-PqList }; 'dry-run' = { Invoke-PqDryRun }
+    rank = { Invoke-PqRank }; arrange = { Invoke-PqArrange }
+    queue = { Invoke-PqQueue }; sync = { Invoke-PqSync }; tickets = { Invoke-PqTickets }; register = { Invoke-PqRegister }; list = { Invoke-PqList }; 'dry-run' = { Invoke-PqDryRun }
     report = $null; trace = $null; problems = $null; export = $null; compare = $null; analyze = $null; improve = $null
     doctor = { Invoke-PqDoctor }
 }

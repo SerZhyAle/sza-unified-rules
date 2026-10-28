@@ -6,7 +6,7 @@
 #
 #   Get-PqRank -Registry <obj> [-Queue <Read-PqQueueFile result>] -HeadProvider <sb param($Repo,$Exclude,$ForceId)>
 #              [-Exclude <repo:id[]>] [-SkipRepos <key[]>] [-Slots <int>] [-Busy <hashtable key->int>]
-#              [-Occupied <key[]>] [-TicketBlocked <hashtable 'repo:id'->'resource'|'deviceLevel'>]
+#              [-Occupied <key[]>] [-Stopped <key[]>] [-TicketBlocked <hashtable 'repo:id'->'resource'|'deviceLevel'>]
 #              [-Fill depth|breadth]
 #
 #   The provider returns what Get-PqPickerHead returns: @{ ok; head; payload; why } ($Repo is the registry record).
@@ -20,8 +20,8 @@
 #     candidates  distinct first picks in global order, @{ repo; id; rule; source; score; package; row; priority;
 #                 status; title; alt }, alt the top three rejected picks @{ repo; id; why }
 #     plan        @{ slot; repo; id; rule; source; score; priority; status; title } for -Slots under the fill policy
-#     skipped     @{ repo; why } (disabled, hold, heldByQueue, occupied, exhausted, allLeased, noCandidate,
-#                 pickerFailed)
+#     skipped     @{ repo; why } (disabled, hold, heldByQueue, stopped, occupied, exhausted, allLeased, noCandidate,
+#                 pickerFailed); stopped counts under excluded.held
 #     events      @{ ev; d } for every queue.row and the one rank.result
 
 function Get-PqRankValue($Object, [string]$Name, $Default = $null) {
@@ -49,6 +49,7 @@ function Get-PqRank {
         [int]$Slots = -1,
         [hashtable]$Busy = @{},
         [string[]]$Occupied = @(),
+        [string[]]$Stopped = @(),
         [hashtable]$TicketBlocked = @{},
         [ValidateSet('', 'depth', 'breadth')][string]$Fill = ''
     )
@@ -109,6 +110,8 @@ function Get-PqRank {
         if ((Get-PqRankValue $rec 'enabled' $false) -ne $true) { $skipped.Add([ordered]@{ repo = $k; why = 'disabled' }); $excluded.held++; continue }
         if ((Get-PqRankValue $rec 'hold' $false) -eq $true) { $skipped.Add([ordered]@{ repo = $k; why = 'hold' }); $excluded.held++; continue }
         if ($heldRepos.Contains($k)) { $skipped.Add([ordered]@{ repo = $k; why = 'heldByQueue' }); $excluded.held++; continue }
+        # The repository's own shared stop file (rule 26): the owner's stop or a release freeze holds it like a hold.
+        if (@($Stopped) -ccontains $k) { $skipped.Add([ordered]@{ repo = $k; why = 'stopped' }); $excluded.held++; continue }
         if (@($Occupied) -ccontains $k) { $skipped.Add([ordered]@{ repo = $k; why = 'occupied' }); $excluded.occupied++; continue }
         $cap = if ((Get-PqRankValue $rec 'concurrent' $false) -eq $true) { [int](Get-PqRankValue $rec 'maxWorkers' 1) } else { 1 }
         $busyNow = if ($Busy.ContainsKey($k)) { [int]$Busy[$k] } else { 0 }

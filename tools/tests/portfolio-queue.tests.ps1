@@ -705,6 +705,20 @@ try {
         Assert-That ($d.hash -ceq $r.hash) "registry.changed hash $($d.hash), expected $($r.hash)"
     }
 
+    Test-Case 'registry: Add-PqRepo -PermissionMode writes the mode on the record, reads back clean, and refuses a value outside the list without writing' {
+        . (Get-LibPath 'registry.ps1')
+        $dir = New-StampDir 'moded'
+        $r = Add-PqRepo -Path $dir -Enable -PermissionMode 'bypassPermissions'
+        Assert-That $r.ok "registration failed: $($r.error) $($r.message)"
+        $read = Read-PqRegistry
+        Assert-That $read.ok "the written registry does not read clean: $((Get-Names $read.errors) -join ', ')"
+        Assert-That ($read.document.repos[0].permissionMode -ceq 'bypassPermissions') "permissionMode $($read.document.repos[0].permissionMode)"
+        $hash = Get-PqRegistryHash
+        $bad = Add-PqRepo -Path (New-StampDir 'badmode') -PermissionMode 'yolo'
+        Assert-That (-not $bad.ok -and $bad.error -ceq 'PermissionModeInvalid') "a bad mode returned ok $($bad.ok) error $($bad.error)"
+        Assert-That ((Get-PqRegistryHash) -ceq $hash) 'a refused registration rewrote the file'
+    }
+
     Test-Case 'registry: Add-PqRepo is idempotent for the same path and refuses a taken key with RepoKeyTaken and a path without a readable stamp with StampMissing' {
         . (Get-LibPath 'registry.ps1')
         $dir = New-StampDir 'same'
@@ -745,6 +759,31 @@ try {
         $ev = @(Get-RootEvents $env:SZA_PORTFOLIO_ROOT | Where-Object { $_.ev -ceq 'registry.changed' })
         Assert-That ($ev.Count -eq 2) "$($ev.Count) registry.changed events, expected 2"
         Assert-That ($ev[1].d.hash -ceq (Get-Sha $path)) 'the second event does not carry the new hash'
+        Assert-That (@(Get-ChildItem -LiteralPath $env:SZA_PORTFOLIO_ROOT -File -Filter '*.tmp').Count -eq 0) 'a temp file stayed'
+    }
+
+    Test-Case 'registry: Set-PqRepoRank and Set-PqRepoOrder write ranks, keep everything else, and Get-PqRepoOrder sorts by rank then array order' {
+        . (Get-LibPath 'registry.ps1')
+        $path = Write-Registry ([ordered]@{ schemaVersion = '1.0'; extra = 'x'; repos = @(
+                    [ordered]@{ key = 'one'; path = 'C:\pq-fixture\one'; enabled = $true; note = 'n' },
+                    [ordered]@{ key = 'two'; path = 'C:\pq-fixture\two'; enabled = $false; rank = 100 },
+                    [ordered]@{ key = 'three'; path = 'C:\pq-fixture\three'; enabled = $true }) })
+        $doc = Get-Content -Raw -LiteralPath $path | ConvertFrom-Json -DateKind String
+        Assert-That (((Get-PqRepoOrder $doc).key -join ' ') -ceq 'one two three') 'equal default ranks did not keep array order'
+        $r = Set-PqRepoRank -Key 'three' -Rank 5
+        Assert-That ($r.ok -and $r.changed) "rank returned ok $($r.ok) error $($r.error)"
+        $doc = Get-Content -Raw -LiteralPath $path | ConvertFrom-Json -DateKind String
+        Assert-That (((Get-PqRepoOrder $doc).key -join ' ') -ceq 'three one two') "order after rank: $((Get-PqRepoOrder $doc).key -join ' ')"
+        Assert-That ($doc.extra -ceq 'x' -and $doc.repos[0].note -ceq 'n') 'an unrelated key was lost'
+        $same = Set-PqRepoRank -Key 'three' -Rank 5
+        Assert-That ($same.ok -and -not $same.changed) 'the same rank changed the file'
+        $o = Set-PqRepoOrder -Keys @('two')
+        Assert-That ($o.ok -and $o.changed) "order returned ok $($o.ok) error $($o.error)"
+        $doc = Get-Content -Raw -LiteralPath $path | ConvertFrom-Json -DateKind String
+        Assert-That ((@($doc.repos | ForEach-Object { "$($_.key)=$($_.rank)" }) -join ' ') -ceq 'one=30 two=10 three=20') "ranks: $(@($doc.repos | ForEach-Object { "$($_.key)=$($_.rank)" }) -join ' ')"
+        Assert-That (-not (Set-PqRepoOrder -Keys @('two')).changed) 'the same order changed the file'
+        $u = Set-PqRepoOrder -Keys @('two', 'nope')
+        Assert-That (-not $u.ok -and $u.error -ceq 'UnknownRepoKey') "an unknown key returned $($u.error)"
         Assert-That (@(Get-ChildItem -LiteralPath $env:SZA_PORTFOLIO_ROOT -File -Filter '*.tmp').Count -eq 0) 'a temp file stayed'
     }
 
@@ -975,14 +1014,32 @@ try {
         Assert-That (($after -join "`n") -ceq ($lines -join "`n")) 'another line changed'
     }
 
-    Test-Case 'queue-write: pin of a row already present leaves the old line and the row counts once at the new top' {
+    Test-Case 'queue-write: pin of a row already present moves that line, columns and all, to the top - no second row' {
         . (Get-LibPath 'queue-file.ps1')
-        $file = New-QueueFile @('1', 'a', 'x:S1')
+        $file = New-QueueFile @('1', 'a', 'x:S1_slug  26-10-19 11:51  Draft', 'hold', 'x:S1')
         $null = Add-PqQueuePin -Path $file -Ticket 'x:S1'
-        Assert-That (((Get-FileLines $file) -join '|') -ceq '1|x:S1|a|x:S1') "file after pin: $((Get-FileLines $file) -join '|')"
+        Assert-That (((Get-FileLines $file) -join '|') -ceq '1|x:S1_slug  26-10-19 11:51  Draft|a|hold|x:S1') "file after pin: $((Get-FileLines $file) -join '|')"
         $q = Read-PqQueueFile -Path $file
         Assert-That ((Get-RowKeys $q.rows) -ceq 'x:S1 a') "rows '$(Get-RowKeys $q.rows)'"
-        Assert-That (@($q.bad | Where-Object { $_.kind -ceq 'duplicate' }).Count -eq 1) 'the old line is not reported once as duplicate'
+        Assert-That (@($q.bad).Count -eq 0) "bad rows: $(@($q.bad | ForEach-Object { $_.kind }) -join ',')"
+    }
+
+    Test-Case 'queue-write: arrange sorts each scheduled package by project order, keeps a project''s own row order, and moves nothing else' {
+        . (Get-LibPath 'queue-file.ps1')
+        $lines = @('# notes', 'ticket  changed  status', 'c:S1', 'a:S1', '1', 'b:S1_x  26-10-19 11:51  Draft', '# stays', 'a:S2', 'zz:S1', 'b:S2', 'a:S1', '',
+            '2', 'c', 'a', '--', 'c:S9', 'a:S9', 'hold', 'c:S3', 'a:S3')
+        $file = New-QueueFile $lines -Crlf -Bom
+        $r = Sort-PqQueueByRank -Path $file -ProjectOrder @('a', 'b', 'c')
+        Assert-That ($r.ok -and $r.changed -and $r.moved -eq 8) "arrange returned ok $($r.ok) changed $($r.changed) moved $($r.moved) error $($r.error)"
+        $expected = @('# notes', 'ticket  changed  status', 'a:S1', 'c:S1', '1', 'a:S2', '# stays', 'a:S1', 'b:S1_x  26-10-19 11:51  Draft', 'b:S2', 'zz:S1', '',
+            '2', 'a', 'c', '--', 'c:S9', 'a:S9', 'hold', 'c:S3', 'a:S3')
+        Assert-That (((Get-FileLines $file) -join '|') -ceq ($expected -join '|')) "file after arrange: $((Get-FileLines $file) -join '|')"
+        $bytes = [IO.File]::ReadAllBytes($file)
+        Assert-That ($bytes[0] -eq 0xEF -and ([Text.Encoding]::UTF8.GetString($bytes)).Contains("`r`n")) 'the BOM or the CRLF line ending was lost'
+        $again = Sort-PqQueueByRank -Path $file -ProjectOrder @('a', 'b', 'c')
+        Assert-That ($again.ok -and -not $again.changed -and $again.moved -eq 0) 'a second arrange changed the file'
+        $missing = Sort-PqQueueByRank -Path (Join-Path (New-Scratch 'arrange') 'none.md') -ProjectOrder @('a')
+        Assert-That (-not $missing.ok -and $missing.error -ceq 'QueueFileMissing') "an absent file returned $($missing.error)"
     }
 
     Test-Case 'queue-write: hold moves an existing row under the hold heading, adding the heading at the end when absent, and moves nothing else' {
@@ -1099,6 +1156,65 @@ try {
         $r = Remove-PqQueueHold -Path $file -Target 'tk'
         Assert-That ($r.ok -and $r.changed) 'release of tk did not match the tk:* row'
         Assert-That ((Get-RowKeys (Read-PqQueueFile -Path $file).held) -ceq 'sp-mob:SP-0166') 'the hyphenated id was not read whole'
+    }
+
+    # ---------------------------------------------------------------- queue-sync
+    Test-Case 'queue-read: a row with its slug and columns reads as <repo>:<id>, and the column header line is skipped' {
+        . (Get-LibPath 'queue-file.ps1')
+        $file = New-QueueFile @('ticket                    changed         status', '1', 'fms-web:S0033_contract-sync   26-10-19 11:51  In Progress  # mine', 'a')
+        $q = Read-PqQueueFile -Path $file
+        Assert-That ((Get-RowKeys $q.rows) -ceq 'fms-web:S0033 a' -and @($q.bad).Count -eq 0) "rows '$(Get-RowKeys $q.rows)' bad $(@($q.bad).Count)"
+    }
+
+    Test-Case 'queue-sync: refreshes columns in place, keeps the owner comment, removes rows that left the queue, adds new tickets above hold, moves nothing' {
+        . (Get-LibPath 'queue-file.ps1')
+        $file = New-QueueFile @('# top', 'ticket  changed  status', '1', 'b:S0002', 'a:S0001_old  26-01-01 00:00  Draft  # why', 'a:S0009', 'other:S0005', '', '--', 'b', '', 'hold', 'a:S0003  # one-way')
+        $src = [ordered]@{
+            a = @(
+                [ordered]@{ id = 'S0001'; token = 'S0001_new'; tail = '26-10-19 11:51  In Progress'; unscheduled = $false },
+                [ordered]@{ id = 'S0003'; token = 'S0003_pub'; tail = '26-10-20 10:00  Draft'; unscheduled = $false },
+                [ordered]@{ id = 'S0004'; token = 'S0004_fresh'; tail = '26-10-21 09:00  Draft'; unscheduled = $true })
+            b = @([ordered]@{ id = 'S0002'; token = 'S0002_x'; tail = ''; unscheduled = $false })
+            c = $null
+        }
+        $r = Sync-PqQueueFile -Path $file -Sources $src
+        Assert-That ($r.ok -and $r.changed -and $r.added -eq 1 -and $r.updated -eq 3 -and $r.removed -eq 1) "ok $($r.ok) added $($r.added) updated $($r.updated) removed $($r.removed)"
+        $l = @(Get-FileLines $file)
+        # Parenthesised: the comma binds tighter than +.
+        $expect = @('# top', 'ticket  changed  status', '1', 'b:S0002_x',
+            ('a:S0001_new'.PadRight(74) + '26-10-19 11:51  In Progress  # why'), 'other:S0005', '', '--', 'b',
+            ('a:S0004_fresh'.PadRight(74) + '26-10-21 09:00  Draft'), '', 'hold', ('a:S0003_pub'.PadRight(74) + '26-10-20 10:00  Draft  # one-way'))
+        Assert-That (($l -join '|') -ceq ($expect -join '|')) "file after sync: $($l -join '|')"
+        $again = Sync-PqQueueFile -Path $file -Sources $src
+        Assert-That ($again.ok -and -not $again.changed) 'a second sync changed the file'
+    }
+
+    Test-Case 'queue-sync: an unreadable queue keeps rows; a valid empty queue removes its last row' {
+        . (Get-LibPath 'queue-file.ps1')
+        $file = New-QueueFile @('1', 'a:S0001', 'a:S0002')
+        $r = Sync-PqQueueFile -Path $file -Sources ([ordered]@{ a = $null })
+        Assert-That ($r.ok -and -not $r.changed) 'rows of a repository without a readable queue were touched'
+        $emptyFile = New-QueueFile @('current-next-release: 1', '1', '--')
+        $empty = Read-PqTicketQueueRows $emptyFile
+        Assert-That ($null -ne $empty -and @($empty).Count -eq 0) 'valid empty queue was not recognised'
+        $r = Sync-PqQueueFile -Path $file -Sources ([ordered]@{ a = $empty })
+        Assert-That ($r.ok -and $r.removed -eq 2) 'the completed tickets were not removed'
+        $truncated = New-QueueFile @('current-next-release: 1')
+        Assert-That ($null -eq (Read-PqTicketQueueRows $truncated)) 'a truncated queue was treated as empty'
+        $unsupported = New-QueueFile @('current-next-release: 1', '1', 'X001_task  26-10-28 10:00  Draft')
+        Assert-That ($null -eq (Read-PqTicketQueueRows $unsupported)) 'an unsupported ticket id was treated as a completed ticket'
+        $miss = Sync-PqQueueFile -Path (Join-Path (New-Scratch 'nosync') 'PORTFOLIO_QUEUE.md') -Sources ([ordered]@{})
+        Assert-That (-not $miss.ok -and $miss.error -ceq 'QueueFileMissing') "absent file: $($miss.error)"
+    }
+
+    Test-Case 'queue-sync: Read-PqTicketQueueRows reads a RELEASE_QUEUE.md the way the plan tool writes it' {
+        . (Get-LibPath 'queue-file.ps1')
+        $rq = New-QueueFile @('# Release Queue', 'current-next-release: 47', '', '- S0015 decides first; prose above the first package.', '  S0016 waits for it.', 'ticket   changed   status', '47', '# a note', 'S4466_bugfix-gates   26-10-28 11:29  Draft', '', '--', 'S0555_publish   26-09-30 23:54  In Progress        [idle 2, ok]')
+        $rows = Read-PqTicketQueueRows $rq
+        Assert-That ($rows.Count -eq 2) "rows: $($rows.Count)"
+        Assert-That ($rows[0].id -ceq 'S4466' -and $rows[0].token -ceq 'S4466_bugfix-gates' -and $rows[0].tail -ceq '26-10-28 11:29  Draft' -and -not $rows[0].unscheduled) 'first row misread'
+        Assert-That ($rows[1].id -ceq 'S0555' -and $rows[1].tail -ceq '26-09-30 23:54  In Progress        [idle 2, ok]' -and $rows[1].unscheduled) 'second row misread'
+        Assert-That ($null -eq (Read-PqTicketQueueRows (Join-Path (New-Scratch 'norq') 'RELEASE_QUEUE.md'))) 'an absent file did not read as $null'
     }
 
     # ---------------------------------------------------------------- picker

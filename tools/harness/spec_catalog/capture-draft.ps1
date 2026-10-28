@@ -66,6 +66,9 @@
 .PARAMETER Help
     Print this help.
 
+.PARAMETER ProjectRoot
+    Project root whose catalog receives the ticket. Defaults to the repository resolved by _profile.ps1.
+
 .EXAMPLE
     pwsh -NoProfile -File capture-draft.ps1 -Slug login-crash -Text "The app closes when I tap Sign in."
     pwsh -NoProfile -File capture-draft.ps1 -Slug export-csv -TextFile request.txt -Priority 70 -DedupQuery export
@@ -89,8 +92,17 @@ param(
     [string] $DedupQuery = '',
     [string] $Complexity = '',
     [switch] $AllowClosedDuplicate,
+    [string] $ProjectRoot = '',
     [switch] $Help
 )
+
+if ($ProjectRoot) {
+    if (-not (Test-Path -LiteralPath $ProjectRoot -PathType Container)) {
+        Write-Host "capture-draft: project root '$ProjectRoot' does not exist or is not a directory" -ForegroundColor Red
+        exit 2
+    }
+    $env:SZA_PROJECT_ROOT = (Resolve-Path -LiteralPath $ProjectRoot).Path
+}
 
 . (Join-Path $PSScriptRoot '..\_profile.ps1')
 

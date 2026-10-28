@@ -26,10 +26,18 @@
 #                                   throws 'ProfileUnreadable: <path>'.
 #   Test-PqConcurrentCapable -RepoPath [-ProfileReader]
 #                                   the one place that decides R63: declared lock domains above 0.
-#   Add-PqRepo -Path <dir> [-Key] [-Enable] [-By cli|discovery|edit] [-Log] [-RegistryPath]
+#   Add-PqRepo -Path <dir> [-Key] [-Enable] [-PermissionMode <mode>] [-By cli|discovery|edit] [-Log] [-RegistryPath]
 #                                   @{ ok; status (registered|already); key; error; message; hash }.
 #   Set-PqRepoHold -Key -Hold <bool> [-By] [-Log] [-RegistryPath]
 #                                   @{ ok; changed; error; message; hash }.
+#   Set-PqRepoRank -Key -Rank <long> [-By] [-Log] [-RegistryPath]
+#                                   one repository's rank. @{ ok; changed; error; message; hash }.
+#   Set-PqRepoOrder -Keys <string[]> [-By] [-Log] [-RegistryPath]
+#                                   the whole project order at once: the listed keys first, in that order, then every
+#                                   other repository in its current rank-then-array order; ranks 10, 20, 30, .. are
+#                                   written. @{ ok; changed; error; message; hash }.
+#   Get-PqRepoOrder -Registry       the repositories in project order: rank ascending, equal ranks in array order
+#                                   (rule 45); each @{ key; rank; index }.
 #   Get-PqRepoKeyFor -Path          a key from the folder name; throws 'RepoKeyInvalid: ..' when none results.
 
 . (Join-Path $PSScriptRoot 'paths.ps1')
@@ -467,12 +475,14 @@ function Add-PqRepo {
         [Parameter(Mandatory)][string]$Path,
         [string]$Key,
         [switch]$Enable,
+        [string]$PermissionMode,
         [ValidateSet('cli', 'discovery', 'edit')][string]$By = 'cli',
         [switch]$Log,
         [string]$RegistryPath
     )
     if (-not $RegistryPath) { $RegistryPath = Get-PqPath -Kind registry }
     $fail = { param($n, $m) @{ ok = $false; status = $null; key = $Key; error = $n; message = $m; hash = (Get-PqRegistryHash -Path $RegistryPath) } }
+    if ($PermissionMode -and $PermissionMode -cnotin $script:PqPermissionModes) { return (& $fail 'PermissionModeInvalid' "permissionMode '$PermissionMode' is not one of $($script:PqPermissionModes -join ' ')") }
     if (-not [IO.Path]::IsPathFullyQualified($Path)) { return (& $fail 'RepoPathNotAbsolute' "path '$Path' is not absolute") }
     $full = ConvertTo-PqFullPath $Path
     $stampFile = Join-Path $full '.sza-canon.json'
@@ -501,6 +511,7 @@ function Add-PqRepo {
     }
     # R63: a repository that joins is always one worker and not concurrent, whatever its profile declares.
     $record = [pscustomobject][ordered]@{ key = $Key; path = $full; enabled = [bool]$Enable; maxWorkers = 1; concurrent = $false; role = $role }
+    if ($PermissionMode) { $record | Add-Member -NotePropertyName permissionMode -NotePropertyValue $PermissionMode }
     $doc.repos = @(@($doc.repos) + $record)
     $w = if ($cur.fresh) { Write-PqRegistry -Registry $doc -Path $RegistryPath } else { Write-PqRegistry -Registry $doc -Path $RegistryPath -ExpectedHash $cur.hash }
     if (-not $w.ok) { return (& $fail $w.error $w.message) }
@@ -524,6 +535,74 @@ function Set-PqRepoHold {
     if ($null -eq $repo) { return @{ ok = $false; changed = $false; error = 'UnknownRepoKey'; message = "no repository '$Key' in the registry"; hash = $cur.hash } }
     if ((Get-PqValue $repo 'hold' $false) -eq $Hold) { return @{ ok = $true; changed = $false; error = $null; message = $null; hash = $cur.hash } }
     if (Test-PqHasKey $repo 'hold') { $repo.hold = $Hold } else { $repo | Add-Member -NotePropertyName hold -NotePropertyValue $Hold }
+    $w = Write-PqRegistry -Registry $cur.document -Path $RegistryPath -ExpectedHash $cur.hash
+    if (-not $w.ok) { return @{ ok = $false; changed = $false; error = $w.error; message = $w.message; hash = $w.hash } }
+    if ($Log) { $null = Write-PqLibEvent 'registry.changed' ([ordered]@{ by = $By; added = @(); removed = @(); hash = $w.hash }) }
+    return @{ ok = $true; changed = $true; error = $null; message = $null; hash = $w.hash }
+}
+
+function Get-PqRepoOrder($Registry) {
+    $i = 0
+    $all = @(foreach ($r in @($Registry.repos)) {
+            [pscustomobject]@{ key = [string](Get-PqValue $r 'key'); rank = [long](Get-PqValue $r 'rank' 100); index = $i }
+            $i++
+        })
+    return @($all | Sort-Object -Stable -Property rank, index)
+}
+
+function Set-PqRepoRank {
+    param(
+        [Parameter(Mandatory)][string]$Key,
+        [Parameter(Mandatory)][long]$Rank,
+        [ValidateSet('cli', 'discovery', 'edit')][string]$By = 'cli',
+        [switch]$Log,
+        [string]$RegistryPath
+    )
+    if (-not $RegistryPath) { $RegistryPath = Get-PqPath -Kind registry }
+    if (-not [IO.File]::Exists($RegistryPath)) { return @{ ok = $false; changed = $false; error = 'RegistryMissing'; message = "no registry at $RegistryPath"; hash = $null } }
+    $cur = Read-PqRegistryForWrite $RegistryPath
+    if (-not $cur.ok) { return @{ ok = $false; changed = $false; error = $cur.error; message = $cur.message; hash = (Get-PqRegistryHash -Path $RegistryPath) } }
+    $repo = @($cur.document.repos) | Where-Object { (Get-PqValue $_ 'key') -ceq $Key } | Select-Object -First 1
+    if ($null -eq $repo) { return @{ ok = $false; changed = $false; error = 'UnknownRepoKey'; message = "no repository '$Key' in the registry"; hash = $cur.hash } }
+    if ((Test-PqHasKey $repo 'rank') -and [long]$repo.rank -eq $Rank) { return @{ ok = $true; changed = $false; error = $null; message = $null; hash = $cur.hash } }
+    if (Test-PqHasKey $repo 'rank') { $repo.rank = $Rank } else { $repo | Add-Member -NotePropertyName rank -NotePropertyValue $Rank }
+    $w = Write-PqRegistry -Registry $cur.document -Path $RegistryPath -ExpectedHash $cur.hash
+    if (-not $w.ok) { return @{ ok = $false; changed = $false; error = $w.error; message = $w.message; hash = $w.hash } }
+    if ($Log) { $null = Write-PqLibEvent 'registry.changed' ([ordered]@{ by = $By; added = @(); removed = @(); hash = $w.hash }) }
+    return @{ ok = $true; changed = $true; error = $null; message = $null; hash = $w.hash }
+}
+
+function Set-PqRepoOrder {
+    param(
+        [Parameter(Mandatory)][string[]]$Keys,
+        [ValidateSet('cli', 'discovery', 'edit')][string]$By = 'cli',
+        [switch]$Log,
+        [string]$RegistryPath
+    )
+    if (-not $RegistryPath) { $RegistryPath = Get-PqPath -Kind registry }
+    if (-not [IO.File]::Exists($RegistryPath)) { return @{ ok = $false; changed = $false; error = 'RegistryMissing'; message = "no registry at $RegistryPath"; hash = $null } }
+    $cur = Read-PqRegistryForWrite $RegistryPath
+    if (-not $cur.ok) { return @{ ok = $false; changed = $false; error = $cur.error; message = $cur.message; hash = (Get-PqRegistryHash -Path $RegistryPath) } }
+    $records = @($cur.document.repos)
+    $byKey = @{}
+    foreach ($r in $records) { $byKey[[string](Get-PqValue $r 'key')] = $r }
+    $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    $order = [Collections.Generic.List[string]]::new()
+    foreach ($k in $Keys) {
+        if (-not $byKey.ContainsKey($k)) { return @{ ok = $false; changed = $false; error = 'UnknownRepoKey'; message = "no repository '$k' in the registry"; hash = $cur.hash } }
+        if ($seen.Add($k)) { $order.Add($k) }
+    }
+    foreach ($o in (Get-PqRepoOrder $cur.document)) { if ($seen.Add($o.key)) { $order.Add($o.key) } }
+    $changed = $false
+    for ($i = 0; $i -lt $order.Count; $i++) {
+        $repo = $byKey[$order[$i]]
+        $rank = [long](($i + 1) * 10)
+        if (Test-PqHasKey $repo 'rank') {
+            if ([long]$repo.rank -ne $rank) { $repo.rank = $rank; $changed = $true }
+        }
+        else { $repo | Add-Member -NotePropertyName rank -NotePropertyValue $rank; $changed = $true }
+    }
+    if (-not $changed) { return @{ ok = $true; changed = $false; error = $null; message = $null; hash = $cur.hash } }
     $w = Write-PqRegistry -Registry $cur.document -Path $RegistryPath -ExpectedHash $cur.hash
     if (-not $w.ok) { return @{ ok = $false; changed = $false; error = $w.error; message = $w.message; hash = $w.hash } }
     if ($Log) { $null = Write-PqLibEvent 'registry.changed' ([ordered]@{ by = $By; added = @(); removed = @(); hash = $w.hash }) }
