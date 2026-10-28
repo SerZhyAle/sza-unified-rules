@@ -7,7 +7,12 @@
 #   Get-PqRank -Registry <obj> [-Queue <Read-PqQueueFile result>] -HeadProvider <sb param($Repo,$Exclude,$ForceId)>
 #              [-Exclude <repo:id[]>] [-SkipRepos <key[]>] [-Slots <int>] [-Busy <hashtable key->int>]
 #              [-Occupied <key[]>] [-Stopped <key[]>] [-TicketBlocked <hashtable 'repo:id'->'resource'|'deviceLevel'>]
-#              [-Fill depth|breadth]
+#              [-Fill depth|breadth] [-StopAfter <int>]
+#
+#   -StopAfter n > 0: the walk of step 3 ends once n distinct heads are found, so a caller that reads only the first
+#   candidate (the dispatcher loop, status) does not pay one picker run per queue row it never looks at. The first n
+#   candidates are exactly those of the full walk; the alternatives of the last one, and the counts the walk would
+#   have added, cover only what was walked. 0 (the default) walks every entry.
 #
 #   The provider returns what Get-PqPickerHead returns: @{ ok; head; payload; why } ($Repo is the registry record).
 #
@@ -51,7 +56,8 @@ function Get-PqRank {
         [string[]]$Occupied = @(),
         [string[]]$Stopped = @(),
         [hashtable]$TicketBlocked = @{},
-        [ValidateSet('', 'depth', 'breadth')][string]$Fill = ''
+        [ValidateSet('', 'depth', 'breadth')][string]$Fill = '',
+        [ValidateRange(0, [int]::MaxValue)][int]$StopAfter = 0
     )
     $sw = [Diagnostics.Stopwatch]::StartNew()
     if (-not $Fill) { $Fill = [string](Get-PqRankValue $Registry 'fill' 'depth') }
@@ -209,7 +215,9 @@ function Get-PqRank {
     # candidate above it.
     $walk = [Collections.Generic.List[object]]::new()
     $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    $found = 0
     foreach ($e in $entries) {
+        if ($StopAfter -gt 0 -and $found -ge $StopAfter) { break }
         $p = & $pickOne $e $false
         if ($null -eq $p.head) {
             if ($e.kind -eq 'ticket') { $walk.Add(@{ entry = $e; head = $null; why = "notOffered:$($p.why)"; id = $e.id }) }
@@ -218,6 +226,7 @@ function Get-PqRank {
         $id = [string](Get-PqRankValue $p.head 'id')
         if (-not $seen.Add("$($e.repo):$id")) { continue }
         $walk.Add(@{ entry = $e; head = $p.head; why = $null; id = $id })
+        $found++
     }
 
     # 4. Fill (R66).

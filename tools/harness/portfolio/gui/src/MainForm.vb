@@ -5,8 +5,11 @@ Imports System.Linq
 
 Partial Class MainForm
     Private _isRefreshing As Boolean = False
+    Private _isCliBusy As Boolean = False
     Private _boldRepos As Font
     Private _boldWorkers As Font
+    Private _consoleExpandedHeight As Integer = 140
+    Private _consoleCollapsed As Boolean = False
 
     ' The console keeps the tail of the session; a panel left open for days must not grow without bound.
     Private Const ConsoleMaxChars As Integer = 200000
@@ -20,15 +23,53 @@ Partial Class MainForm
 
     Protected Overrides Sub OnLoad(e As EventArgs)
         MyBase.OnLoad(e)
-        ' The designer size is logical; scaled up on a high-DPI screen it can exceed the screen.
-        Dim area = Screen.FromControl(Me).WorkingArea
-        If Width > area.Width OrElse Height > area.Height Then
-            Bounds = New Rectangle(area.X + area.Width \ 20, area.Y + area.Height \ 20, area.Width * 9 \ 10, area.Height * 9 \ 10)
+
+        ' 1. Restore persistent UI layout and state per APP-BEHAVIOUR Rule 9
+        Dim state = UiState.Load()
+        UiState.ApplyBoundsSafely(Me, state)
+
+        If state.MainSplitterDistance.HasValue AndAlso state.MainSplitterDistance.Value > 100 AndAlso state.MainSplitterDistance.Value < Me.Width - 100 Then
+            Try
+                splitMain.SplitterDistance = state.MainSplitterDistance.Value
+            Catch
+            End Try
         End If
+
+        If state.MonitorSplitterDistance.HasValue AndAlso state.MonitorSplitterDistance.Value > 50 AndAlso state.MonitorSplitterDistance.Value < splitRightMonitor.Height - 50 Then
+            Try
+                splitRightMonitor.SplitterDistance = state.MonitorSplitterDistance.Value
+            Catch
+            End Try
+        End If
+
+        chkAutoRefresh.Checked = state.AutoRefresh
+        _consoleCollapsed = state.ConsoleCollapsed
+        _consoleExpandedHeight = Math.Max(240, state.ConsoleHeight)
+
+        If _consoleCollapsed Then
+            pnlBottom.Height = pnlBottomBar.Height
+            btnToggleConsole.Text = "▲ Console"
+        Else
+            pnlBottom.Height = _consoleExpandedHeight
+            btnToggleConsole.Text = "▼ Console"
+        End If
+
+        ' 2. Restore Theme
+        Dim mode As AppThemeMode
+        If [Enum].TryParse(Of AppThemeMode)(state.Theme, mode) Then
+            ThemeService.Mode = mode
+        Else
+            ThemeService.Mode = AppThemeMode.System
+        End If
+        UpdateThemeButtonText()
+        ThemeService.ApplyTheme(Me)
+
+        ' 3. Display paths
         lblPqPath.Text = $"Script: {PqCli.PqScriptPath}   Root: {PortfolioState.PortfolioRoot}"
         If Not File.Exists(PqCli.PqScriptPath) Then
             LogConsole($"pq.ps1 not found at {PqCli.PqScriptPath} - set SZA_PQ_SCRIPT to its full path.")
         End If
+
         WireEvents()
         RefreshAll()
 
@@ -43,7 +84,7 @@ Partial Class MainForm
         AddTextColumn(dgvRepos, "colStatus", "Status", 80)
         AddTextColumn(dgvRepos, "colQueued", "Queued", 55)
         AddTextColumn(dgvRepos, "colPerm", "Permission", 115)
-        AddButtonColumn(dgvRepos, "colNewSpec", "Spec", "+ Spec", 60)
+        AddButtonColumn(dgvRepos, "colNewSpec", "Spec", "+ Spec...", 65)
         AddButtonColumn(dgvRepos, "colQueue", "Tickets", "Open Queue", 85)
         AddButtonColumn(dgvRepos, "colFolder", "Folder", "Open Dir", 70)
 
@@ -66,7 +107,6 @@ Partial Class MainForm
         AddTextColumn(dgvPasses, "colExit", "Exit", 40)
     End Sub
 
-    ' Widths are given at 96 DPI; the form's font scaling does not reach grid columns, so they are scaled here.
     Private Shared Sub AddTextColumn(grid As DataGridView, name As String, header As String, width As Integer)
         grid.Columns.Add(name, header)
         grid.Columns(name).Width = grid.LogicalToDeviceUnits(width)
@@ -93,6 +133,7 @@ Partial Class MainForm
         AddHandler btnDoctor.Click, AddressOf BtnDoctor_Click
         AddHandler btnGuide.Click, AddressOf BtnGuide_Click
         AddHandler btnRegister.Click, AddressOf BtnRegister_Click
+        AddHandler btnTheme.Click, AddressOf BtnTheme_Click
 
         AddHandler btnOpenQueue.Click, AddressOf BtnOpenQueue_Click
         AddHandler btnDryRun.Click, AddressOf BtnDryRun_Click
@@ -103,14 +144,94 @@ Partial Class MainForm
         AddHandler btnHold.Click, Sub() SteerAsync("hold", requireTicket:=False)
         AddHandler btnRelease.Click, Sub() SteerAsync("release", requireTicket:=False)
 
-        AddHandler dgvRepos.CellContentClick, AddressOf DgvRepos_CellContentClick
+        AddHandler dgvRepos.CellClick, AddressOf DgvRepos_CellClick
         AddHandler dgvRepos.SelectionChanged, AddressOf DgvRepos_SelectionChanged
         AddHandler dgvWorkers.CellDoubleClick, Sub(s, e) SteerFromRow(dgvWorkers, e.RowIndex, "colWorkerRepo", "colWorkerTicket")
         AddHandler dgvPasses.CellDoubleClick, Sub(s, e) SteerFromRow(dgvPasses, e.RowIndex, "colPassRepo", "colPassTicket")
 
+        AddHandler splBottom.SplitterMoved, AddressOf SplBottom_SplitterMoved
+        AddHandler splBottom.DoubleClick, AddressOf BtnToggleConsole_Click
+
+        AddHandler btnToggleConsole.Click, AddressOf BtnToggleConsole_Click
+        AddHandler btnClearConsole.Click, Sub() txtConsole.Clear()
+        AddHandler btnCopyConsole.Click, AddressOf BtnCopyConsole_Click
         AddHandler btnRefreshNow.Click, Sub() RefreshAll()
         AddHandler chkAutoRefresh.CheckedChanged, Sub() tmrRefresh.Enabled = chkAutoRefresh.Checked
         AddHandler tmrRefresh.Tick, Sub() RefreshAll()
+
+        AddHandler ThemeService.ThemeChanged, AddressOf OnThemeChanged
+    End Sub
+
+    Protected Overrides Sub OnKeyDown(e As KeyEventArgs)
+        MyBase.OnKeyDown(e)
+        If e.KeyCode = Keys.F1 Then
+            btnGuide.PerformClick()
+            e.Handled = True
+        ElseIf e.KeyCode = Keys.F5 Then
+            RefreshAll()
+            e.Handled = True
+        ElseIf e.Control AndAlso e.KeyCode = Keys.N Then
+            btnNewSpec.PerformClick()
+            e.Handled = True
+        ElseIf e.Control AndAlso e.KeyCode = Keys.R Then
+            btnRegister.PerformClick()
+            e.Handled = True
+        ElseIf e.Control AndAlso e.KeyCode = Keys.D Then
+            btnDoctor.PerformClick()
+            e.Handled = True
+        End If
+    End Sub
+
+    Private Sub BtnTheme_Click(sender As Object, e As EventArgs)
+        Select Case ThemeService.Mode
+            Case AppThemeMode.System
+                ThemeService.Mode = AppThemeMode.Dark
+            Case AppThemeMode.Dark
+                ThemeService.Mode = AppThemeMode.Light
+            Case Else
+                ThemeService.Mode = AppThemeMode.System
+        End Select
+        UpdateThemeButtonText()
+    End Sub
+
+    Private Sub UpdateThemeButtonText()
+        Dim modeText = ThemeService.Mode.ToString()
+        If ThemeService.Mode = AppThemeMode.System Then
+            modeText &= If(ThemeService.IsDark, " (Dark)", " (Light)")
+        End If
+        btnTheme.Text = $"🎨 {modeText}"
+    End Sub
+
+    Private Sub OnThemeChanged(sender As Object, e As EventArgs)
+        UpdateThemeButtonText()
+        ThemeService.ApplyTheme(Me)
+        RefreshAll()
+    End Sub
+
+    Private Sub BtnToggleConsole_Click(sender As Object, e As EventArgs)
+        If _consoleCollapsed Then
+            pnlBottom.Height = Math.Max(_consoleExpandedHeight, 180)
+            btnToggleConsole.Text = "▼ Console"
+            _consoleCollapsed = False
+        Else
+            _consoleExpandedHeight = Math.Max(pnlBottom.Height, 180)
+            pnlBottom.Height = pnlBottomBar.Height
+            btnToggleConsole.Text = "▲ Console"
+            _consoleCollapsed = True
+        End If
+    End Sub
+
+    Private Sub SplBottom_SplitterMoved(sender As Object, e As SplitterEventArgs)
+        If Not _consoleCollapsed AndAlso pnlBottom.Height > pnlBottomBar.Height + 20 Then
+            _consoleExpandedHeight = pnlBottom.Height
+        End If
+    End Sub
+
+    Private Sub BtnCopyConsole_Click(sender As Object, e As EventArgs)
+        If txtConsole.TextLength > 0 Then
+            Clipboard.SetText(txtConsole.Text)
+            LogConsole("Console contents copied to clipboard.")
+        End If
     End Sub
 
     Public Sub LogConsole(msg As String)
@@ -133,8 +254,9 @@ Partial Class MainForm
             Dim liveCount = workers.Where(Function(w) w.Alive).Count()
             Dim queue = PortfolioState.ReadQueue()
             Dim repos = PortfolioState.GetRepos(queue)
+            Dim p = ThemeService.Palette
 
-            ' 1. Banner. STOP stays on disk after the workers drain; the next 'pq start' clears it.
+            ' 1. Banner
             If stopInfo.Present AndAlso liveCount > 0 Then
                 pnlBanner.BackColor = Color.FromArgb(140, 30, 30)
                 lblStatus.Text = $"🛑 STOP ({stopInfo.Level}) - draining {liveCount} worker(s).."
@@ -145,7 +267,7 @@ Partial Class MainForm
                 pnlBanner.BackColor = Color.FromArgb(20, 90, 45)
                 lblStatus.Text = $"🟢 ACTIVE - {liveCount} worker(s) running"
             Else
-                pnlBanner.BackColor = Color.FromArgb(33, 43, 54)
+                pnlBanner.BackColor = If(ThemeService.IsDark, Color.FromArgb(22, 27, 34), Color.FromArgb(33, 43, 54))
                 lblStatus.Text = "⚪ IDLE - no worker running"
             End If
 
@@ -165,10 +287,10 @@ Partial Class MainForm
             For Each w In workers
                 Dim idx = dgvWorkers.Rows.Add(w.Slot, w.Pid, w.Repository, w.Ticket, w.Elapsed, If(w.Alive, "Alive", "Dead"))
                 If w.Alive Then
-                    dgvWorkers.Rows(idx).DefaultCellStyle.ForeColor = Color.DarkGreen
+                    dgvWorkers.Rows(idx).DefaultCellStyle.ForeColor = p.StatusSuccess
                     dgvWorkers.Rows(idx).DefaultCellStyle.Font = _boldWorkers
                 Else
-                    dgvWorkers.Rows(idx).DefaultCellStyle.ForeColor = Color.Gray
+                    dgvWorkers.Rows(idx).DefaultCellStyle.ForeColor = p.TextMuted
                 End If
             Next
             RestoreScroll(dgvWorkers, workersScroll)
@@ -176,17 +298,17 @@ Partial Class MainForm
             ' 4. Passes, newest first
             Dim passesScroll = FirstVisibleRow(dgvPasses)
             dgvPasses.Rows.Clear()
-            For Each p In PortfolioState.GetRecentPasses(25)
-                Dim finTime = p.FinishedAt
+            For Each pass In PortfolioState.GetRecentPasses(25)
+                Dim finTime = pass.FinishedAt
                 If finTime.Length >= 16 Then finTime = finTime.Substring(5, 11).Replace("T", " ")
-                Dim move = If(p.StatusBefore = "" AndAlso p.StatusAfter = "", "", $"{p.StatusBefore} → {p.StatusAfter}")
-                Dim idx = dgvPasses.Rows.Add(finTime, p.Repo, p.Id, move, p.Outcome, p.Model, Math.Round(p.Seconds, 1), p.ExitCode)
-                Dim outcomeColor = If(p.Outcome = "ok" OrElse p.Moved, Color.DarkGreen, If(p.Outcome = "unmoved", Color.DarkOrange, Color.DarkRed))
+                Dim move = If(pass.StatusBefore = "" AndAlso pass.StatusAfter = "", "", $"{pass.StatusBefore} → {pass.StatusAfter}")
+                Dim idx = dgvPasses.Rows.Add(finTime, pass.Repo, pass.Id, move, pass.Outcome, pass.Model, Math.Round(pass.Seconds, 1), pass.ExitCode)
+                Dim outcomeColor = If(pass.Outcome = "ok" OrElse pass.Moved, p.StatusSuccess, If(pass.Outcome = "unmoved", p.StatusWarning, p.StatusDanger))
                 dgvPasses.Rows(idx).Cells("colOutcome").Style.ForeColor = outcomeColor
             Next
             RestoreScroll(dgvPasses, passesScroll)
 
-            ' 5. Repositories; selection and scroll survive the rebuild
+            ' 5. Repositories
             Dim selKey = SelectedRepoKey()
             Dim reposScroll = FirstVisibleRow(dgvRepos)
             dgvRepos.Rows.Clear()
@@ -201,16 +323,16 @@ Partial Class MainForm
 
                 Dim statusCell = row.Cells("colStatus")
                 If r.IsHeld Then
-                    statusCell.Style.ForeColor = Color.DarkOrange
+                    statusCell.Style.ForeColor = p.StatusWarning
                     statusCell.Style.Font = _boldRepos
                 ElseIf Not r.Enabled Then
-                    statusCell.Style.ForeColor = Color.Gray
+                    statusCell.Style.ForeColor = p.TextMuted
                 Else
-                    statusCell.Style.ForeColor = Color.DarkGreen
+                    statusCell.Style.ForeColor = p.StatusSuccess
                 End If
                 If r.Enabled AndAlso String.IsNullOrWhiteSpace(r.PermissionMode) Then
                     row.Cells("colPerm").Value = "(none - start refuses)"
-                    row.Cells("colPerm").Style.ForeColor = Color.DarkRed
+                    row.Cells("colPerm").Style.ForeColor = p.StatusDanger
                 End If
 
                 If r.Key.Equals(selKey, StringComparison.Ordinal) Then selIdx = idx
@@ -253,9 +375,19 @@ Partial Class MainForm
         RefreshAll()
     End Sub
 
-    ' Runs a pq verb hidden and logs what it printed; the button stays disabled while it runs.
+    ' Runs a pq verb hidden and logs output; guarded by busy lock per APP-BEHAVIOUR Rule 3
     Private Async Function RunLoggedAsync(button As Button, ParamArray arguments As String()) As Task(Of CliResult)
+        If _isCliBusy Then
+            LogConsole("A CLI command is already executing in the background, please wait...")
+            Dim busyRes As New CliResult With {.ExitCode = -1, .ErrorOutput = "CLI busy"}
+            Return busyRes
+        End If
+
+        _isCliBusy = True
         If button IsNot Nothing Then button.Enabled = False
+        Dim oldCursor = Me.Cursor
+        Me.Cursor = Cursors.WaitCursor
+
         Try
             Dim res = Await PqCli.RunSilentAsync(arguments)
             Dim verb = String.Join(" ", arguments)
@@ -266,6 +398,8 @@ Partial Class MainForm
             End If
             Return res
         Finally
+            _isCliBusy = False
+            Me.Cursor = oldCursor
             If button IsNot Nothing Then button.Enabled = True
             RefreshAll()
         End Try
@@ -316,7 +450,6 @@ Partial Class MainForm
         End Using
     End Sub
 
-    ' 'pq queue' syncs the file from every repository's ticket queue, then opens it; -Init writes the first one.
     Private Async Sub BtnOpenQueue_Click(sender As Object, e As EventArgs)
         If File.Exists(PortfolioState.GetPortfolioQueuePath()) Then
             LogConsole("Syncing and opening PORTFOLIO_QUEUE.md ('pq queue')..")
@@ -332,8 +465,6 @@ Partial Class MainForm
         Await RunLoggedAsync(btnDryRun, "dry-run")
     End Sub
 
-    ' The grid shows the projects in project order; a move rewrites the whole order with 'pq rank -Order', which
-    ' writes ranks 10, 20, 30, .. so the next move is a plain swap. The queue file is not touched until Arrange.
     Private Async Sub MoveProjectAsync(delta As Integer)
         If dgvRepos.SelectedRows.Count = 0 Then Return
         Dim from = dgvRepos.SelectedRows(0).Index
@@ -384,8 +515,6 @@ Partial Class MainForm
         End Try
     End Sub
 
-    ' Only a selection the owner makes fills the target box; the refresh rebuilds the grid and must not overwrite
-    ' a 'repo:ticket' typed there.
     Private Sub DgvRepos_SelectionChanged(sender As Object, e As EventArgs)
         If _isRefreshing Then Return
         Dim key = SelectedRepoKey()
@@ -402,8 +531,8 @@ Partial Class MainForm
         txtSteer.Text = If(String.IsNullOrWhiteSpace(ticket), repo, $"{repo}:{ticket}")
     End Sub
 
-    Private Async Sub DgvRepos_CellContentClick(sender As Object, e As DataGridViewCellEventArgs)
-        If e.RowIndex < 0 Then Return
+    Private Sub DgvRepos_CellClick(sender As Object, e As DataGridViewCellEventArgs)
+        If e.RowIndex < 0 OrElse e.ColumnIndex < 0 Then Return
         Dim r = TryCast(dgvRepos.Rows(e.RowIndex).Tag, RepoInfo)
         If r Is Nothing Then Return
 
@@ -412,14 +541,40 @@ Partial Class MainForm
             Case "colNewSpec"
                 ShowNewSpec(r.Key)
             Case "colQueue"
-                ' pq resolves the file from the repository's profile (paths.releaseQueue) and opens it in $EDITOR.
-                LogConsole($"Opening the ticket queue of '{r.Key}' ('pq tickets {r.Key}')..")
-                Await RunLoggedAsync(Nothing, "tickets", r.Key)
+                Dim queuePath = PortfolioState.GetTicketQueuePath(r)
+                If File.Exists(queuePath) Then
+                    LogConsole($"Opening ticket queue of '{r.Key}': {queuePath}")
+                    Dim err = PqCli.OpenFileWithDefaultApp(queuePath)
+                    If err IsNot Nothing Then LogConsole($"Cannot open {queuePath}: {err}")
+                Else
+                    LogConsole($"Ticket queue file missing for '{r.Key}': {queuePath}")
+                    MessageBox.Show(Me, $"No ticket queue file found at:{Environment.NewLine}{queuePath}{Environment.NewLine}{Environment.NewLine}A ticket queue is created when the first ticket is drafted in this project.", "Ticket Queue Missing", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                End If
             Case "colFolder"
-                LogConsole($"Opening {r.Path}")
+                LogConsole($"Opening folder: {r.Path}")
                 Dim err = PqCli.OpenFolder(r.Path)
-                If err IsNot Nothing Then LogConsole($"Cannot open the folder: {err}")
+                If err IsNot Nothing Then LogConsole($"Cannot open folder {r.Path}: {err}")
         End Select
+    End Sub
+
+    Protected Overrides Sub OnFormClosing(e As FormClosingEventArgs)
+        ' Save layout state per APP-BEHAVIOUR Rule 9
+        Dim state As New UiStateData With {
+            .WindowX = If(WindowState = FormWindowState.Normal, Me.Location.X, Me.RestoreBounds.Location.X),
+            .WindowY = If(WindowState = FormWindowState.Normal, Me.Location.Y, Me.RestoreBounds.Location.Y),
+            .WindowWidth = If(WindowState = FormWindowState.Normal, Me.Width, Me.RestoreBounds.Width),
+            .WindowHeight = If(WindowState = FormWindowState.Normal, Me.Height, Me.RestoreBounds.Height),
+            .WindowMaximized = (Me.WindowState = FormWindowState.Maximized),
+            .MainSplitterDistance = splitMain.SplitterDistance,
+            .MonitorSplitterDistance = splitRightMonitor.SplitterDistance,
+            .ConsoleHeight = If(_consoleCollapsed, _consoleExpandedHeight, pnlBottom.Height),
+            .ConsoleCollapsed = _consoleCollapsed,
+            .AutoRefresh = chkAutoRefresh.Checked,
+            .Theme = ThemeService.Mode.ToString()
+        }
+        UiState.Save(state)
+
+        MyBase.OnFormClosing(e)
     End Sub
 
     Protected Overrides Sub OnFormClosed(e As FormClosedEventArgs)

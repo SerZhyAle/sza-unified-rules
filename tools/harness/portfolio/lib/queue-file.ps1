@@ -60,6 +60,7 @@
 $script:PqQueueRowPattern = '^(?<repo>[a-z][a-z0-9-]*)(?::(?<id>\*|[^\s:#_]+)(?:_[^\s#]*)?)?$'
 $script:PqQueueUnscheduled = [long]::MaxValue
 $script:PqQueueTicketWidth = 74
+$script:PqDefaultReleaseQueue = $null
 
 function Get-PqQueueHash([byte[]]$Bytes) {
     return [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($Bytes)).ToLowerInvariant()
@@ -433,8 +434,22 @@ function Initialize-PqQueueFile {
 
 # ---- the repositories' own ticket queues, and the sync from them ----
 
+# The shipped default of paths.releaseQueue, read from the harness profile in an isolated module (that script caches one
+# project root, so it is never dot-sourced here) and kept for the life of the process.
+function Get-PqDefaultReleaseQueue {
+    if ($null -eq $script:PqDefaultReleaseQueue) {
+        $defaults = New-Module -ArgumentList (Join-Path $PSScriptRoot '..\..\_profile.ps1') -ReturnResult -ScriptBlock {
+            param($ProfileScript)
+            . $ProfileScript
+            $script:SzaProfileDefaults
+        }
+        $script:PqDefaultReleaseQueue = [string]$defaults.paths['releaseQueue']
+    }
+    return $script:PqDefaultReleaseQueue
+}
+
 function Get-PqTicketQueuePath($Repo) {
-    $rel = 'PLAN/RELEASE_QUEUE.md'
+    $rel = Get-PqDefaultReleaseQueue
     $profileFile = Join-Path ([string]$Repo.path) '.sza-profile.json'
     if ([IO.File]::Exists($profileFile)) {
         try {

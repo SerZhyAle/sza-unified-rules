@@ -390,6 +390,73 @@ $stopFileMine = "{0}-{1}" -f $stopFileAll, $Instance
 $runDir = Join-Path $RepoRoot (Get-SzaPath 'queueRunsDir' -Relative)
 if (-not (Test-Path $runDir)) { New-Item -ItemType Directory -Path $runDir | Out-Null }
 $journal = Join-Path $runDir ("runs-{0}.jsonl" -f $Instance)
+$activeChildFile = Join-Path $runDir ("child-{0}.json" -f $Instance)
+
+function Get-ActiveQueueChildren {
+    <#
+        Live children started by the runner instances of this repository, read from their per-instance
+        tracking files in queueRunsDir (child-<instance>.json).
+
+        Ties a child to its repository and to its runner instance (S0019):
+        - A stop/kill terminates only the children of the instance(s) it targets.
+        - The start-time "a stop is still draining" check counts only this repository's children.
+        Stale files left behind by a dead or crashed child are cleaned up.
+    #>
+    param(
+        [string] $TargetInstance = '',
+        [switch] $CleanStale
+    )
+    $results = @()
+    if (-not (Test-Path -LiteralPath $runDir)) { return @() }
+
+    $filter = if ($TargetInstance) { "child-$TargetInstance.json" } else { 'child-*.json' }
+    $files = @(Get-ChildItem -LiteralPath $runDir -Filter $filter -File -ErrorAction SilentlyContinue)
+
+    foreach ($f in $files) {
+        $data = $null
+        try {
+            $data = Get-Content -LiteralPath $f.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
+        } catch {
+            continue
+        }
+        if (-not $data -or -not $data.pid) {
+            if ($CleanStale) { Remove-Item -LiteralPath $f.FullName -Force -ErrorAction SilentlyContinue }
+            continue
+        }
+
+        $proc = Get-Process -Id ([int]$data.pid) -ErrorAction SilentlyContinue
+        $alive = $false
+        if ($proc) {
+            if ($data.startTicks) {
+                try {
+                    $alive = ($proc.StartTime.Ticks -eq [int64]$data.startTicks)
+                } catch {
+                    $alive = $false
+                }
+            } else {
+                $alive = $true
+            }
+        }
+
+        if ($alive) {
+            $inst = if ($data.instance) { [string]$data.instance } else {
+                if ($f.BaseName -match '^child-(.+)$') { $Matches[1] } else { '?' }
+            }
+            $results += [pscustomobject]@{
+                Instance   = $inst
+                ProcessId  = [int]$data.pid
+                Ticket     = [string]$data.ticket
+                StartedAt  = [string]$data.startedAt
+                StartTicks = [int64]$data.startTicks
+                File       = $f.FullName
+                Process    = $proc
+            }
+        } elseif ($CleanStale) {
+            Remove-Item -LiteralPath $f.FullName -Force -ErrorAction SilentlyContinue
+        }
+    }
+    return $results
+}
 $limitHoldPath = Get-LimitHoldPath -RepoRoot $RepoRoot
 
 # ---------------------------------------------------------------------------------------------
@@ -405,8 +472,8 @@ if ($Stop) {
     # Name what the stop is waiting for. The flag is only read between tickets, so a stop issued
     # during a 40-minute pipeline does nothing visible for 40 minutes - and silence is indistinguishable
     # from a broken command. Whoever asked for the stop is owed the reason it has not happened yet.
-    $inFlight = @((Get-SzaAgentProcesses) |
-            Where-Object { $_.CommandLine -and $_.CommandLine -match $headlessMatch })
+    $targetInst = if ($PSBoundParameters.ContainsKey('Instance')) { $Instance } else { '' }
+    $inFlight = @(Get-ActiveQueueChildren -TargetInstance $targetInst -CleanStale)
     if ($inFlight.Count -eq 0) {
         Write-Host '  nothing is running - the next start clears this flag and proceeds.' -ForegroundColor DarkGray
     } else {
@@ -414,9 +481,8 @@ if ($Stop) {
         Write-Host ("  {0} ticket(s) still in flight - the stop takes effect when each one ENDS:" -f $inFlight.Count) -ForegroundColor Cyan
         foreach ($c in $inFlight) {
             $age = '?'
-            try { $age = '{0:N0}' -f ((Get-Date) - $c.CreationDate).TotalMinutes } catch { $age = '?' }
-            $ticket = if ($c.CommandLine -match '(S\d{4})') { $Matches[1] } else { '?' }
-            Write-Host ("    pid {0,-7} {1,4} min   ticket {2}" -f $c.ProcessId, $age, $ticket) -ForegroundColor Cyan
+            try { $age = '{0:N0}' -f ((Get-Date) - [datetime]::Parse($c.StartedAt)).TotalMinutes } catch { $age = '?' }
+            Write-Host ("    pid {0,-7} {1,4} min   ticket {2}" -f $c.ProcessId, $age, $c.Ticket) -ForegroundColor Cyan
         }
         Write-Host ''
         Write-Host '  A full pipeline routinely runs 30-60 minutes, so this is a wait, not a hang.' -ForegroundColor DarkGray
@@ -425,16 +491,22 @@ if ($Stop) {
     }
 
     if ($Kill) {
-        # Only the children this repository's runs started. A claude process serving the operator's
-        # own interactive window must not be killed by a queue command.
-        $victims = @((Get-SzaAgentProcesses) |
-                Where-Object { $_.CommandLine -and $_.CommandLine -match $headlessMatch })
+        # Only the children this repository's runs started for the targeted instance(s) (S0019).
+        # A claude process serving the operator's own interactive window or children in another
+        # repository must not be killed by a queue command.
+        $victims = @(Get-ActiveQueueChildren -TargetInstance $targetInst -CleanStale)
         if ($victims.Count -eq 0) {
             Write-Host '  -Kill: no headless claude child is running.' -ForegroundColor DarkGray
         } else {
             foreach ($v in $victims) {
                 Write-Host ("  -Kill: terminating pid {0}" -f $v.ProcessId) -ForegroundColor Red
-                & taskkill.exe /PID $v.ProcessId /T /F 2>&1 | Out-Null
+                Stop-ProcessTree -ProcessId $v.ProcessId
+                if (Test-Path -LiteralPath $v.File) {
+                    Remove-Item -LiteralPath $v.File -Force -ErrorAction SilentlyContinue
+                }
+                if ($v.Ticket -and (Test-Path -LiteralPath $leaseScript)) {
+                    & pwsh -NoProfile -File $leaseScript -Verb Release -Id $v.Ticket -Force *> $null
+                }
             }
             Write-Host '  the ticket in flight is left mid-run; what it already wrote to disk stands.' -ForegroundColor DarkYellow
         }
@@ -457,9 +529,8 @@ if (Test-Path $stopFileMine) {
 # having done nothing, which reads exactly like a broken script. But blindly deleting it would let a
 # freshly started instance cancel a stop that is still draining the other two.
 #
-# Live children are what tells the two apart: a stop still in progress has processes behind it.
-$liveChildren = @((Get-SzaAgentProcesses) |
-        Where-Object { $_.CommandLine -and $_.CommandLine -match $headlessMatch })
+# Live children of this repository are what tells the two apart: a stop still in progress has processes behind it (S0019).
+$liveChildren = @(Get-ActiveQueueChildren -CleanStale)
 if (Test-Path $stopFileAll) {
     if ($liveChildren.Count -gt 0) {
         Write-Host "run-spec-queue: a stop is in progress - $($liveChildren.Count) child process(es) are still finishing." -ForegroundColor Red
@@ -699,13 +770,6 @@ function Get-TicketStepMarkCount {
         # An unreadable plan is not evidence of a stalled child - fall back to the flat deadline.
         return $null
     }
-}
-
-function Stop-ProcessTree {
-    param([int] $ProcessId)
-    # taskkill /T reaches the node and gradle children the CLI spawns; Stop-Process alone leaves them
-    # holding BUILD.LOCK, which would stall every later ticket in the run.
-    & taskkill.exe /PID $ProcessId /T /F 2>&1 | Out-Null
 }
 
 function Get-LeaseStoreDir {

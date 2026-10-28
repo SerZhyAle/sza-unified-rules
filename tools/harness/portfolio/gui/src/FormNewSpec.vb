@@ -1,6 +1,9 @@
 Option Explicit On
 Option Strict On
 
+''' <summary>
+''' Specification draft capture dialog per APP-BEHAVIOUR, BUTTONS, and APP-STYLE.
+''' </summary>
 Public Class FormNewSpec
     Inherits Form
 
@@ -28,34 +31,84 @@ Public Class FormNewSpec
 
     Private Sub InitializeComponent()
         Me.Text = "New Specification (/spec-draft) - Capture Task or Problem"
-        Me.Size = New Size(720, 580)
-        Me.MinimumSize = New Size(640, 500)
+        Me.AutoScaleDimensions = New SizeF(7.0F, 15.0F)
+        Me.AutoScaleMode = AutoScaleMode.Font
+        Me.ClientSize = New Size(780, 620)
+        Me.MinimumSize = New Size(700, 540)
         Me.StartPosition = FormStartPosition.CenterParent
         Me.Font = New Font("Segoe UI", 9.0F)
 
-        ' --- Project Row ---
+        ' --- Bottom Panel (docked cleanly, ensures status & action buttons are never cut off) ---
+        Dim pnlBottom As New Panel With {
+            .Dock = DockStyle.Bottom,
+            .Height = 84,
+            .Padding = New Padding(20, 2, 20, 8)
+        }
+
+        lblStatus = New Label With {
+            .Dock = DockStyle.Top,
+            .Height = 28,
+            .TextAlign = ContentAlignment.MiddleLeft,
+            .Font = New Font("Segoe UI", 9.0F)
+        }
+
+        Dim pnlButtons As New FlowLayoutPanel With {
+            .Dock = DockStyle.Bottom,
+            .Height = 42,
+            .FlowDirection = FlowDirection.RightToLeft,
+            .WrapContents = False,
+            .Margin = Padding.Empty,
+            .Padding = Padding.Empty
+        }
+
+        btnCancel = New Button With {
+            .Name = "btnCancel",
+            .Text = "Cancel",
+            .Size = New Size(110, 36),
+            .Margin = New Padding(0, 2, 0, 0),
+            .AccessibleName = "Cancel Button",
+            .AccessibleRole = AccessibleRole.PushButton
+        }
+        AddHandler btnCancel.Click, Sub() Me.DialogResult = DialogResult.Cancel
+
+        btnDraft = New Button With {
+            .Name = "btnDraft",
+            .Text = "📝 &Create Specification",
+            .Size = New Size(240, 36),
+            .Margin = New Padding(0, 2, 12, 0),
+            .Font = New Font("Segoe UI", 9.5F, FontStyle.Bold),
+            .AccessibleName = "Create Specification Button",
+            .AccessibleRole = AccessibleRole.PushButton
+        }
+        AddHandler btnDraft.Click, AddressOf BtnDraft_Click
+
+        pnlButtons.Controls.AddRange({btnCancel, btnDraft})
+        pnlBottom.Controls.AddRange({pnlButtons, lblStatus})
+
+        ' --- Row 1: Target Project & Complexity ---
         Dim lblProj As New Label With {
-            .Text = "Target Project:",
+            .Text = "Target &Project:",
             .Location = New Point(20, 16),
             .AutoSize = True,
             .Font = New Font("Segoe UI", 9.0F, FontStyle.Bold)
         }
         cmbProject = New ComboBox With {
-            .Location = New Point(125, 13),
-            .Size = New Size(260, 25),
-            .DropDownStyle = ComboBoxStyle.DropDownList
+            .Location = New Point(140, 13),
+            .Size = New Size(220, 26),
+            .DropDownStyle = ComboBoxStyle.DropDownList,
+            .AccessibleName = "Target Project Dropdown"
         }
 
-        ' --- Complexity Row ---
         Dim lblComp As New Label With {
-            .Text = "Complexity:",
-            .Location = New Point(405, 16),
+            .Text = "&Complexity:",
+            .Location = New Point(380, 16),
             .AutoSize = True
         }
         cmbComplexity = New ComboBox With {
-            .Location = New Point(480, 13),
-            .Size = New Size(205, 25),
-            .DropDownStyle = ComboBoxStyle.DropDownList
+            .Location = New Point(470, 13),
+            .Size = New Size(290, 26),
+            .DropDownStyle = ComboBoxStyle.DropDownList,
+            .AccessibleName = "Complexity Dropdown"
         }
         cmbComplexity.Items.AddRange({
             "medium - not assessed at capture",
@@ -64,115 +117,107 @@ Public Class FormNewSpec
         })
         cmbComplexity.SelectedIndex = 0
 
-        ' --- Type / Prefix Row ---
-        Dim pnlType As New Panel With {
-            .Location = New Point(20, 48),
-            .Size = New Size(665, 30)
+        ' --- Row 2: Type / Prefix Row (FlowLayoutPanel ensures zero overlapping radio buttons) ---
+        Dim pnlType As New FlowLayoutPanel With {
+            .Location = New Point(20, 50),
+            .Size = New Size(740, 32),
+            .FlowDirection = FlowDirection.LeftToRight,
+            .WrapContents = False
         }
         Dim lblType As New Label With {
             .Text = "Type:",
-            .Location = New Point(0, 5),
             .AutoSize = True,
-            .Font = New Font("Segoe UI", 9.0F, FontStyle.Bold)
+            .Font = New Font("Segoe UI", 9.0F, FontStyle.Bold),
+            .Margin = New Padding(0, 3, 20, 0)
         }
         rdoFeature = New RadioButton With {
-            .Text = "Feature / Task",
-            .Location = New Point(105, 3),
+            .Text = "&Feature / Task",
             .AutoSize = True,
-            .Checked = True
+            .Checked = True,
+            .Margin = New Padding(0, 0, 24, 0)
         }
         AddHandler rdoFeature.CheckedChanged, AddressOf RdoType_CheckedChanged
 
         rdoBug = New RadioButton With {
-            .Text = "Bug / Defect (bugfix-)",
-            .Location = New Point(230, 3),
-            .AutoSize = True
+            .Text = "&Bug / Defect (bugfix-)",
+            .AutoSize = True,
+            .Margin = New Padding(0, 0, 24, 0)
         }
         AddHandler rdoBug.CheckedChanged, AddressOf RdoType_CheckedChanged
 
         rdoHotfix = New RadioButton With {
-            .Text = "Urgent Blocker (hotfix-)",
-            .Location = New Point(400, 3),
-            .AutoSize = True
+            .Text = "&Urgent Blocker (hotfix-)",
+            .AutoSize = True,
+            .Margin = New Padding(0, 0, 0, 0)
         }
         AddHandler rdoHotfix.CheckedChanged, AddressOf RdoType_CheckedChanged
 
         pnlType.Controls.AddRange({lblType, rdoFeature, rdoBug, rdoHotfix})
 
-        ' --- Slug Row ---
+        ' --- Row 3: Ticket Slug & Pin ---
         Dim lblSlug As New Label With {
-            .Text = "Ticket Slug:",
-            .Location = New Point(20, 86),
+            .Text = "Ticket &Slug:",
+            .Location = New Point(20, 88),
             .AutoSize = True,
             .Font = New Font("Segoe UI", 9.0F, FontStyle.Bold)
         }
         txtSlug = New TextBox With {
-            .Location = New Point(125, 83),
-            .Size = New Size(370, 25),
-            .Font = New Font("Consolas", 9.5F)
+            .Location = New Point(140, 85),
+            .Size = New Size(360, 26),
+            .Font = New Font("Consolas", 9.5F),
+            .AccessibleName = "Ticket Slug Input"
         }
         chkPin = New CheckBox With {
-            .Text = "Pin to top of queue (-Pin)",
-            .Location = New Point(510, 85),
-            .AutoSize = True
+            .Text = "Pin to &top of queue (-Pin)",
+            .Location = New Point(520, 87),
+            .AutoSize = True,
+            .AccessibleName = "Pin to top checkbox"
         }
 
-        ' --- Description Header ---
+        ' --- Row 4: Description Header ---
         Dim lblDesc As New Label With {
-            .Text = "Problem Description / Requirements (exact words captured byte-for-byte):",
-            .Location = New Point(20, 120),
+            .Text = "&Task or Problem Description (in your own words; spec-draft will turn this into an aligned spec):",
+            .Location = New Point(20, 122),
             .AutoSize = True,
             .Font = New Font("Segoe UI", 9.0F, FontStyle.Bold)
         }
 
-        ' --- Description Text Box ---
+        ' --- Description Text Box (expands smoothly above docked pnlBottom) ---
         txtDescription = New TextBox With {
-            .Location = New Point(20, 142),
-            .Size = New Size(665, 310),
+            .Location = New Point(20, 146),
+            .Size = New Size(740, 375),
             .Multiline = True,
             .AcceptsReturn = True,
             .ScrollBars = ScrollBars.Vertical,
             .Font = New Font("Segoe UI", 9.5F),
-            .Anchor = AnchorStyles.Top Or AnchorStyles.Bottom Or AnchorStyles.Left Or AnchorStyles.Right
+            .Anchor = AnchorStyles.Top Or AnchorStyles.Bottom Or AnchorStyles.Left Or AnchorStyles.Right,
+            .AccessibleName = "Task Description Text"
         }
 
-        ' --- Status Label ---
-        lblStatus = New Label With {
-            .Location = New Point(20, 460),
-            .Size = New Size(665, 30),
-            .ForeColor = Color.DarkSlateBlue,
-            .Anchor = AnchorStyles.Bottom Or AnchorStyles.Left Or AnchorStyles.Right
-        }
+        Me.Controls.AddRange({lblProj, cmbProject, lblComp, cmbComplexity, pnlType, lblSlug, txtSlug, chkPin, lblDesc, txtDescription, pnlBottom})
 
-        ' --- Buttons ---
-        btnDraft = New Button With {
-            .Text = "📝 Create Draft (/spec-draft)",
-            .Size = New Size(220, 36),
-            .Location = New Point(345, 495),
-            .BackColor = Color.FromArgb(220, 245, 225),
-            .Font = New Font("Segoe UI", 9.5F, FontStyle.Bold),
-            .UseVisualStyleBackColor = False,
-            .Anchor = AnchorStyles.Bottom Or AnchorStyles.Right
-        }
-        AddHandler btnDraft.Click, AddressOf BtnDraft_Click
-
-        btnCancel = New Button With {
-            .Text = "Cancel",
-            .Size = New Size(110, 36),
-            .Location = New Point(575, 495),
-            .UseVisualStyleBackColor = True,
-            .Anchor = AnchorStyles.Bottom Or AnchorStyles.Right
-        }
-        AddHandler btnCancel.Click, Sub() Me.DialogResult = DialogResult.Cancel
-
-        Me.Controls.AddRange({lblProj, cmbProject, lblComp, cmbComplexity, pnlType, lblSlug, txtSlug, chkPin, lblDesc, txtDescription, lblStatus, btnDraft, btnCancel})
+        ' APP-BEHAVIOUR Rule 1
         Me.AcceptButton = btnDraft
         Me.CancelButton = btnCancel
+
+        ' Tab Order
+        cmbProject.TabIndex = 0
+        cmbComplexity.TabIndex = 1
+        rdoFeature.TabIndex = 2
+        rdoBug.TabIndex = 3
+        rdoHotfix.TabIndex = 4
+        txtSlug.TabIndex = 5
+        chkPin.TabIndex = 6
+        txtDescription.TabIndex = 7
+        btnDraft.TabIndex = 8
+        btnCancel.TabIndex = 9
     End Sub
 
     Protected Overrides Sub OnLoad(e As EventArgs)
         MyBase.OnLoad(e)
         LoadProjects()
+        ThemeService.ApplyTheme(Me)
+        AddHandler ThemeService.ThemeChanged, Sub() ThemeService.ApplyTheme(Me)
     End Sub
 
     Private Sub LoadProjects()
@@ -197,87 +242,70 @@ Public Class FormNewSpec
 
     Private Sub RdoType_CheckedChanged(sender As Object, e As EventArgs)
         Dim current = txtSlug.Text.Trim()
-        ' Strip existing prefix if present
-        If current.StartsWith("bugfix-", StringComparison.OrdinalIgnoreCase) Then
-            current = current.Substring(7)
-        ElseIf current.StartsWith("hotfix-", StringComparison.OrdinalIgnoreCase) Then
-            current = current.Substring(7)
-        End If
+        Dim baseSlug = current
+        For Each prefix In {"bugfix-", "hotfix-"}
+            If baseSlug.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) Then
+                baseSlug = baseSlug.Substring(prefix.Length)
+            End If
+        Next
 
         If rdoBug.Checked Then
-            txtSlug.Text = "bugfix-" & current
-            chkPin.Checked = False
+            txtSlug.Text = "bugfix-" & baseSlug
         ElseIf rdoHotfix.Checked Then
-            txtSlug.Text = "hotfix-" & current
-            chkPin.Checked = True
+            txtSlug.Text = "hotfix-" & baseSlug
         Else
-            txtSlug.Text = current
+            txtSlug.Text = baseSlug
         End If
     End Sub
 
     Private Async Sub BtnDraft_Click(sender As Object, e As EventArgs)
-        Dim projectKey = cmbProject.SelectedItem?.ToString()
-        ' Passed exactly as typed: spec-draft keeps the owner's words byte for byte.
-        Dim textContent = txtDescription.Text
+        Dim projKey = cmbProject.SelectedItem?.ToString()
         Dim slug = txtSlug.Text.Trim()
-        Dim complexity = cmbComplexity.SelectedItem?.ToString()
+        Dim desc = txtDescription.Text.Trim()
+        Dim comp = cmbComplexity.SelectedItem?.ToString()
         Dim pin = chkPin.Checked
 
-        If String.IsNullOrWhiteSpace(projectKey) Then
-            lblStatus.ForeColor = Color.DarkRed
-            lblStatus.Text = "Please select a target project."
+        If String.IsNullOrWhiteSpace(projKey) Then
+            SetStatus("Please select a target repository project.", isError:=True)
             Return
         End If
 
-        If String.IsNullOrWhiteSpace(textContent) Then
-            lblStatus.ForeColor = Color.DarkRed
-            lblStatus.Text = "Please enter the problem description or requirements."
+        If String.IsNullOrWhiteSpace(slug) Then
+            SetStatus("Please enter a ticket slug (e.g. 'player-crash-on-seek').", isError:=True)
+            txtSlug.Focus()
+            Return
+        End If
+
+        If String.IsNullOrWhiteSpace(desc) Then
+            SetStatus("Please provide a description of the task or defect.", isError:=True)
             txtDescription.Focus()
             Return
         End If
 
-        ' Auto-generate slug if empty
-        If String.IsNullOrWhiteSpace(slug) Then
-            Dim prefix = If(rdoHotfix.Checked, "hotfix-", If(rdoBug.Checked, "bugfix-", "task-"))
-            Dim stamp = DateTime.Now.ToString("yyMMdd-HHmm")
-            slug = $"{prefix}spec-{stamp}"
-            txtSlug.Text = slug
+        Dim compToken = "medium"
+        If comp.StartsWith("light") Then
+            compToken = "light"
+        ElseIf comp.StartsWith("hard") Then
+            compToken = "hard"
         End If
-
-        ' spec-draft's slug rule: [a-z0-9][a-z0-9_-]*, not starting with 'spec_'.
-        slug = System.Text.RegularExpressions.Regex.Replace(slug.ToLowerInvariant(), "[^a-z0-9_-]", "-")
-        slug = System.Text.RegularExpressions.Regex.Replace(slug, "-+", "-").Trim("-"c, "_"c)
-        If slug = "" OrElse slug.StartsWith("spec_") Then
-            lblStatus.ForeColor = Color.DarkRed
-            lblStatus.Text = "The slug needs a letter or digit first and must not start with 'spec_'."
-            txtSlug.Focus()
-            Return
-        End If
-        txtSlug.Text = slug
 
         btnDraft.Enabled = False
         btnCancel.Enabled = False
-        lblStatus.ForeColor = Color.DarkSlateBlue
-        lblStatus.Text = $"Capturing the draft into '{projectKey}' via spec-draft.ps1.."
+        SetStatus("Generating ticket specification via spec-draft.ps1...", isError:=False)
 
-        Dim res = Await PqCli.DraftSpecAsync(projectKey, slug, textContent, complexity, pin)
-
+        Dim res = Await PqCli.DraftSpecAsync(projKey, slug, desc, compToken, pin)
         If res.Success Then
-            ' The last line is the machine-readable result: drafted <key>:<id> file=.. pq=<verdict> position=..
             ResultText = res.Output.Trim()
-            MessageBox.Show(Me, $"Captured into '{projectKey}'." & vbCrLf & vbCrLf & ResultText, "Spec Draft Created",
-                            MessageBoxButtons.OK, MessageBoxIcon.Information)
             Me.DialogResult = DialogResult.OK
         Else
+            SetStatus(res.Message, isError:=True)
             btnDraft.Enabled = True
             btnCancel.Enabled = True
-            lblStatus.ForeColor = Color.DarkRed
-            lblStatus.Text = $"spec-draft exit {res.ExitCode}: {LastLine(res.Message)}"
         End If
     End Sub
 
-    Private Shared Function LastLine(text As String) As String
-        Dim lines = text.Split({vbCr, vbLf}, StringSplitOptions.RemoveEmptyEntries)
-        Return If(lines.Length = 0, "", lines(lines.Length - 1).Trim())
-    End Function
+    Private Sub SetStatus(msg As String, isError As Boolean)
+        lblStatus.Text = msg
+        lblStatus.ForeColor = If(isError, ThemeService.Palette.StatusDanger, ThemeService.Palette.Accent)
+    End Sub
 End Class

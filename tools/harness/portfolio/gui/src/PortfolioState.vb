@@ -136,6 +136,30 @@ Public Class PortfolioState
         Return Path.Combine(PortfolioRoot, "PORTFOLIO_QUEUE.md")
     End Function
 
+    ''' <summary>
+    ''' Resolves the ticket queue file for a repository (defaulting to PLAN/RELEASE_QUEUE.md or reading .sza-profile.json paths.releaseQueue).
+    ''' </summary>
+    Public Shared Function GetTicketQueuePath(repo As RepoInfo) As String
+        If repo Is Nothing OrElse String.IsNullOrWhiteSpace(repo.Path) Then Return ""
+        Dim rel = "PLAN\RELEASE_QUEUE.md"
+        Dim profileFile = Path.Combine(repo.Path, ".sza-profile.json")
+        If File.Exists(profileFile) Then
+            Try
+                Using doc = ReadJson(profileFile)
+                    If doc IsNot Nothing Then
+                        Dim paths As JsonElement
+                        If doc.RootElement.ValueKind = JsonValueKind.Object AndAlso doc.RootElement.TryGetProperty("paths", paths) Then
+                            Dim customRel = Str(paths, "releaseQueue")
+                            If Not String.IsNullOrWhiteSpace(customRel) Then rel = customRel
+                        End If
+                    End If
+                End Using
+            Catch
+            End Try
+        End If
+        Return Path.Combine(repo.Path, rel)
+    End Function
+
     ' ---- shared readers ----
 
     Private Shared Function OpenShared(path As String) As FileStream

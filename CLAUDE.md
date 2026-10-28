@@ -17,6 +17,13 @@ does not apply here; this is where fixes land. It applies everywhere else.
 
 - **Gate before committing anything under `rules/`:** `pwsh -File tools/check-rules.ps1` (exit 0 required).
   It validates internal links, section numbering, `§` references and the house text style.
+- **An ordinary edit gets quick checks only.** Do not run a test suite that takes a minute or more after a normal
+  modification - the owner switched them off on 2026-10-28. Measured that day: `ledger-rules.tests.ps1` 313 s,
+  `portfolio-queue.tests.ps1` about 200-330 s, `smoke-portfolio-runner.ps1` 120-300 s, `batch-runner.tests.ps1` 163 s.
+  What stays: the checks that finish in seconds (`check-rules.ps1`, `check-contracts.ps1`, `check-documents.py`,
+  `assert-portable.ps1`, `layout-gate.tests.ps1`, `portfolio-events.tests.ps1`) and a direct call of the function or script
+  that was changed. A long suite runs only when the owner asks for it by name. When a change is not covered by a suite, say
+  so in the report instead of running one.
 - **The shared contracts catalog is at `P:\Contracts`** - the one place in this repo's prose that gives the
   path, besides [rules/CONTRACTS.md](rules/CONTRACTS.md) and the `contract-sync` skill, which teach the rule
   itself, and the three scripts that need a default to fall back on when `SZA_CONTRACTS_ROOT` is unset.

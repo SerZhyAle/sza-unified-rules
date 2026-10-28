@@ -566,6 +566,15 @@ try {
         Assert-That (@(Get-ChildItem -LiteralPath $s -Force).Count -eq 0) 'Get-PqRoot created something under the scratch directory'
     }
 
+    Test-Case 'paths: ConvertTo-PqFullPath spells the drive letter in upper case and leaves the rest of the path alone' {
+        . (Get-LibPath 'paths.ps1')
+        if ($sep -ne '\') { return }   # a drive letter exists on Windows only
+        Assert-That ((ConvertTo-PqFullPath 'p:\web\Some Repo\') -ceq 'P:\web\Some Repo') 'lowercase drive letter, mixed case below it and a trailing separator'
+        Assert-That ((ConvertTo-PqFullPath 'p:/web/repo') -ceq 'P:\web\repo') 'lowercase drive letter with forward slashes'
+        Assert-That ((ConvertTo-PqFullPath 'P:\web\repo') -ceq 'P:\web\repo') 'an upper-case drive letter is unchanged'
+        Assert-That ((ConvertTo-PqFullPath 'c:\') -ceq 'C:\') 'a bare drive root keeps its separator'
+    }
+
     Test-Case 'paths: a relative SZA_PORTFOLIO_ROOT is refused with PortfolioRootNotAbsolute' {
         . (Get-LibPath 'paths.ps1')
         $s = New-Scratch 'relative'

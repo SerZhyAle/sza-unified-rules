@@ -37,6 +37,9 @@ function ConvertTo-PqFullPath([string]$Path) {
     if ($full.Length -gt $rootPart.Length) {
         $full = $full.TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
     }
+    # The agent CLI keys its per-folder workspace trust on the working directory as spelled, drive letter included:
+    # `p:/X` and `P:/X` are two entries, and a pass started from the unaccepted spelling runs untrusted.
+    if ($full.Length -ge 2 -and $full[1] -ceq ':' -and [char]::IsLower($full[0])) { $full = $full.Substring(0, 1).ToUpperInvariant() + $full.Substring(1) }
     return $full
 }
 

@@ -20,7 +20,8 @@ function Get-PqNextRank {
         [string]$HarnessRoot,
         [string[]]$Exclude = @(),
         [string[]]$Occupied = @(),
-        [int]$Slots = -1
+        [int]$Slots = -1,
+        [int]$StopAfter = 0
     )
     if (-not $HarnessRoot) { $HarnessRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..')) }
     if (@($Occupied).Count -eq 0) {
@@ -29,9 +30,17 @@ function Get-PqNextRank {
     $byKey = @{}
     foreach ($r in @($Registry.repos)) { $byKey[[string]$r.key] = $r }
 
+    # One ledger read per repository for the whole queue; a ledger that cannot be read in bulk is asked ticket by ticket.
+    $ledgers = @{}
     $lookup = {
         param($repo, $id)
         if (-not $byKey.ContainsKey($repo)) { return @{ exists = $false; closed = $false } }
+        if (-not $ledgers.ContainsKey($repo)) { $ledgers[$repo] = Get-PqLedgerStatuses -RepoPath $byKey[$repo].path -HarnessRoot $HarnessRoot }
+        $ledger = $ledgers[$repo]
+        if ($null -ne $ledger) {
+            if (-not $ledger.ContainsKey($id)) { return @{ exists = $false; closed = $false } }
+            return @{ exists = $true; closed = ([string]$ledger[$id] -cin @('Verified', 'Archived')) }
+        }
         $rec = Get-PqTicketRecord -RepoPath $byKey[$repo].path -Id $id -HarnessRoot $HarnessRoot
         if ($null -eq $rec) { return @{ exists = $false; closed = $false } }
         return @{ exists = $true; closed = ([string]$rec.status -cin @('Verified', 'Archived')) }
@@ -48,7 +57,7 @@ function Get-PqNextRank {
     }
 
     $n = if ($Slots -ge 0) { $Slots } else { [int](Get-PqValue $Registry 'maxWorkers' 1) }
-    return (Get-PqRank -Registry $Registry -Queue $queue -HeadProvider $provider -Slots $n -Exclude $Exclude -Occupied $Occupied -Stopped (Get-PqStoppedRepos $Registry))
+    return (Get-PqRank -Registry $Registry -Queue $queue -HeadProvider $provider -Slots $n -Exclude $Exclude -Occupied $Occupied -Stopped (Get-PqStoppedRepos $Registry) -StopAfter $StopAfter)
 }
 
 # Keys of enabled repositories whose shared queue stop file (rule 26, paths.queueStopFile) exists: the owner's `rs`, or
@@ -267,6 +276,8 @@ function Invoke-PqPassChild {
         [Parameter(Mandatory)][string]$PermissionMode,
         [scriptblock]$OnStarted
     )
+    # A registry record may spell the drive letter in lower case; the agent CLI would then see an untrusted workspace.
+    $RepoPath = ConvertTo-PqFullPath $RepoPath
     $pwsh = (Get-Command pwsh -CommandType Application | Select-Object -First 1).Source
     $psi = [Diagnostics.ProcessStartInfo]::new($pwsh)
     $passArgs = @('-NoProfile', '-File', $Script, '-RepoRoot', $RepoPath, '-Ids', $TicketId, '-MaxTickets', '1', '-ModelPolicy', 'shape', '-Instance', $Instance)
@@ -283,7 +294,14 @@ function Invoke-PqPassChild {
         $proc = [Diagnostics.Process]::Start($psi)
         if ($OnStarted) { $null = & $OnStarted $proc.Id }
         # Short waits let PowerShell process Ctrl+C. A cancelled dispatcher must not orphan its runner.
+        # The agent CLI prints its answer only when it finishes, so a minute-by-minute line is the only sign of life.
+        $passSw = [Diagnostics.Stopwatch]::StartNew()
+        $beatAt = 60
         while (-not $proc.WaitForExit(250)) {
+            if ($passSw.Elapsed.TotalSeconds -ge $beatAt) {
+                Write-Host ('pass {0} {1} - still running, {2:hh\:mm\:ss} elapsed' -f $Instance, $TicketId, $passSw.Elapsed) -ForegroundColor DarkGray
+                $beatAt += 60
+            }
             $stop = Read-PqState (Get-PqPath -Kind stop)
             if ((Get-PqValue $stop 'level') -ceq 'kill') {
                 # Also covers a stop during runner startup, before its own stop-file reader is ready.
@@ -472,8 +490,10 @@ function Start-PqLoop {
             }
             catch { }
 
-            # 4. Rank
-            $rank = Get-PqNextRank -Registry $Registry -HarnessRoot $harness -Exclude $exclude -Occupied $occupied -Slots 1
+            # 4. Rank. The loop reads only the first candidate, so the walk ends at the first head found: one picker run
+            # per queue row costs minutes on a queue of a hundred rows.
+            if (-not $waiting) { Write-Host 'ranking the queue' }
+            $rank = Get-PqNextRank -Registry $Registry -HarnessRoot $harness -Exclude $exclude -Occupied $occupied -Slots 1 -StopAfter 1
             foreach ($e in @($rank.events)) {
                 $null = Write-PqEvent -Log $log -Ev $e.ev -Run $runId -Worker $slot -D $e.d
             }
@@ -570,6 +590,7 @@ function Start-PqLoop {
             $profilePath = Join-Path $repoPath '.sza-profile.json'
             $profileHash = if ([IO.File]::Exists($profilePath)) { Get-PqFileHash ([IO.File]::ReadAllBytes($profilePath)) } else { '' }
             $passSw = [Diagnostics.Stopwatch]::StartNew()
+            Write-Host "pass $passNum $repoKey`:$ticketId $statusBefore - started"
             $childRes = Invoke-PqPassChild -Script $actualRunner -RepoPath $repoPath -TicketId $ticketId -Instance "pq$slot" -PermissionMode $permMode -OnStarted $onStarted
             $passSw.Stop()
             $elapsedSec = [Math]::Round($passSw.ElapsedMilliseconds / 1000, 1)

@@ -17,6 +17,8 @@
 #       leased, excluded, notRanked, malformed or the picker's auto-skip reason.
 #   Get-PqTicketRecord -RepoPath -Id [-HarnessRoot]
 #       the ledger record (archive included) through select.ps1, or $null.
+#   Get-PqLedgerStatuses -RepoPath [-HarnessRoot] [-TimeoutSeconds]
+#       @{ id = status } for the whole ledger (archive included) from one select.ps1 run, or $null when it cannot be read.
 #
 # Cost: one child process per call, two for a -ForceId that is not the head (S0015 Phase 02 evidence,
 # picker-latency.json).
@@ -156,6 +158,26 @@ function Get-PqPickerHead {
     if (-not $why) { $why = Get-PqAutoSkipReason $payload $ForceId }
     if (-not $why) { $why = if ((Get-PqPayloadIds $p2.malformed) -ccontains $ForceId) { 'malformed' } else { 'notOffered' } }
     return @{ ok = $true; head = $null; payload = $payload; why = $why; error = $null; ms = $ms }
+}
+
+# Every ticket of one repository's ledger, archive included, from a single child process: @{ id = status }, ids compared
+# ordinally. $null when the ledger cannot be read in bulk (timeout, non-zero exit, unparsable output) - the caller then
+# asks ticket by ticket through Get-PqTicketRecord. One child per queue row costs minutes on a queue of a hundred rows.
+function Get-PqLedgerStatuses {
+    param([Parameter(Mandatory)][string]$RepoPath, [string]$HarnessRoot, [int]$TimeoutSeconds = 120)
+    $HarnessRoot = Get-PqHarnessRoot $HarnessRoot
+    $script = Join-Path $HarnessRoot 'spec_catalog\select.ps1'
+    try { $r = Invoke-PqRepoChild -RepoPath $RepoPath -Script $script -Arguments @('-IncludeArchived', '-Format', 'json') -TimeoutSeconds $TimeoutSeconds }
+    catch { return $null }
+    if ($r.timedOut -or $r.code -ne 0) { return $null }
+    $text = ([string]$r.stdout).Trim()
+    if ($text.Length -eq 0) { return $null }
+    try { $value = ConvertFrom-Json -InputObject $text -DateKind String -NoEnumerate } catch { return $null }
+    $map = [hashtable]::new([StringComparer]::Ordinal)
+    foreach ($x in @($value)) {
+        if ($null -ne $x -and $null -ne $x.PSObject.Properties['id']) { $map[[string]$x.id] = [string]$x.status }
+    }
+    return $map
 }
 
 function Get-PqTicketRecord {

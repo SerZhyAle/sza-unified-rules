@@ -1322,6 +1322,24 @@ $o | ConvertTo-Json -Compress
         Assert-That ($null -eq (Get-PqTicketRecord -RepoPath $repo -Id 'S0099' -HarnessRoot $harness)) 'an absent id returned a record'
     }
 
+    Test-Case 'picker: Get-PqLedgerStatuses reads the whole ledger, archive included, in one call and gives $null when it cannot' {
+        . (Get-LibPath 'picker.ps1')
+        $repo = New-FixtureRepo -Name 'pk' -Priorities @(40, 80, 60)
+        $null = Invoke-Tool $repo 'spec_catalog/archive.ps1' @('-Id', 'S0001')
+        $map = Get-PqLedgerStatuses -RepoPath $repo -HarnessRoot $harness
+        Assert-That ($null -ne $map) 'the bulk read returned $null on a healthy repository'
+        Assert-That ($map.Count -eq 3) "the ledger holds $($map.Count) ids, expected 3: $(@($map.Keys) -join ',')"
+        foreach ($id in @('S0001', 'S0002', 'S0003')) {
+            $one = Get-PqTicketRecord -RepoPath $repo -Id $id -HarnessRoot $harness
+            Assert-That ($map.ContainsKey($id) -and $map[$id] -ceq [string]$one.status) "$id : bulk '$($map[$id])', per-id '$($one.status)'"
+        }
+        Assert-That ($map['S0001'] -ceq 'Archived') "the archived ticket reads '$($map['S0001'])'"
+        Assert-That (-not $map.ContainsKey('S0099')) 'an absent id is in the map'
+        Assert-That (-not $map.ContainsKey('s0002')) 'ids are compared case-insensitively'
+        $none = Get-PqLedgerStatuses -RepoPath $repo -HarnessRoot (New-Scratch 'no-harness')
+        Assert-That ($null -eq $none) 'a missing select.ps1 did not give $null'
+    }
+
     Test-Case 'picker: Get-PqPickerHead -ForceId selects exactly that id when it is offerable and says why when not' {
         . (Get-LibPath 'picker.ps1')
         $repo = New-FixtureRepo -Name 'pk' -Slugs @('one', 'two', 'three', 'gated') -Priorities @(80, 60, 40, 70) -Texts @('', '', '', 'owner directive: the owner starts this one by hand')
@@ -1530,6 +1548,25 @@ Start-Sleep -Seconds 120
         Assert-That (-not (Test-Path -LiteralPath $root)) 'the rank created the portfolio root'
         $logs = Get-Variable -Name PqLogs -Scope Script -ValueOnly -ErrorAction Ignore
         Assert-That ($null -eq $logs -or $logs.Count -eq 0) 'the rank opened a log'
+    }
+
+    Test-Case 'rank: -StopAfter 1 gives the same first candidate as the full walk and asks the provider nothing about the rows after it' {
+        . (Get-LibPath 'queue-file.ps1'); . (Get-LibPath 'rank.ps1')
+        $reg = New-RankRegistry @((New-RankRepo 'a'), (New-RankRepo 'b'), (New-RankRepo 'c'))
+        $table = @{ a = @('S0001:50', 'S0002:50', 'S0003:50'); b = @('S0001:50'); c = @('S0001:50') }
+        $queue = Read-QueueLines @('1', 'a:S0002', 'a:S0003', 'b', 'c:S0001')
+        $fullCalls = [Collections.Generic.List[string]]::new()
+        $full = Get-PqRank -Registry $reg -Queue $queue -HeadProvider (New-FakeProvider $table -Calls $fullCalls) -Slots 1
+        $cutCalls = [Collections.Generic.List[string]]::new()
+        $cut = Get-PqRank -Registry $reg -Queue $queue -HeadProvider (New-FakeProvider $table -Calls $cutCalls) -Slots 1 -StopAfter 1
+        Assert-That (@($cut.candidates).Count -eq 1) "-StopAfter 1 returned $(@($cut.candidates).Count) candidates"
+        Assert-That ($cut.candidates[0].repo -ceq $full.candidates[0].repo -and $cut.candidates[0].id -ceq $full.candidates[0].id) "first candidate $($cut.candidates[0].repo):$($cut.candidates[0].id), the full walk gave $($full.candidates[0].repo):$($full.candidates[0].id)"
+        Assert-That ($cutCalls.Count -lt $fullCalls.Count) "-StopAfter 1 made $($cutCalls.Count) provider calls, the full walk $($fullCalls.Count)"
+        Assert-That (@($cutCalls | Where-Object { $_ -like 'b|*' -or $_ -like 'c|*' }).Count -eq 0) "the provider was asked about rows after the first head: $($cutCalls -join '; ')"
+        $keys = (@($cut.events | Where-Object { $_.ev -ceq 'rank.result' } | ForEach-Object { @($_.d.Keys) -join ',' }) -join ';')
+        Assert-That ($keys -ceq 'heads,excluded,autoSkipReasons,fill,ms,queueRows,queueBad') "rank.result keys changed: $keys"
+        $zero = Get-PqRank -Registry $reg -Queue $queue -HeadProvider (New-FakeProvider $table) -Slots 1 -StopAfter 0
+        Assert-That ((Get-CandidateKeys $zero) -ceq (Get-CandidateKeys $full)) "-StopAfter 0 gave '$(Get-CandidateKeys $zero)', the default gave '$(Get-CandidateKeys $full)'"
     }
 
     Test-Case 'rank-integration: two fixture repositories and a queue file that lists the lower-priority repository first - the real picker, the file wins' {

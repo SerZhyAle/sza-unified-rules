@@ -4,7 +4,8 @@ Option Strict On
 Public Module Program
     <STAThread>
     Public Sub Main()
-        Application.SetHighDpiMode(HighDpiMode.SystemAware)
+        ' PerMonitorV2 ensures crisp text scaling across different monitors per UI-SIZING & WINDOWS-UI.
+        Application.SetHighDpiMode(HighDpiMode.PerMonitorV2)
         Application.EnableVisualStyles()
         Application.SetCompatibleTextRenderingDefault(False)
         ' An exception in an event handler (an Async Sub included) is shown, not allowed to close the panel.

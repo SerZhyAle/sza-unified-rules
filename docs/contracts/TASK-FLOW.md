@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Contract | `TASK-FLOW` |
-| Version | 0.8, draft |
+| Version | 0.9, draft |
 | Home | the shared contracts catalog, domain `task-flow/` (the path is in [CLAUDE.md](../../CLAUDE.md)) |
 | Role | **shared implementation, partial**: `tools/harness/` supplies the ticket tools, repository runner and day-0 scaffold; `tools/harness/portfolio/` supplies the S0015 dispatcher, registry, queue, rank and event log. Remaining portfolio features belong to S0016. The owner is `shared`, so this repository edits the contract only through the canon session |
 

@@ -534,7 +534,7 @@ function Invoke-PqStatus {
     if ($null -ne $reg) {
         try {
             $harness = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-            $rank = Get-PqNextRank -Registry $reg -HarnessRoot $harness -Slots 1
+            $rank = Get-PqNextRank -Registry $reg -HarnessRoot $harness -Slots 1 -StopAfter 1
             if (@($rank.candidates).Count -gt 0) {
                 $nextCandidate = [ordered]@{
                     repo = [string]$rank.candidates[0].repo

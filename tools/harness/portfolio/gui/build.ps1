@@ -75,8 +75,23 @@ switch ($Task) {
             throw "Publish reported success but PQShell.exe was not found in $PublishDir"
         }
         if (Test-Path $DeployDir) {
-            Copy-Item $exe.FullName -Destination (Join-Path $DeployDir 'PQShell.exe') -Force
-            Write-Host "Copied PQShell.exe -> $DeployDir" -ForegroundColor Green
+            $target = Join-Path $DeployDir 'PQShell.exe'
+            $previous = "$target.old"
+            # A running exe cannot be overwritten but can be renamed: the open panel keeps running from the renamed
+            # file and the next launch gets the new one.
+            if (Test-Path $previous) { Remove-Item $previous -Force -ErrorAction SilentlyContinue }
+            try {
+                Copy-Item $exe.FullName -Destination $target -Force
+                Write-Host "Copied PQShell.exe -> $DeployDir" -ForegroundColor Green
+            }
+            catch {
+                $copyError = $_
+                if (-not (Test-Path $target)) { throw }
+                try { Move-Item $target $previous -Force }
+                catch { throw "PQShell.exe in $DeployDir is in use and cannot be renamed aside: close the panel and publish again ($($copyError.Exception.Message))" }
+                Copy-Item $exe.FullName -Destination $target -Force
+                Write-Host "PQShell.exe was running: copied the new build, the old one stays as PQShell.exe.old. Restart the panel to pick it up." -ForegroundColor Yellow
+            }
         }
     }
 }

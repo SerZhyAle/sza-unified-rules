@@ -714,6 +714,23 @@ $seen | ConvertTo-Json | Set-Content (Join-Path $RepoRoot 'temp/env-dump.json')
         }
     }
 
+    Run-SmokeCase 'V14b: a pass child starts in the repo as the agent CLI knows it - drive letter in upper case, whatever the registry spells' {
+        Remove-Item -LiteralPath (Join-Path $portfolioRoot 'STOP') -Force -ErrorAction SilentlyContinue
+        if ([IO.Path]::DirectorySeparatorChar -ne '\') { return }   # a drive letter exists on Windows only
+        $dumper = Join-Path $scratch 'root-dumper.ps1'
+        @'
+param($RepoRoot, $Ids, $MaxTickets, $ModelPolicy, $Instance, $PermissionMode)
+$RepoRoot | Set-Content (Join-Path $RepoRoot 'temp/root-dump.txt')
+'@ | Set-Content $dumper
+        $dump = Join-Path $repoADir 'temp/root-dump.txt'
+        Remove-Item -LiteralPath $dump -ErrorAction SilentlyContinue
+        $lower = $repoADir.Substring(0, 1).ToLowerInvariant() + $repoADir.Substring(1)
+        $r = Invoke-PqPassChild -Script $dumper -RepoPath $lower -TicketId 'S0001' -PermissionMode 'acceptEdits'
+        Assert-That ($r.code -eq 0 -and (Test-Path -LiteralPath $dump)) 'the dumping child did not run'
+        $seen = (Get-Content -Raw $dump).Trim()
+        Assert-That ($seen -ceq ($repoADir.Substring(0, 1).ToUpperInvariant() + $repoADir.Substring(1))) "the child was given '$seen', expected the upper-case drive letter spelling of '$repoADir'"
+    }
+
     Run-SmokeCase 'Rule 29: the read-only children (picker, ticket record, lease release) do not speak as the starting agent' {
         # spec-next-preflight.ps1 keeps a lease whose holder is "mine" in the ranking, so a picker that inherits the
         # launching session's CLAUDE_CODE_SESSION_ID offers the very ticket that session holds.
