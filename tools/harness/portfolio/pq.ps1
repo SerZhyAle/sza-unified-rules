@@ -80,7 +80,10 @@ $lib = Join-Path $PSScriptRoot 'lib'
 . (Join-Path $lib 'picker.ps1')
 . (Join-Path $lib 'rank.ps1')
 . (Join-Path $lib 'ledger-watch.ps1')
+. (Join-Path $lib 'xrepo.ps1')
+. (Join-Path $lib 'discovery.ps1')
 . (Join-Path $lib 'loop.ps1')
+. (Join-Path $lib 'agents.ps1')
 
 function Write-PqError([string]$Name, [string]$Message) {
     [Console]::Error.WriteLine("pq: $Name - $Message")
@@ -511,11 +514,13 @@ function Invoke-PqStatus {
                 $p = [int]$wObj.pid
                 $alive = Test-PqStateOwner $wObj
                 $target = if ($wObj.repository -and $wObj.ticket) { "$($wObj.repository):$($wObj.ticket)" } else { '-' }
+                $title = if ($wObj.PSObject.Properties['title']) { [string]$wObj.title } else { '' }
                 $workers.Add([ordered]@{
                     slot = $k
                     pid = $p
                     alive = $alive
                     target = $target
+                    title = $title
                     since = [string]$wObj.since
                 })
             }
@@ -565,7 +570,8 @@ function Invoke-PqStatus {
     else {
         "Workers:"
         foreach ($w in $workers) {
-            "  slot {0}  pid={1}  alive={2}  target={3}  since={4}" -f $w.slot, $w.pid, $w.alive.ToString().ToLowerInvariant(), $w.target, $w.since
+            $targetStr = if ($w.title) { "$($w.target) ($($w.title))" } else { $w.target }
+            "  slot {0}  pid={1}  alive={2}  target={3}  since={4}" -f $w.slot, $w.pid, $w.alive.ToString().ToLowerInvariant(), $targetStr, $w.since
         }
     }
     if ($passesToday.Count -eq 0) {

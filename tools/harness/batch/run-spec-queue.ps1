@@ -57,8 +57,10 @@
     What each instance LAUNCHES is the profile's, per instance (S2698). runner.instances maps an
     -Instance name onto a record whose `command`, `argsTemplate` and `headlessMatch` each fall back
     to the shared runner.<field> beside it, so a project declaring no map launches exactly what it
-    launched before. The template's substitutions are {prompt}, {permissionMode} and {model}, and
-    an element carrying {model} is dropped with the flag before it when no model was chosen. That
+    launched before. The template's substitutions are {prompt}, {permissionMode}, {model} and
+    {effort}, and an element carrying {model} or {effort} is dropped with the flag before it when
+    there is no value for it. -AgentJson, the portfolio's agent record for one pass (TASK-FLOW
+    rule 42), takes precedence over both levels and is never written to the profile. That
     is what lets one instance of three run a different agent or a different model while the other
     two are untouched - the comparison then needs no new journal field, since the run journal is
     already per instance and already records the model.
@@ -226,6 +228,11 @@ param(
 
     [string] $RepoRoot = '',
 
+    # The portfolio's agent record (TASK-FLOW rule 42) as compact JSON, for one pass. Its command,
+    # argsTemplate, headlessMatch and effort take precedence over runner.instances.<instance> and
+    # runner.*; the model comes in through -ModelPolicy fixed -Model. Empty = the profile, as before.
+    [string] $AgentJson = '',
+
     [switch] $Help
 )
 
@@ -247,9 +254,12 @@ Set-Location $RepoRoot
 # ---------------------------------------------------------------------------------------------
 
 if ([string]::IsNullOrWhiteSpace($PromptTemplate)) {
-    # The profile spells the placeholder {Id}; this script has always accepted {id}. Both work.
-    $PromptTemplate = ([string](Get-SzaProfileValue 'runner.promptTemplate')).Replace('{Id}', '{id}')
+    $PromptTemplate = [string](Get-SzaProfileValue 'runner.promptTemplate')
 }
+# A slash command this repository does not have reaches the child as plain text; send the lifecycle skill instead.
+$promptResolution = Resolve-SzaPromptTemplate -Template $PromptTemplate -Root $RepoRoot
+# The profile spells the placeholder {Id}; this script has always accepted {id}. Both work.
+$PromptTemplate = ([string]$promptResolution.template).Replace('{Id}', '{id}')
 function Get-InstanceSetting {
     <#
         One field of the child invocation, resolved instance first (S2698). The chain is
@@ -259,6 +269,7 @@ function Get-InstanceSetting {
     #>
     param([Parameter(Mandatory)][string] $Field)
 
+    if ($null -ne $script:AgentRecord -and (Test-SzaHasProperty -Object $script:AgentRecord -Name $Field)) { return $script:AgentRecord.$Field }
     $map = Get-SzaProfileValue 'runner.instances'
     if (Test-SzaHasProperty -Object $map -Name $Instance) {
         $entry = $map.$Instance
@@ -270,21 +281,23 @@ function Get-InstanceSetting {
 function Expand-ChildArgs {
     <#
         The child's argument vector, from the instance's template (S2698). Substitutions are
-        {prompt}, {permissionMode} and {model}, applied per element and BEFORE ArgumentList, so
-        escaping stays .NET's job - the property that stopped three tickets being lost to
-        Start-Process's unquoted join.
+        {prompt}, {permissionMode}, {model} and {effort}, applied per element and BEFORE
+        ArgumentList, so escaping stays .NET's job - the property that stopped three tickets being
+        lost to Start-Process's unquoted join.
     #>
     param(
         [string[]] $Template,
         [string] $Prompt,
         [string] $Mode,
-        [string] $Model
+        [string] $Model,
+        [string] $Effort
     )
 
     $out = @()
     foreach ($element in $Template) {
         $text = [string]$element
-        if ($text -match '\{model\}' -and [string]::IsNullOrWhiteSpace($Model)) {
+        if (($text -match '\{model\}' -and [string]::IsNullOrWhiteSpace($Model)) -or
+            ($text -match '\{effort\}' -and [string]::IsNullOrWhiteSpace($Effort))) {
             # No model chosen: the placeholder's element goes, and so does the flag in front of it.
             # Passing it through as an empty string is NOT the same thing - ArgumentList hands the
             # child a real empty argument, so `--model ""` would reach a CLI that today sees no
@@ -294,7 +307,7 @@ function Expand-ChildArgs {
             }
             continue
         }
-        $out += $text.Replace('{prompt}', $Prompt).Replace('{permissionMode}', $Mode).Replace('{model}', $Model)
+        $out += $text.Replace('{prompt}', $Prompt).Replace('{permissionMode}', $Mode).Replace('{model}', $Model).Replace('{effort}', $Effort)
     }
     # A bare return, not `, $out`: the comma hands the caller a one-element wrapper AROUND the
     # vector, so `@(Expand-ChildArgs ..)` would be one argument holding an array and every child
@@ -347,6 +360,15 @@ function Test-ChildTakesSessionId {
     return $script:ChildTakesSessionIdAnswer
 }
 
+$script:AgentRecord = $null
+if ($AgentJson.Trim()) {
+    try { $script:AgentRecord = ConvertFrom-Json -InputObject $AgentJson }
+    catch {
+        Write-Host ("run-spec-queue: -AgentJson does not parse: {0}" -f $_.Exception.Message) -ForegroundColor Red
+        exit 2
+    }
+}
+$childEffort = if ($null -ne $script:AgentRecord -and (Test-SzaHasProperty -Object $script:AgentRecord -Name 'effort')) { [string]$script:AgentRecord.effort } else { '' }
 $runnerCommand = [string](Get-InstanceSetting -Field 'command')
 $runnerArgsTemplate = @(Get-InstanceSetting -Field 'argsTemplate')
 $headlessMatch = [string](Get-InstanceSetting -Field 'headlessMatch')
@@ -391,6 +413,54 @@ $runDir = Join-Path $RepoRoot (Get-SzaPath 'queueRunsDir' -Relative)
 if (-not (Test-Path $runDir)) { New-Item -ItemType Directory -Path $runDir | Out-Null }
 $journal = Join-Path $runDir ("runs-{0}.jsonl" -f $Instance)
 $activeChildFile = Join-Path $runDir ("child-{0}.json" -f $Instance)
+
+function Stop-ProcessTree {
+    param([int] $ProcessId)
+    # taskkill /T reaches the node and gradle children the CLI spawns; Stop-Process alone leaves them
+    # holding BUILD.LOCK, which would stall every later ticket in the run.
+    & taskkill.exe /PID $ProcessId /T /F 2>&1 | Out-Null
+}
+
+function Get-TicketRecord {
+    param([string] $Id)
+    try {
+        $raw = & pwsh -NoProfile -File $select -Id $Id -Format json 2>$null | Out-String
+        if ([string]::IsNullOrWhiteSpace($raw)) { return $null }
+        return ($raw | ConvertFrom-Json)
+    } catch {
+        return $null
+    }
+}
+
+function Get-TicketTitle {
+    param($Ticket, [string]$Id)
+    if ($null -ne $Ticket) {
+        if ($Ticket.PSObject.Properties['name'] -and $Ticket.name) { return [string]$Ticket.name }
+        if ($Ticket.PSObject.Properties['title'] -and $Ticket.title) { return [string]$Ticket.title }
+    }
+    if ($Id) {
+        $rec = Get-TicketRecord -Id $Id
+        if ($null -ne $rec) {
+            if ($rec.PSObject.Properties['name'] -and $rec.name) { return [string]$rec.name }
+            if ($rec.PSObject.Properties['title'] -and $rec.title) { return [string]$rec.title }
+        }
+        try {
+            $specsRel = Get-SzaPath 'specsDir' -Relative -ErrorAction SilentlyContinue
+            $planDir = if ($specsRel) { Join-Path $RepoRoot $specsRel } else { (Get-SzaPath 'specsDir') }
+            if (Test-Path -LiteralPath $planDir) {
+                $file = Get-ChildItem -LiteralPath $planDir -Filter "$Id*.md" -File -ErrorAction SilentlyContinue | Select-Object -First 1
+                if ($file) {
+                    foreach ($line in [IO.File]::ReadLines($file.FullName)) {
+                        if ($line -match '^#\s+(?:' + [regex]::Escape($Id) + '\s*[-:]\s*)?(?<title>.+)$') {
+                            return $Matches['title'].Trim()
+                        }
+                    }
+                }
+            }
+        } catch { }
+    }
+    return ''
+}
 
 function Get-ActiveQueueChildren {
     <#
@@ -442,10 +512,13 @@ function Get-ActiveQueueChildren {
             $inst = if ($data.instance) { [string]$data.instance } else {
                 if ($f.BaseName -match '^child-(.+)$') { $Matches[1] } else { '?' }
             }
+            $t = [string]$data.ticket
+            $title = if ($data.PSObject.Properties['title']) { [string]$data.title } else { Get-TicketTitle -Id $t }
             $results += [pscustomobject]@{
                 Instance   = $inst
                 ProcessId  = [int]$data.pid
-                Ticket     = [string]$data.ticket
+                Ticket     = $t
+                Title      = $title
                 StartedAt  = [string]$data.startedAt
                 StartTicks = [int64]$data.startTicks
                 File       = $f.FullName
@@ -482,7 +555,8 @@ if ($Stop) {
         foreach ($c in $inFlight) {
             $age = '?'
             try { $age = '{0:N0}' -f ((Get-Date) - [datetime]::Parse($c.StartedAt)).TotalMinutes } catch { $age = '?' }
-            Write-Host ("    pid {0,-7} {1,4} min   ticket {2}" -f $c.ProcessId, $age, $c.Ticket) -ForegroundColor Cyan
+            $cTitle = if ($c.PSObject.Properties['Title'] -and $c.Title) { " - $($c.Title)" } else { '' }
+            Write-Host ("    pid {0,-7} {1,4} min   ticket {2}{3}" -f $c.ProcessId, $age, $c.Ticket, $cTitle) -ForegroundColor Cyan
         }
         Write-Host ''
         Write-Host '  A full pipeline routinely runs 30-60 minutes, so this is a wait, not a hang.' -ForegroundColor DarkGray
@@ -522,6 +596,7 @@ if (Test-Path $stopFileMine) {
     Write-Host "run-spec-queue: clearing this instance's leftover stop file - $stopFileMine" -ForegroundColor Yellow
     Remove-Item $stopFileMine -Force
 }
+[void](Get-ActiveQueueChildren -TargetInstance $Instance -CleanStale)
 
 # The shared file needs the opposite care, and getting it wrong strands the runner in two different
 # ways. Nothing deletes it: the loop that reads it must leave it in place so the sibling instances
@@ -582,17 +657,6 @@ function Get-NextQueuedTicket {
     }
     if (-not $payload.selected) { return $null }
     return $payload.selected
-}
-
-function Get-TicketRecord {
-    param([string] $Id)
-    try {
-        $raw = & pwsh -NoProfile -File $select -Id $Id -Format json 2>$null | Out-String
-        if ([string]::IsNullOrWhiteSpace($raw)) { return $null }
-        return ($raw | ConvertFrom-Json)
-    } catch {
-        return $null
-    }
 }
 
 function Get-TicketComplexity {
@@ -1043,6 +1107,9 @@ Write-Host 'run-spec-queue' -ForegroundColor Cyan
 Write-Host ("  cli            : {0}" -f $claude)
 Write-Host ("  order          : {0}" -f $(if ($explicit.Count) { "explicit ($($explicit -join ', '))" } else { "$(Get-SzaPath 'releaseQueue' -Relative) via spec-next-preflight.ps1" }))
 Write-Host ("  prompt         : {0}" -f $PromptTemplate)
+if ($promptResolution.replaced) {
+    Write-Host ("  prompt note    : /{0} is not a command here (no command or skill file) - sent the lifecycle skill instead; set runner.promptTemplate to change it" -f $promptResolution.command) -ForegroundColor DarkYellow
+}
 Write-Host ("  permission     : {0}" -f $PermissionMode)
 Write-Host ("  model policy   : {0}" -f $(
     switch ($ModelPolicy) {
@@ -1243,6 +1310,8 @@ while ($true) {
     }
 
     $statusBefore = if ($ticket) { [string]$ticket.status } else { Get-TicketStatus -Id $id }
+    $ticketTitle = Get-TicketTitle -Ticket $ticket -Id $id
+    $titleSuffix = if ($ticketTitle) { " - $ticketTitle" } else { '' }
     $childModel = Select-ModelFor -Ticket $ticket
     $childComplexity = Get-TicketComplexity -Ticket $ticket
 
@@ -1278,16 +1347,17 @@ while ($true) {
 
     Write-Host ''
     Write-Host ('=' * 78) -ForegroundColor DarkGray
-    Write-Host ("  {0}  [{1}]   ticket {2} of {3}" -f $id, $statusBefore, ($handled + 1), $(if ($MaxTickets -gt 0) { $MaxTickets } else { '?' })) -ForegroundColor Cyan
+    Write-Host ("  {0}  [{1}]{2}   ticket {3} of {4}" -f $id, $statusBefore, $titleSuffix, ($handled + 1), $(if ($MaxTickets -gt 0) { $MaxTickets } else { '?' })) -ForegroundColor Cyan
     Write-Host ("  started {0}   model {1}{2}   fresh context - this is a new process" -f `
             $started.ToString('HH:mm:ss'), $(if ($childModel) { $childModel } else { 'CLI default' }),
             $(if ($childComplexity) { " ($childComplexity)" } else { '' })) -ForegroundColor DarkGray
     Write-Host ('=' * 78) -ForegroundColor DarkGray
+    try { $host.UI.RawUI.WindowTitle = "$id$titleSuffix | run-spec-queue ($Instance)" } catch { }
 
     # --- run it in its own process --------------------------------------------------------
     $prompt = $PromptTemplate.Replace('{id}', $id)
     $childArgs = @(Expand-ChildArgs -Template $runnerArgsTemplate -Prompt $prompt `
-            -Mode $PermissionMode -Model $childModel)
+            -Mode $PermissionMode -Model $childModel -Effort $childEffort)
 
     # S4265: the child runs under a session id the runner chose, so that if it ends on the usage
     # limit its transcript is found by that name and never by guessing the CLI's project directory.
@@ -1336,6 +1406,19 @@ while ($true) {
     $logBody = ''
     try {
         $proc = [System.Diagnostics.Process]::Start($psi)
+        $childStartTicks = 0
+        try { $childStartTicks = $proc.StartTime.Ticks } catch { $childStartTicks = 0 }
+        $childRecord = [ordered]@{
+            schema     = 1
+            pid        = $proc.Id
+            startTicks = $childStartTicks
+            instance   = $Instance
+            ticket     = $id
+            title      = $ticketTitle
+            runnerPid  = $PID
+            startedAt  = (Get-Date).ToString('s')
+        }
+        [System.IO.File]::WriteAllText($activeChildFile, ($childRecord | ConvertTo-Json -Compress), [System.Text.Encoding]::UTF8)
 
         # Start draining before waiting. A redirected pipe that fills while nobody reads it blocks
         # the child forever, and the timeout below would then report a hang this script caused.
@@ -1425,8 +1508,8 @@ while ($true) {
                     $stepMarks = $now
                     $deadline = (Get-Date).AddMinutes($TimeoutMinutes)
                     $extensions++
-                    Write-Host ("  {0}: step {1} of its plan ticked - deadline moved to {2}." -f `
-                            $id, $now, $deadline.ToString('HH:mm:ss')) -ForegroundColor DarkGray
+                    Write-Host ("  {0}{3}: step {1} of its plan ticked - deadline moved to {2}." -f `
+                            $id, $now, $deadline.ToString('HH:mm:ss'), $titleSuffix) -ForegroundColor DarkGray
                 }
             }
             if ($timedOut) {
@@ -1439,7 +1522,7 @@ while ($true) {
                     "$extensions extension(s), plan went $stepMarksAtStart -> $stepMarks done"
                 }
                 Write-Host ''
-                Write-Host ("  run-spec-queue: {0} exceeded {1} min - killing the process tree. {2}." -f $id, $TimeoutMinutes, $progress) -ForegroundColor Red
+                Write-Host ("  run-spec-queue: {0}{3} exceeded {1} min - killing the process tree. {2}." -f $id, $TimeoutMinutes, $progress, $titleSuffix) -ForegroundColor Red
                 Stop-ProcessTree -ProcessId $proc.Id
                 # A killed child cannot release its ticket lease; drop it so a later run is not refused.
                 & pwsh -NoProfile -File (Get-SzaHarnessScript 'locks/ticket-lease.ps1') -Verb Release -Id $id 2>&1 | Out-Null
@@ -1461,7 +1544,11 @@ while ($true) {
         }
     } catch {
         $outcome = 'launch-failed'
-        Write-Host ("  run-spec-queue: could not launch the child for {0} - {1}" -f $id, $_.Exception.Message) -ForegroundColor Red
+        Write-Host ("  run-spec-queue: could not launch the child for {0}{2} - {1}" -f $id, $_.Exception.Message, $titleSuffix) -ForegroundColor Red
+    } finally {
+        if (Test-Path -LiteralPath $activeChildFile) {
+            Remove-Item -LiteralPath $activeChildFile -Force -ErrorAction SilentlyContinue
+        }
     }
 
     # Release the lease the child claimed, now that its process is gone. /spec-all asks the child to do
@@ -1572,7 +1659,7 @@ while ($true) {
 
     $colour = if ($moved) { 'Green' } elseif ($outcome -eq 'context-handoff') { 'Cyan' } elseif ($outcome -eq 'limit-hit') { 'Magenta' } elseif ($outcome -ne 'ok') { 'Red' } else { 'Yellow' }
     Write-Host ''
-    Write-Host ("  {0}: {1} -> {2}   ({3}, {4} min)" -f $id, $statusBefore, $statusAfter, $outcome, $elapsed) -ForegroundColor $colour
+    Write-Host ("  {0}{5}: {1} -> {2}   ({3}, {4} min)" -f $id, $statusBefore, $statusAfter, $outcome, $elapsed, $titleSuffix) -ForegroundColor $colour
     if ($relaunch) {
         Write-Host ("  {0} handed back at {1} tokens ({2}) - relaunching with a fresh context, handoff {3} of {4}." -f `
                 $id, $handoff.tokens, $handoff.boundary, $handoffCounts[$id], $handoffCap) -ForegroundColor DarkCyan
@@ -1627,6 +1714,7 @@ if ($summaryHold.Active) {
     Write-Host ("  The queue is not empty or idle. Delete {0} to end the wait early." -f $limitHoldPath) -ForegroundColor DarkGray
 }
 Write-Host ''
+try { $host.UI.RawUI.WindowTitle = "run-spec-queue ($Instance) - done" } catch { }
 
 if (-not $ranAny) { exit 3 }
 exit 0

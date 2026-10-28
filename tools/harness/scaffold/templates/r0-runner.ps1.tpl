@@ -200,8 +200,11 @@ while ($true) {
     if (-not $next) { break }
 
     $id = $next.id; $before = [string]$next.status
+    $name = if ($next.PSObject.Properties['name']) { [string]$next.name } else { '' }
+    $titlePart = if ($name) { " - $name" } else { '' }
     $argv = @($ChildArgs | ForEach-Object { $_ -ireplace '\{id\}', $id })
-    Write-Host ("r0: {0} [{1}] - starting child" -f $id, $before)
+    Write-Host ("r0: {0} [{1}]{2} - starting child" -f $id, $before, $titlePart)
+    try { $host.UI.RawUI.WindowTitle = "r0: $id$titlePart [$before]" } catch { }
 
     $psi = [Diagnostics.ProcessStartInfo]::new($exe.Source)
     foreach ($a in $argv) { $psi.ArgumentList.Add($a) }
@@ -224,9 +227,10 @@ while ($true) {
         finishedAt = (Get-Date -Format 'yyyy-MM-ddTHH:mm:ss')
     }
     [IO.File]::AppendAllText($runFile, (($row | ConvertTo-Json -Compress) + "`n"))
-    Write-Host ("r0: {0} {1} -> {2}  {3} (exit {4})" -f $id, $before, $after, $outcome, $exit)
+    Write-Host ("r0: {0}{5} {1} -> {2}  {3} (exit {4})" -f $id, $before, $after, $outcome, $exit, $titlePart)
 
     if (-not $moved) { $dropped.Add($id) }                       # no autonomous next step left
     $done++
 }
+try { $host.UI.RawUI.WindowTitle = 'r0: done' } catch { }
 exit 0

@@ -173,7 +173,10 @@ $Script:SzaProfileDefaults = [ordered]@{
     }
     runner      = [ordered]@{
         command          = 'claude'
-        promptTemplate   = '/spec-all {Id}'
+        # What a queue child is told when the project names nothing, or names a command it does not
+        # have (Resolve-SzaPromptTemplate). The plugin's lifecycle skill runs in every repository that
+        # has the sza plugin; until 2026-10-28 this was '/spec-all {Id}', a command only FMS_A has.
+        promptTemplate   = '/sza:spec-to-audit {Id} - an unattended queue pass, nobody answers questions: take this one ticket as far as it goes and do not start another. When it cannot move, set the matching Block status with a statusNote naming what is missing. A lease on the ticket whose reason is run-spec-queue followed by an instance name is the claim the runner made for you: it is yours.'
         decisionStatuses = @('Draft', 'Approved', 'Tactical', 'In Progress', 'Partial', 'Broken', 'BlockQuestions')
         cheapStatuses    = @('Implemented', 'BlockNeedUserTest')
         cheapTierMax     = 3
@@ -435,6 +438,57 @@ function Get-SzaPath {
     if ([System.IO.Path]::IsPathRooted($value)) { return $value }
     $joined = Join-Path (Get-SzaProjectRoot) $value
     return $joined.Replace('/', [System.IO.Path]::DirectorySeparatorChar)
+}
+
+function Test-SzaSlashCommand {
+    <#
+    .SYNOPSIS
+        Whether a Claude Code session started in -Root can run the slash command -Name.
+    .DESCRIPTION
+        A plain name is a project or user command (<commandsDir>/<name>.md, ~/.claude/commands/<name>.md)
+        or skill (.claude/skills/<name>/SKILL.md, ~/.claude/skills/<name>/SKILL.md). 'sza:<skill>' is the
+        plugin's own skill, looked up beside this harness; a harness copied out of the plugin cannot see
+        that folder and answers true, because the plugin is installed at user scope. Any other
+        '<plugin>:<name>' is not checked and answers true.
+    #>
+    param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][string]$Root, [string]$CommandsDir = '.claude/commands')
+    if ($Name -match '^(?<plugin>[^:]+):(?<skill>.+)$') {
+        if ($Matches['plugin'] -cne 'sza') { return $true }
+        $skillsDir = Join-Path (Split-Path -Parent (Split-Path -Parent $Script:SzaHarnessRoot)) 'skills'
+        if (-not (Test-Path -LiteralPath $skillsDir -PathType Container)) { return $true }
+        return (Test-Path -LiteralPath (Join-Path $skillsDir "$($Matches['skill'])\SKILL.md") -PathType Leaf)
+    }
+    $userDir = if ($env:CLAUDE_CONFIG_DIR) { $env:CLAUDE_CONFIG_DIR } else { Join-Path $HOME '.claude' }
+    $commands = if ([System.IO.Path]::IsPathRooted($CommandsDir)) { $CommandsDir } else { Join-Path $Root $CommandsDir }
+    foreach ($candidate in @(
+            (Join-Path $commands "$Name.md"),
+            (Join-Path $Root ".claude\skills\$Name\SKILL.md"),
+            (Join-Path $userDir "commands\$Name.md"),
+            (Join-Path $userDir "skills\$Name\SKILL.md"))) {
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) { return $true }
+    }
+    return $false
+}
+
+function Resolve-SzaPromptTemplate {
+    <#
+    .SYNOPSIS
+        The prompt template a queue child is actually sent: @{ template; replaced; command }.
+    .DESCRIPTION
+        A template that opens with /<name> keeps its form only when Test-SzaSlashCommand finds that
+        command; otherwise it is replaced by the shared default, the plugin's lifecycle skill, and
+        replaced names the missing command. The CLI reports no error for an unknown command - the child
+        gets the text as a plain prompt and improvises a pipeline of its own (S0038 in StreamsPlayer_mob,
+        2026-10-28, sent '/spec-all' that the repository never had). A plain-text template passes as is.
+    #>
+    param([Parameter(Mandatory)][AllowEmptyString()][string]$Template, [string]$Root = (Get-SzaProjectRoot), [string]$CommandsDir = '')
+    $default = [string]$Script:SzaProfileDefaults.runner.promptTemplate
+    if ([string]::IsNullOrWhiteSpace($Template)) { return @{ template = $default; replaced = $false; command = '' } }
+    if ($Template -notmatch '^/(?<name>[A-Za-z0-9_:-]+)') { return @{ template = $Template; replaced = $false; command = '' } }
+    $name = $Matches['name']
+    if (-not $CommandsDir) { $CommandsDir = [string](Get-SzaProfileValue 'paths.commandsDir') }
+    if (Test-SzaSlashCommand -Name $name -Root $Root -CommandsDir $CommandsDir) { return @{ template = $Template; replaced = $false; command = $name } }
+    return @{ template = $default; replaced = $true; command = $name }
 }
 
 function Get-SzaEnvName {

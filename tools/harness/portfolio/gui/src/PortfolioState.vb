@@ -37,6 +37,7 @@ Public Class WorkerInfo
     Public Property StartedAt As String = ""
     Public Property Repository As String = ""
     Public Property Ticket As String = ""
+    Public Property Title As String = ""
     Public Property Since As String = ""
     Public Property Alive As Boolean
     Public Property Elapsed As String = ""
@@ -389,6 +390,7 @@ Public Class PortfolioState
                         .StartedAt = Str(root, "startedAt"),
                         .Repository = Str(root, "repository"),
                         .Ticket = Str(root, "ticket"),
+                        .Title = Str(root, "title"),
                         .Since = Str(root, "since")
                     }
                     w.Alive = IsStateOwnerAlive(w.Pid, w.StartedAt)

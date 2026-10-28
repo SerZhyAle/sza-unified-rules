@@ -196,6 +196,55 @@ function Get-DevMonitorTicketLastWrite {
     }
 }
 
+function Get-DevMonitorTicketTitle {
+    param([string]$RepoRoot, [string]$Id)
+    if (-not $Id -or $Id -eq '?') { return '' }
+    try {
+        $journalRel = Get-SzaPath 'journal' -Relative -ErrorAction SilentlyContinue
+        if ($journalRel) {
+            $jp = Join-Path $RepoRoot $journalRel
+            if (Test-Path -LiteralPath $jp) {
+                foreach ($line in [IO.File]::ReadLines($jp)) {
+                    if ($line -match '"id"\s*:\s*"' + [regex]::Escape($Id) + '"') {
+                        $rec = $line | ConvertFrom-Json
+                        if ($rec.name) { return [string]$rec.name }
+                    }
+                }
+            }
+        }
+    } catch { }
+    try {
+        $specsRel = Get-SzaPath 'specsDir' -Relative -ErrorAction SilentlyContinue
+        if ($specsRel) {
+            $specsDir = Join-Path $RepoRoot $specsRel
+            if (Test-Path -LiteralPath $specsDir) {
+                $file = Get-ChildItem -LiteralPath $specsDir -Filter "$Id*.md" -File -ErrorAction SilentlyContinue | Select-Object -First 1
+                if ($file) {
+                    foreach ($line in [IO.File]::ReadLines($file.FullName)) {
+                        if ($line -match '^#\s+(?:' + [regex]::Escape($Id) + '\s*[-:]\s*)?(?<title>.+)$') {
+                            return $Matches['title'].Trim()
+                        }
+                    }
+                }
+            }
+        }
+    } catch { }
+    try {
+        $qRel = Get-SzaPath 'releaseQueue' -Relative -ErrorAction SilentlyContinue
+        if ($qRel) {
+            $qp = Join-Path $RepoRoot $qRel
+            if (Test-Path -LiteralPath $qp) {
+                foreach ($line in [IO.File]::ReadLines($qp)) {
+                    if ($line -match [regex]::Escape($Id) + '_([a-z0-9][a-z0-9-]*)') {
+                        return $Matches[1]
+                    }
+                }
+            }
+        }
+    } catch { }
+    return ''
+}
+
 function Get-DevMonitorLeaseFiles {
     param([string]$RepoRoot)
     $dir = (Join-Path $RepoRoot (Get-SzaPath 'leasesDir' -Relative))
@@ -205,8 +254,10 @@ function Get-DevMonitorLeaseFiles {
         $lease = Read-DevMonitorJson -Path $f.FullName
         if ($null -eq $lease) { continue }
         $claimed = ConvertFrom-DevMonitorEpoch (Get-DevMonitorProp $lease 'claimedAt')
+        $lid = [string](Get-DevMonitorProp $lease 'id' $f.BaseName)
         $out += [pscustomobject][ordered]@{
-            id              = [string](Get-DevMonitorProp $lease 'id' $f.BaseName)
+            id              = $lid
+            title           = (Get-DevMonitorTicketTitle -RepoRoot $RepoRoot -Id $lid)
             sessionId       = [string](Get-DevMonitorProp $lease 'sessionId' '')
             name            = ''
             reason          = [string](Get-DevMonitorProp $lease 'reason' '')
@@ -391,6 +442,7 @@ function Get-DevMonitorChildren {
         try { $started = $c.CreationDate } catch { $started = $null }
         $ageMinutes = if ($started) { [math]::Round(((Get-Date) - $started).TotalMinutes, 1) } else { $null }
         $ticket = if ($c.CommandLine -match '(S\d{4})') { $Matches[1] } else { '?' }
+        $title = Get-DevMonitorTicketTitle -RepoRoot $RepoRoot -Id $ticket
         $model = if ($c.CommandLine -match '--model\s+(\S+)') { $Matches[1] } else { 'default' }
         $write = Get-DevMonitorTicketLastWrite -RepoRoot $RepoRoot -Id $ticket
         # Judge the silence against this run's own age, never against the file's absolute date: a
@@ -401,6 +453,7 @@ function Get-DevMonitorChildren {
         $out += [pscustomobject][ordered]@{
             pid              = $c.ProcessId
             ticket           = $ticket
+            title            = $title
             model            = $model
             ageMinutes       = $ageMinutes
             lastWriteMinutes = if ($null -ne $write) { $write.Minutes } else { $null }

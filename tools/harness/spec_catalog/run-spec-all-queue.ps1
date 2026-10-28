@@ -276,7 +276,9 @@ function Get-NextQueueTicket {
         $ticketId = $queueName.Substring(0, 5)
         $slug = $queueName.Substring(6)
 
-        $status = [string] (Get-CatalogRecord -TicketId $ticketId).status
+        $catRec = Get-CatalogRecord -TicketId $ticketId
+        $status = [string] $catRec.status
+        $name = if ($catRec.PSObject.Properties['name'] -and $catRec.name) { [string]$catRec.name } else { $slug }
         if (Test-TerminalStatus -Status $status) { continue }
 
         $busy = Get-TicketBusySignal -TicketId $ticketId
@@ -311,6 +313,7 @@ function Get-NextQueueTicket {
             Id        = $ticketId
             QueueName = $queueName
             Slug      = $slug
+            Name      = $name
             Release   = $release
             Status    = $status
         }
@@ -337,7 +340,9 @@ function Show-NextQueuePreview {
         Write-Host "$Label - nothing eligible: every queue ticket is terminal, blocked, or held by a live sibling."
         return
     }
-    Write-Host "$Label - $($next.Id) $($next.Slug) (rel $($next.Release), status: $($next.Status))"
+    $ticketName = if ($next.PSObject.Properties['Name'] -and $next.Name) { [string]$next.Name } elseif ($next.Slug) { $next.Slug } else { '' }
+    $titlePart = if ($ticketName) { " - $ticketName" } else { '' }
+    Write-Host "$Label - $($next.Id)$titlePart (rel $($next.Release), status: $($next.Status))"
 }
 
 function Start-SpecAll {
@@ -356,8 +361,11 @@ function Start-SpecAll {
     $stamp = Get-Date -Format 'yyyyMMdd_HHmmss'
     $stdoutPath = Join-Path $ticketTempPath "spec-all_$stamp.stdout.log"
     $stderrPath = Join-Path $ticketTempPath "spec-all_$stamp.stderr.log"
-    $prompt = ([string](Get-SzaProfileValue 'runner.promptTemplate')).Replace('{Id}', $Ticket.Id).Replace('{id}', $Ticket.Id)
-    Write-Host "Attempt $Attempt/$MaxAttemptsPerTicket - starting $prompt : $($Ticket.Slug) (rel $($Ticket.Release), status: $Status)."
+    $prompt = ([string](Resolve-SzaPromptTemplate -Template ([string](Get-SzaProfileValue 'runner.promptTemplate'))).template).Replace('{Id}', $Ticket.Id).Replace('{id}', $Ticket.Id)
+    $ticketName = if ($Ticket.PSObject.Properties['Name'] -and $Ticket.Name) { [string]$Ticket.Name } elseif ($Ticket.Slug) { $Ticket.Slug } else { '' }
+    $titleSuffix = if ($ticketName) { " - $ticketName" } else { '' }
+    Write-Host "Attempt $Attempt/$MaxAttemptsPerTicket - starting $prompt$titleSuffix (rel $($Ticket.Release), status: $Status)."
+    try { $host.UI.RawUI.WindowTitle = "spec-all: $($Ticket.Id)$titleSuffix" } catch { }
     try {
         $commandPath = (Get-Command $ClaudeCommand -ErrorAction Stop).Source
         $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
@@ -391,13 +399,15 @@ function Wait-SpecAll {
     param(
         [Parameter(Mandatory)] $Process,
         [Parameter(Mandatory)][string] $TicketId,
-        [Parameter(Mandatory)][string] $Status
+        [Parameter(Mandatory)][string] $Status,
+        [string] $TicketTitle = ''
     )
 
     $observedStatus = $Status
     $startedAt = Get-Date
     $lastBeatAt = $startedAt
     $terminalObserved = $false
+    $titleSuffix = if ($TicketTitle) { " - $TicketTitle" } else { '' }
     while (-not $Process.HasExited -and -not $terminalObserved) {
         Start-Sleep -Seconds $PollSeconds
         # Re-claiming our own lease is a no-op that refreshes its heartbeat, which is what keeps a
@@ -416,13 +426,13 @@ function Wait-SpecAll {
         # whole answer), so without this the console looks hung. One line per HeartbeatMinutes.
         if (((Get-Date) - $lastBeatAt).TotalMinutes -ge $HeartbeatMinutes) {
             $runningMinutes = [int] ((Get-Date) - $startedAt).TotalMinutes
-            Write-Host "  .. $TicketId running $runningMinutes min (status: $observedStatus)"
+            Write-Host "  .. $TicketId$titleSuffix running $runningMinutes min (status: $observedStatus)"
             $lastBeatAt = Get-Date
         }
     }
 
     if ($terminalObserved -and -not $Process.HasExited) {
-        Write-Host "  Stopping Claude Code for $TicketId after terminal status $observedStatus."
+        Write-Host "  Stopping Claude Code for $TicketId$titleSuffix after terminal status $observedStatus."
         try { $Process.Kill($true) } catch { }
         $Process.WaitForExit()
     }
@@ -471,12 +481,14 @@ try {
                 }
 
                 $before = Get-TicketStamp -TicketId $ticket.Id
+                $tName = if ($ticket.PSObject.Properties['Name'] -and $ticket.Name) { [string]$ticket.Name } elseif ($ticket.Slug) { $ticket.Slug } else { '' }
+                $titleSuffix = if ($tName) { " - $tName" } else { '' }
                 $process = Start-SpecAll -Ticket $ticket -Status $before.Status -Attempt $attempt
-                Wait-SpecAll -Process $process -TicketId $ticket.Id -Status $before.Status
+                Wait-SpecAll -Process $process -TicketId $ticket.Id -Status $before.Status -TicketTitle $tName
 
                 $after = Get-TicketStamp -TicketId $ticket.Id
                 if (Test-TerminalStatus -Status $after.Status) {
-                    Write-Host "$($ticket.Id) finished with terminal status: $($after.Status)"
+                    Write-Host "$($ticket.Id)$titleSuffix finished with terminal status: $($after.Status)"
                     $completedCount++
                     break
                 }
@@ -498,7 +510,7 @@ try {
                     exit 3
                 }
 
-                Write-Host "$($ticket.Id) advanced to $($after.Status) but is not finished - resuming it in a fresh session."
+                Write-Host "$($ticket.Id)$titleSuffix advanced to $($after.Status) but is not finished - resuming it in a fresh session."
             }
         } finally {
             $release = Invoke-TicketLease -Verb Release -TicketId $ticket.Id
@@ -510,6 +522,7 @@ try {
 
     Write-Host "Reached MaxTickets: $MaxTickets"
     Show-NextQueuePreview -Label 'Next in the queue'
+    try { $host.UI.RawUI.WindowTitle = 'spec-all: queue finished' } catch { }
     exit 0
 } finally {
     Exit-InstanceLock

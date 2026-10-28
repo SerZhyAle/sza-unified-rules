@@ -165,9 +165,10 @@ function Show-Snapshot {
         # One id per line costs a screen-height per five tickets and says nothing a comma cannot. A
         # lease the liveness helper would sweep is kept and marked - this view writes nothing.
         $parts = foreach ($l in $leases) {
-            if ($l.liveness -eq 'foreign-stale') { "$($l.id) (stale)" }
-            elseif ($l.liveness -eq 'unknown') { "$($l.id) (?)" }
-            else { $l.id }
+            $tName = if ($l.PSObject.Properties['title'] -and $l.title) { " ($($l.title))" } else { '' }
+            if ($l.liveness -eq 'foreign-stale') { "$($l.id)$tName (stale)" }
+            elseif ($l.liveness -eq 'unknown') { "$($l.id)$tName (?)" }
+            else { "$($l.id)$tName" }
         }
         Write-Host ("  " + ($parts -join ', '))
     }
@@ -340,7 +341,8 @@ function Show-Snapshot {
     } else {
         foreach ($c in $children) {
             $age = if ($null -ne $c.ageMinutes) { '{0,4:N0} min' -f [double]$c.ageMinutes } else { '   ? min' }
-            Write-Host ("  pid {0,-7} {1}  ticket {2}  model {3}" -f $c.pid, $age, $c.ticket, $c.model) -ForegroundColor Green
+            $titleSuffix = if ($c.PSObject.Properties['title'] -and $c.title) { " - $($c.title)" } else { '' }
+            Write-Host ("  pid {0,-7} {1}  ticket {2}{3}  model {4}" -f $c.pid, $age, $c.ticket, $titleSuffix, $c.model) -ForegroundColor Green
 
             $quiet = $c.quietMinutes
             $writeColour = if ($null -eq $quiet) { 'DarkGray' }

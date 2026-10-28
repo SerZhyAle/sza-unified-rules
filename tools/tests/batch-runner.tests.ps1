@@ -340,6 +340,17 @@ try {
         $marker = Split-Path $p -Leaf
         $drainer = Start-Process pwsh -ArgumentList '-NoProfile', '-Command', "Start-Sleep 120 # $marker" -PassThru -WindowStyle Hidden
         try {
+            $runDir = Join-Path $p 'temp/spec-queue'
+            New-Item -ItemType Directory -Path $runDir -Force | Out-Null
+            [ordered]@{
+                schema     = 1
+                pid        = $drainer.Id
+                startTicks = $drainer.StartTime.Ticks
+                instance   = 'a'
+                ticket     = 'S0001'
+                runnerPid  = $PID
+                startedAt  = (Get-Date).ToString('s')
+            } | ConvertTo-Json -Compress | Set-Content (Join-Path $runDir 'child-a.json') -Encoding utf8
             Set-Content (Join-Path $p 'temp/STOP-SPEC-QUEUE') 'stop'
             $r = Invoke-Proc $p @($batch)
             Assert-That ($r.code -eq 3) "expected exit 3, got $($r.code): $($r.output)"
@@ -358,6 +369,56 @@ try {
         Assert-That ($killResult.code -eq 0) "runner exit $($killResult.code) after the kill: $($killResult.output)"
         Assert-That (-not (Test-Alive $killPid)) 'the grandchild survived -Stop -Kill'
         Assert-That ($killResult.seconds -lt 150) "the runner needed $([int]$killResult.seconds) s to end after the kill"
+    }
+
+    Test-Case 'batch S0019: -Stop -Kill terminates only children of this repository and the named instance' {
+        $pOther = New-Project 'b-scope-other' @{ S0001 = 'idle' } 'a' @('only')
+        $pTarget = New-Project 'b-scope-target' @{ S0001 = 'idle' } 'a' @('only')
+        Set-BatchProfile $pOther
+        Set-BatchProfile $pTarget
+        $otherChild = Start-Process pwsh -ArgumentList '-NoProfile', '-Command', 'Start-Sleep 120' -PassThru -WindowStyle Hidden
+        $targetChildA = Start-Process pwsh -ArgumentList '-NoProfile', '-Command', 'Start-Sleep 120' -PassThru -WindowStyle Hidden
+        $targetChildB = Start-Process pwsh -ArgumentList '-NoProfile', '-Command', 'Start-Sleep 120' -PassThru -WindowStyle Hidden
+        try {
+            $otherRunDir = Join-Path $pOther 'temp/spec-queue'
+            New-Item -ItemType Directory -Path $otherRunDir -Force | Out-Null
+            [ordered]@{ schema = 1; pid = $otherChild.Id; startTicks = $otherChild.StartTime.Ticks; instance = 'a'; ticket = 'S0001'; runnerPid = $PID; startedAt = (Get-Date).ToString('s') } |
+                ConvertTo-Json -Compress | Set-Content (Join-Path $otherRunDir 'child-a.json') -Encoding utf8
+
+            $targetRunDir = Join-Path $pTarget 'temp/spec-queue'
+            New-Item -ItemType Directory -Path $targetRunDir -Force | Out-Null
+            [ordered]@{ schema = 1; pid = $targetChildA.Id; startTicks = $targetChildA.StartTime.Ticks; instance = 'a'; ticket = 'S0001'; runnerPid = $PID; startedAt = (Get-Date).ToString('s') } |
+                ConvertTo-Json -Compress | Set-Content (Join-Path $targetRunDir 'child-a.json') -Encoding utf8
+            [ordered]@{ schema = 1; pid = $targetChildB.Id; startTicks = $targetChildB.StartTime.Ticks; instance = 'b'; ticket = 'S0002'; runnerPid = $PID; startedAt = (Get-Date).ToString('s') } |
+                ConvertTo-Json -Compress | Set-Content (Join-Path $targetRunDir 'child-b.json') -Encoding utf8
+
+            # Step 1: -Stop -Kill -Instance a in target project kills only instance a's child, leaving instance b and the other project's child alive
+            $killInstA = Invoke-Proc $pTarget @($batch, '-Stop', '-Kill', '-Instance', 'a')
+            Assert-That ($killInstA.code -eq 0) "kill instance a exit $($killInstA.code): $($killInstA.output)"
+            Assert-That ($killInstA.output -match "-Kill: terminating pid $($targetChildA.Id)") "instance a was not terminated: $($killInstA.output)"
+            Assert-That (-not (Get-Process -Id $targetChildA.Id -ErrorAction SilentlyContinue)) 'instance a child survived instance kill'
+            Assert-That ([bool](Get-Process -Id $targetChildB.Id -ErrorAction SilentlyContinue)) 'instance b child was killed by instance a kill'
+            Assert-That ([bool](Get-Process -Id $otherChild.Id -ErrorAction SilentlyContinue)) 'other repository child was killed by target repo kill'
+
+            # Step 2: -Stop -Kill in target project kills instance b, still leaving other repository's child alive
+            $killAll = Invoke-Proc $pTarget @($batch, '-Stop', '-Kill')
+            Assert-That ($killAll.code -eq 0) "kill all exit $($killAll.code): $($killAll.output)"
+            Assert-That ($killAll.output -match "-Kill: terminating pid $($targetChildB.Id)") "instance b was not terminated: $($killAll.output)"
+            Assert-That (-not (Get-Process -Id $targetChildB.Id -ErrorAction SilentlyContinue)) 'instance b child survived all-instances kill'
+            Assert-That ([bool](Get-Process -Id $otherChild.Id -ErrorAction SilentlyContinue)) 'other repository child was killed by target repo kill all'
+
+            # Step 3: Draining check isolation - a project with a leftover STOP-SPEC-QUEUE but no children of its own is not blocked by another repository's child
+            $pFresh = New-Project 'b-scope-fresh' @{ S0001 = 'idle' } 'a' @('only')
+            Set-BatchProfile $pFresh
+            Set-Content (Join-Path $pFresh 'temp/STOP-SPEC-QUEUE') 'stop'
+            $freshRun = Invoke-Proc $pFresh @($batch)
+            Assert-That ($freshRun.code -eq 0) "fresh run exit $($freshRun.code): $($freshRun.output)"
+            Assert-That ($freshRun.output -match 'clearing a stop flag left over') 'fresh run did not clear leftover stop when other repo child was running'
+        } finally {
+            & taskkill.exe /PID $otherChild.Id /T /F 2>&1 | Out-Null
+            & taskkill.exe /PID $targetChildA.Id /T /F 2>&1 | Out-Null
+            & taskkill.exe /PID $targetChildB.Id /T /F 2>&1 | Out-Null
+        }
     }
 
     Test-Case 'R0 rendered: a dry run launches nothing and does not run the start step' {

@@ -12,6 +12,8 @@
 #   Lock-PqRepo                 takes run\repo-<key>.lock for a non-concurrent repository pass.
 #   Set-PqRepoLockPass          records the pass's runner process on that lock, so an orphaned pass keeps it held.
 #   Unlock-PqRepo               releases run\repo-<key>.lock.
+#   Get-PqDropMark              a dropped ticket's status, updated and spec-file time, read from the ledger files.
+#   Get-PqDropChange            which of the three differs from the mark taken when the drop was made, or $null.
 #   Start-PqLoop                the main execution loop of pq start (V1-V9).
 
 function Get-PqNextRank {
@@ -163,7 +165,7 @@ function Get-PqWorkerSlot($Registry) {
     }
 }
 
-function Set-PqWorkerState([int]$Slot, [string]$Repo = $null, [string]$Ticket = $null) {
+function Set-PqWorkerState([int]$Slot, [string]$Repo = $null, [string]$Ticket = $null, [string]$Title = $null, [string]$Agent = $null) {
     Invoke-PqStateLock {
         $root = Get-PqRoot
         $runDir = Join-Path $root 'run'
@@ -174,6 +176,8 @@ function Set-PqWorkerState([int]$Slot, [string]$Repo = $null, [string]$Ticket = 
             startedAt = (Get-Process -Id $PID).StartTime.ToUniversalTime().ToString('o')
             repository = $Repo
             ticket = $Ticket
+            title = $Title
+            agent = $Agent
             since = [DateTimeOffset]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
         }
         $tmp = "$wf.$PID.tmp"
@@ -272,15 +276,20 @@ function Invoke-PqPassChild {
         [Parameter(Mandatory)][string]$Script,
         [Parameter(Mandatory)][string]$RepoPath,
         [Parameter(Mandatory)][string]$TicketId,
+        [string]$TicketTitle = '',
         [string]$Instance = 'pq1',
         [Parameter(Mandatory)][string]$PermissionMode,
-        [scriptblock]$OnStarted
+        [scriptblock]$OnStarted,
+        # The agent of the pass, when it is not claude (Get-PqAgentPassArgs): it carries its own -ModelPolicy.
+        [string[]]$AgentArgs = @()
     )
     # A registry record may spell the drive letter in lower case; the agent CLI would then see an untrusted workspace.
     $RepoPath = ConvertTo-PqFullPath $RepoPath
     $pwsh = (Get-Command pwsh -CommandType Application | Select-Object -First 1).Source
     $psi = [Diagnostics.ProcessStartInfo]::new($pwsh)
-    $passArgs = @('-NoProfile', '-File', $Script, '-RepoRoot', $RepoPath, '-Ids', $TicketId, '-MaxTickets', '1', '-ModelPolicy', 'shape', '-Instance', $Instance)
+    $passArgs = @('-NoProfile', '-File', $Script, '-RepoRoot', $RepoPath, '-Ids', $TicketId, '-MaxTickets', '1', '-Instance', $Instance)
+    $AgentArgs = @(@($AgentArgs) | Where-Object { $null -ne $_ })
+    if ($AgentArgs.Count -gt 0) { $passArgs += $AgentArgs } else { $passArgs += @('-ModelPolicy', 'shape') }
     if ($PermissionMode) { $passArgs += @('-PermissionMode', $PermissionMode) }
     foreach ($a in $passArgs) { $psi.ArgumentList.Add([string]$a) }
     $psi.UseShellExecute = $false
@@ -297,9 +306,11 @@ function Invoke-PqPassChild {
         # The agent CLI prints its answer only when it finishes, so a minute-by-minute line is the only sign of life.
         $passSw = [Diagnostics.Stopwatch]::StartNew()
         $beatAt = 60
+        $titlePart = if ($TicketTitle) { " - $TicketTitle" } else { '' }
+        try { $host.UI.RawUI.WindowTitle = "pass $Instance $TicketId$titlePart" } catch { }
         while (-not $proc.WaitForExit(250)) {
             if ($passSw.Elapsed.TotalSeconds -ge $beatAt) {
-                Write-Host ('pass {0} {1} - still running, {2:hh\:mm\:ss} elapsed' -f $Instance, $TicketId, $passSw.Elapsed) -ForegroundColor DarkGray
+                Write-Host ('pass {0} {1}{2} - still running, {3:hh\:mm\:ss} elapsed' -f $Instance, $TicketId, $titlePart, $passSw.Elapsed) -ForegroundColor DarkGray
                 $beatAt += 60
             }
             $stop = Read-PqState (Get-PqPath -Kind stop)
@@ -382,6 +393,35 @@ function Read-PqPassOutcome {
     }
 }
 
+# The drop of rule 43 (S0016 R31): a ticket that came back unmoved stays out of the rank until its status, its `updated`
+# or its spec file's modification time differs from what they were when the pass ended. The mark is taken after the
+# pass, so the pass's own writes never lift its own drop. Read from the ledger files directly (no child process), so a
+# waiting worker can look once a poll at no cost. $null when the ticket or its ledger cannot be read; a drop whose mark
+# is $null stays for the run, as it did before marks existed.
+function Get-PqDropMark {
+    param([Parameter(Mandatory)][string]$RepoPath, [Parameter(Mandatory)][string]$TicketId, $Snapshot)
+    try {
+        $snap = if ($null -ne $Snapshot) { $Snapshot } else { Get-PqLedgerSnapshot -RepoPath $RepoPath }
+        if (-not $snap.complete -or -not $snap.tickets.Contains($TicketId)) { return $null }
+        $t = $snap.tickets[$TicketId]
+        $specMtime = $null
+        if ($t.file) {
+            $f = Resolve-PqRepoPathValue $snap.root ([string]$t.file)
+            if ([IO.File]::Exists($f)) { $specMtime = [IO.File]::GetLastWriteTimeUtc($f).ToString('o') }
+        }
+        return [ordered]@{ status = [string]$t.status; updated = [string]$t.updated; specMtime = [string]$specMtime }
+    }
+    catch { return $null }
+}
+
+function Get-PqDropChange($Mark, $Current) {
+    if ($null -eq $Mark -or $null -eq $Current) { return $null }
+    if ($Current.status -cne $Mark.status) { return 'status' }
+    if ($Current.updated -cne $Mark.updated) { return 'updated' }
+    if ($Current.specMtime -cne $Mark.specMtime) { return 'specMtime' }
+    return $null
+}
+
 function ConvertTo-PqPassEndOutcome([string]$Outcome) {
     switch ($Outcome) {
         'ok' { 'ok' }
@@ -447,6 +487,10 @@ function Start-PqLoop {
     $passCount = 0
     $movedCount = 0
     $exclude = [Collections.Generic.List[string]]::new()
+    $drops = @{}
+    $xblocked = @{}
+    $joinSeen = @{}
+    $nextDiscoveryAt = [DateTime]::MinValue
     $currentRepoLock = $null
     $exitCode = 0
     $runSw = [Diagnostics.Stopwatch]::StartNew()
@@ -474,6 +518,12 @@ function Start-PqLoop {
                 break
             }
 
+            # A stamped repository under a discovery root joins by itself (rule 49): at the start, then every ten minutes.
+            if ([DateTime]::UtcNow -ge $nextDiscoveryAt) {
+                $nextDiscoveryAt = [DateTime]::UtcNow.AddMinutes(10)
+                try { $null = Invoke-PqDiscovery -Registry $Registry -Seen $joinSeen -HarnessRoot $harness -Log $log -Run $runId -Worker $slot } catch { }
+            }
+
             # 3. Check occupied repositories
             $current = Read-PqRegistry
             if (-not $current.ok) { throw 'RegistryInvalid: cannot reload the registry' }
@@ -489,6 +539,39 @@ function Start-PqLoop {
                 if ([IO.File]::Exists($qpSync)) { $null = Sync-PqRegisteredQueues -Path $qpSync -Registry $Registry -Log }
             }
             catch { }
+
+            # A dropped ticket the owner (or anyone) changed since its drop is offered again: one ledger read per
+            # repository that holds a drop.
+            if ($drops.Count -gt 0) {
+                $snaps = @{}
+                foreach ($dk in @($drops.Keys)) {
+                    $drop = $drops[$dk]
+                    $dropRepo = $byKey[$drop.repo]
+                    if ($null -eq $dropRepo) { continue }
+                    if (-not $snaps.ContainsKey($drop.repo)) {
+                        try { $snaps[$drop.repo] = Get-PqLedgerSnapshot -RepoPath ([string]$dropRepo.path) } catch { $snaps[$drop.repo] = $null }
+                    }
+                    if ($null -eq $snaps[$drop.repo]) { continue }
+                    $changed = Get-PqDropChange $drop.mark (Get-PqDropMark -RepoPath ([string]$dropRepo.path) -TicketId $drop.id -Snapshot $snaps[$drop.repo])
+                    if (-not $changed) { continue }
+                    $drops.Remove($dk)
+                    [void]$exclude.Remove($dk)
+                    $null = Write-PqEvent -Log $log -Ev 'ticket.dropLifted' -Run $runId -Repo $drop.repo -Id $drop.id -Worker $slot -D ([ordered]@{ changed = $changed })
+                    Write-Host "ticket $dk changed ($changed) - offered again"
+                }
+            }
+
+            # A ticket held by a blocker in another repository (rule 52) is offered again once that blocker is released.
+            foreach ($bk in @($xblocked.Keys)) {
+                $held = $xblocked[$bk]
+                $still = Get-PqXrepoBlock -Registry $Registry -RepoKey $held.repo -TicketId $held.id
+                if ($null -ne $still) { continue }
+                $xblocked.Remove($bk)
+                [void]$exclude.Remove($bk)
+                $null = Write-PqEvent -Log $log -Ev 'xrepo.resolve' -Run $runId -Repo $held.repo -Id $held.id -Worker $slot -D ([ordered]@{ blocked = $bk; blocker = $held.blocker; state = 'released' })
+                $null = Write-PqEvent -Log $log -Ev 'ticket.unblocked' -Run $runId -Repo $held.repo -Id $held.id -Worker $slot -D ([ordered]@{ blocker = $held.blocker })
+                Write-Host "ticket $bk - blocker $($held.blocker) released, offered again"
+            }
 
             # 4. Rank. The loop reads only the first candidate, so the walk ends at the first head found: one picker run
             # per queue row costs minutes on a queue of a hundred rows.
@@ -549,9 +632,62 @@ function Start-PqLoop {
             if ($waiting) { Write-Host 'queue resumed'; $waiting = $false }
             $repoKey = [string]$cand.repo
             $ticketId = [string]$cand.id
+            $ticketTitle = [string]$cand.title
             $repoRec = $byKey[$repoKey]
             $repoPath = [string]$repoRec.path
             $isConcurrent = (Get-PqValue $repoRec 'concurrent' $false) -eq $true
+
+            # Rule 52: a blocker in another repository that is not released keeps the ticket out; rank again at once.
+            $xb = Get-PqXrepoBlock -Registry $Registry -RepoKey $repoKey -TicketId $ticketId
+            if ($null -ne $xb) {
+                $xbKey = "$repoKey`:$ticketId"
+                $exclude.Add($xbKey)
+                $xblocked[$xbKey] = @{ repo = $repoKey; id = $ticketId; blocker = $xb.blocker }
+                $null = Write-PqEvent -Log $log -Ev 'xrepo.resolve' -Run $runId -Repo $repoKey -Id $ticketId -Worker $slot -D ([ordered]@{ blocked = $xbKey; blocker = $xb.blocker; state = $xb.state; blockerStatus = $xb.status })
+                if ($xb.state -ceq 'cycle') { $null = Write-PqEvent -Log $log -Ev 'xrepo.cycle' -Run $runId -Worker $slot -D ([ordered]@{ members = @($xbKey, $xb.blocker) }) }
+                $null = Write-PqEvent -Log $log -Ev 'ticket.blocked' -Run $runId -Repo $repoKey -Id $ticketId -Worker $slot -D ([ordered]@{ status = [string]$cand.status; why = (ConvertTo-PqCut $xb.why 80); blocker = $xb.blocker })
+                Write-Host "ticket $xbKey waits on $($xb.blocker) ($($xb.state): $($xb.why))"
+                continue
+            }
+
+            if (-not $ticketTitle) {
+                $rec = Get-PqTicketRecord -RepoPath $repoPath -Id $ticketId -HarnessRoot $harness
+                if ($rec -and $rec.name) { $ticketTitle = [string]$rec.name }
+                elseif ($rec -and $rec.title) { $ticketTitle = [string]$rec.title }
+            }
+            if (-not $ticketTitle) {
+                try {
+                    $repoPaths = Get-PqRepoPaths -RepoPath $repoPath
+                    $planDir = $repoPaths.SpecsDir
+                    if ([IO.Directory]::Exists($planDir)) {
+                        $files = [IO.Directory]::GetFiles($planDir, "$ticketId*.md")
+                        if ($files.Length -gt 0) {
+                            foreach ($line in [IO.File]::ReadLines($files[0])) {
+                                if ($line -match '^#\s+(?:' + [regex]::Escape($ticketId) + '\s*[-:]\s*)?(?<title>.+)$') {
+                                    $ticketTitle = $Matches['title'].Trim()
+                                    break
+                                }
+                            }
+                        }
+                    }
+                } catch { }
+            }
+
+            # The agent of this pass (rule 42): the first of agentOrder that is not held, under its maxParallel, admits
+            # the ticket's level and can reach the repository's pipeline. No declared level runs at medium (rule 51).
+            $ticketLevel = Get-PqTicketLevel -RepoPath $repoPath -TicketId $ticketId
+            $pick = Select-PqAgent -Registry $Registry -RepoPath $repoPath -Level $(if ($ticketLevel) { $ticketLevel } else { 'medium' })
+            foreach ($fb in @($pick.fallbacks)) {
+                $null = Write-PqEvent -Log $log -Ev 'agent.fallback' -Run $runId -Repo $repoKey -Id $ticketId -Worker $slot -D ([ordered]@{ from = $fb.from; to = $pick.agent; repo = $repoKey; id = $ticketId; why = $fb.why })
+            }
+            if (-not $pick.agent) {
+                $null = Write-PqEvent -Log $log -Ev 'dispatch.skip' -Run $runId -Repo $repoKey -Id $ticketId -Worker $slot -D ([ordered]@{ why = 'noAgent' })
+                Write-Host "ticket $repoKey`:$ticketId - no agent may take it now ($((@($pick.fallbacks) | ForEach-Object { "$($_.from): $($_.why)" }) -join ', ')); waiting 30 s"
+                for ($w = 0; $w -lt 30 -and -not [IO.File]::Exists($stopPath); $w++) { Start-Sleep -Seconds 1 }
+                continue
+            }
+            $agentName = [string]$pick.agent
+            $agentArgs = if ($agentName -ceq 'claude') { @() } else { Get-PqAgentPassArgs $pick }
 
             if (-not $isConcurrent) {
                 $currentRepoLock = Lock-PqRepo -RepoKey $repoKey
@@ -561,7 +697,7 @@ function Start-PqLoop {
             # A stop may arrive while a repository's picker is running.
             if ([IO.File]::Exists($stopPath)) { continue }
 
-            Set-PqWorkerState -Slot $slot -Repo $repoKey -Ticket $ticketId
+            Set-PqWorkerState -Slot $slot -Repo $repoKey -Ticket $ticketId -Title $ticketTitle -Agent $agentName
             $passNum = $passCount + 1
             $passId = "$runId.$passNum"
             $statusBefore = [string]$cand.status
@@ -572,7 +708,7 @@ function Start-PqLoop {
 
             $onStarted = {
                 param($childPid)
-                $null = Write-PqEvent -Log $log -Ev 'pass.launch' -Run $runId -Repo $repoKey -Id $ticketId -Pass $passId -Worker $slot -D ([ordered]@{
+                $null = Write-PqEvent -Log $log -Ev 'pass.launch' -Run $runId -Repo $repoKey -Id $ticketId -Pass $passId -Worker $slot -Agent $agentName -D ([ordered]@{
                     instance = "pq$slot"
                     permission = $permMode
                     statusBefore = $statusBefore
@@ -590,8 +726,10 @@ function Start-PqLoop {
             $profilePath = Join-Path $repoPath '.sza-profile.json'
             $profileHash = if ([IO.File]::Exists($profilePath)) { Get-PqFileHash ([IO.File]::ReadAllBytes($profilePath)) } else { '' }
             $passSw = [Diagnostics.Stopwatch]::StartNew()
-            Write-Host "pass $passNum $repoKey`:$ticketId $statusBefore - started"
-            $childRes = Invoke-PqPassChild -Script $actualRunner -RepoPath $repoPath -TicketId $ticketId -Instance "pq$slot" -PermissionMode $permMode -OnStarted $onStarted
+            $titlePart = if ($ticketTitle) { " - $ticketTitle" } else { '' }
+            $agentPart = if ($agentName -cne 'claude') { " [$agentName]" } else { '' }
+            Write-Host "pass $passNum $repoKey`:$ticketId $statusBefore$titlePart$agentPart - started"
+            $childRes = Invoke-PqPassChild -Script $actualRunner -RepoPath $repoPath -TicketId $ticketId -TicketTitle $ticketTitle -Instance "pq$slot" -PermissionMode $permMode -OnStarted $onStarted -AgentArgs $agentArgs
             $passSw.Stop()
             $elapsedSec = [Math]::Round($passSw.ElapsedMilliseconds / 1000, 1)
 
@@ -604,7 +742,7 @@ function Start-PqLoop {
                 pass = $passId
                 repo = $repoKey
                 id = $ticketId
-                agent = 'claude'
+                agent = $agentName
                 model = $outcomeRes.model
                 complexity = $outcomeRes.complexity
                 statusBefore = $statusBefore
@@ -626,7 +764,7 @@ function Start-PqLoop {
             }
 
             $mappedOutcome = ConvertTo-PqPassEndOutcome $outcomeRes.outcome
-            $null = Write-PqEvent -Log $log -Ev 'pass.end' -Run $runId -Repo $repoKey -Id $ticketId -Pass $passId -Worker $slot -D ([ordered]@{
+            $null = Write-PqEvent -Log $log -Ev 'pass.end' -Run $runId -Repo $repoKey -Id $ticketId -Pass $passId -Worker $slot -Agent $agentName -D ([ordered]@{
                 exit = $childRes.code
                 outcome = $mappedOutcome
                 launches = $outcomeRes.launches
@@ -638,15 +776,43 @@ function Start-PqLoop {
 
             for ($limit = 0; $limit -lt $outcomeRes.limits; $limit++) {
                 $null = Write-PqEvent -Log $log -Ev 'pass.limit' -Run $runId -Repo $repoKey -Id $ticketId -Pass $passId -Worker $slot -D ([ordered]@{
-                    agent = 'claude'
+                    agent = $agentName
                     source = 'log'
                     detector = 'proven'
                 })
             }
 
+            # Rule 48 for an agent other than claude: its limit text is never read, so a fast failure that moved nothing
+            # is a probable limit. The agent is held and polled, the pass is neutral to the ticket, and the next pass
+            # offers the same ticket to the next agent of agentOrder. A pass that did not fail fast clears a hold: it
+            # was the probe.
+            $agentHeldNow = $false
+            if ($agentName -cne 'claude' -and -not $childRes.killed) {
+                $fastFail = (-not $outcomeRes.moved) -and $elapsedSec -lt $script:PqFastFailureSeconds -and $outcomeRes.outcome -cin @('child-failed', 'no-progress', 'launch-failed')
+                if ($fastFail) {
+                    Set-PqAgentHold -Name $agentName -Pass $passId -Source 'fastFailure' -Detector 'unproven'
+                    $agentHeldNow = $true
+                    $poll = [int](Get-PqValue $pick.record 'limitPollMinutes' 30)
+                    $null = Write-PqEvent -Log $log -Ev 'agent.hold' -Run $runId -Repo $repoKey -Id $ticketId -Pass $passId -Worker $slot -Agent $agentName -D ([ordered]@{ agent = $agentName; until = $null; source = 'fastFailure'; detector = 'unproven' })
+                    $null = Write-PqEvent -Log $log -Ev 'agent.unproven' -Run $runId -Worker $slot -Agent $agentName -D ([ordered]@{ agent = $agentName; signal = 'fastFailureNoMove'; count = 1 })
+                    Write-Host "agent $agentName failed fast (${elapsedSec}s, $($outcomeRes.outcome)) - held as a probable limit, probed again in $poll min; the ticket goes to the next agent"
+                }
+                elseif (Remove-PqAgentHold -Name $agentName) {
+                    $null = Write-PqEvent -Log $log -Ev 'agent.resume' -Run $runId -Worker $slot -Agent $agentName -D ([ordered]@{ agent = $agentName; by = 'probe' })
+                }
+            }
+
             # V5: A ticket that did not move (or failed, except on limit-hit)
-            if ($outcomeRes.outcome -cne 'limit-hit' -and (-not $outcomeRes.moved -or $outcomeRes.outcome -cnotin @('ok', 'context-handoff'))) {
+            if (-not $agentHeldNow -and $outcomeRes.outcome -cne 'limit-hit' -and (-not $outcomeRes.moved -or $outcomeRes.outcome -cnotin @('ok', 'context-handoff'))) {
                 $exclude.Add("$repoKey`:$ticketId")
+                $mark = Get-PqDropMark -RepoPath $repoPath -TicketId $ticketId
+                if ($null -ne $mark) { $drops["$repoKey`:$ticketId"] = @{ repo = $repoKey; id = $ticketId; mark = $mark } }
+                $null = Write-PqEvent -Log $log -Ev 'ticket.dropped' -Run $runId -Repo $repoKey -Id $ticketId -Pass $passId -Worker $slot -D ([ordered]@{
+                    statusAt = Get-PqValue $mark 'status'
+                    updatedAt = Get-PqValue $mark 'updated'
+                    specMtime = Get-PqValue $mark 'specMtime'
+                    after = $passCount + 1
+                })
             }
 
             if ($currentRepoLock) {
@@ -657,7 +823,7 @@ function Start-PqLoop {
 
             $passCount++
             if ($outcomeRes.moved) { $movedCount++ }
-            Write-Host "pass $passNum $repoKey`:$ticketId $statusBefore -> $($outcomeRes.statusAfter) ($($outcomeRes.outcome), ${elapsedSec}s)"
+            Write-Host "pass $passNum $repoKey`:$ticketId $statusBefore -> $($outcomeRes.statusAfter)$titlePart ($($outcomeRes.outcome), ${elapsedSec}s)"
         }
     }
     catch {
@@ -682,6 +848,7 @@ function Start-PqLoop {
         }
         Remove-PqWorkerState -Slot $slot
         try { $null = Close-PqLog -Log $log } catch { }
+        try { $host.UI.RawUI.WindowTitle = "pq - stopped" } catch { }
         Write-Host "pq stopped: passes=$passCount exit=$exitCode"
     }
     return $exitCode

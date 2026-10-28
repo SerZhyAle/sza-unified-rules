@@ -92,7 +92,8 @@ Partial Class MainForm
         AddTextColumn(dgvWorkers, "colSlot", "Slot", 45)
         AddTextColumn(dgvWorkers, "colPid", "PID", 60)
         AddTextColumn(dgvWorkers, "colWorkerRepo", "Project", 95)
-        AddTextColumn(dgvWorkers, "colWorkerTicket", "Ticket", 115)
+        AddTextColumn(dgvWorkers, "colWorkerTicket", "Ticket", 90)
+        AddTextColumn(dgvWorkers, "colWorkerTitle", "Title", 180)
         AddTextColumn(dgvWorkers, "colElapsed", "Running", 80)
         AddTextColumn(dgvWorkers, "colWorkerAlive", "State", 60)
 
@@ -285,7 +286,7 @@ Partial Class MainForm
             Dim workersScroll = FirstVisibleRow(dgvWorkers)
             dgvWorkers.Rows.Clear()
             For Each w In workers
-                Dim idx = dgvWorkers.Rows.Add(w.Slot, w.Pid, w.Repository, w.Ticket, w.Elapsed, If(w.Alive, "Alive", "Dead"))
+                Dim idx = dgvWorkers.Rows.Add(w.Slot, w.Pid, w.Repository, w.Ticket, w.Title, w.Elapsed, If(w.Alive, "Alive", "Dead"))
                 If w.Alive Then
                     dgvWorkers.Rows(idx).DefaultCellStyle.ForeColor = p.StatusSuccess
                     dgvWorkers.Rows(idx).DefaultCellStyle.Font = _boldWorkers

@@ -104,6 +104,7 @@ $pq = Join-Path $PSScriptRoot 'pq.ps1'
 $harness = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $pwshExe = (Get-Process -Id $PID).Path
 . (Join-Path $PSScriptRoot 'lib/picker.ps1')
+. (Join-Path $PSScriptRoot 'lib/ledger-watch.ps1')
 
 function Stop-Draft([int] $Code, [string] $Message) {
     Write-Host "spec-draft: $Message" -ForegroundColor Red
@@ -179,16 +180,16 @@ if (-not (Test-Path -LiteralPath $profileFile -PathType Leaf)) {
     Stop-Draft 2 "$root has no .sza-profile.json - its task flow is not set up. Run the task-flow-init skill there first"
 }
 $profile = ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($profileFile)) -DateKind String
-$journalRel = [string](Get-Prop (Get-Prop $profile 'paths') 'journal' 'PLAN/spec-catalog.jsonl')
+$journalRel = [string](Get-Prop (Get-Prop $profile 'paths') 'journal' $script:PqRepoDefaults.paths.journal)
 if (-not (Test-Path -LiteralPath (Join-Path $root $journalRel) -PathType Leaf)) {
     Stop-Draft 2 "$root has no ticket ledger at $journalRel - run the task-flow-init skill there first"
 }
 $grammar = Get-Prop $profile 'grammar'
 $idPattern = [string](Get-Prop $grammar 'ticketIdPattern' '^S\d{4}$')
-$specTemplate = [string](Get-Prop $grammar 'specFileTemplate' 'PLAN/{0}_{1}.md')
+$specTemplate = [string](Get-Prop $grammar 'specFileTemplate' $script:PqRepoDefaults.grammar.specFileTemplate)
 
 # ---- 3. the capture script ----
-$own = Join-Path $root 'scripts/utils/capture-draft.ps1'
+$own = Join-Path $root (Join-Path 'scripts' (Join-Path 'utils' 'capture-draft.ps1'))
 $ownScript = Test-Path -LiteralPath $own -PathType Leaf
 $captureScript = if ($ownScript) { $own } else { Join-Path $harness 'spec_catalog/capture-draft.ps1' }
 if ($Attach) {
