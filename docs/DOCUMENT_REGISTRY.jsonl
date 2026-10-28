@@ -61,5 +61,6 @@
 {"path": "tools/harness/README.md", "topic": "SZA harness - the development-process layer, shipped", "area": "tools", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "tools/harness/all_features/README.md", "topic": "ALL_FEATURES inventory - schema notes", "area": "tools", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "tools/harness/document_registry/README.md", "topic": "Document registry - how a page gets announced", "area": "tools", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "tools/harness/portfolio/README.md", "topic": "pq - the portfolio queue, operator's guide", "area": "tools", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "tools/harness/scaffold/templates/ticket-template.md", "topic": "{{ID}}_{{SLUG}}", "area": "tools", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "tools/harness/spec_catalog/SCHEMA.md", "topic": "Spec Catalog - Journal Schema", "area": "tools", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}

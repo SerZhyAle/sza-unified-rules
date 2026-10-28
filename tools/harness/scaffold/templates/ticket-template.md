@@ -2,6 +2,7 @@
 
 **Status:** Draft
 **Created:** {{DATE}}
+**Complexity:** {{COMPLEXITY}}
 
 ## 0. Owner request (verbatim)
 

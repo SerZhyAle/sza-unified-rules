@@ -11,11 +11,16 @@
     fixture. What it does not prove: the gate against a real repository (the portfolio run is
     `check-compliance` in each repo), or any rule the gate does not read.
 
+    The FLOW cases (S0015 R39) exercise the gate's task-flow group, which runs only behind -CheckTaskFlow.
+
+    -Case is a regular expression; a case whose name does not match it is not run and not counted.
+
     Exit codes: 0 all cases passed; 1 an assertion failed; 2 prerequisites unavailable.
 #>
 [CmdletBinding()]
 param(
     [string]$SourceRoot = (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent),
+    [string]$Case,
     [switch]$KeepScratch
 )
 
@@ -27,14 +32,15 @@ $savedRoot = $env:SZA_PROJECT_ROOT
 
 function Assert-That([bool]$Condition, [string]$Reason) { if (-not $Condition) { throw $Reason } }
 function Test-Case([string]$Name, [scriptblock]$Body) {
+    if ($Case -and $Name -notmatch $Case) { return }
     $script:run++
     try { & $Body; "OK $Name" }
     catch { $script:failed++; "FAIL $Name - $($_.Exception.Message)" }
 }
 
 # A conforming fixture: README, LICENSE and a stamp that declares no ledger shape. `Files` adds or replaces
-# files (relative path -> text); a value of $null leaves that file out.
-function New-Fixture([string]$Name, [hashtable]$Stamp = @{}, [hashtable]$Files = @{}) {
+# files (relative path -> text); a value of $null leaves that file out. -NoStamp leaves the stamp out.
+function New-Fixture([string]$Name, [hashtable]$Stamp = @{}, [hashtable]$Files = @{}, [switch]$NoStamp) {
     $root = Join-Path $scratch $Name
     New-Item -ItemType Directory -Path $root | Out-Null
     & git -C $root init -q 2>&1 | Out-Null
@@ -42,7 +48,7 @@ function New-Fixture([string]$Name, [hashtable]$Stamp = @{}, [hashtable]$Files =
     foreach ($k in $Stamp.Keys) { $doc[$k] = $Stamp[$k] }
     $all = [ordered]@{ 'README.md' = '# fixture'; 'LICENSE' = 'MIT'; 'CLAUDE.md' = '# fixture rules' }
     foreach ($k in $Files.Keys) { $all[$k] = $Files[$k] }
-    $doc | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $root '.sza-canon.json') -Encoding utf8
+    if (-not $NoStamp) { $doc | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $root '.sza-canon.json') -Encoding utf8 }
     foreach ($rel in $all.Keys) {
         if ($null -eq $all[$rel]) { continue }
         $path = Join-Path $root $rel
@@ -55,20 +61,25 @@ function New-Fixture([string]$Name, [hashtable]$Stamp = @{}, [hashtable]$Files =
 # The finding ids the gate reports for one group of a fixture, as 'ID:severity'. The whole gate runs and the
 # group is read by id prefix: -Only matches one exact id, and `pwsh -File` would bind a second id to the
 # next positional parameter.
-$groupPrefix = @{ LAY = 'SZA-LAY'; RULES = 'SZA-RULES'; CTR = 'SZA-CTR' }
-function Get-Findings([string]$Root, [string]$Group) {
-    $output = & pwsh -NoProfile -File (Join-Path $SourceRoot 'tools/check-compliance.ps1') -RepoRoot $Root -Json 2>&1 | Out-String
+# `Extra` is appended to the gate's arguments (the FLOW cases pass -CheckTaskFlow).
+$groupPrefix = @{ LAY = 'SZA-LAY'; RULES = 'SZA-RULES'; CTR = 'SZA-CTR'; FLOW = 'SZA-FLOW'; CANON = 'SZA-CANON' }
+function Invoke-Gate([string]$Root, [string[]]$Extra = @()) {
+    $output = & pwsh -NoProfile -File (Join-Path $SourceRoot 'tools/check-compliance.ps1') -RepoRoot $Root -Json @Extra 2>&1 | Out-String
+    $code = $LASTEXITCODE
     $start = $output.IndexOf('{')
-    if ($start -lt 0) { throw "the gate printed no report (exit $LASTEXITCODE): $($output.Trim())" }
-    $report = $output.Substring($start) | ConvertFrom-Json
+    if ($start -lt 0) { throw "the gate printed no report (exit $code): $($output.Trim())" }
+    [pscustomobject]@{ Exit = $code; Report = ($output.Substring($start) | ConvertFrom-Json) }
+}
+function Get-Findings([string]$Root, [string]$Group, [string[]]$Extra = @()) {
+    $report = (Invoke-Gate $Root $Extra).Report
     @($report.findings | Where-Object { $_.id -like "$($groupPrefix[$Group])*" } | ForEach-Object { "$($_.id):$($_.severity)" })
 }
-function Assert-Finding([string]$Root, [string]$Group, [string]$Expected) {
-    $found = Get-Findings $Root $Group
+function Assert-Finding([string]$Root, [string]$Group, [string]$Expected, [string[]]$Extra = @()) {
+    $found = Get-Findings $Root $Group $Extra
     Assert-That ($found -contains $Expected) "expected $Expected, the gate said: $($found -join ', ')"
 }
-function Assert-NoFinding([string]$Root, [string]$Group, [string]$IdPrefix) {
-    $found = @(Get-Findings $Root $Group | Where-Object { $_ -like "$IdPrefix*" })
+function Assert-NoFinding([string]$Root, [string]$Group, [string]$IdPrefix, [string[]]$Extra = @()) {
+    $found = @(Get-Findings $Root $Group $Extra | Where-Object { $_ -like "$IdPrefix*" })
     Assert-That ($found.Count -eq 0) "expected no $IdPrefix, the gate said: $($found -join ', ')"
 }
 
@@ -182,6 +193,66 @@ try {
         Assert-That ((Get-Body $revived) -eq $beforeBody) 'a revival changed the text of the spec file beyond its status line'
         & pwsh -NoProfile -File (Join-Path $harness 'spec_catalog/validate.ps1') 2>&1 | Out-Null
         Assert-That ($LASTEXITCODE -eq 0) 'the ledger does not validate after a revival'
+    }
+
+    # --- S0015 R39: stamped repositories need the task flow --------------------------------------------------
+    # The group is advisory and off unless -CheckTaskFlow; Phase 09 of S0015 turns it on by default.
+    $flowOn = @('-CheckTaskFlow')
+    function Get-FlowFinding($Gate) { @($Gate.Report.findings | Where-Object { $_.id -like 'SZA-FLOW*' }) }
+    Test-Case 'flow: the check is off by default' {
+        Assert-NoFinding (New-Fixture 'f1-off') 'FLOW' 'SZA-FLOW'
+    }
+    Test-Case 'flow: with -CheckTaskFlow a stamped repository with no profile, no ledger and no launcher gets FLOW01, FLOW02 and FLOW03 as warnings' {
+        $root = New-Fixture 'f2-bare'
+        $off = Invoke-Gate $root
+        $on = Invoke-Gate $root $flowOn
+        $flow = @(Get-FlowFinding $on)
+        $said = ($flow | ForEach-Object { "$($_.id):$($_.severity)@$($_.path)" }) -join ', '
+        foreach ($want in 'SZA-FLOW01:warn@.sza-profile.json', 'SZA-FLOW02:warn@PLAN/spec-catalog.jsonl', 'SZA-FLOW03:warn@r0.ps1') {
+            Assert-That (($said -split ', ') -contains $want) "expected $want, the gate said: $said"
+        }
+        Assert-That ($flow.Count -eq 3) "expected exactly three FLOW findings, the gate said: $said"
+        # Warnings only: the switch moves neither the error count nor the exit code.
+        Assert-That ($on.Report.errors -eq $off.Report.errors) "the switch changed the error count: $($off.Report.errors) -> $($on.Report.errors)"
+        Assert-That ($on.Exit -eq $off.Exit) "the switch changed the exit code: $($off.Exit) -> $($on.Exit)"
+    }
+    Test-Case 'flow: a repository scaffolded by init-task-flow has no FLOW finding' {
+        $root = New-Fixture 'f3-scaffolded'
+        & pwsh -NoProfile -File (Join-Path $SourceRoot 'tools/harness/scaffold/init-task-flow.ps1') -Root $root 2>&1 | Out-Null
+        Assert-That ($LASTEXITCODE -eq 0) 'the scaffold failed'
+        Assert-That (Test-Path -LiteralPath (Join-Path $root 'r0.ps1')) 'the scaffold wrote no r0.ps1'
+        Assert-NoFinding $root 'FLOW' 'SZA-FLOW' $flowOn
+    }
+    Test-Case 'flow: a ledger moved by the profile''s paths.journal counts, and an a.ps1 with an r0 target counts as a launcher' {
+        $moved = @{ version = '1'; paths = @{ journal = 'LEDGER/rows.jsonl' } } | ConvertTo-Json -Depth 4
+        $aWithR0 = @'
+$targets = [ordered]@{
+    'r0'        = @{ Path = 'scripts\utils\run-mono-queue.ps1'; Args = @{} }
+}
+'@
+        $root = New-Fixture 'f4-moved' -Files @{ '.sza-profile.json' = $moved; 'LEDGER/rows.jsonl' = ''; 'a.ps1' = $aWithR0 }
+        Assert-NoFinding $root 'FLOW' 'SZA-FLOW' $flowOn
+        # The other way round: the default file does not stand in for a moved ledger, and an a.ps1 without an r0 target is no launcher.
+        $root = New-Fixture 'f4-moved-missing' -Files @{ '.sza-profile.json' = $moved; 'PLAN/spec-catalog.jsonl' = ''; 'a.ps1' = "'build' = @{ Path = 'x.ps1' }" }
+        $said = (Get-FlowFinding (Invoke-Gate $root $flowOn) | ForEach-Object { "$($_.id)@$($_.path)" }) -join ', '
+        Assert-That (($said -split ', ') -contains 'SZA-FLOW02@LEDGER/rows.jsonl') "expected SZA-FLOW02 at LEDGER/rows.jsonl, the gate said: $said"
+        Assert-That (($said -split ', ') -contains 'SZA-FLOW03@r0.ps1') "expected SZA-FLOW03, the gate said: $said"
+    }
+    Test-Case 'flow: a dated exemption in the stamp suppresses the finding' {
+        $live = @{ exemptions = @(@{ id = 'SZA-FLOW01'; reason = 'own scheme until the migration ticket'; until = '2099-01-01' }) }
+        $root = New-Fixture 'f5-exempt' $live
+        Assert-NoFinding $root 'FLOW' 'SZA-FLOW01' $flowOn
+        Assert-Finding $root 'FLOW' 'SZA-FLOW02:warn' $flowOn
+        $expired = @{ exemptions = @(@{ id = 'SZA-FLOW01'; reason = 'own scheme until the migration ticket'; until = '2000-01-01' }) }
+        Assert-Finding (New-Fixture 'f5-expired' $expired) 'FLOW' 'SZA-FLOW01:warn' $flowOn
+    }
+    Test-Case 'flow: an unstamped directory gets CANON01 and no FLOW finding' {
+        $root = New-Fixture 'f6-unstamped' -NoStamp
+        $gate = Invoke-Gate $root $flowOn
+        $canon = @($gate.Report.findings | Where-Object { $_.id -eq 'SZA-CANON01' })
+        Assert-That ($canon.Count -eq 1) "expected SZA-CANON01, the gate said: $(($gate.Report.findings | ForEach-Object id) -join ', ')"
+        $flow = @(Get-FlowFinding $gate)
+        Assert-That ($flow.Count -eq 0) "expected no SZA-FLOW, the gate said: $(($flow | ForEach-Object id) -join ', ')"
     }
 }
 catch {

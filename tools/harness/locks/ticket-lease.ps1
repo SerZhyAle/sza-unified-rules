@@ -177,7 +177,9 @@ if ([string]::IsNullOrWhiteSpace($root)) {
     $root = (Get-SzaProjectRoot)
 }
 $leaseDir = Join-Path $root (Get-SzaPath 'leasesDir' -Relative)
-if (-not (Test-Path -LiteralPath $leaseDir)) {
+# List and Status are reads: a read-only caller (spec-next-preflight.ps1, the portfolio picker) must not create
+# the directory; every listing below tolerates its absence.
+if ($Verb -notin @('List', 'Status') -and -not (Test-Path -LiteralPath $leaseDir)) {
     New-Item -ItemType Directory -Path $leaseDir -Force | Out-Null
 }
 

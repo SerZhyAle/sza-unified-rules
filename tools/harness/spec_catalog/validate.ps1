@@ -192,6 +192,30 @@ try {
     Add-Result 'ArchiveSplit' 'FAIL' $_.Exception.Message
 }
 
+# 10. Complexity (S0015 R7, DEVELOPMENT.md section 8): the spec pass rewrites the capture default, so an
+#     Approved ticket whose header still says "not assessed at capture" skipped that checkpoint. Only
+#     Approved is judged - the checkpoint immediately precedes it. A spec with no line at all is not marked:
+#     a ticket captured before the line existed keeps the runner's old routing. WARN at most, never FAIL:
+#     the level steers a model choice, it does not make the ledger wrong. Same window and encoding as the
+#     runner's reader (Get-TicketComplexity in batch/run-spec-queue.ps1).
+$unassessed = New-Object System.Collections.Generic.List[string]
+foreach ($r in $records) {
+    if ($r.status -ne 'Approved') { continue }
+    $specPath = Join-Path $repoRoot $r.file
+    if (-not (Test-Path -LiteralPath $specPath -PathType Leaf)) { continue }
+    foreach ($line in (Get-Content -LiteralPath $specPath -TotalCount 40 -Encoding UTF8)) {
+        if ($line -match '^\*\*Complexity:\*\*') {
+            if ($line -match '^\*\*Complexity:\*\*\s*.*not assessed at capture') { $unassessed.Add($r.id) }
+            break
+        }
+    }
+}
+if ($unassessed.Count -gt 0) {
+    Add-Result 'Complexity' 'WARN' ("Approved tickets still 'not assessed at capture': {0} - rewrite the line at the spec pass (DEVELOPMENT.md section 8)" -f ($unassessed -join ', '))
+} else {
+    Add-Result 'Complexity' 'OK' 'no Approved ticket is still unassessed'
+}
+
 # Render report
 $results | ForEach-Object {
     $color = switch ($_.level) { 'OK' { 'Green' }; 'WARN' { 'Yellow' }; default { 'Red' } }

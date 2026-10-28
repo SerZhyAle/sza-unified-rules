@@ -16,7 +16,12 @@
     without a BOM.
 
     The template is <specs>/TICKET_TEMPLATE.md, written once by scaffold/init-task-flow.ps1 and then
-    owned by the project. Tokens: {{ID}}, {{SLUG}}, {{NAME}}, {{DATE}}, {{TEXT}}.
+    owned by the project. Tokens: {{ID}}, {{SLUG}}, {{NAME}}, {{DATE}}, {{COMPLEXITY}}, {{TEXT}}.
+
+    Every ticket leaves here with a `**Complexity:** <level> - <reason>` header line (DEVELOPMENT.md
+    section 8): the -Complexity value, else `medium - not assessed at capture`, which the spec pass
+    rewrites. A project-owned template written before the token existed has no {{COMPLEXITY}}; the line
+    is then inserted after the `**Created:**` line (else after `**Status:**`, else as line 3).
 
     If the row was written and the file could not be, the row is left in place and named in the error:
     `delete.ps1 -Id <id> -Confirm` retires it, or the file can be written by hand. Nothing is removed
@@ -48,6 +53,12 @@
     `grammar.closedStatuses` when it declares one, else Verified and Archived. With -WhatIf nothing is
     created, so the caller can read the hits and decide.
 
+.PARAMETER Complexity
+    `<light|medium|hard> - <one-line reason>`, written to the spec's `**Complexity:**` line; the level is
+    case-insensitive and written lower-case. Omitted: `medium - not assessed at capture`. A level outside
+    the three, a missing reason or a reason over more than one line is refused with exit 2 before anything
+    is created.
+
 .PARAMETER AllowClosedDuplicate
     Capture anyway after a closed hit - the old defect really did come back, and the new ticket is a
     report rather than a duplicate.
@@ -59,9 +70,12 @@
     pwsh -NoProfile -File capture-draft.ps1 -Slug login-crash -Text "The app closes when I tap Sign in."
     pwsh -NoProfile -File capture-draft.ps1 -Slug export-csv -TextFile request.txt -Priority 70 -DedupQuery export
 
+.EXAMPLE
+    pwsh -NoProfile -File capture-draft.ps1 -Slug fix-typo -Text "Settings says Sav." -Complexity "light - one string"
+
 Exit codes: 0 the ticket exists (the id is the last line printed); 1 the catalog refused the insert or the
-spec file could not be written; 2 bad invocation - slug, text, or the template is missing; 3 refused - the
-dedup query hit a closed ticket and -AllowClosedDuplicate was not given.
+spec file could not be written; 2 bad invocation - slug, text, -Complexity, or the template is missing;
+3 refused - the dedup query hit a closed ticket and -AllowClosedDuplicate was not given.
 #>
 [CmdletBinding(SupportsShouldProcess, PositionalBinding = $false)]
 param(
@@ -73,6 +87,7 @@ param(
     [int]    $Priority = 50,
     [int]    $Tier = -1,
     [string] $DedupQuery = '',
+    [string] $Complexity = '',
     [switch] $AllowClosedDuplicate,
     [switch] $Help
 )
@@ -95,6 +110,19 @@ function Stop-BadInvocation([string] $Reason) {
 # Case-sensitive on purpose: -notmatch is case-insensitive in PowerShell, so [a-z] would let `Bad_Slug` through.
 if ($Slug -cnotmatch '^[a-z0-9][a-z0-9_-]*$' -or $Slug -match '^spec_') {
     Stop-BadInvocation "invalid -Slug '$Slug' - lowercase [a-z0-9_-], starting alphanumeric, not starting with 'spec_'"
+}
+# Checked here, before insert.ps1 runs, so a refused level creates nothing.
+if ($Complexity -match '[\r\n]') {
+    Stop-BadInvocation "invalid -Complexity - the reason is one line; expected '<light|medium|hard> - <one-line reason>'"
+}
+if ($Complexity) {
+    $cx = [regex]::Match($Complexity, '^\s*(light|medium|hard)\s+-\s+(\S.*?)\s*$', 'IgnoreCase')
+    if (-not $cx.Success) {
+        Stop-BadInvocation "invalid -Complexity '$Complexity' - expected '<level> - <one-line reason>' with level light, medium or hard"
+    }
+    $Complexity = '{0} - {1}' -f $cx.Groups[1].Value.ToLowerInvariant(), $cx.Groups[2].Value
+} else {
+    $Complexity = 'medium - not assessed at capture'
 }
 $hasText = $PSBoundParameters.ContainsKey('Text')
 if ($hasText -eq [bool] $TextFile) { Stop-BadInvocation 'give exactly one of -Text and -TextFile' }
@@ -153,6 +181,24 @@ $filePath = Join-Path $root $fileRel
 try {
     if (Test-Path -LiteralPath $filePath) { throw "the spec file already exists: $filePath" }
     $body = $template.Replace('{{ID}}', $id).Replace('{{SLUG}}', $Slug).Replace('{{NAME}}', $Name).Replace('{{DATE}}', (Get-Date -Format 'yyyy-MM-dd'))
+    $body = $body.Replace('{{COMPLEXITY}}', $Complexity)
+    # A template the project wrote before the token existed: insert the line into the header block. Done before
+    # the owner's words go in, so neither a token nor a header-like line inside them can be mistaken for the header.
+    $eol = if ($body.Contains("`r`n")) { "`r`n" } else { "`n" }
+    $lines = [Collections.Generic.List[string]]::new([string[]]($body -split '\r?\n'))
+    $headLines = [Math]::Min(40, $lines.Count)
+    $has = $false
+    for ($i = 0; $i -lt $headLines; $i++) { if ($lines[$i] -match '^\*\*Complexity:\*\*') { $has = $true; break } }
+    if (-not $has) {
+        $at = -1
+        foreach ($anchor in '^\*\*Created:\*\*', '^\*\*Status:\*\*') {
+            for ($i = 0; $i -lt $headLines; $i++) { if ($lines[$i] -match $anchor) { $at = $i + 1; break } }
+            if ($at -ge 0) { break }
+        }
+        if ($at -lt 0) { $at = [Math]::Min(2, $lines.Count) }
+        $lines.Insert($at, "**Complexity:** $Complexity")
+        $body = $lines -join $eol
+    }
     $body = $body.Replace('{{TEXT}}', $Text)
     [IO.File]::WriteAllText($filePath, $body, [Text.UTF8Encoding]::new($false))
 } catch {
@@ -161,5 +207,6 @@ try {
     exit 1
 }
 Write-Host "capture-draft: $fileRel"
+Write-Host "Complexity: $Complexity"
 Write-Output $id
 exit 0

@@ -298,6 +298,48 @@ try {
         Assert-That (@($out.self | Where-Object { $_ }).Count -eq 0) 'a ticket was blocked by itself'
     }
 
+    Test-Case 'rule 9 and 52: a qualified Blocker token is ignored by every local reader and is never read as a local id' {
+        # Rule 52 writes a blocker held in another repository as `Blocker: <repoKey>:<id>` and promises that a local
+        # reader ignores it. This case characterises the shipped readers, so it passes on the unmodified harness; its
+        # guard value is the negative control of S0015 phase 00 step 00.3, a reader that tolerates a `repo:` prefix.
+        $loader = Join-Path $scratch 'qblockers.ps1'
+        @"
+. '$(Join-Path $harness 'spec_catalog/_blocker-links.ps1')'
+`$cases = [ordered]@{
+    qualified = Get-BlockerLinks -SpecText "## 10. Links`n`nBlocker: fms-web:S0028`n" -SelfId S0001
+    russian   = Get-BlockerLinks -SpecText "## 10. Links`n`nБлокер: fms-web:S0028`n" -SelfId S0001
+    mixed     = Get-BlockerLinks -SpecText "## 10. Links`n`nBlocker: S0004`nBlocker: fms-web:S0028`n" -SelfId S0001
+    note      = Get-BlockerLinks -SpecText '' -StatusNote 'waiting. Blocker: fms-web:S0028' -SelfId S0001
+    digitkey  = Get-BlockerLinks -SpecText "## 10. Links`n`nBlocker: s0001:S0002`n" -SelfId S0009
+    depends   = Get-BlockerLinks -SpecText "**Depends on:** fms-web:S0028`n" -SelfId S0001
+}
+`$cases | ConvertTo-Json -Compress
+"@ | Set-Content $loader -Encoding utf8
+        $out = (& pwsh -NoProfile -File $loader 2>&1 | Out-String).Trim() | ConvertFrom-Json
+        Assert-That (@($out.qualified | Where-Object { $_ }).Count -eq 0) "(a) 'Blocker: fms-web:S0028' under '## 10. Links' was read as a local id: $(@($out.qualified) -join ',')"
+        Assert-That (@($out.russian | Where-Object { $_ }).Count -eq 0) "(b) 'Блокер: fms-web:S0028' under '## 10. Links' was read as a local id: $(@($out.russian) -join ',')"
+        Assert-That ((@($out.mixed) -join ',') -eq 'S0004') "(c) a section holding 'Blocker: S0004' and 'Blocker: fms-web:S0028' gave '$(@($out.mixed) -join ',')', not exactly S0004"
+        Assert-That (@($out.note | Where-Object { $_ }).Count -eq 0) "(d) the status note 'waiting. Blocker: fms-web:S0028' was read as a local id: $(@($out.note) -join ',')"
+        # Hazard pins: they record where the local reader is NOT safe, so the contract forbids the input instead.
+        # The SelfId is S0009 here, because the reader drops its own id case-insensitively and S0001 would hide the hazard.
+        Assert-That ((@($out.digitkey) -join ',') -ceq 's0001') "(e) 'Blocker: s0001:S0002' gave '$(@($out.digitkey) -join ',')', not the single id s0001 (the reader is case-insensitive on S\d{4}); rule 41 forbids a key whose second character is a digit"
+        Assert-That ((@($out.depends) -join ',') -eq 'S0028') "(f) '**Depends on:** fms-web:S0028' gave '$(@($out.depends) -join ',')', not the local S0028; rule 52 allows the qualified form only in a Blocker token"
+        # (g) The process level: the closing gate and the picker, in a throwaway project.
+        $p = New-Project 'a-qblock' @('one', 'two')
+        Add-Content (Join-Path $p (Get-Row $p 'S0001').file) "`n## 10. Links`n`nBlocker: other-repo:S0099`n"
+        # A ticket whose only blocker is in another repository is not parked in BlockByOtherTask; the dispatcher holds it (rule 52).
+        $gate = Invoke-Tool $p 'spec_catalog/check-block-note.ps1' @('-Id', 'S0001', '-NewStatus', 'BlockByOtherTask', '-StatusNote', 'waiting on other-repo:S0099', '-NoteSupplied')
+        Assert-That ($gate.code -eq 1) "(g) check-block-note with only 'Blocker: other-repo:S0099' in section 10 exited $($gate.code), not 1: $($gate.output)"
+        Assert-That ($gate.output -match 'records no blocker in a directional channel') "(g) check-block-note with only 'Blocker: other-repo:S0099' did not say it records no directional blocker: $($gate.output)"
+        # The local picker does not enforce the token: the ticket stays selectable.
+        $pick = Invoke-Tool $p 'spec_catalog/spec-next-preflight.ps1' @('-NoDrift', '-Format', 'json')
+        $json = @($pick.output -split "`r?`n" | Where-Object { $_.Trim().StartsWith('{') } | Select-Object -Last 1)
+        Assert-That ($pick.code -eq 0 -and $json.Count -eq 1) "(g) spec-next-preflight exited $($pick.code) without a JSON payload: $($pick.output)"
+        $picked = $json[0] | ConvertFrom-Json
+        Assert-That ($picked.selected.id -eq 'S0001') "(g) with 'Blocker: other-repo:S0099' in its section 10 the picker selected '$($picked.selected.id)', not S0001"
+        Assert-That (@($picked.auto_skipped | Where-Object { $_.id -eq 'S0001' }).Count -eq 0) "(g) the picker auto-skipped S0001 for 'Blocker: other-repo:S0099': $(@($picked.auto_skipped | Where-Object { $_.id -eq 'S0001' } | ForEach-Object { $_.reason }) -join ',')"
+    }
+
     Test-Case 'rule 10: every way a ledger can be wrong fails validation, and each failure names what is wrong' {
         $p = New-Project 'a-validate' @('one', 'two', 'three')
         $ledger = Join-Path $p 'PLAN/spec-catalog.jsonl'
@@ -583,6 +625,350 @@ exit /b %ERRORLEVEL%
         $full = Get-Content (Join-Path $harness 'batch/run-spec-queue.ps1') -Raw
         foreach ($needle in 'ticket-lease', 'AGENT_ID', 'claim-lost-before-launch', 'claim-lost') {
             Assert-That ($full.Contains($needle)) "the full runner no longer carries '$needle'"
+        }
+    }
+
+    # === F. Complexity (S0015 R7) ===================================================================================
+
+    # The runner's own reader of the line, copied from Get-TicketComplexity in batch/run-spec-queue.ps1 (not re-derived):
+    # what capture-draft writes must be what the runner reads.
+    $complexityReader = '^\*\*Complexity:\*\*\s*(.+?)\s*$'
+    $notAssessed = 'medium - not assessed at capture'
+    # The header block every reader of the line looks at: the first forty lines, as the runner reads them.
+    function Get-HeaderLines([string]$Text) { @(($Text -split "`r?`n") | Select-Object -First 40) }
+    function Get-LineIndex([string[]]$Lines, [string]$Pattern) {
+        for ($i = 0; $i -lt $Lines.Count; $i++) { if ($Lines[$i] -match $Pattern) { return $i } }
+        return -1
+    }
+
+    Test-Case 'S0015 R7: capture-draft writes the Complexity line, medium - not assessed at capture by default' {
+        $p = New-Project 'f-cx-default' @()
+        $r = Assert-Tool $p 'spec_catalog/capture-draft.ps1' @('-Slug', 'task-one', '-Text', "the owner's words for one")
+        $head = Get-HeaderLines (Get-SpecText $p 'S0001')
+        $lines = @($head | Where-Object { $_ -match '^\*\*Complexity:\*\*\s+medium - not assessed at capture\s*$' })
+        Assert-That ($lines.Count -eq 1) "the header holds $($lines.Count) default Complexity lines, not 1: $($head -join ' | ')"
+        Assert-That (@($head | Where-Object { $_ -match '^\*\*Complexity:\*\*' }).Count -eq 1) 'the header holds more than one Complexity line'
+        $status = Get-LineIndex $head '^\*\*Status:\*\*'
+        $line = Get-LineIndex $head '^\*\*Complexity:\*\*'
+        $owner = Get-LineIndex $head '^## 0\.'
+        Assert-That ($status -ge 0 -and $owner -gt 0) "the header has no Status line or no '## 0.' heading: $($head -join ' | ')"
+        Assert-That ($line -gt $status -and $line -lt $owner) "the Complexity line is at $line, not between Status ($status) and '## 0.' ($owner)"
+        $m = [regex]::Match($lines[0], $complexityReader)
+        Assert-That ($m.Success -and $m.Groups[1].Value -eq $notAssessed) "the runner's reader reads '$($m.Groups[1].Value)', not '$notAssessed'"
+        $out = @($r.output -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+        Assert-That ($out -contains "Complexity: $notAssessed") "capture-draft did not print 'Complexity: $notAssessed': $($r.output)"
+        Assert-That ($out[-1] -eq 'S0001') "the last line printed is '$($out[-1])', not the id (insert.ps1 callers read the id from the last line)"
+    }
+
+    Test-Case 'S0015 R7: capture-draft -Complexity writes the given level and reason, and refuses a level outside light, medium, hard' {
+        $p = New-Project 'f-cx-given' @()
+        Assert-Tool $p 'spec_catalog/capture-draft.ps1' @('-Slug', 'task-hard', '-Text', 'words', '-Complexity', 'hard - a new subsystem') | Out-Null
+        $head = Get-HeaderLines (Get-SpecText $p 'S0001')
+        Assert-That (@($head | Where-Object { $_ -ceq '**Complexity:** hard - a new subsystem' }).Count -eq 1) "the given level is not written as given: $(@($head | Where-Object { $_ -match 'Complexity' }) -join ' | ')"
+        Assert-That (@($head | Where-Object { $_ -match '^\*\*Complexity:\*\*' }).Count -eq 1) 'the header holds more than one Complexity line'
+        Assert-Tool $p 'spec_catalog/capture-draft.ps1' @('-Slug', 'task-light', '-Text', 'words', '-Complexity', 'LIGHT - one string') | Out-Null
+        $head = Get-HeaderLines (Get-SpecText $p 'S0002')
+        Assert-That (@($head | Where-Object { $_ -ceq '**Complexity:** light - one string' }).Count -eq 1) "an upper-case level is not written lower-case: $(@($head | Where-Object { $_ -match 'Complexity' }) -join ' | ')"
+        $rows = @(Get-Ledger $p).Count
+        foreach ($bad in 'huge - x', 'hard', 'hard -') {
+            $r = Invoke-Tool $p 'spec_catalog/capture-draft.ps1' @('-Slug', 'task-bad', '-Text', 'words', '-Complexity', $bad)
+            Assert-That ($r.code -eq 2) "-Complexity '$bad' exited $($r.code), not 2: $($r.output)"
+            Assert-That (@(Get-Ledger $p).Count -eq $rows) "-Complexity '$bad' still wrote a ledger row"
+            Assert-That (-not (Test-Path -LiteralPath (Join-Path $p 'PLAN/S0003_task-bad.md'))) "-Complexity '$bad' still wrote a spec file"
+            foreach ($level in 'light', 'medium', 'hard') {
+                Assert-That ($r.output -match $level) "the refusal of '$bad' does not name the level '$level': $($r.output)"
+            }
+        }
+    }
+
+    Test-Case 'S0015 R7: a template without the token still gets the line and the owner''s words keep a literal token' {
+        $p = New-Project 'f-cx-old-template' @()
+        # The pre-S0015 template is the shipped one less its Complexity line: a project-owned copy written before the
+        # change has no token. Taken from the tree, not from `git show HEAD:`, so the case survives the commit and a
+        # -SourceRoot copy without .git. Written with CRLF, to show the inserted line follows the template's line ending.
+        $shipped = [IO.File]::ReadAllText((Join-Path $SourceRoot 'tools/harness/scaffold/templates/ticket-template.md'))
+        $old = ($shipped -replace '(?m)^\*\*Complexity:\*\*[^\r\n]*\r?\n', '') -replace '\r?\n', "`r`n"
+        Assert-That (-not $old.Contains('{{COMPLEXITY}}')) 'the pre-S0015 template still carries the token'
+        [IO.File]::WriteAllText((Join-Path $p 'PLAN/TICKET_TEMPLATE.md'), $old, [Text.UTF8Encoding]::new($false))
+        $words = 'literal {{COMPLEXITY}} and $1 kept'
+        Assert-Tool $p 'spec_catalog/capture-draft.ps1' @('-Slug', 'task-old', '-Text', $words) | Out-Null
+        $text = Get-SpecText $p 'S0001'
+        $head = Get-HeaderLines $text
+        $line = Get-LineIndex $head '^\*\*Complexity:\*\*\s+medium - not assessed at capture\s*$'
+        $created = Get-LineIndex $head '^\*\*Created:\*\*'
+        $owner = Get-LineIndex $head '^## 0\.'
+        Assert-That ($line -ge 0) "a token-less template got no Complexity line: $($head -join ' | ')"
+        Assert-That ($line -eq $created + 1 -and $line -lt $owner) "the line is at $line, not directly after Created ($created) and above '## 0.' ($owner)"
+        Assert-That ($text -notmatch '(?<!\r)\n') 'the CRLF template produced a spec with a bare LF line ending'
+        $section = $text.Substring($text.IndexOf('## 0.'))
+        Assert-That ($section.Contains($words)) "the owner's words were not kept byte for byte: $section"
+        Assert-That (([regex]::Matches($text, [regex]::Escape('{{COMPLEXITY}}'))).Count -eq 1) 'the literal token in the owner''s words was expanded or duplicated'
+        # The header sync of a status move must keep the line.
+        Move-Ticket $p 'S0001' 'Approved'
+        $after = Get-HeaderLines (Get-SpecText $p 'S0001')
+        Assert-That ((Get-HeaderStatus (Get-SpecText $p 'S0001')) -eq 'Approved') 'the header was not synced to Approved'
+        Assert-That (@($after | Where-Object { $_ -match '^\*\*Complexity:\*\*\s+medium - not assessed at capture\s*$' }).Count -eq 1) "the status rewrite dropped the Complexity line: $($after -join ' | ')"
+    }
+
+    Test-Case 'S0015 R7: validate warns on an Approved ticket still not assessed at capture, never fails' {
+        $p = New-Project 'f-cx-validate' @('one')
+        $v = Invoke-Tool $p 'spec_catalog/validate.ps1'
+        Assert-That ($v.code -eq 0 -and $v.output -match '\[OK\]\s+Complexity') "(1) a Draft ticket: exit $($v.code), no '[OK] Complexity' line: $($v.output)"
+        Move-Ticket $p 'S0001' 'Approved'
+        $v = Invoke-Tool $p 'spec_catalog/validate.ps1'
+        Assert-That ($v.code -eq 0) "(2) the warning changed the exit code to $($v.code): $($v.output)"
+        Assert-That ($v.output -match '\[WARN\] Complexity\s+.*S0001') "(2) an Approved ticket still not assessed at capture was not reported: $($v.output)"
+        Assert-That ($v.output -match 'Summary: \d+ OK, 1 WARN, 0 FAIL') "(2) the summary does not say 1 WARN: $($v.output)"
+        # The check itself never fails; -Strict turning a warning into exit 1 is validate's existing contract.
+        $s = Invoke-Tool $p 'spec_catalog/validate.ps1' @('-Strict')
+        Assert-That ($s.code -eq 1) "(3) -Strict on the warning exited $($s.code), not 1: $($s.output)"
+        $spec = Join-Path $p (Get-Row $p 'S0001').file
+        $assessed = (Get-Content -LiteralPath $spec -Raw) -replace '(?m)^\*\*Complexity:\*\*[^\r\n]*', '**Complexity:** medium - assessed at the spec pass: one file, approach visible'
+        [IO.File]::WriteAllText($spec, $assessed, [Text.UTF8Encoding]::new($false))
+        $v = Invoke-Tool $p 'spec_catalog/validate.ps1'
+        Assert-That ($v.code -eq 0 -and $v.output -match '\[OK\]\s+Complexity') "(4) a rewritten line is still reported: exit $($v.code): $($v.output)"
+        # A pre-S0015 ticket has no line at all: absence is not a finding, the runner keeps its old routing for it.
+        [IO.File]::WriteAllText($spec, ($assessed -replace '(?m)^\*\*Complexity:\*\*[^\r\n]*\r?\n', ''), [Text.UTF8Encoding]::new($false))
+        Assert-That ((Get-Content -LiteralPath $spec -Raw) -notmatch 'Complexity') '(5) the fixture still carries a Complexity line'
+        $v = Invoke-Tool $p 'spec_catalog/validate.ps1'
+        Assert-That ($v.code -eq 0 -and $v.output -match '\[OK\]\s+Complexity') "(5) an Approved ticket with no line was reported: exit $($v.code): $($v.output)"
+        # Only Approved is judged: the checkpoint immediately follows that transition.
+        foreach ($status in 'Tactical', 'In Progress', 'Implemented') {
+            $id = (Assert-Tool $p 'spec_catalog/capture-draft.ps1' @('-Slug', ('later-' + ($status -replace ' ', '-').ToLowerInvariant()), '-Text', 'words')).output -split "`r?`n" | Select-Object -Last 1
+            Move-Ticket $p $id.Trim() $status
+            Assert-That ((Get-SpecText $p $id.Trim()) -match "(?m)^\*\*Complexity:\*\*\s+$notAssessed\s*$") "(6) the $status fixture $id does not carry the default line"
+        }
+        $v = Invoke-Tool $p 'spec_catalog/validate.ps1'
+        Assert-That ($v.code -eq 0 -and $v.output -match '\[OK\]\s+Complexity') "(6) a Tactical, In Progress or Implemented ticket with the default text was reported: exit $($v.code): $($v.output)"
+    }
+
+    # === G. Uniform launchers and adoption (S0015 R15, R36) =========================================================
+
+    # The six launchers the scaffold renders beside r0.ps1. What they do when run is the runner suite's case C9
+    # (batch-runner.tests.ps1); here only what is written, and when.
+    $launcherNames = @('r1', 'r2', 'r3', 'rs', 'rm', 'rw')
+    function Get-OutputLines([string]$Text) { @($Text -split "`r?`n" | ForEach-Object { $_.TrimEnd() }) }
+    function Get-LauncherHashes([string]$Project, [string[]]$Names) {
+        $h = [ordered]@{}
+        foreach ($n in $Names) { $h[$n] = (Get-FileHash -LiteralPath (Join-Path $Project "$n.ps1") -Algorithm SHA256).Hash }
+        return $h
+    }
+
+    Test-Case 'S0015 R36: the scaffold renders r0 and r1-r3, rs, rm, rw, never overwrites, is safe twice, and -NoLaunchers writes none of the six' {
+        $p = New-Project 'g-launchers' @('one')
+        $all = @('r0') + $launcherNames
+        foreach ($n in $all) { Assert-That (Test-Path -LiteralPath (Join-Path $p "$n.ps1") -PathType Leaf) "the scaffold did not write $n.ps1" }
+        $text = @{}
+        foreach ($n in $launcherNames) {
+            $t = [IO.File]::ReadAllText((Join-Path $p "$n.ps1"))
+            $text[$n] = $t
+            $errors = $null
+            $null = [System.Management.Automation.Language.Parser]::ParseInput($t, [ref]$null, [ref]$errors)
+            Assert-That ($errors.Count -eq 0) "$n.ps1 does not parse: $($errors[0].Message)"
+            Assert-That ($t -notmatch '\{\{\w+\}\}') "$n.ps1 holds an unfilled placeholder: $([regex]::Match($t, '\{\{\w+\}\}').Value)"
+            Assert-That ($t.Contains('tools/harness.ps1')) "$n.ps1 does not forward through tools/harness.ps1"
+            Assert-That ($t -notmatch 'ticket-lease|AGENT_ID|ConvertFrom-Json|\.sza-profile') "$n.ps1 reads the profile or makes a coordination call of its own"
+        }
+        # The fixed values are rendered as a table the launcher turns into -Name value at run time (C9 runs them).
+        foreach ($pair in @(@('r1', 'a'), @('r2', 'b'), @('r3', 'c'))) {
+            $t = $text[$pair[0]]
+            Assert-That ($t.Contains('batch/run-spec-queue')) "$($pair[0]).ps1 does not target batch/run-spec-queue"
+            Assert-That ($t -match "\bInstance\s*=\s*'$($pair[1])'") "$($pair[0]).ps1 does not fix the instance '$($pair[1])'"
+            Assert-That ($t -match '\bQuiet\s*=\s*\$true') "$($pair[0]).ps1 does not fix -Quiet"
+            Assert-That ($t -match "\bPermissionMode\s*=\s*'bypassPermissions'") "$($pair[0]).ps1 does not carry the scaffold's permission mode"
+        }
+        Assert-That ($text.r1 -notmatch 'StartDelaySeconds') 'r1.ps1 is delayed; only r2 and r3 are'
+        Assert-That ($text.r2 -match '\bStartDelaySeconds\s*=\s*20\b') 'r2.ps1 does not fix StartDelaySeconds 20'
+        Assert-That ($text.r3 -match '\bStartDelaySeconds\s*=\s*40\b') 'r3.ps1 does not fix StartDelaySeconds 40'
+        Assert-That ($text.rs.Contains('batch/run-spec-queue') -and $text.rs -match '\bStop\s*=\s*\$true') 'rs.ps1 is not run-spec-queue -Stop'
+        Assert-That ($text.rm.Contains('batch/monitor-spec-queue')) 'rm.ps1 does not target batch/monitor-spec-queue'
+        Assert-That ($text.rw.Contains('portfolio/pq') -and $text.rw -match "'start'") 'rw.ps1 is not pq start'
+        Assert-That ($text.rw -match '\bRepos\s*=\s*\$PSScriptRoot') 'rw.ps1 does not scope pq start to its own repository'
+
+        # Safe twice: nothing created or replaced, every byte the same.
+        $before = Get-LauncherHashes $p $all
+        $again = Assert-Tool $p 'scaffold/init-task-flow.ps1' @('-Root', $p)
+        $wrote = @(Get-OutputLines $again.output | Where-Object { $_ -match '^(created|replaced)\s' })
+        Assert-That ($wrote.Count -eq 0) "a second run wrote: $($wrote -join ' | ')"
+        $after = Get-LauncherHashes $p $all
+        foreach ($n in $all) { Assert-That ($before[$n] -eq $after[$n]) "a second run changed $n.ps1" }
+
+        # Never overwrites what the project made its own.
+        [IO.File]::WriteAllText((Join-Path $p 'r1.ps1'), '# mine', [Text.UTF8Encoding]::new($false))
+        $again = Assert-Tool $p 'scaffold/init-task-flow.ps1' @('-Root', $p)
+        Assert-That ([IO.File]::ReadAllText((Join-Path $p 'r1.ps1')) -ceq '# mine') 'a run without -Force overwrote the project''s r1.ps1'
+        Assert-That (@(Get-OutputLines $again.output | Where-Object { $_ -match '^exists\s+r1\.ps1$' }).Count -eq 1) "no 'exists r1.ps1' line: $($again.output)"
+
+        # -Force replaces the generated launchers and never the profile or the ledger.
+        $profileHash = (Get-FileHash -LiteralPath (Join-Path $p '.sza-profile.json')).Hash
+        $ledgerHash = (Get-FileHash -LiteralPath (Join-Path $p 'PLAN/spec-catalog.jsonl')).Hash
+        $forced = Assert-Tool $p 'scaffold/init-task-flow.ps1' @('-Root', $p, '-Force')
+        foreach ($n in $launcherNames) {
+            Assert-That (@(Get-OutputLines $forced.output | Where-Object { $_ -match "^replaced\s+$n\.ps1$" }).Count -eq 1) "-Force did not replace $n.ps1: $($forced.output)"
+        }
+        Assert-That ([IO.File]::ReadAllText((Join-Path $p 'r1.ps1')) -ceq $text.r1) '-Force did not restore the generated r1.ps1'
+        Assert-That ((Get-FileHash -LiteralPath (Join-Path $p '.sza-profile.json')).Hash -eq $profileHash) '-Force replaced the profile'
+        Assert-That ((Get-FileHash -LiteralPath (Join-Path $p 'PLAN/spec-catalog.jsonl')).Hash -eq $ledgerHash) '-Force replaced the ledger'
+
+        # -NoLaunchers and -NoForwarder write none of the six, and say why.
+        foreach ($switch in '-NoLaunchers', '-NoForwarder') {
+            $q = Join-Path $scratch ('g-launchers' + $switch.ToLowerInvariant())
+            New-Item -ItemType Directory -Path $q | Out-Null
+            $r = Assert-Tool $q 'scaffold/init-task-flow.ps1' @('-Root', $q, $switch)
+            Assert-That (Test-Path -LiteralPath (Join-Path $q 'r0.ps1') -PathType Leaf) "$switch also dropped r0.ps1"
+            $present = @($launcherNames | Where-Object { Test-Path -LiteralPath (Join-Path $q "$_.ps1") })
+            Assert-That ($present.Count -eq 0) "$switch still wrote: $($present -join ', ')"
+            $note = @(Get-OutputLines $r.output | Where-Object { $_ -match "^skipped\s+.*r1\.ps1.*$([regex]::Escape($switch))" })
+            Assert-That ($note.Count -eq 1) "$switch printed no single 'skipped' line naming the launchers and the reason: $($r.output)"
+            if ($switch -eq '-NoForwarder') {
+                Assert-That ($note[0] -match 'tools/harness\.ps1') "the -NoForwarder note does not say the launchers forward through tools/harness.ps1: $($note[0])"
+            }
+        }
+    }
+
+    Test-Case 'S0015 R36: a new profile carries runner.promptTemplate and an existing profile is left alone' {
+        $p = Join-Path $scratch 'g-profile-new'
+        New-Item -ItemType Directory -Path $p | Out-Null
+        $r = Assert-Tool $p 'scaffold/init-task-flow.ps1' @('-Root', $p, '-Prompt', 'work {id} now')
+        $doc = Get-Content -LiteralPath (Join-Path $p '.sza-profile.json') -Raw | ConvertFrom-Json
+        Assert-That ((@($doc.PSObject.Properties.Name) -join ',') -eq 'version,projectName,runner') "the new profile's keys are '$(@($doc.PSObject.Properties.Name) -join ',')'"
+        Assert-That ($doc.version -eq '1' -and $doc.projectName -eq 'g-profile-new') "version '$($doc.version)', projectName '$($doc.projectName)'"
+        Assert-That ((@($doc.runner.PSObject.Properties.Name) -join ',') -eq 'promptTemplate') "the runner block holds '$(@($doc.runner.PSObject.Properties.Name) -join ',')', not only promptTemplate"
+        Assert-That ($doc.runner.promptTemplate -ceq 'work {Id} now') "runner.promptTemplate is '$($doc.runner.promptTemplate)', not 'work {Id} now'"
+        Assert-That ($r.output -notmatch '(?m)^note: .*runner\.promptTemplate') "a new profile got the existing-profile note: $($r.output)"
+
+        # An existing profile with no runner block: its bytes stay, and the output says what r1-r3 will send.
+        $q = Join-Path $scratch 'g-profile-old'
+        New-Item -ItemType Directory -Path $q | Out-Null
+        $own = Join-Path $q '.sza-profile.json'
+        [IO.File]::WriteAllText($own, "{`r`n    ""version"": ""1"",`r`n    ""projectName"": ""mine""`r`n}`r`n", [Text.UTF8Encoding]::new($false))
+        $hash = (Get-FileHash -LiteralPath $own).Hash
+        $r = Assert-Tool $q 'scaffold/init-task-flow.ps1' @('-Root', $q, '-Prompt', 'work {id} now')
+        Assert-That ((Get-FileHash -LiteralPath $own).Hash -eq $hash) 'the existing profile was rewritten'
+        Assert-That ($r.output -match '(?m)^note: .*runner\.promptTemplate') "no note about runner.promptTemplate for an existing profile without one: $($r.output)"
+
+        # An existing profile that already declares its prompt gets no note.
+        $s = Join-Path $scratch 'g-profile-own-prompt'
+        New-Item -ItemType Directory -Path $s | Out-Null
+        [IO.File]::WriteAllText((Join-Path $s '.sza-profile.json'), '{ "version": "1", "projectName": "own", "runner": { "promptTemplate": "/go {Id}" } }', [Text.UTF8Encoding]::new($false))
+        $r = Assert-Tool $s 'scaffold/init-task-flow.ps1' @('-Root', $s)
+        Assert-That ($r.output -notmatch '(?m)^note: .*runner\.promptTemplate') "a profile that declares runner.promptTemplate still got the note: $($r.output)"
+    }
+
+    # Adoption ends in 'pq register'. The block is read from the skill text, never re-typed here, so the case
+    # proves what an adopting session pastes. Every pq call gets SZA_PORTFOLIO_ROOT on the child only, pointing
+    # under this suite's scratch directory: the owner's registry is never read or written.
+    function New-StampedRepo([string]$Name) {
+        $dir = Join-Path $scratch $Name
+        New-Item -ItemType Directory -Path $dir | Out-Null
+        & git -C $dir init -q 2>&1 | Out-Null
+        [IO.File]::WriteAllText((Join-Path $dir '.sza-canon.json'), '{ "schemaVersion": "1.0", "role": "product" }', [Text.UTF8Encoding]::new($false))
+        return $dir
+    }
+    function New-PortfolioRoot([string]$Name) {
+        $root = Join-Path $scratch "pq-$Name"
+        New-Item -ItemType Directory -Path $root | Out-Null
+        return $root
+    }
+    # The first fenced powershell block of a skill that calls portfolio/pq.ps1, line endings normalised to LF.
+    function Get-JoinBlock([string]$Skill) {
+        $file = Join-Path $SourceRoot "skills/$Skill/SKILL.md"
+        $text = ''
+        if (Test-Path -LiteralPath $file -PathType Leaf) { $text = [IO.File]::ReadAllText($file) -replace "`r`n", "`n" }
+        foreach ($m in [regex]::Matches($text, '(?ms)^[ \t]*```powershell[ \t]*\n(.*?)^[ \t]*```[ \t]*$')) {
+            if ($m.Groups[1].Value.Contains('portfolio/pq.ps1')) { return $m.Groups[1].Value }
+        }
+        throw "no fenced powershell block that calls portfolio/pq.ps1 in $Skill"
+    }
+    # Run a block the way a session pastes it: '$sza = <plugin root>' first, the repository as working directory.
+    function Invoke-JoinBlock([string]$Block, [string]$Sza, [string]$WorkDir, [string]$PortfolioRoot) {
+        Assert-That ($PortfolioRoot -and $PortfolioRoot.StartsWith($scratch, [StringComparison]::OrdinalIgnoreCase)) "refusing to run pq without a scratch SZA_PORTFOLIO_ROOT (got '$PortfolioRoot')"
+        $code = "`$sza = '$($Sza -replace "'", "''")'`n" + $Block
+        $psi = [System.Diagnostics.ProcessStartInfo]::new((Get-Command pwsh -CommandType Application | Select-Object -First 1).Source)
+        foreach ($a in @('-NoProfile', '-NonInteractive', '-Command', $code)) { $psi.ArgumentList.Add($a) }
+        $psi.WorkingDirectory = $WorkDir
+        $psi.UseShellExecute = $false
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError = $true
+        $psi.Environment['SZA_PORTFOLIO_ROOT'] = $PortfolioRoot
+        $null = $psi.Environment.Remove('SZA_PROJECT_ROOT')
+        $proc = [System.Diagnostics.Process]::Start($psi)
+        $out = $proc.StandardOutput.ReadToEndAsync()
+        $err = $proc.StandardError.ReadToEndAsync()
+        if (-not $proc.WaitForExit(120000)) { $proc.Kill($true); throw "the join block did not finish in 120 s in $WorkDir" }
+        $proc.WaitForExit()
+        [pscustomobject]@{ code = $proc.ExitCode; output = ($out.Result + $err.Result).Trim() }
+    }
+    function Get-RegisteredRows([string]$PortfolioRoot, [string]$Dir) {
+        $file = Join-Path $PortfolioRoot 'repos.json'
+        Assert-That (Test-Path -LiteralPath $file -PathType Leaf) "no registry at $file"
+        $doc = [IO.File]::ReadAllText($file) | ConvertFrom-Json -DateKind String
+        $want = [IO.Path]::GetFullPath($Dir).TrimEnd('\', '/')
+        @(@($doc.repos) | Where-Object { [string]::Equals([IO.Path]::GetFullPath([string]$_.path).TrimEnd('\', '/'), $want, [StringComparison]::OrdinalIgnoreCase) })
+    }
+    # Every event the cli writer logged under a portfolio root (events-<UTC date>.cli-<pid>.jsonl, one file per process).
+    function Get-CliEvents([string]$PortfolioRoot) {
+        $log = Join-Path $PortfolioRoot 'log'
+        if (-not (Test-Path -LiteralPath $log)) { return @() }
+        $files = @(Get-ChildItem -LiteralPath $log -File | Where-Object { $_.Name -match '^events-\d{4}-\d{2}-\d{2}\.cli(-\d+)?\.jsonl$' })
+        @($files | ForEach-Object { Read-Jsonl $_.FullName })
+    }
+    # Run the block twice against the plugin under test: one record, one registry.changed, one owner.action.
+    function Assert-JoinRegisters([string]$Block, [string]$Dir, [string]$PortfolioRoot, [string]$Label) {
+        $days = @([DateTime]::UtcNow.ToString('yyyy-MM-dd'))
+        $first = Invoke-JoinBlock $Block $SourceRoot $Dir $PortfolioRoot
+        Assert-That ($first.code -eq 0) "${Label}: the first run exited $($first.code): $($first.output)"
+        $key = [regex]::Match($first.output, '(?m)^registered (\S+)\s*$').Groups[1].Value
+        Assert-That ($key -ne '') "${Label}: the first run printed no 'registered <key>' line: $($first.output)"
+        $rows = @(Get-RegisteredRows $PortfolioRoot $Dir)
+        Assert-That ($rows.Count -eq 1) "${Label}: the registry holds $($rows.Count) records for $Dir after the first run, not 1"
+        Assert-That ($rows[0].key -ceq $key -and $rows[0].enabled -eq $false) "${Label}: the record is key '$($rows[0].key)' enabled '$($rows[0].enabled)', not '$key' disabled"
+        $second = Invoke-JoinBlock $Block $SourceRoot $Dir $PortfolioRoot
+        Assert-That ($second.code -eq 0) "${Label}: the second run exited $($second.code): $($second.output)"
+        Assert-That ($second.output -match "(?m)^already registered $([regex]::Escape($key))\s*$") "${Label}: the second run did not say 'already registered $key': $($second.output)"
+        $rows = @(Get-RegisteredRows $PortfolioRoot $Dir)
+        Assert-That ($rows.Count -eq 1) "${Label}: the registry holds $($rows.Count) records for $Dir after the second run, not 1"
+        $days += [DateTime]::UtcNow.ToString('yyyy-MM-dd')
+        $names = @(Get-ChildItem -LiteralPath (Join-Path $PortfolioRoot 'log') -File -Filter 'events-*.jsonl' | ForEach-Object Name)
+        foreach ($n in $names) {
+            Assert-That ($n -match '^events-(\d{4}-\d{2}-\d{2})\.cli(-\d+)?\.jsonl$' -and $days -contains $Matches[1]) "${Label}: an event file that is not the cli writer's for the UTC day: $n"
+        }
+        $events = @(Get-CliEvents $PortfolioRoot)
+        $actions = @($events | Where-Object { $_.ev -ceq 'owner.action' -and $_.d.verb -ceq 'register' })
+        Assert-That ($actions.Count -eq 1) "${Label}: $($actions.Count) owner.action register events, not 1 (the second run registers nothing)"
+        Assert-That (@($actions[0].d.args) -contains 'Path' -and @($actions[0].d.args) -notcontains $Dir) "${Label}: owner.action args are '$(@($actions[0].d.args) -join ',')', not parameter names with Path"
+        $changed = @($events | Where-Object { $_.ev -ceq 'registry.changed' })
+        Assert-That ($changed.Count -eq 1) "${Label}: $($changed.Count) registry.changed events, not 1 (the second run changes nothing)"
+        Assert-That ($changed[0].d.by -ceq 'cli' -and (@($changed[0].d.added) -join ',') -ceq $key) "${Label}: registry.changed by '$($changed[0].d.by)' added '$(@($changed[0].d.added) -join ',')', not by cli added $key"
+    }
+
+    Test-Case 'S0015 R36: a throwaway repository taken through the adoption steps ends registered, twice without a second row' {
+        $real = Join-Path $env:USERPROFILE '.sza/portfolio/repos.json'
+        $realBefore = if (Test-Path -LiteralPath $real) { (Get-FileHash -LiteralPath $real).Hash } else { 'absent' }
+        $dir = New-StampedRepo 'g-adopt'
+        Assert-Tool $dir 'scaffold/init-task-flow.ps1' @('-Root', $dir) | Out-Null
+        $block = Get-JoinBlock 'adopt-canon'
+        Assert-JoinRegisters $block $dir (New-PortfolioRoot 'adopt') 'adopt-canon'
+        $realAfter = if (Test-Path -LiteralPath $real) { (Get-FileHash -LiteralPath $real).Hash } else { 'absent' }
+        Assert-That ($realAfter -eq $realBefore) "the owner's registry $real changed during the case"
+    }
+
+    Test-Case 'S0015 R36: the adoption snippet fails soft when pq is absent' {
+        $blocks = [ordered]@{}
+        foreach ($skill in 'adopt-canon', 'task-flow-init') { $blocks[$skill] = Get-JoinBlock $skill }
+        Assert-That ($blocks['task-flow-init'] -ceq $blocks['adopt-canon']) 'the join block of task-flow-init is not byte for byte the one of adopt-canon'
+        foreach ($skill in $blocks.Keys) {
+            $noPq = Join-Path $scratch "g-plugin-without-pq-$skill"
+            New-Item -ItemType Directory -Path $noPq | Out-Null
+            $dir = New-StampedRepo "g-join-$skill"
+            $root = New-PortfolioRoot "nopq-$skill"
+            $r = Invoke-JoinBlock $blocks[$skill] $noPq $dir $root
+            Assert-That ($r.code -eq 0) "${skill}: with no pq in the plugin the block exited $($r.code): $($r.output)"
+            Assert-That ($r.output -match 'Update the plugin') "${skill}: the output does not tell the owner to update the plugin: $($r.output)"
+            Assert-That ($r.output.Contains('portfolio/pq.ps1 register') -and $r.output.Contains($dir)) "${skill}: the output does not give the command to run afterwards: $($r.output)"
+            $written = @(Get-ChildItem -LiteralPath $root -Recurse -Force)
+            Assert-That ($written.Count -eq 0) "${skill}: with no pq the block wrote under the portfolio root: $($written.Name -join ', ')"
+            Assert-JoinRegisters $blocks[$skill] $dir (New-PortfolioRoot "with-pq-$skill") $skill
         }
     }
 }

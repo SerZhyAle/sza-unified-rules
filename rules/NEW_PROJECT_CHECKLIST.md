@@ -54,7 +54,10 @@ apply (a CLI tool has no site, a single-locale app skips localization).
 
 - Set the layering, naming, size ceiling, comment/logging rules ([DEVELOPMENT.md](DEVELOPMENT.md)).
 - Add the machine-generated-smell gate and any recurring-defect gates the platform needs.
-- Define the ticket/spec lifecycle for the project (Sxxxx catalog in `PLAN/`, or `PLAN/SPECIFICATION_*.md`).
+- Stand the ticket lifecycle up on day 0 - it is not optional and has no alternative scheme: run the
+  [task-flow-init](../skills/task-flow-init/SKILL.md) skill (ledger, plan files, ticket template, minimal
+  profile, the launchers `r0`-`r3`, `rs`, `rm`, `rw`) and end with `pq register`, so the robots and the
+  owner's queue see the repository from its first commit.
 - Wire the gate & closure mechanics ([DEVELOPMENT.md](DEVELOPMENT.md) §15): ratchet baselines, a batched
   fast-gates runner, a one-call closure facade, and (for PowerShell) the reachable-exit-code contract.
 

@@ -13,6 +13,8 @@ Groups:
   CI     workflows holding a write token or a secret pin third-party actions by commit (CI01, advisory)
   HOOK   the enforcement layer: every registered hook is in the inventory table
   LAY    layout and ledger
+  FLOW   the task flow stands: profile, ledger, launcher (FLOW01-FLOW03, advisory, off unless -CheckTaskFlow;
+         Phase 09 of S0015 turns it on)
   CTR    shared contracts: pointers not copies, and the catalog named in exactly one file
   SEC    secrets and committed artifacts
   VER    version shape and channel manifests
@@ -28,6 +30,7 @@ Usage:
   pwsh -File tools/check-compliance.ps1 -Json | ConvertFrom-Json
   pwsh -File tools/check-compliance.ps1 -PrintDigest         # canon core digest, for a stamp
   pwsh -File tools/check-compliance.ps1 -IncludeUntracked    # also judge untracked, non-ignored files
+  pwsh -File tools/check-compliance.ps1 -CheckTaskFlow       # also run group FLOW (off by default)
 
 The git-scoped checks judge tracked files. A repo with no commit yet (adoption runs before the first one)
 is judged on its tracked and untracked, non-ignored files instead - what the first commit would hold - and
@@ -42,7 +45,8 @@ param(
     [string[]]$Skip,
     [switch]$Json,
     [switch]$PrintDigest,
-    [switch]$IncludeUntracked
+    [switch]$IncludeUntracked,
+    [switch]$CheckTaskFlow
 )
 
 $ErrorActionPreference = 'Stop'
@@ -834,6 +838,44 @@ try {
         -not (Test-RepoPath 'docs/README.md')) {
         Add-Finding -Id 'SZA-LAY03' -Severity 'warn' -Path 'docs/README.md' `
             -Message 'docs/ holds 3+ markdown files but has no index' -Fix 'Add docs/README.md - the index of this tree.'
+    }
+
+    # -------------------------------------------------------- group FLOW
+    # Day 0 of TASK-FLOW is a step of adoption (TASK-FLOW rule 50), so a stamped repository of any role
+    # carries a harness profile, a ledger and a launcher. Advisory, and off unless -CheckTaskFlow until
+    # Phase 09 of S0015 has shown it clean on every real repository. Presence only, read offline: nothing
+    # is executed and the profile is not validated here (a profile that does not parse falls back to the
+    # default ledger path).
+
+    if ($CheckTaskFlow -and $stamp) {
+        $flowFix = 'Run the task-flow-init skill (scaffold/init-task-flow.ps1): it writes only what is missing.'
+        if (-not (Test-RepoPath '.sza-profile.json')) {
+            Add-Finding -Id 'SZA-FLOW01' -Severity 'warn' -Path '.sza-profile.json' `
+                -Message 'no harness profile' -Fix $flowFix
+        }
+        $journalRel = 'PLAN/spec-catalog.jsonl'
+        if (Test-RepoPath '.sza-profile.json') {
+            try {
+                $harnessProfile = Get-Content -LiteralPath (Join-RepoPath '.sza-profile.json') -Raw | ConvertFrom-Json
+                $declared = $harnessProfile.paths.journal
+                if ($declared -is [string] -and $declared.Trim()) { $journalRel = $declared.Trim() }
+            }
+            catch { }
+        }
+        if (-not (Test-RepoPath $journalRel)) {
+            Add-Finding -Id 'SZA-FLOW02' -Severity 'warn' -Path $journalRel `
+                -Message 'no ticket ledger at the path the profile names (default PLAN/spec-catalog.jsonl)' -Fix $flowFix
+        }
+        # A launcher: the rendered r0.ps1 (or an r0.cmd), or a root a.ps1 that declares an r0 target, the
+        # origin's shape. The text is matched, never run.
+        $hasLauncher = (Test-RepoPath 'r0.ps1') -or (Test-RepoPath 'r0.cmd')
+        if (-not $hasLauncher -and (Test-RepoPath 'a.ps1')) {
+            $hasLauncher = (Get-Content -LiteralPath (Join-RepoPath 'a.ps1') -Raw) -match "'r0'\s*=\s*@\{"
+        }
+        if (-not $hasLauncher) {
+            Add-Finding -Id 'SZA-FLOW03' -Severity 'warn' -Path 'r0.ps1' `
+                -Message 'no launcher: no r0.ps1 or r0.cmd, and no a.ps1 with an r0 target' -Fix $flowFix
+        }
     }
 
     # --------------------------------------------------------- group CTR

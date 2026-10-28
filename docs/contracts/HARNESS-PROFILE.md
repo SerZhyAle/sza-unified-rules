@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Contract | `HARNESS-PROFILE` |
-| Version | 0.13, draft; source reader verified |
+| Version | 0.14, draft; source reader verified at 0.13; rules 8-10 not implemented |
 | Home | the shared contracts catalog, domain `rule-adoption/` (the path is in [CLAUDE.md](../../CLAUDE.md)) |
 | Role | **consumer**, and the schema's owner. Each repository running the harness writes its own profile |
 
@@ -21,3 +21,12 @@
   readable; higher MINOR and unknown keys are tolerated; unsupported MAJOR, null and malformed carriers
   refuse cleanly. Catalog reader vectors and all existing merge/dev-log regressions are replayed.
   Installed-consumer delivery remains unverified.
+- The agent fields of `runner.instances.<name>`, the per-instance `promptTemplate` and `complexityModels`
+  and the optional `portfolio` override object are 0.14 (the 2026-10-27 amendment, section 3 rules 8-10);
+  every key is optional and the wire stays 1.0. The S0015 dispatcher reuses the existing runner with
+  `-ModelPolicy shape` and an explicit permission mode; `_profile.ps1` remains unchanged. The reader
+  tolerates additional profile keys through its unknown-key merge and reads instance fields through
+  `Test-SzaHasProperty`. Multi-agent overrides and portfolio agent records belong to S0016; the first
+  dispatcher does not claim to implement them (`TASK-FLOW` rule 42). A change to `_profile.ps1` regenerates
+  the reader vectors (`tools/tests/export-contract-vectors.ps1`), because the file is fingerprinted in their
+  manifest.

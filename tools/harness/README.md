@@ -71,3 +71,34 @@ use, per the 2026-10-23 owned contract amendment. Absent carriers retain legacy 
 MINOR additions remain readable; unsupported MAJOR values require updated tooling and refuse before
 merge. Catalog reader artifacts are generated with `tools/tests/export-contract-vectors.ps1` and
 replayed with `tools/tests/contract-reader.tests.ps1 -CatalogRoot <catalog>`.
+
+## Portfolio queue
+
+`portfolio/pq.ps1` runs one terminal worker over the registered repositories. State and logs live in
+`SZA_PORTFOLIO_ROOT`, or `%USERPROFILE%\.sza\portfolio`. Register a repository with
+`pwsh -NoProfile -File <harness>/portfolio/pq.ps1 register -Path <repository>`; it joins disabled. Review
+`dry-run` and the repository's `r0 -DryRun`, then set `enabled: true` and an explicit `permissionMode`
+in `repos.json` (per repository, or inherited from its top level). No permission mode is supplied by
+default. `PORTFOLIO_QUEUE.md` sets the owner's order; `queue -Init -NoOpen` creates its first copy.
+
+Run `start` in each worker terminal, up to `maxWorkers`. Each pass calls the repository runner for one
+ticket with `-ModelPolicy shape`; the ticket's Complexity line chooses the model. A live repository
+lock keeps workers apart unless its registration declares `concurrent: true`. A failed or unchanged
+ticket is excluded until that worker ends. Usage-limit waits stay inside the existing runner.
+
+`start -Drain` exits when no candidate remains (0 after a pass, 3 when none ran); `-MaxTickets N` caps
+passes. Otherwise the worker waits for `pollSeconds` (60 by default), reading registry changes on each
+round. `stop` ends workers after their current passes; `stop -Kill` also invokes the runner's stop
+command and terminates pass process trees. A retained `STOP` is cleared on the next start after live
+workers have exited. Ctrl+C terminates the worker and its pass tree.
+
+`status` prints worker slots, today's UTC pass outcomes, the next ticket and STOP; `log -Last 40`
+prints recent events across writers in timestamp order. Both support `-Json`; `log` also accepts
+`-Repo <key>` and `-Ev <name>`. One row per pass goes to the portfolio's `runs.jsonl`, alongside the
+repository runner's own `runs-pq<slot>.jsonl`. Dispatcher code never writes ticket status directly.
+
+The operator's instruction is [portfolio/README.md](portfolio/README.md). `portfolio/install-shortcuts.ps1`
+puts a `PQ ...` shortcut for each everyday command on the Desktop (`-Remove` takes them off).
+
+Check this flow with `pwsh -NoProfile -File tools/tests/smoke-portfolio-runner.ps1` from the canon root.
+It uses throwaway repositories and fake children; it starts no agent.

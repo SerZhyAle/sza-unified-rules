@@ -57,7 +57,7 @@ catch { Write-Output $_.Exception.Message; exit 2 }
     if ($CatalogRoot) {
         $vectorDir = Join-Path $CatalogRoot 'rule-adoption/vectors'
         $manifest = Get-Content (Join-Path $vectorDir 'manifest.json') -Raw | ConvertFrom-Json
-        Assert-That ($manifest.contracts.'REPO-STAMP' -eq '0.13' -and $manifest.contracts.'HARNESS-PROFILE' -eq '0.13') 'Stale catalog versions'
+        Assert-That ($manifest.contracts.'REPO-STAMP' -eq '0.13' -and $manifest.contracts.'HARNESS-PROFILE' -eq '0.14') 'Stale catalog versions'
         Assert-That ($manifest.files.Count -eq 2 -and $manifest.sources.Count -eq $sources.Count) 'Incomplete artifact manifest'
         foreach ($entry in $manifest.files) {
             Assert-That ($entry.path -in @('reader-cases.json', 'reader-verdicts.json')) 'Unexpected vector artifact path'
@@ -218,7 +218,7 @@ artifacts: none
         Write-Json $verdictFile @($observed.ToArray())
         $sourceHashes = foreach ($source in $sources) { @{ path = $source; sha256 = (Get-TextHash (Join-Path $SourceRoot $source)) } }
         Write-Json (Join-Path $ExportDirectory 'manifest.json') @{
-            contracts = @{ 'REPO-STAMP' = '0.13'; 'HARNESS-PROFILE' = '0.13'; 'RULE-DELIVERY' = '0.12' }
+            contracts = @{ 'REPO-STAMP' = '0.13'; 'HARNESS-PROFILE' = '0.14'; 'RULE-DELIVERY' = '0.12' }
             command = 'pwsh -NoProfile -File tools/tests/export-contract-vectors.ps1 -CatalogRoot <catalog>'
             sourceHash = 'SHA-256 of the source file with CRLF read as LF, so a checkout under any autocrlf setting matches; the files below are catalog-resident and hashed as stored'
             sources = @($sourceHashes); files = @(

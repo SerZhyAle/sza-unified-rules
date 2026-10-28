@@ -114,7 +114,11 @@ if ($Action -ne 'list' -and $Action -ne 'reset') {
 }
 
 $cache = Read-Cache
+$readCount = $cache.Count
 $cache = Prune-Expired $cache
+# list and check are reads: they persist the prune only when it removed an entry, so a read-only caller
+# (spec-next-preflight.ps1, the portfolio picker) never creates or rewrites the cache file.
+$pruned = $cache.Count -ne $readCount
 
 switch ($Action) {
     'add' {
@@ -144,7 +148,7 @@ switch ($Action) {
     }
     'list' {
         # Always emit JSON for machine consumption.
-        Write-Cache $cache  # prune side effect persists
+        if ($pruned) { Write-Cache $cache }  # prune side effect persists
         if ($cache.Count -eq 0) { Write-Output '{}'; exit 0 }
         $obj = [PSCustomObject]@{}
         foreach ($key in ($cache.Keys | Sort-Object)) {
@@ -153,7 +157,7 @@ switch ($Action) {
         $obj | ConvertTo-Json -Depth 5 -Compress
     }
     'check' {
-        Write-Cache $cache
+        if ($pruned) { Write-Cache $cache }
         if ($cache.ContainsKey($Id)) {
             $entry = $cache[$Id]
             Write-Output "$Id|$($entry.reason)|$($entry.expires)"

@@ -43,6 +43,7 @@ call gets a fresh interpreter. The harness is `<root>/tools/harness`.
 - **Ask the owner once, and only this:** the permission mode the unattended child runs in. The default,
   `bypassPermissions`, lets it edit and run anything in the project; the alternatives are
   `acceptEdits`, `auto`, `plan`. Do not pick the permissive one silently, and write the answer down in Step 6.
+  When the portfolio registry already holds one (Step 7), use it and do not ask.
 
 ## Step 2 - Scaffold
 
@@ -60,6 +61,12 @@ archive and burned-ids files, the queue / ready / done plan files, `TICKET_TEMPL
 `tools/harness.ps1`. Every later harness call in the project goes through the forwarder -
 `pwsh -NoProfile -File tools/harness.ps1 spec_catalog/validate` - which finds the newest installed plugin; never
 copy a harness script or a sibling's forwarder. `-NoForwarder` skips it for a project with its own entry points.
+
+Beside `r0.ps1` it writes six uniform launchers: `r1.ps1`-`r3.ps1` (parallel instances `a`, `b`, `c`), `rs.ps1`
+(stop the queue), `rm.ps1` (monitor it) and `rw.ps1` (the portfolio runner scoped to this repository). They
+forward through `tools/harness.ps1`, so they never go stale when the plugin updates, and an argument you pass
+wins over the fixed one. `-NoLaunchers` skips all six, and so does `-NoForwarder`, since they have nothing to
+forward through.
 
 Then add the temp directory to `.gitignore`: it holds run journals and leases, which are not source.
 
@@ -112,9 +119,9 @@ parent's identity - its locks, leases and chat lines all read as the parent's. S
 spawning each child, so each child gets its own agent id; check it once by seeing distinct nicknames in the
 project chat (or the run rows) for two children.
 
-A second parallel runner (R1..Rn) is added only when the journal shows the single runner's idle time is the
-constraint (`TASK-FLOW rule 40`); it needs a per-ticket lease and its own agent identity, which this scaffold
-does not create. Lease timing, once it exists, is in spec-to-audit's
+`r1`-`r3` are rendered on day 0 but **used** only when the journal shows the single runner's idle time is the
+constraint (`TASK-FLOW rule 40`). What they add to R0 is exactly the per-ticket lease and the agent identity
+(`TASK-FLOW rules 28-29`). Lease timing is in spec-to-audit's
 [ticket-lifecycle-traps](../spec-to-audit/references/ticket-lifecycle-traps.md).
 
 ## Step 6 - Write it down where the next session will read it
@@ -127,6 +134,27 @@ Put four facts in the project's agent-rules file (`CLAUDE.md`, else `AGENTS.md`)
 - how to run R0 (`./r0.ps1`, the dry-run and the ceiling), and the permission mode the owner chose;
 - the statuses a ticket can be in (`Block*` needs a `statusNote`; `Verified` needs a `## Last Audit` block).
 
+## Step 7 - Join the portfolio
+
+Register the repository, so the robots and the owner's queue see it from its first commit
+(`TASK-FLOW rule 50`). Paste this block literally, with `$sza` the plugin root resolved in Step 0:
+
+```powershell
+$pq = Join-Path $sza 'tools/harness/portfolio/pq.ps1'
+if (Test-Path -LiteralPath $pq) {
+    pwsh -NoProfile -File $pq register -Path (Get-Location).Path
+} else {
+    Write-Host "pq is not in this plugin version ($sza). Update the plugin, then run: pwsh -NoProfile -File <plugin root>/tools/harness/portfolio/pq.ps1 register -Path $((Get-Location).Path)"
+}
+```
+
+`register` is idempotent: a second run prints `already registered <key>` and changes nothing. When `pq` exists
+and `register` exits non-zero, report its output; the repository is not registered. When `pq` is absent the
+block exits 0 and the printed instruction goes in the report.
+
+This skill does not decide the permission mode alone: it asks only when the registry holds none (the
+top-level `permissionMode` of `pq list -Json`).
+
 ## Gates - what refuses
 
 | Gate | Refuses |
@@ -135,3 +163,4 @@ Put four facts in the project's agent-rules file (`CLAUDE.md`, else `AGENTS.md`)
 | Step 3 | a ticket whose row exists and whose file does not; text that is not the owner's words |
 | Step 4 | the unattended run, until the validate, the dry run and one attended ticket have all been read |
 | Step 5 | an unattended run with no ceiling |
+| Step 7 | a repository that is not registered, once the plugin has pq |

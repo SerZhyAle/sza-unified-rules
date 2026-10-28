@@ -71,7 +71,7 @@ chosen downward to avoid ceremony.
 Problem, goals, constraints, open questions. Deliberately **no** class names, file paths, or signatures - this
 is the contract the audit later checks the build against.
 
-**Gate - all four:**
+**Gate - all five:**
 - The spec says whether the change touches a **shared-contract boundary** - a format, a wire shape, an
   algorithm constant, or a behaviour that another product reads or reproduces. The repo's
   `docs/contracts/` pointers name the contracts it holds; a serializer, importer or exporter with no pointer
@@ -85,6 +85,9 @@ is the contract the audit later checks the build against.
   recommend.)
 - The ticket has one authoritative record with an id and a first-line **Status:**, mutated only through its
   tool where one exists - a catalog CLI, a journal - never hand-edited.
+- The ticket's `**Complexity:**` line exists and was **rewritten at this spec pass**, confirmation included:
+  it no longer reads `not assessed at capture` (see [DEVELOPMENT.md](../../rules/DEVELOPMENT.md) section
+  8). A primitive-spec rung skips this item - it has three sections and no pipeline.
 
 Status vocabulary, identical across the portfolio:
 `Draft -> Approved -> Tactical -> In Progress -> Implemented -> Verified`, plus `Partial`, `Broken`,
@@ -125,7 +128,9 @@ a written step; every consumed symbol greps in the code or is produced earlier.
 
 **Gate**: the self-review is done, every step ends in a **static** check (file exists / symbol declared /
 value equals / command exits 0 - never "works correctly"), and every pre-implementation blocker is ticked.
-An unchecked blocker is the encoded stop.
+An unchecked blocker is the encoded stop. The plan pass has also read the ticket's complexity level against
+the plan and rewritten its `**Complexity:**` line where the plan disagrees (see
+[DEVELOPMENT.md](../../rules/DEVELOPMENT.md) section 8).
 
 ## Stage 3 - Implement
 

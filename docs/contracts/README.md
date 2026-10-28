@@ -6,7 +6,7 @@ these files are concise pointers, not local copies.
 | Contract | Version | Home | Role | Pointer |
 | --- | --- | --- | --- | --- |
 | `REPO-STAMP` | 0.13, draft | `rule-adoption/` | consumer and schema owner | [REPO-STAMP.md](REPO-STAMP.md) |
-| `HARNESS-PROFILE` | 0.13, draft | `rule-adoption/` | consumer and schema owner | [HARNESS-PROFILE.md](HARNESS-PROFILE.md) |
+| `HARNESS-PROFILE` | 0.14, draft | `rule-adoption/` | consumer and schema owner | [HARNESS-PROFILE.md](HARNESS-PROFILE.md) |
 | `REPO-LAYOUT` | 0.11, draft | `rule-adoption/` | producer and consumer | [REPO-LAYOUT.md](REPO-LAYOUT.md) |
 | `RULE-DELIVERY` | 0.12, draft | `rule-adoption/` | producer and consumer; installed reader delivery verified | [RULE-DELIVERY.md](RULE-DELIVERY.md) |
 | `CHECK-VERDICT` | 0.13, draft | `automated-checks/` | scoped test producer | [CHECK-VERDICT.md](CHECK-VERDICT.md) |

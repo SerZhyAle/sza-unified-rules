@@ -6,4 +6,6 @@
 - [S0011 - Complete contract reader and documentation conformance](DONE/S0011_contract-reader-follow-up.md)
 - [S0012 - Verify delivered readers and remaining harness conformance](DONE/S0012_contract-delivery-and-harness-evidence.md)
 - [S0013 - Close the TASK-FLOW harness gaps and exercise a real agent child](DONE/S0013_taskflow-harness-gaps-and-live-child.md)
-- [S0014 - Settle the TASK-FLOW differences and the draft question](S0014_taskflow-differences-and-draft-status.md)
+- [S0014 - Settle the TASK-FLOW differences and the draft question](DONE/S0014_taskflow-differences-and-draft-status.md)
+- [S0015 - Portfolio queue runner, first version: a primitive run loop over the registered projects, with logging](S0015_portfolio-queue-runner.md)
+- [S0016 - Portfolio runner, extended: everything S0015's first version leaves out (deferred, not scheduled)](S0016_portfolio-runner-extended.md)

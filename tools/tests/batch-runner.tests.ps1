@@ -57,7 +57,7 @@ function Invoke-Tool([string]$Project, [string]$Script, [string[]]$ToolArgs = @(
 
 # Start pwsh -File <script> <args> without waiting; stdout and stderr are drained so a full pipe cannot
 # stall the runner. Environment is set on the child only, so concurrent projects cannot see each other.
-function Start-Proc([string]$Project, [string[]]$Arguments) {
+function Start-Proc([string]$Project, [string[]]$Arguments, [hashtable]$Environment = @{}) {
     $psi = [System.Diagnostics.ProcessStartInfo]::new((Get-Command pwsh -CommandType Application | Select-Object -First 1).Source)
     foreach ($a in (@('-NoProfile', '-File') + $Arguments)) { $psi.ArgumentList.Add($a) }
     $psi.WorkingDirectory = $Project
@@ -65,6 +65,7 @@ function Start-Proc([string]$Project, [string[]]$Arguments) {
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
     $psi.Environment['SZA_PROJECT_ROOT'] = $Project
+    foreach ($k in $Environment.Keys) { $psi.Environment[$k] = [string]$Environment[$k] }
     $proc = [System.Diagnostics.Process]::Start($psi)
     $handle = [pscustomobject]@{
         process = $proc
@@ -88,8 +89,8 @@ function Wait-Proc($Handle, [int]$Seconds = 300) {
     if ($Handle.err.IsCompleted) { $text += $Handle.err.Result }
     [pscustomobject]@{ code = $Handle.process.ExitCode; output = $text; seconds = ((Get-Date) - $Handle.started).TotalSeconds }
 }
-function Invoke-Proc([string]$Project, [string[]]$Arguments, [int]$Seconds = 300) {
-    Wait-Proc (Start-Proc $Project $Arguments) $Seconds
+function Invoke-Proc([string]$Project, [string[]]$Arguments, [int]$Seconds = 300, [hashtable]$Environment = @{}) {
+    Wait-Proc (Start-Proc $Project $Arguments $Environment) $Seconds
 }
 
 function Read-Jsonl([string]$Path) {
@@ -524,6 +525,35 @@ try {
             }
             Assert-That ((Get-Launches $ref 'S0002') -ge 2 -and (Get-Launches $ref 'S0003') -eq 1) 'rule 24 differs from the rendered launcher'
         }
+    }
+
+    # The uniform launchers the scaffold renders beside r0.ps1 (S0015 R15, R36) go through the project's forwarder,
+    # which looks at SZA_HARNESS_ROOT first, so the child is pointed at the harness under test.
+    Test-Case 'S0015 R15: the rendered r1, r2, rs and rm forward to the harness runner with the instances of FMS_A''s names' {
+        $p = New-Project 'c9-launchers' @{ S0001 = 'advance' } 'a' @('only')
+        Set-BatchProfile $p
+        $via = @{ SZA_HARNESS_ROOT = $harness }
+        foreach ($pair in @(@('r1', 'a'), @('r2', 'b'), @('r3', 'c'))) {
+            $r = Invoke-Proc $p @((Join-Path $p "$($pair[0]).ps1"), '-DryRun') 300 $via
+            Assert-That ($r.code -eq 0) "$($pair[0]).ps1 -DryRun exit $($r.code): $($r.output)"
+            Assert-That ($r.output -match "(?m)^\s*instance\s+:\s+$($pair[1])\s*$") "$($pair[0]).ps1 -DryRun did not run instance '$($pair[1])': $($r.output)"
+        }
+        # The caller's argument wins over the fixed one, with no duplicate-parameter error.
+        $r = Invoke-Proc $p @((Join-Path $p 'r1.ps1'), '-DryRun', '-Instance', 'z') 300 $via
+        Assert-That ($r.code -eq 0) "r1.ps1 -DryRun -Instance z exit $($r.code): $($r.output)"
+        Assert-That ($r.output -match '(?m)^\s*instance\s+:\s+z\s*$') "r1.ps1 -Instance z did not run instance 'z': $($r.output)"
+        Assert-That (-not (Test-Path (Join-Path $p 'children.log'))) 'a dry run through a launcher started a child'
+        # rs is the shared stop.
+        $stop = Join-Path $p 'temp/STOP-SPEC-QUEUE'
+        Assert-That (-not (Test-Path -LiteralPath $stop)) 'the stop file exists before rs.ps1 ran'
+        $r = Invoke-Proc $p @((Join-Path $p 'rs.ps1')) 300 $via
+        Assert-That ($r.code -eq 0) "rs.ps1 exit $($r.code): $($r.output)"
+        Assert-That (Test-Path -LiteralPath $stop) "rs.ps1 did not write temp/STOP-SPEC-QUEUE: $($r.output)"
+        # rm answers what the monitor answers when called directly.
+        $direct = Invoke-Proc $p @((Join-Path $harness 'batch/monitor-spec-queue.ps1'), '-Json') 300 $via
+        $r = Invoke-Proc $p @((Join-Path $p 'rm.ps1'), '-Json') 300 $via
+        Assert-That ($r.code -eq $direct.code) "rm.ps1 -Json exit $($r.code), the monitor called directly exit $($direct.code): $($r.output)"
+        Assert-That ($r.output.Trim().Length -gt 0) 'rm.ps1 -Json printed nothing'
     }
 
     if ($run -eq 0) { throw 'No test cases executed' }

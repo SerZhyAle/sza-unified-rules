@@ -25,7 +25,7 @@ Canon: [README.md](../../rules/README.md) (consumption model),
   channel rows, open questions, recorded divergences.
 - **No record** -> this is a **new** repo. Follow
   [NEW_PROJECT_CHECKLIST.md](../../rules/NEW_PROJECT_CHECKLIST.md) top to bottom in place of steps 2-4, then
-  continue from step 5, creating the record from `rules/contrib/TEMPLATE.md`.
+  continue from step 5, creating the record from `rules/contrib/TEMPLATE.md`. Step 6a is not skippable.
 - **A stamp already exists and the canon has moved on** -> this is a **re-sync**. Jump to step 7, then fix
   whatever the digest comparison surfaced.
 
@@ -188,6 +188,41 @@ plan-only commits.
 Verify by driving it, not by reading it: change one ticket's status through the write path and show the line
 moving, then run `validate` and cite its exit code.
 
+## Step 6a - Day 0 of the task flow (mandatory)
+
+Every repository that adopts the canon works its tasks through the ledger and joins the portfolio
+(`TASK-FLOW rule 50`). This step is never skipped and has no alternative scheme.
+
+1. **Read first.** A `.sza-profile.json`, a ledger at the profile's `paths.journal` (default
+   `PLAN/spec-catalog.jsonl`) and the launchers (`r0.ps1`, or the project's own launcher with an `r0` target)
+   all present -> day 0 stands; go to item 3. When `r0.ps1` stands but the uniform launchers (`r1`-`r3`,
+   `rs`, `rm`, `rw`) do not, run the scaffold once more - it writes only what is absent:
+   `pwsh -NoProfile -File "<plugin root>/tools/harness/scaffold/init-task-flow.ps1" -Root .`. A project whose
+   own launcher carries the `r0` target keeps it and passes `-NoLaunchers`.
+2. **Otherwise run the [task-flow-init](../task-flow-init/SKILL.md) skill** - its dry run, then the real
+   scaffold. The permission mode for unattended children is the owner's once-per-registry choice: read the
+   top-level `permissionMode` of `pq list -Json` and ask only when the registry holds none (or there is no
+   registry yet). A repository that keeps an own scheme today records a **dated exception** in the shared
+   registry's exceptions section (through `contract-sync`) - never a silent skip, and never a second ticket
+   scheme beside the ledger.
+3. **Prove it:** `pwsh -NoProfile -File tools/harness.ps1 spec_catalog/validate` exits 0 and
+   `pwsh -NoProfile -File ./r0.ps1 -DryRun` prints the order the owner expects (`TASK-FLOW rule 39`).
+4. **Join the portfolio** with exactly this block - `$sza` is the plugin root resolved in step 1; paste it
+   literally:
+
+```powershell
+$pq = Join-Path $sza 'tools/harness/portfolio/pq.ps1'
+if (Test-Path -LiteralPath $pq) {
+    pwsh -NoProfile -File $pq register -Path (Get-Location).Path
+} else {
+    Write-Host "pq is not in this plugin version ($sza). Update the plugin, then run: pwsh -NoProfile -File <plugin root>/tools/harness/portfolio/pq.ps1 register -Path $((Get-Location).Path)"
+}
+```
+
+`register` is idempotent: a second run prints `already registered <key>` and changes nothing. When `pq` exists
+and `register` exits non-zero, report its output and do not tick the day-0 line of "Done means". When `pq` is
+absent the block exits 0 and the printed instruction goes in the report.
+
 ## Step 7 - Re-sync (existing adoption, canon moved)
 
 The staleness ladder, from the compliance gate:
@@ -202,6 +237,9 @@ The staleness ladder, from the compliance gate:
 
 When `CONTRACTS.md` is among the changed docs, the re-sync includes a `contract-sync` run - a change
 there changes what the repo owes the catalog, and reading it is not the same as doing it.
+
+If day 0 of the task flow or the uniform launchers (`r1`-`r3`, `rs`, `rm`, `rw` beside `r0`) are missing, run
+step 6a.
 
 Note the digest deliberately covers the **rule docs only** - not `README.md`, not the spread prompt, not
 `contrib/`. A change to one project's own record must never mark all eight repos stale.
@@ -230,6 +268,8 @@ Re-run the compliance gate and show the before/after counts.
 - [ ] Shared contracts: `contract-sync` ran on this repo, or the record says in one line that it holds none.
 - [ ] The release package plan is either standing up with all six decisions recorded and its reconcile on the
       ticket store's single write path, or skipped with a one-line reason.
+- [ ] Day 0 of the task flow stands (profile, ledger, plan files, template, launchers) and pq register ran, or
+      its printed instruction is in the report.
 - [ ] The repo's own gates pass, with exit codes cited.
 - [ ] The compliance gate's error count is zero, or every remaining error has a recorded exemption.
 - [ ] The contrib record carries a dated adoption section.

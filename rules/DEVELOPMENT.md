@@ -67,9 +67,11 @@ compile-only -> targeted tests -> minified release variant -> device) lives in
 
 - Every non-trivial change is a ticket with an explicit lifecycle (Android reference: `Sxxxx` specs,
   `Draft -> Approved -> Tactical -> In Progress -> Implemented -> Verified`, managed only through the
-  `scripts/spec_catalog/` CLI - never hand-edit the journal). A project without that CLI keeps
-  `PLAN/SPECIFICATION_*.md` instead; the discipline is the same: one authoritative
-  ticket record, mutated through its tool, status synced into the file.
+  `scripts/spec_catalog/` CLI - never hand-edit the journal). A project without that CLI stands the ledger
+  up on day 0 with the harness scaffold ([task-flow-init](../skills/task-flow-init/SKILL.md)) instead of
+  keeping a scheme of its own; an existing repository's own scheme survives only as a **dated exception**
+  in the shared contracts registry ([CONTRACTS.md](CONTRACTS.md) §4). The discipline is the same
+  everywhere: one authoritative ticket record, mutated through its tool, status synced into the file.
 - **Out-of-scope findings are parked, not fixed inline** when they are unrelated, non-trivial, and need
   their own research: dedup by symptom first, capture the symptom/evidence in a fresh draft ticket,
   report it, and resume the original task. Never switch the active ticket for a parked finding. Trivial
@@ -111,6 +113,28 @@ compile-only -> targeted tests -> minified release variant -> device) lives in
   miss: **locate a document section by its heading text, never by its number** - numbers shift when a
   template gains a section, and the gate then reads the wrong part of every older file while its verdict
   stays green.
+- **A ticket declares how hard its own work is, in one header line:**
+  `**Complexity:** <light|medium|hard> - <one-line reason>`. It is written by whoever approves the ticket
+  or returns it to the queue, in the same edit that writes its verification level where the repository
+  keeps one (`**Verify:**`). The level names what the work is: `light` - the fix is known and local (one
+  file, script, string, document or rule line; nothing is left to decide); `medium` - a bounded change
+  inside one feature or layer, whose approach is visible in the neighbouring code; `hard` - the work
+  contains a decision (a new subsystem, a change across layers or modules, lifecycle, concurrency,
+  persistence or a migration, a harness or canon mechanism, or a question research has not answered yet).
+  In doubt, the higher level. It is never an estimate: no hours, no line count, no cost.
+- **Two checkpoints, and the capture default does not survive the first.** A capture tool writes
+  `**Complexity:** medium - not assessed at capture`. Before `Draft -> Approved` - the spec pass - the
+  author reads the level against what the research found and rewrites the Complexity line even when the
+  level stands (`<level> - assessed at the spec pass: <what was found>`), because an untouched default
+  cannot be told apart from a confirmed one. A ticket past that point therefore never still reads "not
+  assessed at capture", and the ticket tool reports one that does, as a warning only. Before `Tactical` -
+  the plan pass - the author reads the level against the plan (files touched, decisions found, risks) and
+  rewrites the Complexity line only when the plan disagrees: `<new> - revised from <old>: <what was found>`.
+- **The Complexity line is read at every launch.** A runner maps the level to a model through its profile
+  and reads the spec as it is on disk each time it launches the ticket, so a revision takes effect at the
+  ticket's next pass and a child already running is never re-modelled. The owner overrules by editing the
+  line. A spec without a Complexity line, or with a value outside the three levels, keeps the runner's
+  earlier routing.
 
 ## 9. Dead-weight & AI-tell hygiene
 
