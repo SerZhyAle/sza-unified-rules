@@ -261,9 +261,12 @@ nothing is written into it: run `task-flow-init` there, which ends in `pq regist
 `agentOrder` in `repos.json` is the spend order, and Claude comes last: for each pass the worker takes the first agent that
 is not held, is under its `maxParallel`, whose `levels` admit the ticket's level (a spec without a Complexity line counts
 as `medium`) and that can reach the repository's pipeline. An agent without slash commands (`promptForm: file`) is told to
-open the pipeline's command file - `.claude/commands/spec-all.md` for a repository whose prompt is `/spec-all {id}` - and
-follow it; a repository whose prompt is plain text gets that text. A repository whose command file is missing is left to
-the next agent. Every agent other than Claude always runs the `model` and `effort` written in its record, whatever the
+open the pipeline's command file - `.claude/commands/spec-all.md` for a repository whose prompt is `/spec-all {id}`, the
+plugin's `skills/spec-to-audit/SKILL.md` for `/sza:spec-to-audit` - and follow it; a repository whose prompt is plain text
+gets that text. A repository without a prompt of its own, or whose prompt names a command it does not have (no command or
+skill file in the repository or in `~/.claude`), gets the shared default, `/sza:spec-to-audit {id}` with the
+unattended-pass instructions, for every agent: an unknown slash command is not an error to the CLI, the child would read
+it as plain text and improvise. The runner prints `prompt note` when it makes that swap. Every agent other than Claude always runs the `model` and `effort` written in its record, whatever the
 ticket's level.
 
 A record for Codex, beside the Claude record (once `agents` is present, Claude needs its own record too):
@@ -276,7 +279,7 @@ A record for Codex, beside the Claude record (once `agents` is present, Claude n
                      "--model", "{model}", "-c", "model_reasoning_effort=\"{effort}\"",
                      "--dangerously-bypass-approvals-and-sandbox", "{prompt}"],
     "headlessMatch": "(?i)codex\\.js\"?\\s.*\\bexec\\b", "promptForm": "file",
-    "model": "gpt-6.1-sol", "effort": "max", "maxParallel": 2, "limitPollMinutes": 30,
+    "model": "gpt-6.1-terra", "effort": "xhigh", "maxParallel": 2, "limitPollMinutes": 30,
     "limitDetector": { "kind": "exitText", "pattern": "(?i)usage limit|rate limit", "status": "unproven" } },
   { "name": "claude", "command": "claude", "promptForm": "slash",
     "argsTemplate": ["-p", "{prompt}", "--permission-mode", "{permissionMode}", "--model", "{model}"],
@@ -351,9 +354,9 @@ text, environment values or keys.
 
 ## A first test in throwaway repositories
 
-Before pointing `pq` at a product, run it over repositories that exist only for the test. A repository gets the runner's own
-prompt (`/spec-all` and the like) only if it has the command, so a scaffolded throwaway repository, whose profile carries a
-self-contained prompt, is the cleanest bench. Two benches show both files at work: the project queue needs two projects, the
+Before pointing `pq` at a product, run it over repositories that exist only for the test. A repository gets its own
+command (`/spec-all` and the like) only if it has the command file, and the plugin's lifecycle skill otherwise, so a
+scaffolded throwaway repository, whose profile carries a self-contained prompt, is the cleanest bench. Two benches show both files at work: the project queue needs two projects, the
 ticket queue needs two tickets in one of them.
 
 1. New folder, `git init`, a `.sza-canon.json` copied from `templates/.sza-canon.json` and filled (or `adopt-canon`), then

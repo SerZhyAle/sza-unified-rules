@@ -146,8 +146,8 @@ function ConvertTo-Literal([string] $Value) { return "'" + $Value.Replace("'", "
 $profileCreated = $false
 if (-not (Test-Path -LiteralPath $profilePath -PathType Leaf)) {
     if (-not $ProjectName) { $ProjectName = Split-Path -Leaf $Root }
-    # The full runner behind r1-r3 reads runner.promptTemplate, whose shared default names a /spec-all command
-    # a new project does not have; R0's prompt goes there, spelled with the profile's {Id}.
+    # The full runner behind r1-r3 reads runner.promptTemplate; R0's one-step prompt goes there, spelled with the
+    # profile's {Id}, so r1-r3 and R0 send the same thing.
     $minimal = [ordered]@{
         version     = '1'
         projectName = $ProjectName

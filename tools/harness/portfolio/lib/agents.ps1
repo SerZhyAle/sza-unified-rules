@@ -9,7 +9,9 @@
 #   Get-PqAgentPrompt -Agent <record> -RepoPath <dir>
 #       @{ ok; template; why }. slash: template $null (the repository's own runner.promptTemplate, as today). file: a
 #       template that tells the agent to open the pipeline's command file, when the repository's template is a slash
-#       command and that file exists; a template that is plain text is used as it is. why noPipelineForm otherwise.
+#       command and that file exists (a project or user command or skill, or the plugin's own skill for /sza:<skill>);
+#       a command the repository does not have falls back to the shared default, the plugin's lifecycle skill. A
+#       template that is plain text is used as it is. why noPipelineForm when no command file is found.
 #   Get-PqAgentHold -Name <agent> / Test-PqAgentHeld -Hold <hold> -Agent <record>
 #       the hold of rule 48 (or $null), and whether it still keeps the agent out. A hold with until in the future holds;
 #       one with until $null holds for limitPollMinutes after it was written, then lets one probe pass through.
@@ -63,18 +65,19 @@ function Get-PqAgentPrompt {
     catch { return @{ ok = $false; template = $null; why = 'noPipelineForm' } }
     $default = [string]$script:PqRepoDefaults.runner.promptTemplate
     if (-not $template) { $template = $default }
+    if ($template -notmatch '^/') { return @{ ok = $true; template = $template.Replace('{Id}', '{id}'); why = $null } }
     $paths = Get-PqRepoPaths -RepoPath $RepoPath
     $commandFile = Find-PqCommandFile -Template $template -Paths $paths
     # A command the repository does not have falls back to the shared default, as run-spec-queue.ps1 does for Claude.
-    if ($template -match '^/' -and -not $commandFile -and $template -cne $default) {
+    if (-not $commandFile -and $template -cne $default) {
         $template = $default
         $commandFile = Find-PqCommandFile -Template $template -Paths $paths
     }
-    $template = $template.Replace('{Id}', '{id}')
-    if ($template -notmatch '^/(?<name>[A-Za-z0-9_:-]+)(?<rest>.*)$') { return @{ ok = $true; template = $template; why = $null } }
+    if (-not $commandFile -or $template.Replace('{Id}', '{id}') -notmatch '^/(?<name>[A-Za-z0-9_:-]+)(?<rest>.*)$') {
+        return @{ ok = $false; template = $null; why = 'noPipelineForm' }
+    }
     $name = $Matches['name']
     $rest = $Matches['rest'].Trim()
-    if (-not $commandFile) { return @{ ok = $false; template = $null; why = 'noPipelineForm' } }
     $rel = [IO.Path]::GetRelativePath($paths.Root, $commandFile)
     if ([IO.Path]::IsPathRooted($rel) -or $rel.StartsWith('..')) { $rel = $commandFile }
     $rel = $rel.Replace('\', '/')
@@ -186,4 +189,20 @@ function Select-PqAgent {
         $levels = @(Get-PqValue $a 'levels' @('light', 'medium', 'hard'))
         if ($levels -cnotcontains $Level) { $fallbacks.Add(@{ from = $name; why = 'levelNotAllowed' }); continue }
         $max = [int](Get-PqValue $a 'maxParallel' 1)
-        if ((Get-PqAgentLiveCount $name) -ge $max) { $fallbacks.Add(@{ from = $name; why = 'maxParallel' 
+        if ((Get-PqAgentLiveCount $name) -ge $max) { $fallbacks.Add(@{ from = $name; why = 'maxParallel' }); continue }
+        $prompt = Get-PqAgentPrompt -Agent $a -RepoPath $RepoPath
+        if (-not $prompt.ok) { $fallbacks.Add(@{ from = $name; why = $prompt.why }); continue }
+        return @{ agent = [string]$name; record = $a; template = $prompt.template; fallbacks = $fallbacks }
+    }
+    return @{ agent = $null; record = $null; template = $null; fallbacks = $fallbacks }
+}
+
+# The runner's arguments for a pass of a non-Claude agent: the record (rule 42), its fixed model, and the prompt form.
+function Get-PqAgentPassArgs($Pick) {
+    $a = $Pick.record
+    $rec = [ordered]@{ command = [string]$a.command; argsTemplate = @($a.argsTemplate); effort = [string](Get-PqValue $a 'effort' '') }
+    if (Test-PqHasKey $a 'headlessMatch') { $rec.headlessMatch = [string]$a.headlessMatch }
+    $args_ = @('-AgentJson', (ConvertTo-Json -InputObject $rec -Compress -Depth 8), '-ModelPolicy', 'fixed', '-Model', [string]$a.model)
+    if ($Pick.template) { $args_ += @('-PromptTemplate', [string]$Pick.template) }
+    return [string[]]$args_
+}
