@@ -49,8 +49,8 @@ for ($i = 0; $i -lt $allRecords.Count; $i++) {
 }
 
 foreach ($ticketId in $Id) {
-    if ($ticketId -notmatch '^S\d{4}$') {
-        $errors.Add("Invalid id '$ticketId' (must match S####).")
+    if (-not (Test-SzaTicketId $ticketId)) {
+        $errors.Add("Invalid id '$ticketId' (must match $(Get-SzaTicketIdDisplay)).")
         continue
     }
     if (-not $indexMap.ContainsKey($ticketId)) {

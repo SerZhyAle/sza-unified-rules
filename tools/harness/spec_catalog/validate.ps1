@@ -43,11 +43,12 @@ if ($idGroups) {
     Add-Result 'Uniqueness'     'OK' 'all ids unique'
 }
 
-# 3. Monotonicity (dense S0001..Smax, archived included)
+# 3. Monotonicity (dense first..max id of the grammar, archived included)
 if ($records.Count -gt 0) {
-    $nums = $records | ForEach-Object {
-        if ($_.id -match '^S(\d{4})$') { [int]$Matches[1] }
-    } | Sort-Object
+    $nums = @($records | ForEach-Object {
+        $n = ConvertTo-SzaTicketNumber ([string]$_.id)
+        if ($null -ne $n) { $n }
+    } | Sort-Object)
     $expected = 1
     $gaps = New-Object System.Collections.Generic.List[int]
     foreach ($n in $nums) {
@@ -59,32 +60,40 @@ if ($records.Count -gt 0) {
     # this check is here to catch.
     $burned = @{}
     foreach ($b in (Read-BurnedIds)) { $burned[$b.id] = $true }
-    $unexplained = @($gaps | Where-Object { -not $burned.ContainsKey(('S{0:D4}' -f $_)) })
+    $unexplained = @($gaps | Where-Object { -not $burned.ContainsKey((Format-SzaTicketId $_)) })
     $accounted = $gaps.Count - $unexplained.Count
-    if ($unexplained.Count -gt 0) {
-        Add-Result 'Monotonicity' 'WARN' ('id gaps: {0}' -f (($unexplained | ForEach-Object { 'S{0:D4}' -f $_ }) -join ', '))
+    $firstId = Format-SzaTicketId 1
+    if ($nums.Count -eq 0) {
+        Add-Result 'Monotonicity' 'OK' '(no record carries an id of the profile grammar)'
+    } elseif ($unexplained.Count -gt 0) {
+        Add-Result 'Monotonicity' 'WARN' ('id gaps: {0}' -f (($unexplained | ForEach-Object { Format-SzaTicketId $_ }) -join ', '))
     } elseif ($accounted -gt 0) {
-        Add-Result 'Monotonicity' 'OK' ('dense S0001..S{0:D4} ({1} burned id(s) accounted for)' -f $nums[-1], $accounted)
+        Add-Result 'Monotonicity' 'OK' ('dense {0}..{1} ({2} burned id(s) accounted for)' -f $firstId, (Format-SzaTicketId $nums[-1]), $accounted)
     } else {
-        Add-Result 'Monotonicity' 'OK' ('dense S0001..S{0:D4}' -f ($nums[-1]))
+        Add-Result 'Monotonicity' 'OK' ('dense {0}..{1}' -f $firstId, (Format-SzaTicketId $nums[-1]))
     }
 } else {
     Add-Result 'Monotonicity'   'OK' '(empty journal)'
 }
 
-# 4. Filesystem -> journal: every PLAN/S####_* file/folder has a record
+# 4. Filesystem -> journal: every PLAN/<id>_* file/folder has a record (the id grammar is the profile's: S####, SP-####)
+#    An id in the burned registry is accounted for without a record: it was spent and the ledger deliberately does not
+#    hold it - a ticket kept by hand before the project had a ledger is adopted that way (TASK-FLOW rule 11).
 $repoRoot = (Get-SzaProjectRoot)
 $planDir  = Join-Path $repoRoot 'PLAN'
+$idFragment = Get-SzaTicketIdFragment
 # @(): a pipeline with no match is $null, and under StrictMode $null has no .Count - a repository
-# with no S####_ entry in PLAN/ yet would otherwise end the whole run here.
-$prefixed = @(Get-ChildItem -Path $planDir -Force | Where-Object { $_.Name -match '^S\d{4}_' })
+# with no <id>_ entry in PLAN/ yet would otherwise end the whole run here.
+$prefixed = @(Get-ChildItem -Path $planDir -Force | Where-Object { $_.Name -match ('^' + $idFragment + '_') })
 $known = @{}
 foreach ($r in $records) { $known[$r.id] = $true }
+$burnedIds = @{}
+foreach ($b in (Read-BurnedIds)) { $burnedIds[[string]$b.id] = $true }
 $orphans = New-Object System.Collections.Generic.List[string]
 foreach ($item in $prefixed) {
-    if ($item.Name -match '^(S\d{4})_') {
+    if ($item.Name -match ('^(' + $idFragment + ')_')) {
         $id = $Matches[1]
-        if (-not $known.ContainsKey($id)) {
+        if (-not $known.ContainsKey($id) -and -not $burnedIds.ContainsKey($id)) {
             $orphans.Add($item.Name)
         }
     }
@@ -92,7 +101,7 @@ foreach ($item in $prefixed) {
 if ($orphans.Count -gt 0) {
     Add-Result 'FS->Journal' 'FAIL' ('orphan filesystem entries (no journal record): {0}' -f ($orphans -join ', '))
 } else {
-    Add-Result 'FS->Journal' 'OK' ('all {0} prefixed entries have a record' -f $prefixed.Count)
+    Add-Result 'FS->Journal' 'OK' ('all {0} prefixed entries have a record or a burned id' -f $prefixed.Count)
 }
 
 # 5. Journal -> filesystem: every record should point at an existing file.

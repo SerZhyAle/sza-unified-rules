@@ -585,23 +585,25 @@ function Read-ReleaseFile {
             continue
         }
         $changedPattern = '(\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?|\d{2}-\d{2}-\d{2}(?: \d{2}:\d{2})?)'
-        if ($parsable -match ('^\s*(S\d{4}_\S*)\s+' + $changedPattern + '\s+(\S.*?)\s*$')) {
+        # The id is what comes before the first underscore of the ticket token; its shape is the profile's grammar.
+        $idFragment = Get-SzaTicketIdFragment
+        if ($parsable -match ('^\s*(' + $idFragment + '_\S*)\s+' + $changedPattern + '\s+(\S.*?)\s*$')) {
             $result.Add([pscustomobject]@{
                 Kind    = 'ticket'
                 Release = $section
                 Ticket  = $Matches[1]
                 Changed = (ConvertTo-ReleaseChangedStamp -Value $Matches[2])
                 Status  = $Matches[3]
-                Id      = $Matches[1].Substring(0, 5)
+                Id      = ($Matches[1] -split '_', 2)[0]
             })
-        } elseif ($parsable -match ('^\s*(\d+|--)\s+(S\d{4}_\S*)\s+' + $changedPattern + '\s+(\S.*?)\s*$')) {
+        } elseif ($parsable -match ('^\s*(\d+|--)\s+(' + $idFragment + '_\S*)\s+' + $changedPattern + '\s+(\S.*?)\s*$')) {
             $result.Add([pscustomobject]@{
                 Kind    = 'ticket'
                 Release = $Matches[1]
                 Ticket  = $Matches[2]
                 Changed = (ConvertTo-ReleaseChangedStamp -Value $Matches[3])
                 Status  = $Matches[4]
-                Id      = $Matches[2].Substring(0, 5)
+                Id      = ($Matches[2] -split '_', 2)[0]
             })
         } else {
             $result.Add([pscustomobject]@{ Kind = 'verbatim'; Text = "$line" })
@@ -979,22 +981,20 @@ function New-CatalogId {
     # Must scan archive too - an archived id must never be reissued - and the burned registry, whose
     # ids are gone from both journals yet just as spent (S1534).
     $records = Read-Catalog -IncludeArchived
+    $spec = Get-SzaTicketIdSpec
     $max = 0
     foreach ($r in $records) {
-        if ($r.id -match '^S(\d{4})$') {
-            $n = [int]$Matches[1]
-            if ($n -gt $max) { $max = $n }
-        }
+        $n = ConvertTo-SzaTicketNumber ([string]$r.id)
+        if ($null -ne $n -and $n -gt $max) { $max = $n }
     }
     foreach ($b in (Read-BurnedIds)) {
-        if ($b.id -match '^S(\d{4})$') {
-            $n = [int]$Matches[1]
-            if ($n -gt $max) { $max = $n }
-        }
+        $n = ConvertTo-SzaTicketNumber ([string]$b.id)
+        if ($null -ne $n -and $n -gt $max) { $max = $n }
     }
     $next = $max + 1
-    if ($next -gt 9999) { throw "Id space exhausted (S9999 reached)." }
-    return ('S{0:D4}' -f $next)
+    $last = [int][Math]::Pow(10, $spec.width) - 1
+    if ($next -gt $last) { throw "Id space exhausted ($(Format-SzaTicketId $last) reached)." }
+    return (Format-SzaTicketId $next)
 }
 
 function Find-Record {
@@ -1085,7 +1085,7 @@ function Invoke-ProbeRemovalOnExit {
     param(
         [Parameter(Mandatory)][string] $Id
     )
-    if ($Id -notmatch '^S\d{4}$') { throw "Invoke-ProbeRemovalOnExit: invalid id '$Id'." }
+    if (-not (Test-SzaTicketId $Id)) { throw "Invoke-ProbeRemovalOnExit: invalid id '$Id'." }
 
     # Configuration first, before anything is scanned or locked: a key set with no command to run
     # must never pass silently, which is what a missing remover would do if it were checked last.

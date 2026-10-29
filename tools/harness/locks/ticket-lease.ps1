@@ -544,7 +544,7 @@ function Get-LiveRunTicketIds {
     foreach ($proc in @((Get-SzaAgentProcesses))) {
         if (-not $proc.CommandLine) { continue }
         if ($proc.CommandLine -notmatch '\s-p\s') { continue }
-        foreach ($m in [regex]::Matches([string]$proc.CommandLine, 'S\d{4}')) { $ids += $m.Value }
+        foreach ($m in [regex]::Matches([string]$proc.CommandLine, (Get-SzaTicketIdFragment))) { $ids += $m.Value }
     }
     return @($ids | Sort-Object -Unique)
 }

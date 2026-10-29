@@ -57,8 +57,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-if ($Id -notmatch '^S\d{4}$') {
-    Write-Error "Invalid -Id '$Id' (must match S####)" -ErrorAction Continue
+if (-not (Test-SzaTicketId $Id)) {
+    Write-Error "Invalid -Id '$Id' (must match $(Get-SzaTicketIdDisplay))" -ErrorAction Continue
     exit 2
 }
 

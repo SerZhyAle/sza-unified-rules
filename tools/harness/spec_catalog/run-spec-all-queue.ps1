@@ -83,7 +83,7 @@ $terminalStatuses = @('Implemented', 'Verified')
 # 2026-09-01 ('[taken 15:42, /spec-all, be08adb0]'). Without it every taken row reads as a
 # malformed line and this runner exits 2 on the owner's own plan; the status group is lazy so
 # the marker cannot be swallowed into the status instead.
-$ticketPattern = '^\s*(?<release>\d+|--)\s+(?<ticket>S\d{4}_[a-z0-9][a-z0-9-]*)\s+(?<changed>\d{4}-\d{2}-\d{2})\s+(?<status>\S(?:.*?\S)?)(?:\s+\[taken\s[^\]]*\])?\s*$'
+$ticketPattern = '^\s*(?<release>\d+|--)\s+(?<ticket>' + (Get-SzaTicketIdFragment) + '_[a-z0-9][a-z0-9-]*)\s+(?<changed>\d{4}-\d{2}-\d{2})\s+(?<status>\S(?:.*?\S)?)(?:\s+\[taken\s[^\]]*\])?\s*$'
 
 function Get-CatalogRecord {
     param([Parameter(Mandatory)][string] $TicketId)
@@ -273,8 +273,8 @@ function Get-NextQueueTicket {
         # and an empty id would launch a bare /spec-all, which aborts at Stage 0 and burns a session.
         $queueName = [string] $Matches.ticket
         $release = [string] $Matches.release
-        $ticketId = $queueName.Substring(0, 5)
-        $slug = $queueName.Substring(6)
+        $ticketId = ($queueName -split '_', 2)[0]
+        $slug = $queueName.Substring($ticketId.Length + 1)
 
         $catRec = Get-CatalogRecord -TicketId $ticketId
         $status = [string] $catRec.status
@@ -352,7 +352,7 @@ function Start-SpecAll {
         [Parameter(Mandatory)][int] $Attempt
     )
 
-    if ($Ticket.Id -notmatch '^S\d{4}$') {
+    if (-not (Test-SzaTicketId $Ticket.Id)) {
         throw "Refusing to start: '$($Ticket.Id)' is not a ticket id. A bare /spec-all aborts at Stage 0 and spends a whole session on nothing."
     }
 

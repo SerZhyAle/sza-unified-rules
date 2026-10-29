@@ -70,7 +70,7 @@ $records = Read-Catalog
 if (-not $Id) {
     $Id = New-CatalogId
 } else {
-    if ($Id -notmatch '^S\d{4}$') { throw "Invalid -Id '$Id' (must match S####)." }
+    if (-not (Test-SzaTicketId $Id)) { throw "Invalid -Id '$Id' (must match $(Get-SzaTicketIdDisplay))." }
 }
 
 if (-not (Test-SzaStatusName $Status)) {

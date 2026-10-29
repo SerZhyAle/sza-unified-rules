@@ -80,7 +80,7 @@
 [CmdletBinding(PositionalBinding = $false, DefaultParameterSetName = 'Steps')]
 param(
     [Parameter(Mandatory = $true)]
-    [ValidatePattern('^S\d{4}$')]
+    [ValidatePattern('^[A-Za-z][A-Za-z0-9-]*\d{2,}$')]   # the shape only; the profile's grammar is checked after it loads
     [string]$Id,
 
     [Parameter(Mandatory = $true, ParameterSetName = 'Steps')]
@@ -112,6 +112,7 @@ param(
 )
 
 . (Join-Path $PSScriptRoot '..\_profile.ps1')
+if (-not (Test-SzaTicketId $Id)) { Write-Error "Invalid -Id '$Id' (must match $(Get-SzaTicketIdDisplay))."; exit 2 }
 
 $ErrorActionPreference = 'Stop'
 

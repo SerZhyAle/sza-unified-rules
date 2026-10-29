@@ -600,6 +600,55 @@ function Get-SzaTicketIdFragment {
     return ($p -replace '^\^', '') -replace '\$$', ''
 }
 
+function Test-SzaTicketId {
+    <#
+    .SYNOPSIS
+        Whether a string is a ticket id under the profile's grammar.ticketIdPattern (default '^S\d{4}$').
+        Case-insensitive, as the -match it replaces always was.
+    #>
+    param([AllowNull()][AllowEmptyString()][string]$Id)
+    return [regex]::IsMatch([string]$Id, [string](Get-SzaProfileValue 'grammar.ticketIdPattern'), [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+}
+
+function Get-SzaTicketIdSpec {
+    <#
+    .SYNOPSIS
+        The id grammar split into what an id is made of: a fixed literal prefix and a fixed-width decimal
+        (TASK-FLOW rule 2). '^S\d{4}$' is S + 4 digits, '^SP-\d{4}$' is SP- + 4 digits. Only allocation and
+        number parsing need this; a pattern of another shape still validates ids (Test-SzaTicketId) but
+        cannot allocate one, so it throws here and says why.
+    #>
+    $pattern = [string](Get-SzaProfileValue 'grammar.ticketIdPattern')
+    $m = [regex]::Match($pattern, '^\^(?<prefix>[A-Za-z][A-Za-z0-9-]*)\\d\{(?<width>[1-9][0-9]*)\}\$$')
+    if (-not $m.Success) {
+        throw "sza-profile: grammar.ticketIdPattern '$pattern' cannot allocate ids - it must be '^<prefix>\d{N}`$', a literal prefix and a fixed-width decimal (TASK-FLOW rule 2)."
+    }
+    $prefix = $m.Groups['prefix'].Value
+    $width = [int]$m.Groups['width'].Value
+    return [pscustomobject]@{ pattern = $pattern; prefix = $prefix; width = $width; display = $prefix + ('#' * $width) }
+}
+
+function Get-SzaTicketIdDisplay {
+    <# The grammar as a person reads it: S#### by default, SP-#### for a project that numbers SP-0001. #>
+    try { return (Get-SzaTicketIdSpec).display } catch { return [string](Get-SzaProfileValue 'grammar.ticketIdPattern') }
+}
+
+function ConvertTo-SzaTicketNumber {
+    <# The number inside an id, or $null when the string is not an id of this grammar. #>
+    param([AllowNull()][AllowEmptyString()][string]$Id)
+    $spec = Get-SzaTicketIdSpec
+    $m = [regex]::Match([string]$Id, '^' + [regex]::Escape($spec.prefix) + '(?<n>\d{' + $spec.width + '})$', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    if ($m.Success) { return [int]$m.Groups['n'].Value }
+    return $null
+}
+
+function Format-SzaTicketId {
+    <# The id for a number: the prefix and the number zero-padded to the grammar's width. #>
+    param([Parameter(Mandatory)][int]$Number)
+    $spec = Get-SzaTicketIdSpec
+    return $spec.prefix + ([string]$Number).PadLeft($spec.width, '0')
+}
+
 function Get-SzaProbeFormRegexForId {
     <#
     .SYNOPSIS

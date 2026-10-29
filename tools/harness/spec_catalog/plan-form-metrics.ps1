@@ -127,7 +127,7 @@ if ($Action -eq 'add') {
         exit 2
     }
     if ($Kind -eq 'measurement') {
-        if ($Ticket -notmatch '^S\d{4}$') {
+        if (-not (Test-SzaTicketId $Ticket)) {
             Write-Error "-Ticket must match S#### for a measurement row (got '$Ticket')" -ErrorAction Continue
             exit 2
         }
@@ -140,7 +140,7 @@ if ($Action -eq 'add') {
             exit 2
         }
     }
-    if ($Kind -eq 'selection' -and $Ticket -notmatch '^S\d{4}$') {
+    if ($Kind -eq 'selection' -and -not (Test-SzaTicketId $Ticket)) {
         Write-Error "-Ticket must match S#### for a selection row (got '$Ticket')" -ErrorAction Continue
         exit 2
     }

@@ -169,7 +169,9 @@ Public Class PqCli
             .StandardOutputEncoding = New UTF8Encoding(False),
             .StandardErrorEncoding = New UTF8Encoding(False)
         }
-        For Each a In {"-NoProfile", "-NonInteractive", "-EncodedCommand", BuildEncodedCommand(scriptPath, arguments)}
+        ' -OutputFormat Text: with -EncodedCommand and a redirected stderr pwsh otherwise wraps every error and every
+        ' Write-Host line in CLIXML, and the status line shows only its "#< CLIXML" header.
+        For Each a In {"-NoProfile", "-NonInteractive", "-OutputFormat", "Text", "-EncodedCommand", BuildEncodedCommand(scriptPath, arguments)}
             psi.ArgumentList.Add(a)
         Next
 
@@ -212,7 +214,12 @@ Public Class PqCli
             args.Add("-Complexity")
             args.Add(complexity)
         End If
-        If pin Then args.Add("-Pin")
+        ' An urgent blocker (hotfix-) is pinned by spec-draft unless told otherwise; an unticked box is that word.
+        If pin Then
+            args.Add("-Pin")
+        ElseIf slug.StartsWith("hotfix-", StringComparison.Ordinal) Then
+            args.Add("-NoPin")
+        End If
 
         Try
             Return Await RunScriptSilentAsync(SpecDraftScriptPath, args.ToArray())
@@ -239,6 +246,75 @@ Public Class PqCli
         Try
             Dim psi As New ProcessStartInfo With {.FileName = "explorer.exe", .UseShellExecute = True}
             psi.ArgumentList.Add(path)
+            Process.Start(psi)?.Dispose()
+            Return Nothing
+        Catch ex As Exception
+            Return ex.Message
+        End Try
+    End Function
+
+    Public Shared Function ResolveVsCodeExe() As String
+        Dim env = Environment.GetEnvironmentVariable("SZA_VSCODE_EXE")
+        If Not String.IsNullOrWhiteSpace(env) AndAlso File.Exists(env) Then Return Path.GetFullPath(env)
+
+        Dim localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)
+        Dim programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles)
+        Dim programFilesX86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86)
+
+        Dim candidates = {
+            Path.Combine(localAppData, "Programs", "Microsoft VS Code", "Code.exe"),
+            Path.Combine(programFiles, "Microsoft VS Code", "Code.exe"),
+            Path.Combine(programFilesX86, "Microsoft VS Code", "Code.exe"),
+            Path.Combine(localAppData, "Programs", "Microsoft VS Code Insiders", "Code - Insiders.exe"),
+            Path.Combine(programFiles, "Microsoft VS Code Insiders", "Code - Insiders.exe")
+        }
+        For Each c In candidates
+            If File.Exists(c) Then Return c
+        Next
+
+        Dim pathEnv = Environment.GetEnvironmentVariable("PATH")
+        If Not String.IsNullOrEmpty(pathEnv) Then
+            For Each p In pathEnv.Split(";"c, StringSplitOptions.RemoveEmptyEntries)
+                Try
+                    Dim trimmed = p.Trim()
+                    Dim codeExe = Path.Combine(trimmed, "Code.exe")
+                    If File.Exists(codeExe) Then Return codeExe
+                    Dim codeCmd = Path.Combine(trimmed, "code.cmd")
+                    If File.Exists(codeCmd) Then
+                        Dim parentDir = Path.GetDirectoryName(trimmed)
+                        If Not String.IsNullOrEmpty(parentDir) Then
+                            Dim parentExe = Path.Combine(parentDir, "Code.exe")
+                            If File.Exists(parentExe) Then Return parentExe
+                        End If
+                        Return codeCmd
+                    End If
+                Catch
+                End Try
+            Next
+        End If
+
+        Return Nothing
+    End Function
+
+    Public Shared Function OpenVsCode(path As String) As String
+        If Not Directory.Exists(path) Then Return $"not found: {path}"
+        Dim exe = ResolveVsCodeExe()
+        Try
+            Dim psi As ProcessStartInfo
+            If Not String.IsNullOrEmpty(exe) AndAlso File.Exists(exe) Then
+                psi = New ProcessStartInfo With {
+                    .FileName = exe,
+                    .UseShellExecute = exe.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase),
+                    .CreateNoWindow = True
+                }
+                psi.ArgumentList.Add(path)
+            Else
+                psi = New ProcessStartInfo With {
+                    .FileName = "code",
+                    .UseShellExecute = True
+                }
+                psi.ArgumentList.Add(path)
+            End If
             Process.Start(psi)?.Dispose()
             Return Nothing
         Catch ex As Exception

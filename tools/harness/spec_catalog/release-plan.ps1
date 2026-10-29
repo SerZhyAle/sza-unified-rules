@@ -153,7 +153,7 @@ foreach ($r in $implSet) { $implIds[$r.id] = $true }
 #      2-cycle. The Kahn backstop below is the final safety net regardless.
 # A ticket with no cued statusNote degrades to priority order (no "after"), never
 # a wrong edge.
-$blockerCue = '(?i)(?:blocked\s+by|depends?\s+(?:on|upon)|gated\s+by|waits?\s+on|waiting\s+on|unblock(?:ed)?\s+(?:by|after|when)|\bafter)\s+(S\d{4})'
+$blockerCue = '(?i)(?:blocked\s+by|depends?\s+(?:on|upon)|gated\s+by|waits?\s+on|waiting\s+on|unblock(?:ed)?\s+(?:by|after|when)|\bafter)\s+(' + (Get-SzaTicketIdFragment) + ')'
 $blockersOf = @{}        # id -> @(blocker ids that are in the impl set)
 foreach ($r in $implSet) { $blockersOf[$r.id] = @() }
 foreach ($r in $implSet) {

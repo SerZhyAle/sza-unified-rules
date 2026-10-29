@@ -197,13 +197,24 @@ Public Class ThemeService
                 ElseIf pnl.Name = "pnlTopActions" OrElse pnl.Name = "pnlBottom" OrElse pnl.Name = "pnlSteer" Then
                     pnl.BackColor = p.SurfaceRaised
                     pnl.ForeColor = p.TextPrimary
+                ElseIf TypeOf ctrl Is TableLayoutPanel OrElse pnl.Name.StartsWith("tbl") OrElse pnl.Name = "pnlContent" Then
+                    pnl.BackColor = p.WindowBackground
+                    pnl.ForeColor = p.TextPrimary
                 Else
                     pnl.BackColor = p.SurfaceRaised
                     pnl.ForeColor = p.TextPrimary
                 End If
             ElseIf TypeOf ctrl Is FlowLayoutPanel Then
-                ctrl.BackColor = p.SurfaceRaised
-                ctrl.ForeColor = p.TextPrimary
+                If ctrl.Name = "pnlType" Then
+                    ctrl.BackColor = p.WindowBackground
+                    ctrl.ForeColor = p.TextPrimary
+                ElseIf ctrl.Name = "pnlButtons" Then
+                    ctrl.BackColor = Color.Transparent
+                    ctrl.ForeColor = p.TextPrimary
+                Else
+                    ctrl.BackColor = p.SurfaceRaised
+                    ctrl.ForeColor = p.TextPrimary
+                End If
             ElseIf TypeOf ctrl Is SplitContainer Then
                 Dim split = CType(ctrl, SplitContainer)
                 split.BackColor = p.Border

@@ -86,7 +86,7 @@ Partial Class MainForm
         AddTextColumn(dgvRepos, "colPerm", "Permission", 115)
         AddButtonColumn(dgvRepos, "colNewSpec", "Spec", "+ Spec...", 65)
         AddButtonColumn(dgvRepos, "colQueue", "Tickets", "Open Queue", 85)
-        AddButtonColumn(dgvRepos, "colFolder", "Folder", "Open Dir", 70)
+        AddButtonColumn(dgvRepos, "colFolder", "Folder", "Open VSCode", 95)
 
         dgvWorkers.Columns.Clear()
         AddTextColumn(dgvWorkers, "colSlot", "Slot", 45)
@@ -552,9 +552,9 @@ Partial Class MainForm
                     MessageBox.Show(Me, $"No ticket queue file found at:{Environment.NewLine}{queuePath}{Environment.NewLine}{Environment.NewLine}A ticket queue is created when the first ticket is drafted in this project.", "Ticket Queue Missing", MessageBoxButtons.OK, MessageBoxIcon.Information)
                 End If
             Case "colFolder"
-                LogConsole($"Opening folder: {r.Path}")
-                Dim err = PqCli.OpenFolder(r.Path)
-                If err IsNot Nothing Then LogConsole($"Cannot open folder {r.Path}: {err}")
+                LogConsole($"Opening folder in VS Code: {r.Path}")
+                Dim err = PqCli.OpenVsCode(r.Path)
+                If err IsNot Nothing Then LogConsole($"Cannot open VS Code for {r.Path}: {err}")
         End Select
     End Sub
 

@@ -146,7 +146,7 @@ function Get-TicketAcceptanceProbeContracts {
             $kind = $marker.Groups['kind'].Value.ToLowerInvariant()
             $expected = $value
             if ($kind -ne 'none') {
-                $ticketPrefix = [regex]::Match($value, '^(?<ticket>S\d{4}):\s*(?<message>.+)$')
+                $ticketPrefix = [regex]::Match($value, ('^(?<ticket>' + (Get-SzaTicketIdFragment) + '):\s*(?<message>.+)$'))
                 if ($ticketPrefix.Success -and $ticketPrefix.Groups['ticket'].Value -eq $record.id) {
                     $expected = $ticketPrefix.Groups['message'].Value
                 }
@@ -181,7 +181,7 @@ function Test-TicketAcceptanceProbeNote {
             $results.Add([pscustomobject]@{ Outcome = $outcome; Expected = $value })
             continue
         }
-        $expectedMatch = [regex]::Match($value, '^(?<ticket>S\d{4}):\s*(?<message>.+)$')
+        $expectedMatch = [regex]::Match($value, ('^(?<ticket>' + (Get-SzaTicketIdFragment) + '):\s*(?<message>.+)$'))
         if (-not $expectedMatch.Success) {
             $results.Add([pscustomobject]@{ Outcome = 'invalid-ticket-prefix'; Expected = $value })
             continue

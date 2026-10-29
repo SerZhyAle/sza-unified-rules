@@ -66,7 +66,7 @@ function Get-CarrierTokenPattern {
     # The literal token handing an open question to another ticket (S1607). Read
     # literally for the same reason `Blocker: Sxxxx` is: the surrounding prose names
     # neighbours as often as owners, so a bare id cannot say which way the arrow points.
-    return '(?:Carrier|Носитель)\s*:?\s*\*{0,2}\s*:?\s*(S\d{4})'
+    return '(?:Carrier|Носитель)\s*:?\s*\*{0,2}\s*:?\s*(' + (Get-SzaTicketIdFragment) + ')'
 }
 
 function Resolve-ResearchSpecPath {

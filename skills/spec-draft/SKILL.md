@@ -27,8 +27,8 @@ This skill captures and reports. It does **not** research, approve, plan or buil
 /spec-draft <slug>                                 an explicit kebab-case name for the ticket
 ```
 
-Optional words in the request: `urgent`/`срочно` (hotfix), a priority number, `pin`/`первым` (put it first in the
-portfolio queue). A bare `Sxxxx` is an existing ticket, not a draft: do not capture it.
+Optional words in the request: `urgent`/`срочно` (hotfix - an urgent blocker, which `pq` works **first**: the script
+pins it by itself), a priority number, `pin`/`первым` (put any other ticket first in the portfolio queue). A bare `Sxxxx` is an existing ticket, not a draft: do not capture it.
 
 ## Step 0 - Resolve the plugin root
 
@@ -72,18 +72,25 @@ pwsh -NoProfile -File "<root>/tools/harness/portfolio/spec-draft.ps1" -Project <
 ```
 
 Leave `-Project` out to use the current folder's project. Add `-WhatIf` first when you want only the dedup report.
-Add `-Pin` only when the owner asked for the ticket to go first in the portfolio queue. `-Attach "<path;path>"` is
+A `hotfix-` slug is pinned first without a flag (`-NoPin` leaves it at the end of its package, only when the owner says
+so); add `-Pin` for any other ticket the owner asked to go first in the portfolio queue. `-Attach "<path;path>"` is
 accepted only by a project whose own capture script takes attachments; it is refused otherwise, before anything is
 created.
 
 The script uses the project's own `scripts/utils/capture-draft.ps1` when it has one (FastMediaSorter_mob_v2 does:
 its templates, tier and attachments), else the canon's, which needs `PLAN/TICKET_TEMPLATE.md`.
 
+**A project with no `.sza-profile.json` is not refused.** It gets a *plain capture*: one file,
+`PLAN/<id>_<slug>.md`, numbered the way the project already numbers its tickets (`SP-0255` after `SP-0254`, `S0001`
+when nothing is numbered yet), from the project's own `PLAN/TICKET_TEMPLATE.md` or the canon's. No profile, ledger or
+queue row is written, so `pq` cannot work it - the result line says `pq=no-task-flow` and `priority=-`. `-Attach` is
+refused there; `-DedupQuery` searches the ticket files' names and first lines.
+
 | Exit | Meaning | What to do |
 | --- | --- | --- |
 | 0 | the ticket exists | Step 4 |
 | 1 | the catalog refused, or the spec file could not be written | quote the message; do not retry blindly - a row without its file is named in it |
-| 2 | bad invocation, unknown project, or no task flow there | fix the argument; for "no task flow" run [task-flow-init](../task-flow-init/SKILL.md) in that project first |
+| 2 | bad invocation, unknown project, a slug that ends in `-` or `_`, or a profile with no ledger | fix the argument; for a half-set-up flow run [task-flow-init](../task-flow-init/SKILL.md) in that project (it never overwrites) |
 | 3 | the dedup query hit a **closed** ticket | the defect is already dealt with: name that ticket, create nothing; add `-AllowClosedDuplicate` only if the owner says it came back |
 
 An **open** ticket in the `dedup:` lines that already covers the problem is not an error: reference its id to the
@@ -96,10 +103,11 @@ Give the owner: the ticket id and file, the project, and what `pq` will do:
 
 | `pq=` | Say |
 | --- | --- |
-| `dispatchable` | pq takes it. Quote the position: it is **N of M in the project's own queue**, so N-1 tickets run before it (a new ticket goes to the end of the current package - the owner orders that file). For an urgent one, offer `-Pin` |
+| `dispatchable` | pq takes it. Quote the position: it is **N of M in the project's own queue**, so N-1 tickets run before it (a new ticket goes to the end of the current package - the owner orders that file). A hotfix is already pinned: say it is first in the portfolio queue. For any other, offer `-Pin` when it is urgent |
 | `held-by-queue`, `held` | captured, but the project is on hold - `pq` will not touch it. Say that lifting a hold is the owner's call; **do not remove it** |
 | `disabled` | registered but not enabled - same: report, do not enable |
 | `unregistered` | `pq` does not know the project. Give the register command the script printed; registering needs the owner's choice of permission mode |
+| `no-task-flow` | the ticket is a plain file in the project's `PLAN/`; `pq` never sees it, and neither does a ledger. Say so, and that setting the flow up (task-flow-init) is the owner's call; **do not set it up yourself** |
 | `not-offered`, other | the project's own picker does not offer it; quote the reason the script printed |
 
 Do not summarise this as "queued" when the verdict is anything but `dispatchable`. Then **return to the task that
@@ -108,7 +116,8 @@ was in flight** - a capture never switches the active ticket, and the ticket is 
 ## What this skill never does
 
 - Lift a hold, enable a project, register one, or reorder `PORTFOLIO_QUEUE.md` - except the single `pq pin` row that
-  `-Pin` writes on the owner's explicit word. The automatic projection refresh keeps existing order and holds.
+  `-Pin` writes on the owner's explicit word, or that a `hotfix-` ticket gets by the owner's standing rule that an
+  urgent blocker goes first. The automatic projection refresh keeps existing order and holds.
 - Capture a finding an agent noticed on its own as a plain draft. In a project `pq` works, a fresh Draft is
   eligible at once, before anyone has triaged it (FastMediaSorter_mob_v2 measured its runner attempting three
   fresh parked drafts within half an hour of capture). Such a finding goes through the project's own parking
@@ -120,6 +129,6 @@ was in flight** - a capture never switches the active ticket, and the ticket is 
 | Gate | Refuses |
 | --- | --- |
 | Step 1 | an ambiguous project; an empty description |
-| Step 3 | an invalid slug, a missing or empty text file, an unknown project, a project with no task flow, `-Attach` without a script that takes it |
+| Step 3 | an invalid slug (a bare `hotfix-` included), a missing or empty text file, an unknown project, a profile with no ledger, `-Attach` without a script that takes it |
 | Step 3 | a dedup hit on a closed ticket without `-AllowClosedDuplicate` |
 | Step 3 | `-Pin` for a project `pq` will not dispatch |

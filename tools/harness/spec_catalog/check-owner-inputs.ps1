@@ -33,11 +33,11 @@ param(
 
 . (Join-Path $PSScriptRoot '_lib.ps1')
 
-if ($Id -notmatch '^S\d{4}$') {
+if (-not (Test-SzaTicketId $Id)) {
     # -ErrorAction Continue, not a bare Write-Error: _lib.ps1 sets $ErrorActionPreference = 'Stop',
     # under which a bare Write-Error throws and the documented `exit 2` below is never reached, so
     # the process reports 1 and a caller cannot tell "bad invocation" from "blockers found" (S1070).
-    Write-Error "Invalid -Id '$Id' (must match S####)." -ErrorAction Continue
+    Write-Error "Invalid -Id '$Id' (must match $(Get-SzaTicketIdDisplay))." -ErrorAction Continue
     exit 2
 }
 

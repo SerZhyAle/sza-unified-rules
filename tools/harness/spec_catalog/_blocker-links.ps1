@@ -52,13 +52,13 @@ function Get-BlockerLinks {
     $ids = @()
     $depMatch = [regex]::Match($text, '(?ms)\*\*Depends on:\*\*\s*(.+?)(?:^\*\*|\r?\n##\s|\z)')
     if ($depMatch.Success) {
-        $ids = @([regex]::Matches($depMatch.Groups[1].Value, '\bS\d{4}\b') | ForEach-Object { $_.Value })
+        $ids = @([regex]::Matches($depMatch.Groups[1].Value, ('\b' + (Get-SzaTicketIdFragment) + '\b')) | ForEach-Object { $_.Value })
     }
     else {
         $tokenText = $note
         $sec10Match = [regex]::Match($text, '(?ms)^##\s+10\.[^\n]*\n(.+?)(?:\r?\n##\s|\z)')
         if ($sec10Match.Success) { $tokenText = $sec10Match.Groups[1].Value + "`n" + $tokenText }
-        $ids = @([regex]::Matches($tokenText, '(?i)(?:Blocker|Блокер)\s*:\s*\**\s*(S\d{4})') |
+        $ids = @([regex]::Matches($tokenText, ('(?i)(?:Blocker|Блокер)\s*:\s*\**\s*(' + (Get-SzaTicketIdFragment) + ')')) |
             ForEach-Object { $_.Groups[1].Value })
     }
 

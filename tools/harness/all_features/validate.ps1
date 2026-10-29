@@ -264,7 +264,7 @@ if (Test-Path $dataFile) {
         }
         # spec
         if ($obj.PSObject.Properties.Name -contains 'spec' -and $null -ne $obj.spec) {
-            if ("$($obj.spec)" -notmatch '^S\d{4}$') {
+            if (-not (Test-SzaTicketId "$($obj.spec)")) {
                 $errors.Add("L${lineNo}: spec '$($obj.spec)' not Sxxxx or null")
             }
         }

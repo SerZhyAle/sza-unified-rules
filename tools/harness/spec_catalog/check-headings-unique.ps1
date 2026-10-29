@@ -41,10 +41,10 @@ param(
 
 . (Join-Path $PSScriptRoot '_lib.ps1')
 
-if ($Id -notmatch '^S\d{4}$') {
+if (-not (Test-SzaTicketId $Id)) {
     # -ErrorAction Continue, not a bare Write-Error: _lib.ps1 sets $ErrorActionPreference
     # to 'Stop', under which a bare Write-Error throws and `exit 2` is never reached (S1070).
-    Write-Error "Invalid -Id '$Id' (must match S####)." -ErrorAction Continue
+    Write-Error "Invalid -Id '$Id' (must match $(Get-SzaTicketIdDisplay))." -ErrorAction Continue
     exit 2
 }
 

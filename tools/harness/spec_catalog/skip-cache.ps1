@@ -107,8 +107,8 @@ if ($Action -ne 'list' -and $Action -ne 'reset') {
         Write-Error "-Id is required for action '$Action'" -ErrorAction Continue
         exit 2
     }
-    if ($Id -notmatch '^S\d{4}$') {
-        Write-Error "Invalid -Id '$Id' (must match S####)" -ErrorAction Continue
+    if (-not (Test-SzaTicketId $Id)) {
+        Write-Error "Invalid -Id '$Id' (must match $(Get-SzaTicketIdDisplay))" -ErrorAction Continue
         exit 2
     }
 }

@@ -449,45 +449,272 @@ function Get-PqDefaultReleaseQueue {
 }
 
 function Get-PqTicketQueuePath($Repo) {
-    $rel = Get-PqDefaultReleaseQueue
-    $profileFile = Join-Path ([string]$Repo.path) '.sza-profile.json'
+    $repoPath = [string]$Repo.path
+    if ($null -ne $Repo.PSObject.Properties['releaseQueue'] -and $Repo.releaseQueue) {
+        $p = [string]$Repo.releaseQueue
+        $full = if ([IO.Path]::IsPathFullyQualified($p)) { $p } else { Join-Path $repoPath $p }
+        if ([IO.File]::Exists($full)) { return [IO.Path]::GetFullPath($full) }
+    }
+    $profileFile = Join-Path $repoPath '.sza-profile.json'
     if ([IO.File]::Exists($profileFile)) {
         try {
             $prof = ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($profileFile)) -DateKind String
             $paths = $prof.PSObject.Properties['paths']
             if ($null -ne $paths -and $null -ne $paths.Value) {
                 $v = $paths.Value.PSObject.Properties['releaseQueue']
-                if ($null -ne $v -and $v.Value) { $rel = [string]$v.Value }
+                if ($null -ne $v -and $v.Value) {
+                    $customRel = [string]$v.Value
+                    $full = if ([IO.Path]::IsPathFullyQualified($customRel)) { $customRel } else { Join-Path $repoPath $customRel }
+                    if ([IO.File]::Exists($full)) { return [IO.Path]::GetFullPath($full) }
+                }
             }
         }
         catch { }
     }
-    return [IO.Path]::GetFullPath((Join-Path ([string]$Repo.path) $rel))
+    $candidates = @(
+        'PLAN/RELEASE_QUEUE.md',
+        'PLAN/release-queue.md',
+        'DEV/plan/RELEASE_QUEUE.md',
+        'docs/specifications/RELEASE_QUEUE.md',
+        'PLAN/INDEX.md',
+        'PLAN/spec-catalog.jsonl',
+        'PLAN/README.md',
+        'tasks/README.md',
+        'tasks/INDEX.md'
+    )
+    foreach ($cand in $candidates) {
+        $full = Join-Path $repoPath $cand
+        if ([IO.File]::Exists($full)) { return [IO.Path]::GetFullPath($full) }
+    }
+    $rel = Get-PqDefaultReleaseQueue
+    return [IO.Path]::GetFullPath((Join-Path $repoPath $rel))
 }
 
 function Read-PqTicketQueueRows([string]$Path) {
     if (-not [IO.File]::Exists($Path)) { return $null }
+
+    if ($Path.EndsWith('.jsonl', [StringComparison]::OrdinalIgnoreCase)) {
+        $out = [Collections.Generic.List[object]]::new()
+        $closed = @('Verified', 'Archived', 'Implemented', 'Closed')
+        try {
+            $split = Split-PqQueueText (Read-PqQueueBytes $Path)
+            foreach ($line in $split.lines) {
+                $t = $line.Trim()
+                if (-not $t) { continue }
+                try {
+                    $obj = ConvertFrom-Json -InputObject $t -DateKind String
+                    $id = [string]$obj.id
+                    $status = [string]$obj.status
+                    if ($status -in $closed) { continue }
+                    $token = if ($null -ne $obj.file -and $obj.file) {
+                        [IO.Path]::GetFileNameWithoutExtension([string]$obj.file)
+                    } elseif ($null -ne $obj.name -and $obj.name) {
+                        $slug = ([string]$obj.name).ToLowerInvariant() -replace '[^a-z0-9]+', '-' -replace '^-+|-+$', ''
+                        "${id}_$slug"
+                    } else { $id }
+                    $token = $token -replace '\s+', '_'
+                    $updated = if ($null -ne $obj.updated -and $obj.updated) { [string]$obj.updated } else { '' }
+                    $tail = if ($updated) { "$updated  $status" } else { $status }
+                    $out.Add([ordered]@{ id = $id; token = $token; tail = $tail; unscheduled = $false })
+                } catch { }
+            }
+            return , $out.ToArray()
+        } catch { return $null }
+    }
+
     try { $split = Split-PqQueueText (Read-PqQueueBytes $Path) } catch { return $null }
     $out = [Collections.Generic.List[object]]::new()
     $unscheduled = $false
     $hasCurrent = $false
     $hasSection = $false
+    $hasUnsupported = $false
+
     foreach ($line in $split.lines) {
         $t = $line.Trim()
-        if ($t -cmatch '^current-next-release:\s*\d+\s*$') { $hasCurrent = $true; continue }
+        if ($t -cmatch '^current-next-release:\s*\d+') { $hasCurrent = $true; continue }
         if ($t -ceq '--') { $unscheduled = $true; $hasSection = $true; continue }
         if ($t -cmatch '^\d+$') { $unscheduled = $false; $hasSection = $true; continue }
-        # Rows live under a package heading; the notes above the first one are prose, even a line that starts with an id.
         if (-not $hasSection) { continue }
-        $m = [regex]::Match($t, '^(?<token>(?<id>(?:S\d{4,}|[A-Z][A-Z0-9]*-\d+))(?:_\S*)?)(?:\s+(?<tail>.*))?$')
+        $m = [regex]::Match($t, '^(?<token>(?<id>(?:S\d{4,}|T\d{4,}|[A-Z][A-Z0-9]*-\d+))(?:_\S*)?)(?:\s+(?<tail>.*))?$')
         if (-not $m.Success) {
-            # A ticket-shaped row with an unsupported id must not be mistaken for a completed ticket.
-            if ($t -cmatch '^\S+\s+\d{2}-\d{2}-\d{2}\s+\d{2}:\d{2}\s+') { return $null }
+            if ($t -cmatch '^\S+\s+\d{2}-\d{2}-\d{2}\s+\d{2}:\d{2}\s+') {
+                $hasUnsupported = $true
+                break
+            }
             continue
         }
         $out.Add([ordered]@{ id = $m.Groups['id'].Value; token = $m.Groups['token'].Value; tail = $m.Groups['tail'].Value.Trim(); unscheduled = $unscheduled })
     }
-    # A truncated or missing file is unknown, but a complete empty plan is authoritative.
+
+    if ($hasUnsupported) { return $null }
+    if ($out.Count -gt 0 -or ($hasCurrent -and $hasSection)) {
+        return , $out.ToArray()
+    }
+
+    $closedStatuses = @('Verified', 'Archived', 'Implemented', 'Closed', 'Done')
+    $dir = Split-Path -Parent $Path
+    $parentDir = Split-Path -Parent $dir
+    $seenIds = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    $inImplemented = $false
+
+    foreach ($line in $split.lines) {
+        $t = $line.Trim()
+        if (-not $t) { continue }
+        if ($t -ceq '--' -or $t -match '(?i)^##\s*(not scheduled|no package|separate backlog)') { $unscheduled = $true; continue }
+        if ($t -match '(?i)^##\s*implemented') { $inImplemented = $true; continue }
+        if ($t -match '(?i)^##\s*(release\s*\d+|\d+|[A-Z]\.)') { $unscheduled = $false; $inImplemented = $false; continue }
+        if ($inImplemented) { continue }
+
+        if ($t -match '^(?<num>\d+)\s+(?<tok>\d+_\S+)\s+(?<date>\d{4}-\d{2}-\d{2})\s+(?<rest>.*)$') {
+            $id = $Matches['num']
+            $token = $Matches['tok']
+            $rest = $Matches['rest'].Trim()
+            $status = ''
+            if ($rest -match '^(?<st>[A-Za-z]+(?:\s+[A-Za-z]+)?)') { $status = $Matches['st'] }
+            if ($status -in $closedStatuses) { continue }
+            if ($seenIds.Add($id)) {
+                $tail = "$($Matches['date'])  $rest"
+                $out.Add([ordered]@{ id = $id; token = $token; tail = $tail; unscheduled = $unscheduled })
+            }
+            continue
+        }
+
+        if ($t.StartsWith('|') -and $t.EndsWith('|') -and $t -notmatch '^\|\s*[-:\s|]+\s*$' -and $t -notmatch '(?i)\|\s*(order|ticket|id|#)\s*\|') {
+            $mLink = [regex]::Match($t, '\[(?<label>[^\]]+)\]\((?<link>[^)]+)\)')
+            $id = $null
+            $token = $null
+            $link = $null
+
+            if ($mLink.Success) {
+                $link = $mLink.Groups['link'].Value
+                if ($link -match '(?i)(done|archive)/') { continue }
+                $token = [IO.Path]::GetFileNameWithoutExtension($link)
+                $mId = [regex]::Match($token, '^(?<id>(?:S\d{4,}|T\d{4,}|[A-Z][A-Z0-9]*-\d+|\d{2,}))')
+                if ($mId.Success) { $id = $mId.Groups['id'].Value }
+                else { $id = $mLink.Groups['label'].Value.Trim() }
+            } else {
+                $mId = [regex]::Match($t, '\b(?<id>(?:SP-\d+|TASK-\d+|S\d{4,}|T\d{4,}))\b')
+                if ($mId.Success) {
+                    $id = $mId.Groups['id'].Value
+                    $token = $id
+                }
+            }
+
+            if (-not $id) { continue }
+
+            $status = ''
+            if ($t -match '\b(?<st>Draft|Approved|Tactical|In Progress|Partial|Broken|BlockByOtherTask|BlockNeedUserTest|BlockQuestions|BlockExternal|Settled|Implemented|Verified|Archived|Closed|Done)\b') {
+                $status = $Matches['st']
+            }
+
+            $specPath = $null
+            if ($link) {
+                $cand = Join-Path $dir $link
+                if ([IO.File]::Exists($cand)) { $specPath = $cand }
+            }
+            if (-not $specPath) {
+                $candFiles = @(Get-ChildItem -Path $dir -Filter "$id*.md" -ErrorAction SilentlyContinue)
+                if ($candFiles.Count -gt 0) {
+                    $specPath = $candFiles[0].FullName
+                    $token = [IO.Path]::GetFileNameWithoutExtension($candFiles[0].Name)
+                }
+            }
+
+            if ($specPath) {
+                $firstLines = [IO.File]::ReadAllLines($specPath) | Select-Object -First 20
+                foreach ($fl in $firstLines) {
+                    if ($fl -match '(?i)\*\*status:\*\*\s*(?<fs>[^\r\n]+)') {
+                        $fStatus = $Matches['fs'].Trim()
+                        if ($fStatus -match '^(?<w>[A-Za-z]+)') { $status = $Matches['w'] }
+                        break
+                    }
+                }
+            }
+
+            if ($status -in $closedStatuses) { continue }
+            $token = $token -replace '\s+', '_'
+            if ($seenIds.Add($id)) {
+                $mtime = if ($specPath) { (Get-Item $specPath).LastWriteTime.ToString('yy-MM-dd HH:mm') } else { '' }
+                $tail = if ($mtime -and $status) { "$mtime  $status" } elseif ($status) { $status } else { 'Draft' }
+                $out.Add([ordered]@{ id = $id; token = $token; tail = $tail; unscheduled = $unscheduled })
+            }
+            continue
+        }
+
+        if ($t -match '^-\s+\[(?<title>[^\]]+)\]\((?<link>[^)]+)\)') {
+            $link = $Matches['link']
+            $title = $Matches['title']
+            if ($link -match '(?i)(done|archive)/') { continue }
+
+            $specPath = Join-Path $dir $link
+            if (-not [IO.File]::Exists($specPath)) {
+                $specPath = Join-Path $parentDir $link
+            }
+            if (-not [IO.File]::Exists($specPath)) { continue }
+
+            $token = [IO.Path]::GetFileNameWithoutExtension($link)
+            $id = if ($token -match '^(?<id>(?:S\d{4,}|T\d{4,}|[A-Z][A-Z0-9]*-\d+|\d{2,}))') { $Matches['id'] } else { $token }
+
+            $status = 'Draft'
+            $firstLines = [IO.File]::ReadAllLines($specPath) | Select-Object -First 20
+            foreach ($fl in $firstLines) {
+                if ($fl -match '(?i)\*\*status:\*\*\s*(?<fs>[^\r\n]+)') {
+                    $fStatus = $Matches['fs'].Trim()
+                    if ($fStatus -match '^(?<w>[A-Za-z]+)') { $status = $Matches['w'] }
+                    break
+                }
+            }
+
+            if ($status -in $closedStatuses) { continue }
+            $token = $token -replace '\s+', '_'
+            if ($seenIds.Add($id)) {
+                $mtime = (Get-Item $specPath).LastWriteTime.ToString('yy-MM-dd HH:mm')
+                $tail = "$mtime  $status"
+                $out.Add([ordered]@{ id = $id; token = $token; tail = $tail; unscheduled = $unscheduled })
+            }
+            continue
+        }
+    }
+
+    $specDirs = @($dir)
+    if ((Split-Path -Leaf $dir) -in @('docs', 'DEV')) {
+        $candPlan = Join-Path (Split-Path -Parent $dir) 'PLAN'
+        if ([IO.Directory]::Exists($candPlan)) { $specDirs += $candPlan }
+    }
+    foreach ($sd in $specDirs) {
+        $candFiles = @(Get-ChildItem -Path $sd -Filter '*.md' -ErrorAction SilentlyContinue | Where-Object {
+            $_.Name -notmatch '(?i)^(README|INDEX|TICKET_TEMPLATE|release[-_]queue)\.md$' -and
+            $_.FullName -notmatch '[\\/](done|archive)[\\/]'
+        })
+        foreach ($cf in $candFiles) {
+            $fn = [IO.Path]::GetFileNameWithoutExtension($cf.Name)
+            $mId = [regex]::Match($fn, '^(?<id>(?:S\d{4,}|T\d{4,}|SP-\d+|TASK-\d+|\d+))(?:[_-]|\b)')
+            $cid = if ($mId.Success) { $mId.Groups['id'].Value } else { $fn }
+            if ($seenIds.Contains($cid)) { continue }
+
+            $cStatus = 'Draft'
+            $firstLines = [IO.File]::ReadAllLines($cf.FullName) | Select-Object -First 20
+            $foundStatus = $false
+            foreach ($fl in $firstLines) {
+                if ($fl -match '(?i)\*\*status:\*\*\s*(?<fs>[^\r\n]+)') {
+                    $foundStatus = $true
+                    $fStatus = $Matches['fs'].Trim()
+                    if ($fStatus -match '^(?<w>[A-Za-z]+)') { $cStatus = $Matches['w'] }
+                    break
+                }
+            }
+            if ($foundStatus -or $mId.Success) {
+                if ($cStatus -notin $closedStatuses) {
+                    if ($seenIds.Add($cid)) {
+                        $mtime = $cf.LastWriteTime.ToString('yy-MM-dd HH:mm')
+                        $ctok = $fn -replace '\s+', '_'
+                        $out.Add([ordered]@{ id = $cid; token = $ctok; tail = "$mtime  $cStatus"; unscheduled = $false })
+                    }
+                }
+            }
+        }
+    }
+
     if ($out.Count -eq 0 -and -not ($hasCurrent -and $hasSection)) { return $null }
     return , $out.ToArray()
 }

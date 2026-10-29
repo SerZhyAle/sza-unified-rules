@@ -410,7 +410,7 @@ switch ($Verb) {
         if ($result.crossed) { exit 3 } else { exit 0 }
     }
     'Record' {
-        if (-not $Id -or $Id -notmatch '^S\d{4}$') {
+        if (-not $Id -or -not (Test-SzaTicketId $Id)) {
             Write-Error "spec-next-session: -Id must match S#### (got '$Id')" -ErrorAction Continue
             exit 2
         }

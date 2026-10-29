@@ -41,7 +41,7 @@ trap {
 
 . (Join-Path $PSScriptRoot '_lib.ps1')
 
-if ($Id -notmatch '^S\d{4}$') { throw "Invalid -Id '$Id' (must match S####)." }
+if (-not (Test-SzaTicketId $Id)) { throw "Invalid -Id '$Id' (must match $(Get-SzaTicketIdDisplay))." }
 if ($PSBoundParameters.ContainsKey('Priority')) {
     if ($Priority -lt 0 -or $Priority -gt 100) {
         throw "Invalid -Priority '$Priority' (must be 0..100)."

@@ -17,7 +17,7 @@ trap {
 
 . (Join-Path $PSScriptRoot '_lib.ps1')
 
-if ($Id -notmatch '^S\d{4}$') { throw "Invalid -Id '$Id' (must match S####)." }
+if (-not (Test-SzaTicketId $Id)) { throw "Invalid -Id '$Id' (must match $(Get-SzaTicketIdDisplay))." }
 
 $records = [System.Collections.Generic.List[object]]::new()
 # S1437: read -> mutate -> write is one critical section. Two processes holding the same

@@ -173,7 +173,7 @@ function Get-DevMonitorTicketLastWrite {
         only a file it wrote proves it is working.
     #>
     param([string]$RepoRoot, [string]$Id)
-    if ($Id -notmatch '^S\d{4}$') { return $null }
+    if (-not (Test-SzaTicketId $Id)) { return $null }
     $files = @()
     $planDir = Join-Path $RepoRoot 'PLAN'
     if (Test-Path -LiteralPath $planDir) {
@@ -441,7 +441,7 @@ function Get-DevMonitorChildren {
         $started = $null
         try { $started = $c.CreationDate } catch { $started = $null }
         $ageMinutes = if ($started) { [math]::Round(((Get-Date) - $started).TotalMinutes, 1) } else { $null }
-        $ticket = if ($c.CommandLine -match '(S\d{4})') { $Matches[1] } else { '?' }
+        $ticket = if ($c.CommandLine -match ('(' + (Get-SzaTicketIdFragment) + ')')) { $Matches[1] } else { '?' }
         $title = Get-DevMonitorTicketTitle -RepoRoot $RepoRoot -Id $ticket
         $model = if ($c.CommandLine -match '--model\s+(\S+)') { $Matches[1] } else { 'default' }
         $write = Get-DevMonitorTicketLastWrite -RepoRoot $RepoRoot -Id $ticket
@@ -496,11 +496,11 @@ function Get-DevMonitorNextUp {
     foreach ($line in $lines) {
         if ($line -match '^\s*(\d+|--)\s*$') { $section = $Matches[1]; continue }
         $rel = $null
-        if ($line -match ('^(S(\d{4}))_(\S+)\s+' + $changedPattern + '\s+(\S+)' + $markerPattern)) {
+        if ($line -match ('^((' + (Get-SzaTicketIdFragment) + '))_(\S+)\s+' + $changedPattern + '\s+(\S+)' + $markerPattern)) {
             $rel = $section
             $id = $Matches[1]; $slug = $Matches[3]; $changed = $Matches[4]; $status = $Matches[5]
             $takenRaw = $Matches[6]; $idleCountRaw = $Matches[7]; $idleOutcomeRaw = $Matches[8]
-        } elseif ($line -match ('^(\d+|--)\s+(S\d{4})_(\S+)\s+' + $changedPattern + '\s+(\S+)' + $markerPattern)) {
+        } elseif ($line -match ('^(\d+|--)\s+(' + (Get-SzaTicketIdFragment) + ')_(\S+)\s+' + $changedPattern + '\s+(\S+)' + $markerPattern)) {
             $rel = $Matches[1]
             $id = $Matches[2]; $slug = $Matches[3]; $changed = $Matches[4]; $status = $Matches[5]
             $takenRaw = $Matches[6]; $idleCountRaw = $Matches[7]; $idleOutcomeRaw = $Matches[8]

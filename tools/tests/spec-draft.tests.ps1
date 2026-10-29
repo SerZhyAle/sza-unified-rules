@@ -10,17 +10,23 @@
       1. The owner's words land in the spec file byte for byte (Cyrillic, `$`, `{{ID}}`, quotes, `...`), the
          ledger row and the ticket-queue row exist, the ledger validates, the result line is exact.
       2. A second and a third ticket land behind the first: the reported position is the one the project's own
-         picker gives, and a hotfix behind others is told how to jump the line.
+         picker gives, and a hotfix behind others is pinned first without being asked (10 covers -NoPin).
       3. -Pin writes the ticket into PORTFOLIO_QUEUE.md; under `hold` it is refused and nothing is written.
       4. A project under `hold` is still captured into, and reported as not dispatched; the file is untouched.
       5. An unregistered project is captured into and reported as unregistered; the registry is untouched.
       6. With no -Project the project is found from the current folder.
       7. A project's own scripts/utils/capture-draft.ps1 is used instead of the canon's.
-      8. Every refusal (bad slug, no text, empty text, unknown project, no task flow, -Attach without a script
-         that takes it) exits 2 and creates nothing; -WhatIf creates nothing.
+      8. Every refusal (bad slug, a slug that ends in a separator, no text, empty text, unknown project, a profile
+         with no ledger, -Attach without a script that takes it) exits 2 and creates nothing; -WhatIf creates
+         nothing.
+      9. A project with no task flow at all gets a plain ticket file in its own numbering (SP-0014 after SP-0013 and
+         a DONE/ folder), nothing else is written, and the report says pq=no-task-flow; an empty folder starts at
+         S0001; a bare complexity level, a closed dedup hit and -WhatIf behave.
+
+    -Only <regex> runs the cases whose name matches it (cases 2-4 build on case 1, so use it for 8 and 9 only).
 #>
 [CmdletBinding()]
-param([switch] $KeepScratch)
+param([switch] $KeepScratch, [string] $Only = '')
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -34,6 +40,7 @@ $pwshExe = (Get-Command pwsh -CommandType Application | Select-Object -First 1).
 $run = 0; $passed = 0; $failed = 0
 function Assert-That([bool] $Condition, [string] $Message) { if (-not $Condition) { throw $Message } }
 function Run-Case([string] $Name, [scriptblock] $Body) {
+    if ($Only -and $Name -notmatch $Only) { return }
     $script:run++
     Write-Host -NoNewline "CASE  $Name ... "
     try { & $Body; $script:passed++; Write-Host 'PASS' -ForegroundColor Green }
@@ -146,7 +153,7 @@ try {
         Assert-That ($v.code -eq 0) "validate.ps1 exit $($v.code): $($v.output)"
     }
 
-    Run-Case '2 later tickets land behind it; the position is the picker''s; a hotfix is told how to jump' {
+    Run-Case '2 later tickets land behind it; the position is the picker''s; a hotfix is pinned first by itself' {
         $f = Write-Text 'owner2.txt' 'Add CSV export to the list screen.'
         $r = Invoke-Draft @('-Project', 'repo-a', '-Slug', 'add-csv-export', '-TextFile', $f)
         Assert-That ($r.code -eq 0 -and $r.last -ceq 'drafted repo-a:S0002 file=PLAN/S0002_add-csv-export.md priority=50 pq=dispatchable position=2/2') "second: $($r.last) | $($r.output)"
@@ -154,7 +161,8 @@ try {
         $f = Write-Text 'owner3.txt' 'Boot loop on cold start.'
         $r = Invoke-Draft @('-Project', 'repo-a', '-Slug', 'hotfix-boot-loop', '-TextFile', $f)
         Assert-That ($r.code -eq 0 -and $r.last -ceq 'drafted repo-a:S0003 file=PLAN/S0003_hotfix-boot-loop.md priority=95 pq=dispatchable position=3/3') "hotfix: $($r.last) | $($r.output)"
-        Assert-That ($r.stdout -match 'pq pin repo-a:S0003') "no pin hint: $($r.stdout)"
+        Assert-That ($r.stdout -match 'pq: pinned - repo-a:S0003') "a hotfix was not pinned by itself: $($r.stdout)"
+        Assert-That ((Get-Content $queueFile -Raw) -match '(?m)^repo-a:S0003(?:_|\s|$)') 'no pin row for the hotfix in PORTFOLIO_QUEUE.md'
     }
 
     Run-Case '3 -Pin writes PORTFOLIO_QUEUE.md' {
@@ -223,14 +231,16 @@ exit 0
         $ledger = Get-LedgerCount $repoFree
         $good = Write-Text 'owner10.txt' 'Some text.'
         $empty = Write-Text 'empty.txt' "  `r`n"
-        $bare = Join-Path $scratch 'bare'; New-Item -ItemType Directory -Path $bare | Out-Null
+        $half = Join-Path $scratch 'half'; New-Item -ItemType Directory -Path $half | Out-Null
+        [IO.File]::WriteAllText((Join-Path $half '.sza-profile.json'), '{ "version": "1", "projectName": "half" }')
         $cases = @(
             @{ n = 'bad slug'; a = @('-Project', $repoFree, '-Slug', 'Bad_Slug', '-TextFile', $good); m = 'invalid -Slug' },
             @{ n = 'spec_ slug'; a = @('-Project', $repoFree, '-Slug', 'spec_x', '-TextFile', $good); m = 'invalid -Slug' },
+            @{ n = 'a bare prefix names nothing'; a = @('-Project', $repoFree, '-Slug', 'hotfix-', '-TextFile', $good); m = 'ends with a separator' },
             @{ n = 'no text file'; a = @('-Project', $repoFree, '-Slug', 'ok-slug'); m = '-TextFile' },
             @{ n = 'empty text'; a = @('-Project', $repoFree, '-Slug', 'ok-slug', '-TextFile', $empty); m = 'text is empty' },
             @{ n = 'unknown project'; a = @('-Project', 'no-such-key', '-Slug', 'ok-slug', '-TextFile', $good); m = 'registered: repo-a' },
-            @{ n = 'no task flow'; a = @('-Project', $bare, '-Slug', 'ok-slug', '-TextFile', $good); m = 'task-flow-init' },
+            @{ n = 'a profile with no ledger'; a = @('-Project', $half, '-Slug', 'ok-slug', '-TextFile', $good); m = 'task-flow-init' },
             @{ n = 'attach without a script that takes it'; a = @('-Project', $repoFree, '-Slug', 'ok-slug', '-TextFile', $good, '-Attach', 'a.png'); m = 'attachments' }
         )
         foreach ($c in $cases) {
@@ -242,6 +252,67 @@ exit 0
         $r = Invoke-Draft @('-Project', $repoFree, '-Slug', 'would-be', '-TextFile', $good, '-WhatIf')
         Assert-That ($r.code -eq 0 -and $r.stdout -match 'nothing was created') "-WhatIf: $($r.output)"
         Assert-That ((Get-LedgerCount $repoFree) -eq $ledger) '-WhatIf created a ledger row'
+        Assert-That (@(Get-ChildItem -LiteralPath $half -Force).Count -eq 1) 'a refusal wrote into the half-set-up project'
+    }
+
+    Run-Case '9 no task flow at all: a plain ticket file in the project''s own numbering, nothing else written' {
+        $plainRepo = Join-Path $scratch 'plain'
+        $plan = Join-Path $plainRepo 'PLAN'
+        New-Item -ItemType Directory -Path (Join-Path $plan 'DONE') -Force | Out-Null
+        New-Item -ItemType Directory -Path (Join-Path $plan 'SP-0013_tactical') -Force | Out-Null
+        [IO.File]::WriteAllText((Join-Path $plan 'SP-0007_old-open.md'), "# SP-0007`n`n**Status:** In Progress`n`nsync crash on resume`n")
+        [IO.File]::WriteAllText((Join-Path $plan 'DONE\SP-0012_old-closed.md'), "# SP-0012`n`n**Status:** Verified - 2026-01-01`n`nlogin loop on cold start`n")
+        $f = Write-Text 'owner11.txt' $tricky
+        $before = @(Get-ChildItem -LiteralPath $plainRepo -Recurse -Force).Count
+
+        $r = Invoke-Draft @('-Project', $plainRepo, '-Slug', 'hotfix-plain-one', '-TextFile', $f, '-Complexity', 'medium', '-WhatIf')
+        Assert-That ($r.code -eq 0 -and $r.stdout -match 'nothing was created' -and $r.stdout -match 'SP-0014') "-WhatIf: $($r.output)"
+        Assert-That (@(Get-ChildItem -LiteralPath $plainRepo -Recurse -Force).Count -eq $before) '-WhatIf wrote something'
+
+        $r = Invoke-Draft @('-Project', $plainRepo, '-Slug', 'hotfix-plain-one', '-TextFile', $f, '-Complexity', 'medium')
+        Assert-That ($r.code -eq 0) "exit $($r.code): $($r.output)"
+        Assert-That ($r.last -ceq 'drafted plain:SP-0014 file=PLAN/SP-0014_hotfix-plain-one.md priority=- pq=no-task-flow position=0/0') "result line: $($r.last)"
+        $spec = [IO.File]::ReadAllText((Join-Path $plan 'SP-0014_hotfix-plain-one.md'))
+        Assert-That ($spec.Contains($tricky)) 'the owner text is not in the spec byte for byte'
+        Assert-That ($spec -match '(?m)^\*\*Status:\*\* Draft\r?$' -and $spec -match '(?m)^\*\*Complexity:\*\* medium - not assessed at capture\r?$') 'the header is wrong'
+        Assert-That (-not (Test-Path (Join-Path $plainRepo '.sza-profile.json')) -and -not (Test-Path (Join-Path $plan 'spec-catalog.jsonl')) -and -not (Test-Path (Join-Path $plan 'RELEASE_QUEUE.md'))) 'a plain capture wrote task-flow files'
+
+        $r = Invoke-Draft @('-Project', $plainRepo, '-Slug', 'second-one', '-TextFile', $f, '-Complexity', 'hard - located nowhere yet')
+        Assert-That ($r.code -eq 0 -and $r.last -match '^drafted plain:SP-0015 file=PLAN/SP-0015_second-one\.md ') "second: $($r.last) | $($r.output)"
+        Assert-That ([IO.File]::ReadAllText((Join-Path $plan 'SP-0015_second-one.md')) -match '(?m)^\*\*Complexity:\*\* hard - located nowhere yet\r?$') 'the full complexity form was not kept'
+
+        $r = Invoke-Draft @('-Project', $plainRepo, '-Slug', 'again', '-TextFile', $f, '-DedupQuery', 'login loop')
+        Assert-That ($r.code -eq 3 -and $r.stdout -match 'dedup: SP-0012') "closed hit: exit $($r.code): $($r.output)"
+        Assert-That (-not (Test-Path (Join-Path $plan 'SP-0016_again.md'))) 'a closed dedup hit still created the ticket'
+        $r = Invoke-Draft @('-Project', $plainRepo, '-Slug', 'again', '-TextFile', $f, '-DedupQuery', 'sync crash')
+        Assert-That ($r.code -eq 0 -and $r.stdout -match 'dedup: SP-0007' -and (Test-Path (Join-Path $plan 'SP-0016_again.md'))) "open hit goes on: exit $($r.code): $($r.output)"
+
+        $r = Invoke-Draft @('-Project', $plainRepo, '-Slug', 'pinned', '-TextFile', $f, '-Pin')
+        Assert-That ($r.code -eq 0 -and $r.stdout -match 'pin refused') "-Pin: $($r.output)"
+
+        $empty = Join-Path $scratch 'plain-empty'; New-Item -ItemType Directory -Path $empty | Out-Null
+        $r = Invoke-Draft @('-Project', $empty, '-Slug', 'first-ever', '-TextFile', $f)
+        Assert-That ($r.code -eq 0 -and $r.last -ceq 'drafted plain-empty:S0001 file=PLAN/S0001_first-ever.md priority=- pq=no-task-flow position=0/0') "empty project: $($r.last) | $($r.output)"
+    }
+
+    Run-Case '10 a hotfix is pinned first without being asked; -NoPin leaves it in place; -Pin with -NoPin is refused' {
+        $repoB = New-Repo 'repo-b'
+        $regB = Invoke-PqCli @('register', '-Path', $repoB, '-Key', 'repo-b', '-Enable', '-PermissionMode', 'bypassPermissions')
+        Assert-That ($regB.code -eq 0) "register repo-b: $($regB.output)"
+        $f = Write-Text 'owner12.txt' 'Urgent: nothing starts.'
+        $r = Invoke-Draft @('-Project', 'repo-b', '-Slug', 'hotfix-nothing-starts', '-TextFile', $f)
+        Assert-That ($r.code -eq 0 -and $r.stdout -match 'pq: pinned - repo-b:S0001') "default: $($r.output)"
+        # The sync that follows a capture lists every local ticket at the bottom, so a row alone proves nothing: a pin
+        # is the first repo-b row of the file.
+        $firstRow = { (Get-Content $queueFile | Where-Object { $_ -match '^repo-b:S\d{4}' } | Select-Object -First 1) }
+        Assert-That ((& $firstRow) -match '^repo-b:S0001') "repo-b:S0001 is not first: $(& $firstRow)"
+        $r = Invoke-Draft @('-Project', 'repo-b', '-Slug', 'hotfix-stays-put', '-TextFile', $f, '-NoPin')
+        Assert-That ($r.code -eq 0 -and $r.stdout -notmatch 'pq: pinned' -and $r.stdout -match '-NoPin left it in place') "-NoPin: $($r.output)"
+        Assert-That ((& $firstRow) -match '^repo-b:S0001') "a -NoPin hotfix took the first place: $(& $firstRow)"
+        $r = Invoke-Draft @('-Project', 'repo-b', '-Slug', 'hotfix-both', '-TextFile', $f, '-Pin', '-NoPin')
+        Assert-That ($r.code -eq 2 -and $r.stdout -match 'contradict') "-Pin -NoPin: exit $($r.code): $($r.output)"
+        $r = Invoke-Draft @('-Project', 'repo-b', '-Slug', 'bugfix-plain-bug', '-TextFile', $f)
+        Assert-That ($r.code -eq 0 -and $r.stdout -notmatch 'pq: pinned') "a bugfix- was pinned: $($r.output)"
     }
 }
 finally {

@@ -142,8 +142,8 @@ Public Class PortfolioState
     ''' </summary>
     Public Shared Function GetTicketQueuePath(repo As RepoInfo) As String
         If repo Is Nothing OrElse String.IsNullOrWhiteSpace(repo.Path) Then Return ""
-        Dim rel = "PLAN\RELEASE_QUEUE.md"
-        Dim profileFile = Path.Combine(repo.Path, ".sza-profile.json")
+        Dim repoPath = repo.Path
+        Dim profileFile = Path.Combine(repoPath, ".sza-profile.json")
         If File.Exists(profileFile) Then
             Try
                 Using doc = ReadJson(profileFile)
@@ -151,14 +151,34 @@ Public Class PortfolioState
                         Dim paths As JsonElement
                         If doc.RootElement.ValueKind = JsonValueKind.Object AndAlso doc.RootElement.TryGetProperty("paths", paths) Then
                             Dim customRel = Str(paths, "releaseQueue")
-                            If Not String.IsNullOrWhiteSpace(customRel) Then rel = customRel
+                            If Not String.IsNullOrWhiteSpace(customRel) Then
+                                Dim full = If(Path.IsPathFullyQualified(customRel), customRel, Path.Combine(repoPath, customRel))
+                                If File.Exists(full) Then Return full
+                            End If
                         End If
                     End If
                 End Using
             Catch
             End Try
         End If
-        Return Path.Combine(repo.Path, rel)
+
+        Dim candidates = {
+            "PLAN\RELEASE_QUEUE.md",
+            "PLAN\release-queue.md",
+            "DEV\plan\RELEASE_QUEUE.md",
+            "docs\specifications\RELEASE_QUEUE.md",
+            "PLAN\INDEX.md",
+            "PLAN\spec-catalog.jsonl",
+            "PLAN\README.md",
+            "tasks\README.md",
+            "tasks\INDEX.md"
+        }
+        For Each cand In candidates
+            Dim full = Path.Combine(repoPath, cand)
+            If File.Exists(full) Then Return full
+        Next
+
+        Return Path.Combine(repoPath, "PLAN\RELEASE_QUEUE.md")
     End Function
 
     ' ---- shared readers ----
@@ -315,7 +335,7 @@ Public Class PortfolioState
         If queue Is Nothing Then queue = ReadQueue()
 
         Dim heldKeys As New HashSet(Of String)(queue.Held.Where(Function(r) r.Id Is Nothing).Select(Function(r) r.Repo), StringComparer.Ordinal)
-        Dim counts = queue.Rows.GroupBy(Function(r) r.Repo).ToDictionary(Function(g) g.Key, Function(g) g.Count(), StringComparer.Ordinal)
+        Dim counts = queue.Rows.Concat(queue.Held.Where(Function(r) r.Id IsNot Nothing)).GroupBy(Function(r) r.Repo).ToDictionary(Function(g) g.Key, Function(g) g.Count(), StringComparer.Ordinal)
 
         Try
             Using doc = ReadJson(GetReposJsonPath())

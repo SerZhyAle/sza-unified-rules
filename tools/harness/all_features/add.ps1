@@ -127,7 +127,7 @@ if (-not [string]::IsNullOrWhiteSpace($WearFlavors)) {
 $specVal = $null
 if (-not [string]::IsNullOrWhiteSpace($Spec)) {
     $specT = $Spec.Trim()
-    if ($specT -notmatch '^S\d{4}$') { Fail "Invalid -Spec '$specT'. Expected Sxxxx or empty." }
+    if (-not (Test-SzaTicketId $specT)) { Fail "Invalid -Spec '$specT'. Expected Sxxxx or empty." }
     $specVal = $specT
 }
 

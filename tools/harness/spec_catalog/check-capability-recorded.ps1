@@ -49,7 +49,7 @@ function Stop-CannotVerify([string]$why) {
     exit 2
 }
 
-if ($Id -notmatch '^S\d{4}$') { Stop-CannotVerify "invalid id" }
+if (-not (Test-SzaTicketId $Id)) { Stop-CannotVerify "invalid id" }
 
 $records = Read-Catalog
 $record = $records | Where-Object { $_.id -eq $Id } | Select-Object -First 1

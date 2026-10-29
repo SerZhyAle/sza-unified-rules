@@ -32,7 +32,7 @@
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)][ValidatePattern('^S\d{4}$')][string] $Id,
+    [Parameter(Mandatory)][ValidatePattern('^[A-Za-z][A-Za-z0-9-]*\d{2,}$')][string] $Id,   # the shape only; the profile's grammar is checked below
     [string] $Reason = 'spec-preamble',
     [string] $ProductArea,
     [string] $Trigger,
@@ -48,6 +48,7 @@ param(
 )
 
 . (Join-Path $PSScriptRoot '..\_profile.ps1')
+if (-not (Test-SzaTicketId $Id)) { Write-Error "Invalid -Id '$Id' (must match $(Get-SzaTicketIdDisplay))."; exit 2 }
 
 trap {
     Write-Host "spec-preamble: $_" -ForegroundColor Red

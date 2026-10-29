@@ -116,7 +116,7 @@ try {
         if ($flavors.Count -eq 0) { Fail "Record '$idN' would have empty flavors." }
         foreach ($f in $flavors) { if ($validFlavors -notcontains $f) { Fail "Invalid flavor '$f'. Allowed: $($validFlavors -join ', ')." } }
         if ((Test-NonAscii $name) -or (Test-NonAscii $desc)) { Fail "EN-only: non-ASCII in name/description." }
-        if ($specVal -and "$specVal" -notmatch '^S\d{4}$') { Fail "Invalid spec '$specVal'." }
+        if ($specVal -and -not (Test-SzaTicketId "$specVal")) { Fail "Invalid spec '$specVal'." }
         # S1982: same shape check add.ps1 applies, so a gate cannot enter the inventory through the
         # patch path unchecked. The flag's existence and the flavors it implies stay with validate.ps1.
         if ($gateVal) {

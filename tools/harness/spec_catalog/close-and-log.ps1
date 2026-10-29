@@ -91,7 +91,7 @@ function Reject([string]$msg) {
     exit 2
 }
 
-if ($Id -notmatch '^S\d{4}$') { Reject "Invalid -Id '$Id' (must match S####)" }
+if (-not (Test-SzaTicketId $Id)) { Reject "Invalid -Id '$Id' (must match $(Get-SzaTicketIdDisplay))" }
 
 # Cross-process transport form: `pwsh -File` binds only the FIRST element of a multi-element
 # array argument, so callers from another process pass one string holding a JSON ARRAY.

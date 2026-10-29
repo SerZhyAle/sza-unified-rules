@@ -176,7 +176,7 @@ function Get-ExcusedProbeTickets {
     foreach ($line in Get-Content -LiteralPath $BaselinePath) {
         $trimmedLine = $line.Trim()
         if ($trimmedLine -eq '' -or $trimmedLine.StartsWith('#')) { continue }
-        if ($trimmedLine -match '^(?<id>S\d{4})\s+\S') { [void]$excused.Add($Matches['id']) }
+        if ($trimmedLine -match ('^(?<id>' + (Get-SzaTicketIdFragment) + ')\s+\S')) { [void]$excused.Add($Matches['id']) }
     }
     # S2934: the comma is load-bearing. PowerShell unrolls any IEnumerable written to the pipeline,
     # so a bare `return $excused` hands back the set's ELEMENTS - an object[] when the baseline has

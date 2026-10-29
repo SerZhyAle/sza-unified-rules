@@ -37,7 +37,7 @@ if ($Help) {
 . (Join-Path $PSScriptRoot '_lib.ps1')
 
 if ($Id) {
-    if ($Id -notmatch '^S\d{4}$') { throw "Invalid -Id '$Id' (must match S####)." }
+    if (-not (Test-SzaTicketId $Id)) { throw "Invalid -Id '$Id' (must match $(Get-SzaTicketIdDisplay))." }
     # Single-id lookup always resolves across both journals (archive fallback),
     # so an archived ticket stays addressable without -IncludeArchived.
     $rec = Find-Record -Id $Id

@@ -20,6 +20,7 @@ Public Class FormNewSpec
     Private lblStatus As Label
 
     Private _defaultProjectKey As String = ""
+    Private _pinTickedByType As Boolean = False
 
     ' What spec-draft printed, for the main window's console.
     Public Property ResultText As String = ""
@@ -37,22 +38,26 @@ Public Class FormNewSpec
         Me.MinimumSize = New Size(700, 540)
         Me.StartPosition = FormStartPosition.CenterParent
         Me.Font = New Font("Segoe UI", 9.0F)
+        Me.SuspendLayout()
 
-        ' --- Bottom Panel (docked cleanly, ensures status & action buttons are never cut off) ---
+        ' --- Bottom Panel (Status & Buttons, docked bottom) ---
         Dim pnlBottom As New Panel With {
+            .Name = "pnlBottom",
             .Dock = DockStyle.Bottom,
             .Height = 84,
-            .Padding = New Padding(20, 2, 20, 8)
+            .Padding = New Padding(20, 4, 20, 10)
         }
 
         lblStatus = New Label With {
+            .Name = "lblStatus",
             .Dock = DockStyle.Top,
-            .Height = 28,
+            .Height = 26,
             .TextAlign = ContentAlignment.MiddleLeft,
             .Font = New Font("Segoe UI", 9.0F)
         }
 
         Dim pnlButtons As New FlowLayoutPanel With {
+            .Name = "pnlButtons",
             .Dock = DockStyle.Bottom,
             .Height = 42,
             .FlowDirection = FlowDirection.RightToLeft,
@@ -85,29 +90,56 @@ Public Class FormNewSpec
         pnlButtons.Controls.AddRange({btnCancel, btnDraft})
         pnlBottom.Controls.AddRange({pnlButtons, lblStatus})
 
-        ' --- Row 1: Target Project & Complexity ---
-        Dim lblProj As New Label With {
-            .Text = "Target &Project:",
-            .Location = New Point(20, 16),
+        ' --- Top Controls (Adaptive 4-column TableLayoutPanel, zero overlapping at any DPI) ---
+        Dim tblTop As New TableLayoutPanel With {
+            .Name = "tblTop",
+            .Dock = DockStyle.Top,
             .AutoSize = True,
-            .Font = New Font("Segoe UI", 9.0F, FontStyle.Bold)
+            .AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            .Padding = New Padding(20, 16, 20, 6),
+            .ColumnCount = 4,
+            .RowCount = 4
+        }
+        tblTop.SuspendLayout()
+
+        tblTop.ColumnStyles.Add(New ColumnStyle(SizeType.AutoSize))
+        tblTop.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 45.0F))
+        tblTop.ColumnStyles.Add(New ColumnStyle(SizeType.AutoSize))
+        tblTop.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 55.0F))
+
+        For i = 0 To 3
+            tblTop.RowStyles.Add(New RowStyle(SizeType.AutoSize))
+        Next
+
+        ' Row 0: Target Project & Complexity
+        Dim lblProj As New Label With {
+            .Name = "lblProj",
+            .Text = "Target &Project:",
+            .AutoSize = True,
+            .Font = New Font("Segoe UI", 9.0F, FontStyle.Bold),
+            .Anchor = AnchorStyles.Left,
+            .Margin = New Padding(0, 0, 8, 8)
         }
         cmbProject = New ComboBox With {
-            .Location = New Point(140, 13),
-            .Size = New Size(220, 26),
+            .Name = "cmbProject",
             .DropDownStyle = ComboBoxStyle.DropDownList,
+            .Dock = DockStyle.Fill,
+            .Margin = New Padding(0, 0, 16, 8),
             .AccessibleName = "Target Project Dropdown"
         }
 
         Dim lblComp As New Label With {
+            .Name = "lblComp",
             .Text = "&Complexity:",
-            .Location = New Point(380, 16),
-            .AutoSize = True
+            .AutoSize = True,
+            .Anchor = AnchorStyles.Left,
+            .Margin = New Padding(8, 0, 8, 8)
         }
         cmbComplexity = New ComboBox With {
-            .Location = New Point(470, 13),
-            .Size = New Size(290, 26),
+            .Name = "cmbComplexity",
             .DropDownStyle = ComboBoxStyle.DropDownList,
+            .Dock = DockStyle.Fill,
+            .Margin = New Padding(0, 0, 0, 8),
             .AccessibleName = "Complexity Dropdown"
         }
         cmbComplexity.Items.AddRange({
@@ -117,35 +149,47 @@ Public Class FormNewSpec
         })
         cmbComplexity.SelectedIndex = 0
 
-        ' --- Row 2: Type / Prefix Row (FlowLayoutPanel ensures zero overlapping radio buttons) ---
+        tblTop.Controls.Add(lblProj, 0, 0)
+        tblTop.Controls.Add(cmbProject, 1, 0)
+        tblTop.Controls.Add(lblComp, 2, 0)
+        tblTop.Controls.Add(cmbComplexity, 3, 0)
+
+        ' Row 1: Type / Prefix Row
         Dim pnlType As New FlowLayoutPanel With {
-            .Location = New Point(20, 50),
-            .Size = New Size(740, 32),
+            .Name = "pnlType",
+            .Dock = DockStyle.Fill,
+            .AutoSize = True,
+            .AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            .WrapContents = True,
             .FlowDirection = FlowDirection.LeftToRight,
-            .WrapContents = False
+            .Margin = New Padding(0, 2, 0, 8)
         }
         Dim lblType As New Label With {
+            .Name = "lblType",
             .Text = "Type:",
             .AutoSize = True,
             .Font = New Font("Segoe UI", 9.0F, FontStyle.Bold),
-            .Margin = New Padding(0, 3, 20, 0)
+            .Margin = New Padding(0, 3, 16, 0)
         }
         rdoFeature = New RadioButton With {
+            .Name = "rdoFeature",
             .Text = "&Feature / Task",
             .AutoSize = True,
             .Checked = True,
-            .Margin = New Padding(0, 0, 24, 0)
+            .Margin = New Padding(0, 0, 20, 0)
         }
         AddHandler rdoFeature.CheckedChanged, AddressOf RdoType_CheckedChanged
 
         rdoBug = New RadioButton With {
+            .Name = "rdoBug",
             .Text = "&Bug / Defect (bugfix-)",
             .AutoSize = True,
-            .Margin = New Padding(0, 0, 24, 0)
+            .Margin = New Padding(0, 0, 20, 0)
         }
         AddHandler rdoBug.CheckedChanged, AddressOf RdoType_CheckedChanged
 
         rdoHotfix = New RadioButton With {
+            .Name = "rdoHotfix",
             .Text = "&Urgent Blocker (hotfix-)",
             .AutoSize = True,
             .Margin = New Padding(0, 0, 0, 0)
@@ -153,48 +197,75 @@ Public Class FormNewSpec
         AddHandler rdoHotfix.CheckedChanged, AddressOf RdoType_CheckedChanged
 
         pnlType.Controls.AddRange({lblType, rdoFeature, rdoBug, rdoHotfix})
+        tblTop.Controls.Add(pnlType, 0, 1)
+        tblTop.SetColumnSpan(pnlType, 4)
 
-        ' --- Row 3: Ticket Slug & Pin ---
+        ' Row 2: Ticket Slug & Pin
         Dim lblSlug As New Label With {
+            .Name = "lblSlug",
             .Text = "Ticket &Slug:",
-            .Location = New Point(20, 88),
             .AutoSize = True,
-            .Font = New Font("Segoe UI", 9.0F, FontStyle.Bold)
+            .Font = New Font("Segoe UI", 9.0F, FontStyle.Bold),
+            .Anchor = AnchorStyles.Left,
+            .Margin = New Padding(0, 0, 8, 8)
         }
         txtSlug = New TextBox With {
-            .Location = New Point(140, 85),
-            .Size = New Size(360, 26),
+            .Name = "txtSlug",
+            .Dock = DockStyle.Fill,
             .Font = New Font("Consolas", 9.5F),
+            .Margin = New Padding(0, 0, 16, 8),
             .AccessibleName = "Ticket Slug Input"
         }
         chkPin = New CheckBox With {
+            .Name = "chkPin",
             .Text = "Pin to &top of queue (-Pin)",
-            .Location = New Point(520, 87),
             .AutoSize = True,
+            .Anchor = AnchorStyles.Left,
+            .Margin = New Padding(8, 0, 0, 8),
             .AccessibleName = "Pin to top checkbox"
         }
 
-        ' --- Row 4: Description Header ---
-        Dim lblDesc As New Label With {
-            .Text = "&Task or Problem Description (in your own words; spec-draft will turn this into an aligned spec):",
-            .Location = New Point(20, 122),
-            .AutoSize = True,
-            .Font = New Font("Segoe UI", 9.0F, FontStyle.Bold)
-        }
+        tblTop.Controls.Add(lblSlug, 0, 2)
+        tblTop.Controls.Add(txtSlug, 1, 2)
+        tblTop.Controls.Add(chkPin, 2, 2)
+        tblTop.SetColumnSpan(chkPin, 2)
 
-        ' --- Description Text Box (expands smoothly above docked pnlBottom) ---
+        ' Row 3: Description Header
+        Dim lblDesc As New Label With {
+            .Name = "lblDesc",
+            .Text = "&Task or Problem Description (in your own words; spec-draft will turn this into an aligned spec):",
+            .AutoSize = True,
+            .Font = New Font("Segoe UI", 9.0F, FontStyle.Bold),
+            .Margin = New Padding(0, 4, 0, 4)
+        }
+        tblTop.Controls.Add(lblDesc, 0, 3)
+        tblTop.SetColumnSpan(lblDesc, 4)
+
+        tblTop.ResumeLayout(False)
+        tblTop.PerformLayout()
+
+        ' --- Center Content: Task Description Multiline Editor ---
+        Dim pnlContent As New Panel With {
+            .Name = "pnlContent",
+            .Dock = DockStyle.Fill,
+            .Padding = New Padding(20, 0, 20, 0)
+        }
         txtDescription = New TextBox With {
-            .Location = New Point(20, 146),
-            .Size = New Size(740, 375),
+            .Name = "txtDescription",
+            .Dock = DockStyle.Fill,
             .Multiline = True,
             .AcceptsReturn = True,
             .ScrollBars = ScrollBars.Vertical,
             .Font = New Font("Segoe UI", 9.5F),
-            .Anchor = AnchorStyles.Top Or AnchorStyles.Bottom Or AnchorStyles.Left Or AnchorStyles.Right,
             .AccessibleName = "Task Description Text"
         }
+        pnlContent.Controls.Add(txtDescription)
 
-        Me.Controls.AddRange({lblProj, cmbProject, lblComp, cmbComplexity, pnlType, lblSlug, txtSlug, chkPin, lblDesc, txtDescription, pnlBottom})
+        ' Container assembly in correct docking z-order
+        Me.Controls.Add(pnlContent)
+        Me.Controls.Add(tblTop)
+        Me.Controls.Add(pnlBottom)
+        pnlContent.BringToFront()
 
         ' APP-BEHAVIOUR Rule 1
         Me.AcceptButton = btnDraft
@@ -211,6 +282,9 @@ Public Class FormNewSpec
         txtDescription.TabIndex = 7
         btnDraft.TabIndex = 8
         btnCancel.TabIndex = 9
+
+        Me.ResumeLayout(False)
+        Me.PerformLayout()
     End Sub
 
     Protected Overrides Sub OnLoad(e As EventArgs)
@@ -255,6 +329,16 @@ Public Class FormNewSpec
             txtSlug.Text = "hotfix-" & baseSlug
         Else
             txtSlug.Text = baseSlug
+        End If
+
+        ' An urgent blocker goes first in the queue: the type ticks the pin box, and leaving the type takes back only
+        ' a tick the type made.
+        If rdoHotfix.Checked AndAlso Not chkPin.Checked Then
+            chkPin.Checked = True
+            _pinTickedByType = True
+        ElseIf Not rdoHotfix.Checked AndAlso _pinTickedByType Then
+            chkPin.Checked = False
+            _pinTickedByType = False
         End If
     End Sub
 

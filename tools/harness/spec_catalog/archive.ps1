@@ -82,8 +82,8 @@ $noArtefact = [System.Collections.Generic.List[string]]::new()
 
 # Phase 1: resolve every id and locate its artefacts before anything is touched.
 foreach ($oneId in $ids) {
-    if ($oneId -notmatch '^S\d{4}$') {
-        $failed.Add($oneId); $lines.Add("${oneId}: invalid id (must match S####)."); continue
+    if (-not (Test-SzaTicketId $oneId)) {
+        $failed.Add($oneId); $lines.Add("${oneId}: invalid id (must match $(Get-SzaTicketIdDisplay))."); continue
     }
     $record = Find-Record -Id $oneId
     if (-not $record) {

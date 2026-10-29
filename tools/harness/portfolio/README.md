@@ -178,8 +178,13 @@ The `spec-draft` skill (`/spec-draft`, or `spec-draft.ps1` in this folder) captu
 registered project as a `Draft` ticket and then tells you, read only, what `pq` will do with it. A new ticket's
 row goes to the **end of the current package** of that project's ticket queue (the file never reorders), so the
 report gives its place in the project's own ranking: at position 38 it waits for 37 tickets, and `-Pin` (or
-`pq pin <key>:<id>`) is the way to put it first. A project under `hold`, a project not enabled and a project not
+`pq pin <key>:<id>`) is the way to put it first. An urgent blocker (a `hotfix-` slug, **Urgent Blocker** in the
+New Spec dialog) is pinned by itself, so `pq` works it before everything else; `-NoPin` is the way out. A project under `hold`, a project not enabled and a project not
 registered are reported as they are; the script undoes none of them.
+
+A project with no task flow (no `.sza-profile.json`) is captured into too, as a plain `PLAN/<id>_<slug>.md` numbered
+the way that project already numbers its tickets; no profile, ledger or queue row is written, and the report says
+`pq=no-task-flow`, because `pq` cannot work a ticket that has no ledger.
 
 ## One-time setup, per repository
 
