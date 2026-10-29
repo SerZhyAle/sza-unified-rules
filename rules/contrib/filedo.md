@@ -761,3 +761,7 @@ The decision is the owner's: split now, or accept `SZA-RULES05` as a standing no
 ## Test lab report (2026-10-23)
 
 - Ticket `PLAN/SP-0172 test-lab-report.md` (Draft, not queued; `PLAN/` is git-ignored), created by the canon session from the owner's order of 2026-10-23 to collect what every project knows about its hardware, emulators and test practice (contract `TEST-LAB` 0.1, draft). Documentation only: the product files one inventory report and a pointer; no code, test or harness changes. Reports to the Windows profile owner (FMS_Win).
+
+## Fast checks between releases (2026-10-29)
+
+- Ticket `PLAN/SP-0173 fast-checks-between-releases.md` (Approved, first in `PLAN/release-queue.md`; `PLAN/` is git-ignored), created by the canon session from the owner's order of 2026-10-29 to switch off full builds and tests longer than 5 s between releases (canon TESTING_AND_QA section 2, highest priority). The product has to take `build.ps1 -Test` (the twelve-step gate) and the installer step off the between-release path of `AGENTS.md` and the build skill in favour of a fast tier, while `release.ps1` keeps the full gate, the full `go test ./fdsec/` run, `govulncheck` and the operations run.

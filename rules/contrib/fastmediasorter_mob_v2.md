@@ -2618,6 +2618,7 @@ $out | ConvertTo-Json -Depth 5 -Compress
 ## Test lab report (2026-10-23)
 
 - Ticket `PLAN/S4426_test-lab-equipment-report.md` (Draft, Tier 3, auto-added to the end of package 47 by `capture-draft`), created by the canon session from the owner's order of 2026-10-23 to collect what every project knows about its hardware, emulators and test practice (contract `TEST-LAB` 0.1, draft). Documentation only: the product files one inventory report and a pointer; no code, test or harness changes. Owner of the Android profile `TEST-LAB-ANDROID`; StreamsPlayer_mob and Tourist_mob report to it.
+- Ticket `PLAN/S4488_fast-checks-only-between-releases.md` (Draft, first in package 47 of `PLAN/RELEASE_QUEUE.md`), created by the canon session from the owner's order of 2026-10-29 to switch off full builds and tests longer than 5 s between releases (canon TESTING_AND_QA section 2, highest priority). The repo has to cut its between-release paths (`CLAUDE.md` sections 9 and 12 with the `AGENTS.md` mirror, `/build`, `/spec-dev`, `/spec-all`, `/spec-code`, `post-change.ps1`, and the push and pull_request triggers of `android-ci.yml`, `static-gates.yml` and `maestro-tests.yml`) down to checks of 5 s or less and keep the full build and every tier in the release path; `FastMediaSorter_release` shares this record and is inventoried in the same ticket.
 
 ## BlockQuestions exit - lifted into the canon 2026-10-25 (source: the overlay's `/spec-quiz`)
 

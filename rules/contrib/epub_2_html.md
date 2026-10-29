@@ -773,3 +773,7 @@ product asks.
 ## Test lab report (2026-10-23)
 
 - Ticket `DEV/plan/123_2026-10-23_test-lab-inventory-report.md` (Draft, not queued; `next-ticket-number` moved to 124), created by the canon session from the owner's order of 2026-10-23 to collect what every project knows about its hardware, emulators and test practice (contract `TEST-LAB` 0.1, draft). Documentation only: the product files one inventory report and a pointer; no code, test or harness changes. Reports to the Windows profile owner (FMS_Win) and, for the Chrome/Edge extension and the site, to the web profile owner (the hub).
+
+## Fast checks between releases (2026-10-29)
+
+- Ticket `DEV/plan/124_2026-10-29_fast-checks-between-releases.md` (Approved, first in release 1 of `DEV/plan/RELEASE_QUEUE.md`; `next-ticket-number` moved to 125), created by the canon session from the owner's order of 2026-10-29 to switch off full builds and tests longer than 5 s between releases (canon TESTING_AND_QA section 2, highest priority). The product has to make `scripts/build-local.ps1` and the full `scripts/check.ps1` gate a release action, give `AGENTS.md`, `.claude/commands/` and `/build` a fast tier instead, and have `scripts/release.ps1` and `DEV/RELEASE.md` run the full gate themselves, so the tag still takes the full-plan evidence.

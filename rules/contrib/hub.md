@@ -268,3 +268,7 @@ on the intent to monetise: a network-surface row for third-party scripts in SECU
 ## Test lab report (2026-10-23)
 
 - Ticket `PLAN/S0005_test-lab-report-and-web-profile.md` (Draft, not queued; `PLAN/` is git-ignored), created by the canon session from the owner's order of 2026-10-23 to collect what every project knows about its hardware, emulators and test practice (contract `TEST-LAB` 0.1, draft). Documentation only: the product files one inventory report and a pointer; no code, test or harness changes. Owner of the web profile `TEST-LAB-WEB`; FMS_Web reports to it.
+
+## Fast checks between releases (2026-10-29)
+
+- Ticket `PLAN/S0006_fast-checks-between-releases.md` (Approved, first in `PLAN/README.md`; the hub has no queue, and `PLAN/` is git-ignored), created by the canon session from the owner's order of 2026-10-29 to switch off full builds and tests longer than 5 s between releases (canon TESTING_AND_QA section 2, highest priority). The hub classes its compliance gate, docs check, UI check and promotion probes as fast or release, adds one fast command, and moves the rendered and network checks to the publish pre-flight (`deploy.bat` plays the release), with nothing written under `docs/`.

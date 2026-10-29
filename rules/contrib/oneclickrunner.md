@@ -307,3 +307,7 @@ together with the re-sync so the record exists. Per the canon, committing is on 
 ## Test lab report (2026-10-23)
 
 - Ticket `PLAN/T0032_test-lab-report.md` (Draft, not queued), created by the canon session from the owner's order of 2026-10-23 to collect what every project knows about its hardware, emulators and test practice (contract `TEST-LAB` 0.1, draft). Documentation only: the product files one inventory report and a pointer; no code, test or harness changes. Reports to the Windows profile owner (FMS_Win).
+
+## Fast checks between releases (2026-10-29)
+
+- Ticket `PLAN/T0033_fast-checks-only-between-releases.md` (Approved, first in `PLAN/INDEX.md` and `PLAN/README.md`; this repo has no release queue file), created by the canon session from the owner's order of 2026-10-29 to switch off full builds and tests longer than 5 s between releases (canon TESTING_AND_QA section 2, highest priority). The product has no tests and no CI, so it inventories the between-release builds (`build.ps1`, `dotnet build -c Release` in `CLAUDE.md`, `/verify --build`, the build rungs of `/spec-dev` and `/spec-tech`), names a fast command or a static fast tier, and keeps the full build on the release path (`release.ps1`).

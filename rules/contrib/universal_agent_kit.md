@@ -698,3 +698,7 @@ notice's "now" column before the session ran and a version may not be pinned to 
 ## Test lab report (2026-10-23)
 
 - Specification `docs/specifications/SPECIFICATION_TEST_LAB_REPORT.md` (Draft; `docs/` is git-ignored), created by the canon session from the owner's order of 2026-10-23 to collect what every project knows about its hardware, emulators and test practice (contract `TEST-LAB` 0.1, draft). Documentation only: the product files one inventory report and a pointer; no code, test or harness changes. The kit has no equipment of its own; the open question is how a result names the machine it ran on. Reports to the owner of each platform it is used on.
+
+## Fast checks between releases (2026-10-29)
+
+- Specification `docs/specifications/SPECIFICATION_FAST_CHECKS_BETWEEN_RELEASES.md` (Approved; `docs/` is git-ignored and the repo has no queue or index, so its priority line is the order), created by the canon session from the owner's order of 2026-10-29 to switch off full builds and tests longer than 5 s between releases (canon TESTING_AND_QA section 2, highest priority). The kit repository moves its own rebuild, site gates, browser check and compliance gate to the publish pre-flight, and rewrites what the kit teaches (`<CHECK_CMD>` as the fast check with a release command beside it, the validation ladder, the skills that run checks, the cost guidance, the examples and the portal sources) so a consuming project learns the same 5 s line.

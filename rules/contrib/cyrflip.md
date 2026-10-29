@@ -707,3 +707,7 @@ account-name redaction (catalog `CAPTURE-OUTPUT` proposal of 2026-10-01 and `DIA
 ## Test lab report (2026-10-23)
 
 - Ticket `PLAN/S0080_test-lab-report.md` (Draft, not queued; `PLAN/` is git-ignored), created by the canon session from the owner's order of 2026-10-23 to collect what every project knows about its hardware, emulators and test practice (contract `TEST-LAB` 0.1, draft). Documentation only: the product files one inventory report and a pointer; no code, test or harness changes. Reports to the Windows profile owner (FMS_Win); the `docs/` site checked in headless Chrome is a web question for the owners.
+
+## Fast checks between releases (2026-10-29)
+
+- Ticket `PLAN/S0081_fast-checks-only-between-releases.md` (Approved, first in `PLAN/RELEASE_QUEUE.md`, head of package 3; `PLAN/` is git-ignored), created by the canon session from the owner's order of 2026-10-29 to switch off full builds and tests longer than 5 s between releases (canon TESTING_AND_QA section 2, highest priority). The product inventories every between-release build and test (`build.ps1 -Tests`, the `/build` skill, push and pull-request CI, the `CLAUDE.md` commands), classes each as fast or release from recorded times, and keeps the full build and every slow tier on the release path (`release.ps1`, `release.yml`).

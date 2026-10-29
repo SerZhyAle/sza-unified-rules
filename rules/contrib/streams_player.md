@@ -698,3 +698,7 @@ Full canon reconciliation to **2026.10.02.5** (core digest `sha256:1a8cbbb109975
 ## Test lab report (2026-10-23)
 
 - Ticket `PLAN/SP-0242_report_the_test_lab_to_the_portfolio.md` (Draft, not queued; `PLAN/` is git-ignored), created by the canon session from the owner's order of 2026-10-23 to collect what every project knows about its hardware, emulators and test practice (contract `TEST-LAB` 0.1, draft). Documentation only: the product files one inventory report and a pointer; no code, test or harness changes. Reports to the Windows profile owner (FMS_Win).
+
+## Fast checks between releases (2026-10-29)
+
+- Ticket `PLAN/SP-0256_fast-checks-only-between-releases.md` (Approved, first in `PLAN/PQ_QUEUE.md`; `PLAN/` is git-ignored), created by the canon session from the owner's order of 2026-10-29 to switch off full builds and tests longer than 5 s between releases (canon TESTING_AND_QA section 2, highest priority). The product inventories every between-release build and test (push and pull-request CI, the validation ladder, the agent-rules commands), classes each as fast or release from recorded times, and moves the full build, the full suite and the CI waits of `release.yml` and `pages.yml` onto the release path.

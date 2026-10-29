@@ -236,3 +236,7 @@ the 2026-09-03 entry did. Owed:
 ## Test lab report (2026-10-23)
 
 - Ticket `tasks/TASK-11-test-lab-report.md` (Draft, not queued), created by the canon session from the owner's order of 2026-10-23 to collect what every project knows about its hardware, emulators and test practice (contract `TEST-LAB` 0.1, draft). Documentation only: the product files one inventory report and a pointer; no code, test or harness changes. Reports to the Windows profile owner (FMS_Win). The repo's `CLAUDE.md` does not yet name the catalog; the first run that creates `docs/contracts/` adds that line.
+
+## Fast checks between releases (2026-10-29)
+
+- Ticket `tasks/TASK-12-fast-checks-between-releases.md` (Approved, first in `tasks/README.md`; the repo has no queue), created by the canon session from the owner's order of 2026-10-29 to switch off full builds and tests longer than 5 s between releases (canon TESTING_AND_QA section 2, highest priority). The tool has no tests, so the fast tier is grep and a direct look at the diff (plus an optional small static script), `dotnet build` and the `/verify` run-and-observe move to the pre-flight of `build.ps1 publish`, and `CLAUDE.md`, the command files and `docs/VALIDATION.md` are reworded to match.
