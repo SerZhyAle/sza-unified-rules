@@ -181,7 +181,7 @@ function Get-PqEventNames {
         'repo.ready', 'repo.scaffolded', 'repo.skipped',
         'res.sample',
         'resource.acquire', 'resource.release', 'resource.wait',
-        'run.end', 'run.heartbeat', 'run.pause', 'run.resume', 'run.start', 'run.stop',
+        'run.end', 'run.error', 'run.heartbeat', 'run.pause', 'run.resume', 'run.start', 'run.stop',
         'ticket.blocked', 'ticket.complexity', 'ticket.created', 'ticket.dropLifted', 'ticket.dropped',
         'ticket.thrash', 'ticket.transition', 'ticket.unblocked',
         'tripwire.check', 'tripwire.trip',
