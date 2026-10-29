@@ -30,8 +30,12 @@ minutes matter (reference: `CyrFlip`):
   trigger contract** - the build script may push to `main` freely because `[skip ci]` keeps it free, and only
   the release script produces the billable `v*` tag. The price is the only clean-room run between releases,
   which the pre-flight must then supply (§2).
+- **No full build or test suite in branch CI** - push and pull-request CI runs only the gates that take 5 s or
+  less (docs, links, lint, the fast test tier); the full build and the suites run in the release workflow
+  against the tag's own tree, and the release never takes a branch-CI green as proof of a check that green no
+  longer ran ([TESTING_AND_QA.md](TESTING_AND_QA.md) §2).
 - **`paths-ignore` on the CI workflow** - doc/manifest/asset/extension-only changes (`**.md`, `docs/**`,
-  `winget/**`, `assets/**`, the extension subtree) never burn a full build.
+  `winget/**`, `assets/**`, the extension subtree) never start a code CI run at all.
 - **Skip the release anchor commit in CI** - the release flow makes a `release:`-prefixed anchor commit that the
   tag's release workflow already builds+tests; a CI `if:` that skips `release:` commits avoids double-billing.
   Keep the tag trigger off the branch workflow (listen to `main` only), so a `v*` tag fires *only* the release

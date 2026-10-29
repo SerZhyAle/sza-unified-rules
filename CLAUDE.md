@@ -17,13 +17,15 @@ does not apply here; this is where fixes land. It applies everywhere else.
 
 - **Gate before committing anything under `rules/`:** `pwsh -File tools/check-rules.ps1` (exit 0 required).
   It validates internal links, section numbering, `§` references and the house text style.
-- **An ordinary edit gets quick checks only.** Do not run a test suite that takes a minute or more after a normal
-  modification - the owner switched them off on 2026-10-28. Measured that day: `ledger-rules.tests.ps1` 313 s,
-  `portfolio-queue.tests.ps1` about 200-330 s, `smoke-portfolio-runner.ps1` 120-300 s, `batch-runner.tests.ps1` 163 s.
-  What stays: the checks that finish in seconds (`check-rules.ps1`, `check-contracts.ps1`, `check-documents.py`,
-  `assert-portable.ps1`, `layout-gate.tests.ps1`, `portfolio-events.tests.ps1`) and a direct call of the function or script
-  that was changed. A long suite runs only when the owner asks for it by name. When a change is not covered by a suite, say
-  so in the report instead of running one.
+- **An ordinary edit gets checks of 5 seconds or less only** ([TESTING_AND_QA.md](rules/TESTING_AND_QA.md) §2). Do
+  not run any test, suite or gate above 5 s after a normal modification - the owner switched them off on 2026-10-28
+  and set the 5 s line for the whole portfolio on 2026-10-29. Measured on 2026-10-29 (a timed call of each): fast -
+  `check-rules.ps1` 0.8 s, `check-contracts.ps1` 2.4 s, `check-documents.py` 0.6 s, `assert-portable.ps1` 1.1 s;
+  release tier - `layout-gate.tests.ps1` 26.5 s, `portfolio-events.tests.ps1` 20.4 s, `ticket-id-grammar.tests.ps1`
+  about 18 s, and from 2026-10-28 `ledger-rules.tests.ps1` 313 s, `portfolio-queue.tests.ps1` about 200-330 s,
+  `smoke-portfolio-runner.ps1` 120-300 s, `batch-runner.tests.ps1` 163 s. What stays is the fast list and a direct call of
+  the function or script that was changed. A release-tier suite runs only when the owner asks for it by name. When a change
+  is not covered by a fast check, say so in the report instead of running a slow one.
 - **The shared contracts catalog is at `P:\Contracts`** - the one place in this repo's prose that gives the
   path, besides [rules/CONTRACTS.md](rules/CONTRACTS.md) and the `contract-sync` skill, which teach the rule
   itself, and the three scripts that need a default to fall back on when `SZA_CONTRACTS_ROOT` is unset.

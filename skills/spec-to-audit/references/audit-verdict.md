@@ -16,7 +16,7 @@ Extract the verification contract from two places:
 
 Then run each check and record exactly one outcome.
 
-## Six outcomes
+## Seven outcomes
 
 | Outcome | Meaning |
 | --- | --- |
@@ -26,12 +26,13 @@ Then run each check and record exactly one outcome.
 | **MANUAL** | Only a human at the keyboard, or a real device or target, can close this. |
 | **UNCHECKABLE** | No mechanical check exists for this claim at this rung. |
 | **EXEMPT** | Explicitly out of scope, with the reason recorded. |
+| **RELEASE** | The proving rung is the full build or a test above 5 s; it was not run between releases (TESTING_AND_QA §2). The item names the exact command the release will run. |
 
 ## Scoring
 
 | Verdict | Condition |
 | --- | --- |
-| **Verified** | every check is PASS, MANUAL or EXEMPT, with **zero WARN and zero FAIL** |
+| **Verified** | every check is PASS, MANUAL, EXEMPT or RELEASE, with **zero WARN and zero FAIL** |
 | **Partial** | zero FAIL, at least one WARN |
 | **Broken** | at least one FAIL |
 
@@ -70,7 +71,7 @@ audit file per run, which accumulates noise nobody reads.
 ## Last Audit
 
 **Date:** <YY-MM-DD HH:mm> | **Mode:** <static|re-audit|sweep> | **Outcome:** <Verified|Partial|Broken>
-**Counts:** PASS <n> | WARN <n> | FAIL <n> | MANUAL <n> | UNCHECKABLE <n> | EXEMPT <n>
+**Counts:** PASS <n> | WARN <n> | FAIL <n> | MANUAL <n> | UNCHECKABLE <n> | EXEMPT <n> | RELEASE <n>
 
 ### Action items
 1. <finding> - <file:line> - <what must change>

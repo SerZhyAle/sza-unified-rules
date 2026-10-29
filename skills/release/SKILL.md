@@ -108,7 +108,10 @@ asked. **Default when the repo is silent: ask once, immediately before the irrev
 
 ## Phase 2 - Pre-flight gate: pay locally before you pay CI
 
-Run the repo's build+test gate in the **release** configuration, not the dev default. If the repo has a local
+Run the repo's build+test gate in the **release** configuration, not the dev default: the full build and
+every test tier, the release tier above 5 s included. Between releases nothing slower than 5 s ran
+([TESTING_AND_QA.md](../../rules/TESTING_AND_QA.md) §2), so this run is the first proof of every `RELEASE`
+item the tickets since the last release recorded - a red here is expected news, not a surprise to explain away. If the repo has a local
 CI-parity build, run it: a failure discovered here is free, a failure discovered in a paid Windows job is not.
 Judge a **detached worktree of HEAD**, never the working tree: the tree is dirty by design, and `[skip ci]`
 commits mean this is the only clean-room run before the paid one.

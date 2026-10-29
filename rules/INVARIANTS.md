@@ -74,7 +74,13 @@ Ordered by cost of violation. The pointer after each line is the doc that expand
   the current code - build on it. Tree state is checked only by a release or commit flow's own gate.
   ([GITHUB_INTERACTION](GITHUB_INTERACTION.md) §1)
 
-This sits here rather than in the list because it costs nothing irreversible - it costs every session a
+- **Between releases, no full build and no test longer than 5 seconds.** A technical piece, a point fix or a
+  small improvement is checked by static inspection, the tests and gates that take 5 s or less, and a direct
+  call of what changed - and reported as "not built, not tested until the release". The full build and every
+  slower test run only before or during a release, or when the owner names that run.
+  ([TESTING_AND_QA](TESTING_AND_QA.md) §2)
+
+These sit here rather than in the list because they cost nothing irreversible - they cost every session a
 turn and the owner's attention, and a reference doc never reaches the session to stop it.
 
 ## What is deliberately not here

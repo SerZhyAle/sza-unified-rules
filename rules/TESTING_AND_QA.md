@@ -78,10 +78,34 @@ Don't over-test a typo or under-test a migration. Pick the rung the change actua
 - **Script**: run it, exit 0.
 - **Config / layout / manifest**: the target build passes.
 - **Code, pure symbol change**: compile-only check.
-- **Code, behavioural change**: targeted tests for the touched area.
+- **Code, behavioural change**: targeted tests for the touched area, from the fast tier (below).
 - **Reflection / serialization / DI / minification / startup**: proven on the **minified release/target
   variant**, not just debug - keep rules and reflective types survive shrinking.
 - **User-facing flow**: exercised on a real device/emulator (below).
+
+**Between releases the ladder stops at the checks that take 5 seconds or less.** While a technical piece, a
+point fix or a small improvement is being made, no agent runs a full build, a full test suite, or any single
+test, suite or gate that takes longer than 5 seconds, and no branch CI, hook or edit-time script runs them on
+push, pull request or save - unless the owner names that run. What remains is static inspection, the tests
+and gates that finish in 5 s or less, and a direct call of the changed script or function. The full build,
+every test above 5 s, the release-variant proof and the device pass belong to the release: they run before
+or during it, against the exact candidate it names (§5), so the release workflow builds and tests the tag's
+own tree instead of relying on a branch-CI green that no longer covers them. §1 still holds: a change checked
+only by the fast rungs is reported as "not built, not tested until the release" - a stated fact, never a
+pass. A ticket's audit records each slow rung it skipped as a `RELEASE` item naming the command the release
+will run; such an item does not hold the ticket open, and the release's full build and full suite are what
+discharge it. The owner ordered it on 2026-10-28 in the canon repo, again on 2026-10-29 in
+Streams_Player, and the same day for the whole portfolio with the 5 s line, after minute-long suites and full
+builds were re-run after every small edit while the owner waited.
+
+- **Every test and gate is classed by its measured wall time: *fast* (5 s or less) or *release* (above
+  5 s).** The class is recorded where the runner reads it - a test category or tag, a separate suite, a
+  `-Release` switch - never only in prose, so "run the fast tier" is one command. A test with no recorded
+  time is *release* until it is measured at the next release run; nothing is run between releases just to
+  time it. The figure carries its date and the command that regenerates it (§8).
+- **Splitting a slow suite is the fix, not skipping it.** When a suite above 5 s holds a few checks of
+  the touched area that are fast on their own, expose them as a fast filter rather than calling the whole
+  suite; a slow test is moved to the release tier, never deleted to meet the line.
 
 ## 3. Test tiers
 
@@ -146,8 +170,9 @@ For anything a user sees or touches, drive it on real hardware or an emulator, n
 
 ## 5. Pre-release sweep (gates the release)
 
-Before shipping (see [RELEASE_AND_DISTRIBUTION.md](RELEASE_AND_DISTRIBUTION.md) §2), run one end-to-end
-sweep and produce an explicit **PASS/FAIL verdict**:
+Before shipping (see [RELEASE_AND_DISTRIBUTION.md](RELEASE_AND_DISTRIBUTION.md) §2), run the full build and
+every test tier, the release tier above 5 s included (§2), then one end-to-end sweep, and produce an explicit
+**PASS/FAIL verdict**:
 
 1. **Clean install** - install over nothing *and* over a prior version (update path).
 2. **Resources** - every shipped asset/string/icon is present and correct for the target variant.
@@ -289,7 +314,8 @@ worth carrying everywhere.
 
 ## 9. Applying to a new project
 
-1. Adopt the flagship rule (§1) and the evidence ladder (§2) as the definition of "done".
+1. Adopt the flagship rule (§1) and the evidence ladder (§2) as the definition of "done", and split the tests
+   into the fast tier (5 s or less) and the release tier from the first suite on (§2).
 2. Stand up unit tests for domain logic; add integration tests where a mock would hide a real break.
 3. Script the pre-release sweep (§5) with a written verdict; wire it to the release gate.
 4. Write the persona happy-path (§6) as a repeatable check, not a vibe.

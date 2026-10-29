@@ -187,6 +187,14 @@ catching it at the end costs every intervening phase.
 - User-facing flow -> actually run and observed. A changed GUI action needs run-and-observe, not merely a
   build.
 
+**Between releases, nothing above 5 seconds runs** ([TESTING_AND_QA.md](../../rules/TESTING_AND_QA.md) §2).
+No full build, no full suite, no single test, suite or gate whose recorded wall time is above 5 s, and none
+with no recorded time - unless the owner names that run, or this is the release itself. Use the fast tier,
+a fast filter of the touched area, static inspection and a direct call of what changed. Each rung skipped for
+this reason goes into the audit as a `RELEASE` item naming the command the release will run, and the report
+says "not built, not tested until the release". A project whose build or test command has no fast form gets
+that fact written into its rules file, not a slow run.
+
 **Three traps:**
 
 1. **Red-flag words.** "Should", "probably", "seems", "looks fixed", "I think it passes" each mean the proving

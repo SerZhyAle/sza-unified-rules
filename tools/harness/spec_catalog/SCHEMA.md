@@ -121,7 +121,12 @@ Ids that were allocated and later removed from both journals. Row shape: `id`, `
 
 - `New-CatalogId` takes its maximum over the active journal, the archive **and** this registry. Deleting a record is the one way an id can silently return to circulation, and two tickets answering to one id would make every dev-log row, changelog entry and commit message already naming it ambiguous after the fact.
 - `validate.ps1` subtracts registered ids from the `Monotonicity` gap list, so a deliberate hole reads as accounted for and a genuinely lost record still surfaces. Without this a single cleanup buries the check under known holes forever.
+- `validate.ps1` also reads a `PLAN/<id>_*` file whose id is registered as accounted for: the id was spent and the ledger deliberately does not hold it. This is how a project that kept its tickets by hand before it had a ledger joins the catalog without importing them: it registers every id it has spent (reason `predates the ledger`), the next id is one past the highest, and only the tickets created from then on are ledger records. A file whose id is neither a record nor registered is still an orphan.
 - Written only by `purge-probe-records.ps1`. No command removes a row.
+
+## The id grammar
+
+The id shape is the profile's `grammar.ticketIdPattern` (`TASK-FLOW` rule 2): a literal prefix and a fixed-width decimal, default `^S\d{4}$` (`S0001`). A project that numbers its tickets `SP-0255` declares `^SP-\d{4}$` together with a matching `grammar.specFilePattern` (and, if it keeps closed work in another folder, `paths.specArchiveDir`); every script reads the shape from there (`Test-SzaTicketId`, `Get-SzaTicketIdSpec`, `Format-SzaTicketId` in `_profile.ps1`). A pattern with no fixed width still validates ids but cannot allocate one, and `New-CatalogId` says so. The `S####` and `PLAN/S\d{4}_` forms in the rest of this page are the default grammar. Covered by `tools/tests/ticket-id-grammar.tests.ps1`.
 
 ## Alternate-catalog runs
 

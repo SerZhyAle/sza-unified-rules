@@ -36,6 +36,13 @@ call gets a fresh interpreter. The harness is `<root>/tools/harness`.
 
 - A `.sza-profile.json` **and** a ledger already exist -> the project has a flow. Stop; offer only the
   launcher (`-RunnerPath`) and say what is already there.
+- Does the project already keep **hand-numbered tickets** of its own (`PLAN/SP-0254_<slug>.md`, an `AGENTS.md` that
+  declares the scheme)? Do not renumber them and do not import them. Write the profile first with its grammar
+  (`grammar.ticketIdPattern` `^SP-\d{4}$`, a matching `grammar.specFilePattern`, `paths.specArchiveDir` for its
+  closed-work folder, and a `paths.releaseQueue` of its own when its queue file is a hand-kept table), then run the
+  scaffold, then register every id the project has spent in the burned list (reason `predates the ledger`): the
+  ledger then starts at the next number and `validate` accounts for the old files (`spec_catalog/SCHEMA.md`, "The id
+  grammar").
 - Is the agent CLI on `PATH` (`Get-Command claude`)? R0 exits 2 if not.
 - Does the project already have a pipeline command that takes one ticket from its status to the next (a
   `.claude/commands` file)? If yes, that is the child's prompt: `-Prompt "/<command> {id}"`. If no, the default
