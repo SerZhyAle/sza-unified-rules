@@ -50,9 +50,10 @@ function Get-PqNextRank {
 
     $qp = Get-PqQueuePath $Registry
     $queue = Read-PqQueueFile -Path $qp -KnownRepos (Get-PqKnownKeys $Registry) -TicketLookup $lookup
+    $pickerCache = @{}
     $provider = {
         param($Repo, $Ex, $ForceId)
-        $a = @{ RepoPath = [string]$Repo.path; HarnessRoot = $HarnessRoot }
+        $a = @{ RepoPath = [string]$Repo.path; HarnessRoot = $HarnessRoot; Cache = $pickerCache }
         if (@($Ex).Count -gt 0) { $a.Exclude = [string[]]@($Ex) }
         if ($ForceId) { $a.ForceId = $ForceId }
         Get-PqPickerHead @a

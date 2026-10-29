@@ -11,7 +11,7 @@
 #                   [-ScriptPath <file>]
 #       @{ ok; payload; code; error; ms }: error PickerFailed (non-zero exit, nothing parseable; message holds the
 #       first 300 characters of stderr) or PickerTimeout (the child and its tree are killed). Never throws.
-#   Get-PqPickerHead -RepoPath [-Exclude] [-ForceId <id>] [-HarnessRoot] [-TimeoutSeconds]
+#   Get-PqPickerHead -RepoPath [-Exclude] [-ForceId <id>] [-HarnessRoot] [-TimeoutSeconds] [-Cache <hashtable>]
 #       @{ ok; head; payload; why; error; ms }. Without -ForceId head is payload.selected. With it, head is that
 #       ticket when the picker would offer it once the ids ranked above it are excluded, else $null and why is
 #       leased, excluded, notRanked, malformed or the picker's auto-skip reason.
@@ -128,9 +128,18 @@ function Get-PqPickerHead {
         [string[]]$Exclude,
         [string]$ForceId,
         [string]$HarnessRoot,
-        [int]$TimeoutSeconds = 300
+        [int]$TimeoutSeconds = 300,
+        [hashtable]$Cache
     )
-    $first = Invoke-PqPicker -RepoPath $RepoPath -Exclude $Exclude -HarnessRoot $HarnessRoot -TimeoutSeconds $TimeoutSeconds
+    # -Cache keeps the unforced run per (repository, exclusion) for one rank: every ticket row of a repository asks the
+    # same first question, and a queue whose blocked rows pile up above the head paid one child per row (a night of
+    # 2026-10-29 spent 15 minutes a pass ranking 58 such rows).
+    $ck = "$RepoPath|$(@($Exclude) -join ',')"
+    if ($null -ne $Cache -and $Cache.ContainsKey($ck)) { $first = $Cache[$ck] }
+    else {
+        $first = Invoke-PqPicker -RepoPath $RepoPath -Exclude $Exclude -HarnessRoot $HarnessRoot -TimeoutSeconds $TimeoutSeconds
+        if ($null -ne $Cache -and $first.ok) { $Cache[$ck] = $first }
+    }
     if (-not $first.ok) { return @{ ok = $false; head = $null; payload = $null; why = 'pickerFailed'; error = $first.error; ms = $first.ms } }
     $payload = $first.payload
     if (-not $ForceId) { return @{ ok = $true; head = $payload.selected; payload = $payload; why = $null; error = $null; ms = $first.ms } }

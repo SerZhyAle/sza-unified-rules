@@ -758,9 +758,20 @@ function Sync-PqRegisteredQueues {
 }
 
 # One ticket row as the sync writes it: '<repo>:<token>', padded, then the tail, then the owner's comment if any.
+# A '#' in the tail (a note such as 'slices #115 and #116') is dropped: it would read back as the start of the owner's
+# comment, and every later sync would keep that piece as a comment and write the tail again in front of it.
+# The row's id ends at the first '_', so a token whose slug joins the id by another character ('TASK-10-contract-sync')
+# is written as '<id>_<slug>': read back as a longer id, the row would be removed and added again by every sync.
 function Format-PqQueueTicketLine([string]$Repo, $Row, [string]$Comment) {
-    $line = "$($Repo):$($Row.token)"
-    if ($Row.tail) { $line = $line.PadRight([Math]::Max($script:PqQueueTicketWidth, $line.Length + 2)) + $Row.tail }
+    $token = [string]$Row.token
+    $id = [string]$Row.id
+    if ($id -and $token -cne $id -and -not $token.StartsWith("${id}_", [StringComparison]::Ordinal)) {
+        $slug = if ($token.StartsWith($id, [StringComparison]::Ordinal)) { $token.Substring($id.Length).TrimStart('-', '_') } else { $token }
+        $token = if ($slug) { "${id}_$slug" } else { $id }
+    }
+    $line = "$($Repo):$token"
+    $tail = ([string]$Row.tail).Replace('#', '')
+    if ($tail) { $line = $line.PadRight([Math]::Max($script:PqQueueTicketWidth, $line.Length + 2)) + $tail }
     if ($Comment) { $line += '  ' + $Comment }
     return $line
 }
