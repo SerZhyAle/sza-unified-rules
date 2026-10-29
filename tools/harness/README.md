@@ -115,5 +115,14 @@ reason notes, and for an id says what that id is in the current project and wher
 projects). It writes nothing. `pwsh -NoProfile -File tools/tests/quiz-list.tests.ps1` checks it over throwaway
 repositories in a few seconds.
 
+`aliases/register-spec-commands.ps1` makes the spec commands answer to their bare and short names in a project: it
+writes eight forwarders (`spec-quiz`/`sq`, `spec-draft`/`sd`, `spec-next`/`sn`, `spec-all`/`sa`) into the project's
+`.claude/commands/`, each telling the model to invoke the matching `sza:` plugin skill with the same arguments. It
+runs for the current project, `-Project <key|folder>`, or `-All` (every enabled registry project, minus `-Skip`).
+A file it wrote carries `forwards_to:` and is rewritten when the table changes; a command file without that marker
+is hand-written (FastMediaSorter_mob_v2's full pipelines) and is never touched. `-Check` writes nothing and exits 1
+on a missing or stale file. `pwsh -NoProfile -File tools/tests/register-spec-commands.tests.ps1` checks it over
+throwaway folders in a few seconds. A project added to the portfolio later gets its commands from one `-Project` run.
+
 Check this flow with `pwsh -NoProfile -File tools/tests/smoke-portfolio-runner.ps1` from the canon root.
 It uses throwaway repositories and fake children; it starts no agent.

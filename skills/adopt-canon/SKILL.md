@@ -223,6 +223,15 @@ if (Test-Path -LiteralPath $pq) {
 and `register` exits non-zero, report its output and do not tick the day-0 line of "Done means". When `pq` is
 absent the block exits 0 and the printed instruction goes in the report.
 
+5. **Register the spec commands.** `/spec-quiz` `/sq`, `/spec-draft` `/sd`, `/spec-next` `/sn`, `/spec-all` `/sa` work
+   in a project through eight forwarders in its `.claude/commands/`, which the plugin does not create by itself:
+
+```powershell
+pwsh -NoProfile -File (Join-Path $sza 'tools/harness/aliases/register-spec-commands.ps1') -Project (Get-Location).Path
+```
+
+   Idempotent; a command file the project wrote by hand is kept. The line it prints is the evidence for "Done means".
+
 ## Step 7 - Re-sync (existing adoption, canon moved)
 
 The staleness ladder, from the compliance gate:
@@ -269,7 +278,7 @@ Re-run the compliance gate and show the before/after counts.
 - [ ] The release package plan is either standing up with all six decisions recorded and its reconcile on the
       ticket store's single write path, or skipped with a one-line reason.
 - [ ] Day 0 of the task flow stands (profile, ledger, plan files, template, launchers) and pq register ran, or
-      its printed instruction is in the report.
+      its printed instruction is in the report; the spec commands are registered (its step 5), the printed line cited.
 - [ ] The repo's own gates pass, with exit codes cited.
 - [ ] The compliance gate's error count is zero, or every remaining error has a recorded exemption.
 - [ ] The contrib record carries a dated adoption section.

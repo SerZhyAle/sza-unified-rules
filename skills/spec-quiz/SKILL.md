@@ -77,16 +77,18 @@ prerequisites in their notes (`S0024` after `S0023`) go in that order, and a que
 
 ## Step 2 - Work inside the ticket's project
 
-The ticket tools resolve their project from where they run. For a ticket of another project than the current folder,
-run every command of that project with `-WorkingDirectory`:
+The ticket tools resolve their project from where they run: the harness walks up from the working folder to
+`.sza-profile.json`. So every ticket command is the plugin's own script, run with `-WorkingDirectory` set to the
+ticket's project - the same call for the current project and for another one, and for a project that has no
+`tools/harness.ps1` forwarder (most do not):
 
 ```powershell
-pwsh -NoProfile -WorkingDirectory "<project root>" -File "<project root>/tools/harness.ps1" spec_catalog/select -Id <id> -Format json
+pwsh -NoProfile -WorkingDirectory "<project root>" -File "<root>/tools/harness/spec_catalog/select.ps1" -Id <id> -Format json
 ```
 
-`tools/harness.ps1` is the adopted forwarder every canon-adopting repository has; a project with its own
-`scripts/spec_catalog/` names its entry points in its `CLAUDE.md`. Read the project's `CLAUDE.md` and the ticket's
-spec before researching: the answers that need no question are in the project's own records and code.
+A project with its own `scripts/spec_catalog/` (FastMediaSorter_mob_v2) names its entry points in its `CLAUDE.md`; use
+those with the same arguments. Read the project's `CLAUDE.md` and the ticket's spec before researching: the answers that need no question
+are in the project's own records and code.
 
 `select` is the authority on the status. If it disagrees with the list, trust `select` and say so.
 
@@ -117,9 +119,9 @@ Follow Quiz mode steps 2-8. The parts a project-independent skill must pin down:
 - **Restore one level** through the project's ticket tool, which also rewrites the spec's status line and clears the
   block's note:
   ```powershell
-  pwsh -NoProfile -WorkingDirectory "<root>" -File "<root>/tools/harness.ps1" spec_catalog/update -Id <id> -Status <restored>
+  pwsh -NoProfile -WorkingDirectory "<project root>" -File "<root>/tools/harness/spec_catalog/update.ps1" -Id <id> -Status <restored>
   ```
-  A restore to `Approved` first passes the owner-inputs gate (`spec_catalog/check-owner-inputs -Id <id>`, exit 0); on
+  A restore to `Approved` first passes the owner-inputs gate (`check-owner-inputs.ps1 -Id <id>`, exit 0); on
   exit 1 the residue it names is either one more round of questions or the ticket stays blocked with the note
   narrowed (step 7). The restored status is inferred from what exists (step 6); two equally plausible are one more
   question.
