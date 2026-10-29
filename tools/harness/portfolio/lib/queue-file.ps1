@@ -35,13 +35,23 @@
 #       (written|exists); hash }.
 #
 #   Get-PqTicketQueuePath -Repo <registry record>
-#       a repository's own ticket queue file: its profile's paths.releaseQueue, PLAN/RELEASE_QUEUE.md by default.
+#       a repository's own ticket queue file: its profile's paths.releaseQueue, PLAN/RELEASE_QUEUE.md by default; a
+#       repository with a profile and no file there is read from its ledger (paths.journal).
+#   Register-PqTicketFiles -Repo <registry record> [-HarnessRoot] [-List]
+#       file -> ledger (rule 65): every '<id>_<slug>.md' of the specs directory with no row is inserted through the
+#       repository's insert.ps1. @{ repo; id; file; status; ok; err } per file tried; -List only names them (ok
+#       $null) and writes nothing. State: the files the tool
+#       refused, not offered again by this process until they change.
 #   Read-PqTicketQueueRows -Path <file>
 #       that file's ticket rows in file order, each @{ id; token; tail; unscheduled } (token: the id with its slug;
 #       tail: changed, status and any note, as written; unscheduled: under its '--'); $null when the file is absent or
 #       unreadable.
 #   Get-PqQueueSources -Registry
 #       [ordered] key -> Read-PqTicketQueueRows of every registered repository, in registry order.
+#   Sync-PqRegisteredQueues -Path -Registry [-Key] [-Log]
+#       Register-PqTicketFiles for the enabled repositories (or -Key), each result recorded as ticket.created
+#       (source import) or queue.row (kind unregistered), then Sync-PqQueueFile from Get-PqQueueSources under the
+#       machine-wide sync lock; the result carries registered.
 #   Sync-PqQueueFile -Path -Sources <IDictionary> [-Log] [-BeforeRename <sb>]
 #       keeps the file the way a repository's plan tool keeps its RELEASE_QUEUE.md: a <repo>:<id> row whose ticket is
 #       still in its repository's queue gets that ticket's slug, changed time and status (an owner's # comment stays);
@@ -60,7 +70,7 @@
 $script:PqQueueRowPattern = '^(?<repo>[a-z][a-z0-9-]*)(?::(?<id>\*|[^\s:#_]+)(?:_[^\s#]*)?)?$'
 $script:PqQueueUnscheduled = [long]::MaxValue
 $script:PqQueueTicketWidth = 74
-$script:PqDefaultReleaseQueue = $null
+$script:PqProfileDefaults = $null
 
 function Get-PqQueueHash([byte[]]$Bytes) {
     return [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($Bytes)).ToLowerInvariant()
@@ -436,16 +446,42 @@ function Initialize-PqQueueFile {
 
 # The shipped default of paths.releaseQueue, read from the harness profile in an isolated module (that script caches one
 # project root, so it is never dot-sourced here) and kept for the life of the process.
-function Get-PqDefaultReleaseQueue {
-    if ($null -eq $script:PqDefaultReleaseQueue) {
-        $defaults = New-Module -ArgumentList (Join-Path $PSScriptRoot '..\..\_profile.ps1') -ReturnResult -ScriptBlock {
+function Get-PqProfileDefaults {
+    if ($null -eq $script:PqProfileDefaults) {
+        $script:PqProfileDefaults = New-Module -ArgumentList (Join-Path $PSScriptRoot '..\..\_profile.ps1') -ReturnResult -ScriptBlock {
             param($ProfileScript)
             . $ProfileScript
             $script:SzaProfileDefaults
         }
-        $script:PqDefaultReleaseQueue = [string]$defaults.paths['releaseQueue']
     }
-    return $script:PqDefaultReleaseQueue
+    return $script:PqProfileDefaults
+}
+
+function Get-PqDefaultReleaseQueue { return [string](Get-PqProfileDefaults).paths['releaseQueue'] }
+
+# A repository's .sza-profile.json, parsed, or $null when it has none or it cannot be read.
+function Read-PqRepoProfile([string]$RepoPath) {
+    $file = Join-Path $RepoPath '.sza-profile.json'
+    if (-not [IO.File]::Exists($file)) { return $null }
+    try { return (ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($file)) -DateKind String) } catch { return $null }
+}
+
+# One profile key with the harness default behind it ('paths', 'journal'), the way the harness itself reads it.
+function Get-PqRepoProfileValue([string]$RepoPath, [string]$Section, [string]$Key, $Profile = (Read-PqRepoProfile $RepoPath)) {
+    if ($null -ne $Profile) {
+        $s = $Profile.PSObject.Properties[$Section]
+        if ($null -ne $s -and $null -ne $s.Value) {
+            $v = $s.Value.PSObject.Properties[$Key]
+            if ($null -ne $v -and $null -ne $v.Value -and [string]$v.Value -ne '') { return $v.Value }
+        }
+    }
+    return (Get-PqProfileDefaults)[$Section][$Key]
+}
+
+function Get-PqRepoProfilePath([string]$RepoPath, [string]$Key, $Profile = (Read-PqRepoProfile $RepoPath)) {
+    $rel = [string](Get-PqRepoProfileValue -RepoPath $RepoPath -Section 'paths' -Key $Key -Profile $Profile)
+    $full = if ([IO.Path]::IsPathFullyQualified($rel)) { $rel } else { Join-Path $RepoPath $rel }
+    return [IO.Path]::GetFullPath($full)
 }
 
 function Get-PqTicketQueuePath($Repo) {
@@ -455,21 +491,13 @@ function Get-PqTicketQueuePath($Repo) {
         $full = if ([IO.Path]::IsPathFullyQualified($p)) { $p } else { Join-Path $repoPath $p }
         if ([IO.File]::Exists($full)) { return [IO.Path]::GetFullPath($full) }
     }
-    $profileFile = Join-Path $repoPath '.sza-profile.json'
-    if ([IO.File]::Exists($profileFile)) {
-        try {
-            $prof = ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($profileFile)) -DateKind String
-            $paths = $prof.PSObject.Properties['paths']
-            if ($null -ne $paths -and $null -ne $paths.Value) {
-                $v = $paths.Value.PSObject.Properties['releaseQueue']
-                if ($null -ne $v -and $v.Value) {
-                    $customRel = [string]$v.Value
-                    $full = if ([IO.Path]::IsPathFullyQualified($customRel)) { $customRel } else { Join-Path $repoPath $customRel }
-                    if ([IO.File]::Exists($full)) { return [IO.Path]::GetFullPath($full) }
-                }
-            }
-        }
-        catch { }
+    if ($null -ne (Read-PqRepoProfile $repoPath)) {
+        $queue = Get-PqRepoProfilePath -RepoPath $repoPath -Key 'releaseQueue'
+        if ([IO.File]::Exists($queue)) { return $queue }
+        # A repository with a ledger and no harness queue file at the profile's path is read from its ledger: the
+        # owner's own tables beside it (a RELEASE_QUEUE.md of another shape) are not the ticket list.
+        $journal = Get-PqRepoProfilePath -RepoPath $repoPath -Key 'journal'
+        if ([IO.File]::Exists($journal)) { return $journal }
     }
     $candidates = @(
         'PLAN/RELEASE_QUEUE.md',
@@ -719,6 +747,74 @@ function Read-PqTicketQueueRows([string]$Path) {
     return , $out.ToArray()
 }
 
+# Ticket files with no ledger row, registered through the repository's own insert tool (TASK-FLOW rule 65): a file
+# whose name is '<id>_<slug>.md' in the specs directory, whose id matches the profile's grammar and is in neither
+# journal nor the burned list. The status is the header's '**Status:**' value when it opens with a word of the
+# vocabulary, else Draft. Only a repository with a profile and a ledger is read; one without is never given a ledger
+# here. A file the tool refused is not offered again by this process until it changes. @{ repo; id; file; status;
+# ok; err } per file tried.
+$script:PqRegisterRefused = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+
+function Register-PqTicketFiles {
+    param([Parameter(Mandatory)]$Repo, [string]$HarnessRoot, [switch]$List)
+    $out = [Collections.Generic.List[object]]::new()
+    $repoPath = [string]$Repo.path
+    $prof = Read-PqRepoProfile $repoPath
+    if ($null -eq $prof) { return $out.ToArray() }
+    $journal = Get-PqRepoProfilePath -RepoPath $repoPath -Key 'journal' -Profile $prof
+    if (-not [IO.File]::Exists($journal)) { return $out.ToArray() }
+    $specsRel = ([string](Get-PqRepoProfileValue -RepoPath $repoPath -Section 'paths' -Key 'specsDir' -Profile $prof)).Replace('\', '/').TrimEnd('/')
+    $specsDir = Get-PqRepoProfilePath -RepoPath $repoPath -Key 'specsDir' -Profile $prof
+    if (-not [IO.Directory]::Exists($specsDir)) { return $out.ToArray() }
+    $idCore = ([string](Get-PqRepoProfileValue -RepoPath $repoPath -Section 'grammar' -Key 'ticketIdPattern' -Profile $prof)).TrimStart('^').TrimEnd('$')
+    $vocab = @(Get-PqRepoProfileValue -RepoPath $repoPath -Section 'grammar' -Key 'statusVocabulary' -Profile $prof) | Sort-Object { $_.Length } -Descending
+
+    $known = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach ($k in 'journal', 'journalArchive', 'burnedIds') {
+        $f = Get-PqRepoProfilePath -RepoPath $repoPath -Key $k -Profile $prof
+        if (-not [IO.File]::Exists($f)) { continue }
+        foreach ($m in [regex]::Matches([IO.File]::ReadAllText($f), '"id"\s*:\s*"(?<id>[^"]+)"')) { $null = $known.Add($m.Groups['id'].Value) }
+    }
+    $rx = [regex]::new("^(?<id>$idCore)_(?<slug>.+)\.md$")
+    foreach ($fi in [IO.DirectoryInfo]::new($specsDir).GetFiles('*.md')) {
+        $m = $rx.Match($fi.Name)
+        if (-not $m.Success) { continue }
+        $id = $m.Groups['id'].Value
+        $slug = $m.Groups['slug'].Value
+        if ($known.Contains($id) -or $slug.StartsWith('spec_', [StringComparison]::OrdinalIgnoreCase)) { continue }
+        $refusedKey = "$($fi.FullName)|$($fi.LastWriteTimeUtc.Ticks)"
+        if ($script:PqRegisterRefused.Contains($refusedKey)) { continue }
+        $status = 'Draft'
+        foreach ($line in (Get-Content -LiteralPath $fi.FullName -TotalCount 40 -Encoding UTF8)) {
+            $sm = [regex]::Match($line, '^\*\*Status:\*\*\s*(?<v>.*)$')
+            if (-not $sm.Success) { continue }
+            $v = $sm.Groups['v'].Value
+            foreach ($w in $vocab) { if ($v -ceq $w -or $v.StartsWith("$w ", [StringComparison]::Ordinal)) { $status = $w; break } }
+            break
+        }
+        $name = ($slug.ToLowerInvariant() -replace '[^a-z0-9]+', '-').Trim('-')
+        $rel = "$specsRel/$($fi.Name)"
+        if ($List) { $out.Add([ordered]@{ repo = [string]$Repo.key; id = $id; file = $rel; status = $status; ok = $null }); continue }
+        $r = $null
+        $err = $null
+        try {
+            $r = Invoke-PqRepoChild -RepoPath $repoPath -Script (Join-Path (Get-PqHarnessRoot $HarnessRoot) 'spec_catalog\insert.ps1') `
+                -Arguments @('-Id', $id, '-File', $rel, '-Name', $name, '-Status', $status) -TimeoutSeconds 120
+        }
+        catch { $err = $_.Exception.Message }
+        $ok = ($null -ne $r -and -not $r.timedOut -and $r.code -eq 0)
+        if (-not $ok) {
+            if (-not $err -and $null -ne $r) { $err = (([string]$r.stdout).Trim() + ' ' + ([string]$r.stderr).Trim()).Trim() }
+            $null = $script:PqRegisterRefused.Add($refusedKey)
+        }
+        else { $null = $known.Add($id) }
+        $row = [ordered]@{ repo = [string]$Repo.key; id = $id; file = $rel; status = $status; ok = $ok }
+        if (-not $ok) { $row.err = ConvertTo-PqCut ([string]$err) 300 }
+        $out.Add($row)
+    }
+    return $out.ToArray()
+}
+
 function Get-PqQueueSources($Registry) {
     $sources = [ordered]@{}
     foreach ($r in @($Registry.repos)) { $sources[[string]$r.key] = Read-PqTicketQueueRows (Get-PqTicketQueuePath $r) }
@@ -729,6 +825,18 @@ function Get-PqQueueSources($Registry) {
 # worker could read an old local queue, wait for a newer status to be published, then overwrite it.
 function Sync-PqRegisteredQueues {
     param([string]$Path, $Registry, [string]$Key, [switch]$Log)
+    # File -> ledger first (rule 65), outside the lock: a ticket registered now is in this sync's sources. Every
+    # registration is recorded, logged or not, because it writes a repository's ledger.
+    $registered = [Collections.Generic.List[object]]::new()
+    $targets = if ($Key) { @($Registry.repos | Where-Object { [string]$_.key -ceq $Key }) } else { @($Registry.repos | Where-Object { $_.enabled -eq $true }) }
+    foreach ($t in $targets) {
+        foreach ($reg in @(Register-PqTicketFiles -Repo $t)) {
+            $registered.Add($reg)
+            if ($null -eq $script:PqDefaultLog) { $null = Open-PqLog -Writer cli }
+            if ($reg.ok) { $null = Write-PqEvent -Ev 'ticket.created' -Repo $reg.repo -Id $reg.id -D ([ordered]@{ source = 'import'; status = $reg.status; priority = 50; file = $reg.file }) }
+            else { $null = Write-PqEvent -Ev 'queue.row' -Repo $reg.repo -Id $reg.id -D ([ordered]@{ kind = 'unregistered'; line = 0; text = (ConvertTo-PqCut "$($reg.file): $($reg.err)" 80) }) }
+        }
+    }
     $bytes = [Text.Encoding]::UTF8.GetBytes([IO.Path]::GetFullPath($Path).ToLowerInvariant())
     $name = 'sza-pq-sync-' + [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes))
     $mutex = [Threading.Mutex]::new($false, $name)
@@ -748,6 +856,7 @@ function Sync-PqRegisteredQueues {
             $unreadable = @($sources.Keys | Where-Object { $null -eq $sources[$_] })
             $result = Sync-PqQueueFile -Path $Path -Sources $sources -Log:$Log
             $result.unreadable = $unreadable
+            $result.registered = $registered.ToArray()
             if ($result.ok -or $result.error -cne 'QueueChangedOnDisk') { return $result }
         }
         return $result

@@ -11,5 +11,5 @@
 - [S0016 - Portfolio runner, extended: everything S0015's first version leaves out (deferred, not scheduled)](S0016_portfolio-runner-extended.md)
 - [S0017 - PQ WinForms Shell: a desktop control panel for pq.ps1 in VB.NET](S0017_pq-winforms-shell.md)
 - [S0018 - Synchronize project and portfolio queues](S0018_portfolio-queue-sync.md)
-- [S0019 - The queue runner's kill reaches every headless agent on the machine](S0019_runner-kill-scope.md)
+- [S0019 - The queue runner's kill reaches every headless agent on the machine](DONE/S0019_runner-kill-scope.md)
 - [S0020 - Align PQShell UI/UX with SZA Contracts](S0020_pqshell-contracts-alignment.md)

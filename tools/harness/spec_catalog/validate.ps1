@@ -79,8 +79,10 @@ if ($records.Count -gt 0) {
 # 4. Filesystem -> journal: every PLAN/<id>_* file/folder has a record (the id grammar is the profile's: S####, SP-####)
 #    An id in the burned registry is accounted for without a record: it was spent and the ledger deliberately does not
 #    hold it - a ticket kept by hand before the project had a ledger is adopted that way (TASK-FLOW rule 11).
+# The profile's specs directory, not a literal PLAN/: a project whose tickets live in tasks/ or docs/specifications/
+# had no PLAN/ at all, and the listing below ended the run.
 $repoRoot = (Get-SzaProjectRoot)
-$planDir  = Join-Path $repoRoot 'PLAN'
+$planDir  = Get-SzaPath 'specsDir'
 $idFragment = Get-SzaTicketIdFragment
 # @(): a pipeline with no match is $null, and under StrictMode $null has no .Count - a repository
 # with no <id>_ entry in PLAN/ yet would otherwise end the whole run here.

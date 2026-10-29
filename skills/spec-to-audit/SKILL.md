@@ -96,6 +96,14 @@ Status vocabulary, identical across the portfolio:
 removing the condition and advancing exactly one level. `BlockQuestions` is the one whose condition only
 the owner can remove; its exit is [Quiz mode](#quiz-mode---draining-the-owners-questions).
 
+**`BlockExternal` is for a party outside this repo's own sessions** - a device nobody attached, a vendor, an
+answer from another product's owner. It is never for work this repo's session is allowed to do itself. The
+canon is read-only from a project session with one exception, the repo's own `rules/contrib/<repo>.md`
+record ([adopt-canon](../adopt-canon/SKILL.md)), so a ticket that says "record it in the canon contrib record
+by a canon session" is not blocked: write the record, with the re-sync it belongs to. A canon session is
+needed only to change a rule, a skill or the contracts catalog itself - and then the block is a one-line note
+naming the exact fix, not a stop on the whole ticket.
+
 **Two literal tokens, because direction is not recoverable from prose.** A ticket's "related tickets"
 section names blockers, successors, consumers and neighbours in one breath and is equally happy to *deny*
 a relationship - measured on the reference corpus, **98 spec files yield a ticket id there against 15 that

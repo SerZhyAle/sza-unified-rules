@@ -27,3 +27,6 @@ PLAN/
 dev/DOCUMENT_REGISTRY.jsonl
 dev/DOCS_MAP.md
 dev/document-corpus.json
+
+# The canon's own harness profile stays in this checkout: the harness looks for a profile above its own root (_profile.ps1 step 3), so a shipped one would become the project root of every consumer that has none.
+/.sza-profile.json

@@ -23,6 +23,12 @@ Public Class RepoInfo
     Public Property QueueHold As Boolean = False
     ' Active rows of this repository in PORTFOLIO_QUEUE.md, '--' included.
     Public Property QueuedRows As Integer = 0
+    ' Of those, the ticket rows the runner would take (PortfolioState.IsRunnable); 0 for a repository it does not
+    ' work (disabled or held).
+    Public Property RunnableRows As Integer = 0
+    ' Ticket rows in a Block* status (BlockQuestions, BlockNeedUserTest, BlockByOtherTask, BlockExternal), active or held:
+    ' open, and waiting on someone or something before the runner can move them.
+    Public Property BlockedRows As Integer = 0
 
     Public ReadOnly Property IsHeld As Boolean
         Get
@@ -264,7 +270,20 @@ Public Class PortfolioState
     Private Shared ReadOnly RowPattern As New Regex("^(?<repo>[a-z][a-z0-9-]*)(?::(?<id>\*|[^\s:#_]+)(?:_[^\s#]*)?)?$")
     Private Shared ReadOnly HeaderPattern As New Regex("^ticket\s+changed\s+status$")
     ' The columns the sync writes after the token: 'yy-MM-dd HH:mm  <status>'.
-    Private Shared ReadOnly StatusPattern As New Regex("^\d{2}-\d{2}-\d{2}\s+\d{2}:\d{2}\s+(?<status>.+)$")
+    ' The status word after the optional changed date and time ('26-10-29 01:37  Approved', '26-10-29  Approved',
+    ' 'Approved (owner order..)'); the rest of the line is a note.
+    Private Shared ReadOnly StatusPattern As New Regex("^(?:\d{2}-\d{2}-\d{2}(?:\s+\d{2}:\d{2})?\s+)?(?<status>In Progress|[A-Za-z]+)")
+
+    ' The statuses the picker offers on their own (spec-next-preflight.ps1 $eligibleStatuses), less BlockByOtherTask,
+    ' which it offers only once the blocker is closed - in a night's queue almost never. A row with no status column
+    ' is counted: the ledger, not the file, decides it.
+    Private Shared ReadOnly RunnableStatuses As New HashSet(Of String)(
+        {"Draft", "Approved", "Tactical", "In Progress", "Implemented", "Partial", "Broken"}, StringComparer.Ordinal)
+
+    ' A ticket row the runner would take, judged from the queue file alone; pq dry-run asks the pickers for the exact plan.
+    Public Shared Function IsRunnable(row As QueueRow) As Boolean
+        Return row.Id IsNot Nothing AndAlso (String.IsNullOrEmpty(row.Status) OrElse RunnableStatuses.Contains(row.Status))
+    End Function
 
     Public Shared Function ReadQueue() As QueueSnapshot
         Dim snap As New QueueSnapshot()
@@ -336,6 +355,9 @@ Public Class PortfolioState
 
         Dim heldKeys As New HashSet(Of String)(queue.Held.Where(Function(r) r.Id Is Nothing).Select(Function(r) r.Repo), StringComparer.Ordinal)
         Dim counts = queue.Rows.Concat(queue.Held.Where(Function(r) r.Id IsNot Nothing)).GroupBy(Function(r) r.Repo).ToDictionary(Function(g) g.Key, Function(g) g.Count(), StringComparer.Ordinal)
+        Dim heldTickets As New HashSet(Of String)(queue.Held.Where(Function(r) r.Id IsNot Nothing).Select(Function(r) r.Target), StringComparer.Ordinal)
+        Dim blocked = queue.Rows.Concat(queue.Held).Where(Function(r) r.Id IsNot Nothing AndAlso r.Status IsNot Nothing AndAlso r.Status.StartsWith("Block", StringComparison.Ordinal)).GroupBy(Function(r) r.Repo).ToDictionary(Function(g) g.Key, Function(g) g.Count(), StringComparer.Ordinal)
+        Dim runnable = queue.Rows.Where(Function(r) IsRunnable(r) AndAlso Not heldTickets.Contains(r.Target)).GroupBy(Function(r) r.Repo).ToDictionary(Function(g) g.Key, Function(g) g.Count(), StringComparer.Ordinal)
 
         Try
             Using doc = ReadJson(GetReposJsonPath())
@@ -364,6 +386,8 @@ Public Class PortfolioState
                     r.QueueHold = heldKeys.Contains(r.Key)
                     Dim n As Integer
                     If counts.TryGetValue(r.Key, n) Then r.QueuedRows = n
+                    If r.Enabled AndAlso Not r.IsHeld AndAlso runnable.TryGetValue(r.Key, n) Then r.RunnableRows = n
+                    If blocked.TryGetValue(r.Key, n) Then r.BlockedRows = n
                     list.Add(r)
                 Next
             End Using
@@ -385,6 +409,7 @@ Public Class PortfolioState
             Dim repo As RepoInfo = Nothing
             If Not byKey.TryGetValue(row.Repo, repo) OrElse Not repo.Enabled OrElse repo.IsHeld Then Continue For
             If row.Id IsNot Nothing AndAlso heldTickets.Contains(row.Target) Then Continue For
+            If row.Id IsNot Nothing AndAlso Not IsRunnable(row) Then Continue For
             Return New CandidateInfo With {.Repo = row.Repo, .Id = row.Id, .Status = row.Status}
         Next
         Return Nothing

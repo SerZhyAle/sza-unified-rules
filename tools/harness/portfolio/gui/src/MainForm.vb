@@ -83,6 +83,7 @@ Partial Class MainForm
         AddTextColumn(dgvRepos, "colKey", "Project", 115)
         AddTextColumn(dgvRepos, "colStatus", "Status", 80)
         AddTextColumn(dgvRepos, "colQueued", "Queued", 55)
+        AddTextColumn(dgvRepos, "colBlocked", "Blocked", 55)
         AddTextColumn(dgvRepos, "colPerm", "Permission", 115)
         AddButtonColumn(dgvRepos, "colNewSpec", "Spec", "+ Spec...", 65)
         AddButtonColumn(dgvRepos, "colQueue", "Tickets", "Open Queue", 85)
@@ -156,7 +157,9 @@ Partial Class MainForm
         AddHandler btnToggleConsole.Click, AddressOf BtnToggleConsole_Click
         AddHandler btnClearConsole.Click, Sub() txtConsole.Clear()
         AddHandler btnCopyConsole.Click, AddressOf BtnCopyConsole_Click
-        AddHandler btnRefreshNow.Click, Sub() RefreshAll()
+        ' The file changes only when pq syncs it (each pass end, every steering verb); the button syncs first, so a
+        ' ticket written or moved in a repository since then shows up now.
+        AddHandler btnRefreshNow.Click, Async Sub() Await RunLoggedAsync(btnRefreshNow, "sync")
         AddHandler chkAutoRefresh.CheckedChanged, Sub() tmrRefresh.Enabled = chkAutoRefresh.Checked
         AddHandler tmrRefresh.Tick, Sub() RefreshAll()
 
@@ -316,10 +319,14 @@ Partial Class MainForm
             Dim selIdx = -1
             For Each r In repos
                 Dim statusText = If(r.IsHeld, If(r.RegistryHold, "Held (reg)", "Held"), If(r.Enabled, "Enabled", "Disabled"))
-                Dim idx = dgvRepos.Rows.Add(dgvRepos.Rows.Count + 1, r.Key, statusText, If(r.QueuedRows > 0, CStr(r.QueuedRows), ""), r.PermissionMode)
+                Dim idx = dgvRepos.Rows.Add(dgvRepos.Rows.Count + 1, r.Key, statusText, If(r.RunnableRows > 0, CStr(r.RunnableRows), ""),
+                    If(r.BlockedRows > 0, CStr(r.BlockedRows), ""), r.PermissionMode)
                 Dim row = dgvRepos.Rows(idx)
                 row.Tag = r
                 row.Cells("colKey").ToolTipText = r.Path
+                row.Cells("colQueued").ToolTipText = $"{r.RunnableRows} the runner would take, of {r.QueuedRows} rows in the queue file (blocked, held and unknown rows are not taken)"
+                row.Cells("colBlocked").ToolTipText = "open tickets in a Block status - waiting for an answer, a test, another ticket or something outside"
+                If r.BlockedRows > 0 Then row.Cells("colBlocked").Style.ForeColor = p.StatusWarning
                 row.Cells("colOrder").ToolTipText = $"rank {r.Rank}"
 
                 Dim statusCell = row.Cells("colStatus")
