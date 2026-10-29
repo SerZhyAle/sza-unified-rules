@@ -10,6 +10,7 @@ Partial Class MainForm
     Private _boldWorkers As Font
     Private _consoleExpandedHeight As Integer = 140
     Private _consoleCollapsed As Boolean = False
+    Private _baseTitle As String = ""
 
     ' The console keeps the tail of the session; a panel left open for days must not grow without bound.
     Private Const ConsoleMaxChars As Integer = 200000
@@ -18,6 +19,7 @@ Partial Class MainForm
         InitializeComponent()
         _boldRepos = New Font(dgvRepos.Font, FontStyle.Bold)
         _boldWorkers = New Font(dgvWorkers.Font, FontStyle.Bold)
+        _baseTitle = Me.Text
         ConfigureGrids()
     End Sub
 
@@ -135,6 +137,7 @@ Partial Class MainForm
         AddHandler btnDoctor.Click, AddressOf BtnDoctor_Click
         AddHandler btnGuide.Click, AddressOf BtnGuide_Click
         AddHandler btnRegister.Click, AddressOf BtnRegister_Click
+        AddHandler btnProviders.Click, AddressOf BtnProviders_Click
         AddHandler btnTheme.Click, AddressOf BtnTheme_Click
 
         AddHandler btnOpenQueue.Click, AddressOf BtnOpenQueue_Click
@@ -274,6 +277,10 @@ Partial Class MainForm
                 pnlBanner.BackColor = If(ThemeService.IsDark, Color.FromArgb(22, 27, 34), Color.FromArgb(33, 43, 54))
                 lblStatus.Text = "⚪ IDLE - no worker running"
             End If
+
+            ' 1b. Who spends tokens now: the provider order, with a provider marked while its usage limit is spent
+            Dim providerLine = PortfolioState.GetProviderLine()
+            Me.Text = If(providerLine = "", _baseTitle, $"{_baseTitle}  |  Providers: {providerLine}")
 
             ' 2. Queue top
             If Not queue.Present Then
@@ -451,6 +458,15 @@ Partial Class MainForm
 
     Private Sub BtnRegister_Click(sender As Object, e As EventArgs)
         Using dlg As New FormRegister()
+            If dlg.ShowDialog(Me) = DialogResult.OK Then
+                LogConsole(dlg.ResultText)
+                RefreshAll()
+            End If
+        End Using
+    End Sub
+
+    Private Sub BtnProviders_Click(sender As Object, e As EventArgs)
+        Using dlg As New FormProviders()
             If dlg.ShowDialog(Me) = DialogResult.OK Then
                 LogConsole(dlg.ResultText)
                 RefreshAll()

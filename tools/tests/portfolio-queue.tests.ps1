@@ -1024,16 +1024,20 @@ try {
         Assert-That (@($q.bad).Count -eq 0) "bad rows: $(@($q.bad | ForEach-Object { $_.kind }) -join ',')"
     }
 
-    Test-Case 'queue-write: arrange sorts each scheduled package by project order, keeps a project''s own row order, and moves nothing else' {
+    Test-Case 'queue-write: arrange writes the active part in the order of work - projects by order, each one''s rows in reader order - and keeps that order of work' {
         . (Get-LibPath 'queue-file.ps1')
         $lines = @('# notes', 'ticket  changed  status', 'c:S1', 'a:S1', '1', 'b:S1_x  26-10-19 11:51  Draft', '# stays', 'a:S2', 'zz:S1', 'b:S2', 'a:S1', '',
             '2', 'c', 'a', '--', 'c:S9', 'a:S9', 'hold', 'c:S3', 'a:S3')
         $file = New-QueueFile $lines -Crlf -Bom
+        $perRepo = { param($q) (@('a', 'b', 'c', 'zz') | ForEach-Object { $k = $_; Get-RowKeys @($q.rows | Where-Object { $_.repo -ceq $k }) }) -join '|' }
+        $before = & $perRepo (Read-PqQueueFile -Path $file)
         $r = Sort-PqQueueByRank -Path $file -ProjectOrder @('a', 'b', 'c')
-        Assert-That ($r.ok -and $r.changed -and $r.moved -eq 8) "arrange returned ok $($r.ok) changed $($r.changed) moved $($r.moved) error $($r.error)"
-        $expected = @('# notes', 'ticket  changed  status', 'a:S1', 'c:S1', '1', 'a:S2', '# stays', 'a:S1', 'b:S1_x  26-10-19 11:51  Draft', 'b:S2', 'zz:S1', '',
-            '2', 'a', 'c', '--', 'c:S9', 'a:S9', 'hold', 'c:S3', 'a:S3')
+        Assert-That ($r.ok -and $r.changed -and $r.moved -eq 10) "arrange returned ok $($r.ok) changed $($r.changed) moved $($r.moved) error $($r.error)"
+        $expected = @('# notes', 'ticket  changed  status', '1', 'a:S1', 'a:S2', 'a:S1', 'a', 'a:S9', '', 'b:S1_x  26-10-19 11:51  Draft', 'b:S2', '',
+            'c:S1', 'c', 'c:S9', '', 'zz:S1', '', '# stays', '', 'hold', 'c:S3', 'a:S3')
         Assert-That (((Get-FileLines $file) -join '|') -ceq ($expected -join '|')) "file after arrange: $((Get-FileLines $file) -join '|')"
+        $after = & $perRepo (Read-PqQueueFile -Path $file)
+        Assert-That ($after -ceq $before) "the order of work changed: before '$before' after '$after'"
         $bytes = [IO.File]::ReadAllBytes($file)
         Assert-That ($bytes[0] -eq 0xEF -and ([Text.Encoding]::UTF8.GetString($bytes)).Contains("`r`n")) 'the BOM or the CRLF line ending was lost'
         $again = Sort-PqQueueByRank -Path $file -ProjectOrder @('a', 'b', 'c')
@@ -1166,7 +1170,7 @@ try {
         Assert-That ((Get-RowKeys $q.rows) -ceq 'fms-web:S0033 a' -and @($q.bad).Count -eq 0) "rows '$(Get-RowKeys $q.rows)' bad $(@($q.bad).Count)"
     }
 
-    Test-Case 'queue-sync: refreshes columns in place, keeps the owner comment, removes rows that left the queue, adds new tickets above hold, moves nothing' {
+    Test-Case 'queue-sync: refreshes columns in place, keeps the owner comment, removes rows that left the queue, adds a new ticket after its project''s last row, moves nothing' {
         . (Get-LibPath 'queue-file.ps1')
         $file = New-QueueFile @('# top', 'ticket  changed  status', '1', 'b:S0002', 'a:S0001_old  26-01-01 00:00  Draft  # why', 'a:S0009', 'other:S0005', '', '--', 'b', '', 'hold', 'a:S0003  # one-way')
         $src = [ordered]@{
@@ -1182,11 +1186,24 @@ try {
         $l = @(Get-FileLines $file)
         # Parenthesised: the comma binds tighter than +.
         $expect = @('# top', 'ticket  changed  status', '1', 'b:S0002_x',
-            ('a:S0001_new'.PadRight(74) + '26-10-19 11:51  In Progress  # why'), 'other:S0005', '', '--', 'b',
-            ('a:S0004_fresh'.PadRight(74) + '26-10-21 09:00  Draft'), '', 'hold', ('a:S0003_pub'.PadRight(74) + '26-10-20 10:00  Draft  # one-way'))
+            ('a:S0001_new'.PadRight(74) + '26-10-19 11:51  In Progress  # why'), ('a:S0004_fresh'.PadRight(74) + '26-10-21 09:00  Draft'),
+            'other:S0005', '', '--', 'b', '', 'hold', ('a:S0003_pub'.PadRight(74) + '26-10-20 10:00  Draft  # one-way'))
         Assert-That (($l -join '|') -ceq ($expect -join '|')) "file after sync: $($l -join '|')"
         $again = Sync-PqQueueFile -Path $file -Sources $src
         Assert-That ($again.ok -and -not $again.changed) 'a second sync changed the file'
+    }
+
+    Test-Case 'queue-sync: a project with no active row gets its new tickets as a group of its own at the bottom of the active part' {
+        . (Get-LibPath 'queue-file.ps1')
+        $file = New-QueueFile @('1', 'a:S0001', '', 'hold', 'b:S0007')
+        $src = [ordered]@{
+            a = @([ordered]@{ id = 'S0001'; token = 'S0001'; tail = ''; unscheduled = $false }, [ordered]@{ id = 'S0002'; token = 'S0002'; tail = ''; unscheduled = $false })
+            b = @([ordered]@{ id = 'S0007'; token = 'S0007'; tail = ''; unscheduled = $false }, [ordered]@{ id = 'S0008'; token = 'S0008'; tail = ''; unscheduled = $false })
+        }
+        $r = Sync-PqQueueFile -Path $file -Sources $src
+        Assert-That ($r.ok -and $r.added -eq 2) "ok $($r.ok) added $($r.added)"
+        $l = @(Get-FileLines $file)
+        Assert-That (($l -join '|') -ceq '1|a:S0001|a:S0002||b:S0008||hold|b:S0007') "file after sync: $($l -join '|')"
     }
 
     Test-Case 'queue-sync: an unreadable queue keeps rows; a valid empty queue removes its last row' {
@@ -1405,14 +1422,14 @@ Start-Sleep -Seconds 120
     $fiveQueue = @('1', 'big', 'r1', 'r2', 'r3', 'r4')
     $fiveRepos = { param([bool]$Concurrent = $true) @((New-RankRepo 'big' -Concurrent $Concurrent -MaxWorkers 3), (New-RankRepo 'r1'), (New-RankRepo 'r2'), (New-RankRepo 'r3'), (New-RankRepo 'r4')) }
 
-    Test-Case 'rank: queue file rows come first, by package and then line order' {
+    Test-Case 'rank: the repositories go by registry rank, and inside one repository its file rows go by package and then line order' {
         . (Get-LibPath 'queue-file.ps1'); . (Get-LibPath 'rank.ps1')
-        $reg = New-RankRegistry @((New-RankRepo 'a'), (New-RankRepo 'b'), (New-RankRepo 'c'))
-        $prov = New-FakeProvider @{ a = @('S0001:90'); b = @('S0001:50'); c = @('S0001:10') }
-        $r = Get-PqRank -Registry $reg -Queue (Read-QueueLines @('2', 'a', '1', 'c', 'b')) -HeadProvider $prov
-        Assert-That ((Get-CandidateKeys $r) -ceq 'c:S0001 b:S0001 a:S0001') "order '$(Get-CandidateKeys $r)'"
+        $reg = New-RankRegistry @((New-RankRepo 'a' -Rank 1 -Concurrent $true -MaxWorkers 3), (New-RankRepo 'b' -Rank 2))
+        $prov = New-FakeProvider @{ a = @('S0001:90', 'S0002:50', 'S0003:10'); b = @('S0001:50') }
+        $r = Get-PqRank -Registry $reg -Queue (Read-QueueLines @('1', 'b:S0001', '2', 'a:S0003', '--', 'a:S0002', 'a:S0001')) -HeadProvider $prov
+        Assert-That ((Get-CandidateKeys $r) -ceq 'a:S0003 a:S0002 a:S0001 b:S0001') "order '$(Get-CandidateKeys $r)', expected a (rank 1) before b whatever the packages, and a's package 2 before its --"
         Assert-That (@($r.candidates | Where-Object { $_.rule -cne 'queueFile' }).Count -eq 0) 'a listed candidate does not carry rule queueFile'
-        Assert-That ((@($r.candidates | ForEach-Object { $_.score }) -join ',') -ceq '1,2,3') 'the score of a file row is not its ordinal'
+        Assert-That ((@($r.candidates | ForEach-Object { $_.score }) -join ',') -ceq '2,3,4,1') 'the score of a file row is not its ordinal in the reader order'
     }
 
     Test-Case "rank: a key row and a key:* row take the repository's own head, and a key:ID row takes that ticket even when it is not the head" {
@@ -1423,19 +1440,19 @@ Start-Sleep -Seconds 120
         Assert-That ((Get-CandidateKeys $r) -ceq 'a:S0001 b:S0001 c:S0003') "order '$(Get-CandidateKeys $r)'"
     }
 
-    Test-Case 'rank: repositories the file does not list follow all of it, by head priority descending' {
+    Test-Case 'rank: a repository the file does not list takes its place by registry rank among the listed ones, whatever its head priority' {
         . (Get-LibPath 'queue-file.ps1'); . (Get-LibPath 'rank.ps1')
         $reg = New-RankRegistry @((New-RankRepo 'c' -Rank 1), (New-RankRepo 'a' -Rank 50), (New-RankRepo 'b' -Rank 99))
         $prov = New-FakeProvider @{ a = @('S0001:10'); b = @('S0001:90'); c = @('S0001:50') }
         $r = Get-PqRank -Registry $reg -Queue (Read-QueueLines @('1', 'a')) -HeadProvider $prov
-        Assert-That ((Get-CandidateKeys $r) -ceq 'a:S0001 b:S0001 c:S0001') "order '$(Get-CandidateKeys $r)', expected the file first, then b (90) before c (50) whatever the ranks"
-        Assert-That ((@($r.candidates | ForEach-Object { "$($_.rule)/$($_.source)/$($_.score)" }) -join ',') -ceq 'queueFile/queueFile/1,priority/priority/90,priority/priority/50') "rule/source/score: $(@($r.candidates | ForEach-Object { "$($_.rule)/$($_.source)/$($_.score)" }) -join ',')"
+        Assert-That ((Get-CandidateKeys $r) -ceq 'c:S0001 a:S0001 b:S0001') "order '$(Get-CandidateKeys $r)', expected c (rank 1), a (rank 50, the file), b (rank 99)"
+        Assert-That ((@($r.candidates | ForEach-Object { "$($_.rule)/$($_.source)/$($_.score)" }) -join ',') -ceq 'repoRank/repoOrder/1,queueFile/queueFile/1,repoRank/repoOrder/99') "rule/source/score: $(@($r.candidates | ForEach-Object { "$($_.rule)/$($_.source)/$($_.score)" }) -join ',')"
     }
 
-    Test-Case 'rank: equal head priority is broken by registry rank ascending and then array order' {
+    Test-Case 'rank: with no queue file the repositories go by registry rank ascending and then array order, whatever their head priority' {
         . (Get-LibPath 'queue-file.ps1'); . (Get-LibPath 'rank.ps1')
         $reg = New-RankRegistry @((New-RankRepo 'b' -Rank 2), (New-RankRepo 'c' -Rank 1), (New-RankRepo 'd' -Rank 2))
-        $prov = New-FakeProvider @{ b = @('S0001:50'); c = @('S0001:50'); d = @('S0001:50') }
+        $prov = New-FakeProvider @{ b = @('S0001:10'); c = @('S0001:50'); d = @('S0001:90') }
         $r = Get-PqRank -Registry $reg -HeadProvider $prov
         Assert-That ((Get-CandidateKeys $r) -ceq 'c:S0001 b:S0001 d:S0001') "order '$(Get-CandidateKeys $r)'"
         Assert-That ((@($r.candidates | ForEach-Object { "$($_.rule)/$($_.source)/$($_.score)" }) -join ',') -ceq 'repoRank/repoOrder/1,repoRank/repoOrder/2,repoRank/repoOrder/2') 'a tie is not reported as repoRank with the registry rank as score'
@@ -1459,7 +1476,7 @@ Start-Sleep -Seconds 120
         $r = Get-PqRank -Registry $reg -Queue (Read-QueueLines @('1', 'x', 'a:S0001', 'b')) -HeadProvider $prov
         Assert-That ((Get-CandidateKeys $r) -ceq 'x:S0001 b:S0001') "candidates '$(Get-CandidateKeys $r)'"
         $alt = (@($r.candidates[0].alt | ForEach-Object { "$($_.repo):$($_.id)=$($_.why)" }) -join ',')
-        Assert-That ($alt -ceq 'a:S0001=notOffered:leased,b:S0001=laterRow') "alt of the first candidate: $alt"
+        Assert-That ($alt -ceq 'a:S0001=notOffered:leased,b:S0001=laterRepoRank') "alt of the first candidate: $alt"
     }
 
     Test-Case 'rank: an unknown key, an unknown ticket and a closed ticket produce queue.row payloads and are skipped' {
@@ -1478,12 +1495,21 @@ Start-Sleep -Seconds 120
         Assert-That ($lr.Count -eq 1 -and $lr[0].d.kind -ceq 'unknownRepo') 'a key the registry does not know was not reported when the reader had no -KnownRepos'
     }
 
-    Test-Case 'rank: the -- package sorts after the numbered packages and before the unlisted repositories' {
+    Test-Case 'rank: inside a repository the -- package sorts after the numbered packages, and no package of a repository outranks another repository' {
         . (Get-LibPath 'queue-file.ps1'); . (Get-LibPath 'rank.ps1')
-        $reg = New-RankRegistry @((New-RankRepo 'a'), (New-RankRepo 'b'), (New-RankRepo 'c'))
-        $prov = New-FakeProvider @{ a = @('S0001:10'); b = @('S0001:99'); c = @('S0001:10') }
-        $r = Get-PqRank -Registry $reg -Queue (Read-QueueLines @('--', 'c', '1', 'a')) -HeadProvider $prov
-        Assert-That ((Get-CandidateKeys $r) -ceq 'a:S0001 c:S0001 b:S0001') "order '$(Get-CandidateKeys $r)'"
+        $reg = New-RankRegistry @((New-RankRepo 'a' -Rank 1 -Concurrent $true -MaxWorkers 2), (New-RankRepo 'b' -Rank 2))
+        $prov = New-FakeProvider @{ a = @('S0001:10', 'S0002:10'); b = @('S0001:99') }
+        $r = Get-PqRank -Registry $reg -Queue (Read-QueueLines @('--', 'a:S0001', '1', 'b', 'a:S0002')) -HeadProvider $prov
+        Assert-That ((Get-CandidateKeys $r) -ceq 'a:S0002 a:S0001 b:S0001') "order '$(Get-CandidateKeys $r)', expected a's package 1 row, then its -- row, then b"
+    }
+
+    Test-Case 'rank: inside one repository the alternatives are laterRow in the same package and lowerPackage in a later one' {
+        . (Get-LibPath 'queue-file.ps1'); . (Get-LibPath 'rank.ps1')
+        $reg = New-RankRegistry @((New-RankRepo 'a' -Concurrent $true -MaxWorkers 3))
+        $prov = New-FakeProvider @{ a = @('S0001:50', 'S0002:50', 'S0003:50') }
+        $r = Get-PqRank -Registry $reg -Queue (Read-QueueLines @('1', 'a:S0001', 'a:S0002', '2', 'a:S0003')) -HeadProvider $prov -Slots 5
+        $alt = (@($r.candidates[0].alt | ForEach-Object { "$($_.repo):$($_.id)=$($_.why)" }) -join ',')
+        Assert-That ($alt -ceq 'a:S0002=laterRow,a:S0003=lowerPackage') "alt of the first candidate: $alt"
     }
 
     Test-Case 'rank: every candidate carries rule and source, and alt holds the top three rejected candidates each with a why from the documented list' {
@@ -1498,9 +1524,9 @@ Start-Sleep -Seconds 120
             foreach ($a in $c.alt) { Assert-That ($a.why -cin $validWhy -or $a.why -like 'notOffered:*') "$($c.repo): why '$($a.why)' is not documented" }
         }
         $first = (@($r.candidates[0].alt | ForEach-Object { "$($_.repo)=$($_.why)" }) -join ',')
-        Assert-That ($first -ceq 'r2=laterRow,r3=lowerPackage,r4=lowerPackage') "alt of r1: $first"
+        Assert-That ($first -ceq 'r2=laterRepoRank,r3=laterRepoRank,r4=laterRepoRank') "alt of r1: $first"
         $last = (@($r.candidates[4].alt | ForEach-Object { "$($_.repo)=$($_.why)" }) -join ',')
-        Assert-That ($last -ceq 'u=lowerPackage') "alt of r5 (the unlisted u below the file): $last"
+        Assert-That ($last -ceq 'u=laterRepoRank') "alt of r5 (the unlisted u at the end by array order): $last"
         Assert-That (@($r.candidates[5].alt).Count -eq 0) 'the last candidate has alternatives'
     }
 
@@ -1518,7 +1544,7 @@ Start-Sleep -Seconds 120
         Assert-That ($d.excluded.gated -eq 1 -and $d.excluded.blocked -eq 1 -and $d.excluded.leased -eq 1) "gated $($d.excluded.gated) blocked $($d.excluded.blocked) leased $($d.excluded.leased)"
         Assert-That ($d.autoSkipReasons['owner-gate'] -eq 1 -and $d.autoSkipReasons['blocker-not-verified'] -eq 1) "autoSkipReasons: $(ConvertTo-Json $d.autoSkipReasons -Compress)"
         Assert-That ($d.fill -ceq 'breadth' -and $d.queueRows -eq 2 -and $d.queueBad -eq 1 -and $d.ms -ge 0) "fill $($d.fill) queueRows $($d.queueRows) queueBad $($d.queueBad)"
-        Assert-That ((@($d.heads | ForEach-Object { "$($_.repo):$($_.id)/$($_.source)/$($_.score)" }) -join ',') -ceq 'a:S0003/queueFile/1,b:S0001/priority/50') "heads: $(@($d.heads | ForEach-Object { "$($_.repo):$($_.id)/$($_.source)/$($_.score)" }) -join ',')"
+        Assert-That ((@($d.heads | ForEach-Object { "$($_.repo):$($_.id)/$($_.source)/$($_.score)" }) -join ',') -ceq 'a:S0003/queueFile/1,b:S0001/repoOrder/100') "heads: $(@($d.heads | ForEach-Object { "$($_.repo):$($_.id)/$($_.source)/$($_.score)" }) -join ',')"
         Assert-That ((@($d.heads[0].Keys) -join ',') -ceq 'repo,id,source,score') 'a head is not repo, id, source, score'
     }
 
@@ -1569,18 +1595,18 @@ Start-Sleep -Seconds 120
         Assert-That ((Get-CandidateKeys $zero) -ceq (Get-CandidateKeys $full)) "-StopAfter 0 gave '$(Get-CandidateKeys $zero)', the default gave '$(Get-CandidateKeys $full)'"
     }
 
-    Test-Case 'rank-integration: two fixture repositories and a queue file that lists the lower-priority repository first - the real picker, the file wins' {
+    Test-Case 'rank-integration: two fixture repositories, the lower-priority one ranked first and listed second in the queue file - the real picker, the registry rank wins' {
         . (Get-LibPath 'queue-file.ps1'); . (Get-LibPath 'rank.ps1'); . (Get-LibPath 'picker.ps1')
         $parent = New-Scratch 'repos'
         $lo = New-FixtureRepo -Name 'lo' -Slugs @('one') -Priorities @(10) -Parent $parent
         $hi = New-FixtureRepo -Name 'hi' -Slugs @('one') -Priorities @(90) -Parent $parent
-        $reg = New-RankRegistry @([pscustomobject]@{ key = 'hi'; path = $hi; enabled = $true; rank = 1 }, [pscustomobject]@{ key = 'lo'; path = $lo; enabled = $true; rank = 2 })
+        $reg = New-RankRegistry @([pscustomobject]@{ key = 'hi'; path = $hi; enabled = $true; rank = 2 }, [pscustomobject]@{ key = 'lo'; path = $lo; enabled = $true; rank = 1 })
         $prov = { param($Repo, $Exclude, $ForceId) Get-PqPickerHead -RepoPath $Repo.path -Exclude $Exclude -ForceId $ForceId -HarnessRoot $harness }
-        $r = Get-PqRank -Registry $reg -Queue (Read-QueueLines @('1', 'lo', 'hi')) -HeadProvider $prov
-        Assert-That ((Get-CandidateKeys $r) -ceq 'lo:S0001 hi:S0001') "with the file: '$(Get-CandidateKeys $r)', expected lo first"
+        $r = Get-PqRank -Registry $reg -Queue (Read-QueueLines @('1', 'hi', 'lo')) -HeadProvider $prov
+        Assert-That ((Get-CandidateKeys $r) -ceq 'lo:S0001 hi:S0001') "with the file: '$(Get-CandidateKeys $r)', expected lo first (rank 1) although the file lists hi first"
         $n = Get-PqRank -Registry $reg -HeadProvider $prov
-        Assert-That ((Get-CandidateKeys $n) -ceq 'hi:S0001 lo:S0001') "without the file: '$(Get-CandidateKeys $n)', expected hi first (priority 90)"
-        Assert-That ($n.candidates[0].priority -eq 90 -and $n.candidates[0].status -ceq 'Draft' -and $n.candidates[0].title -ceq 'task-one') 'the head fields did not come from the real picker'
+        Assert-That ((Get-CandidateKeys $n) -ceq 'lo:S0001 hi:S0001') "without the file: '$(Get-CandidateKeys $n)', expected lo first (rank 1) although hi has priority 90"
+        Assert-That ($n.candidates[1].priority -eq 90 -and $n.candidates[1].status -ceq 'Draft' -and $n.candidates[1].title -ceq 'task-one') 'the head fields did not come from the real picker'
     }
 
     Test-Case 'rank: fill depth - a concurrent repository with maxWorkers 3 at the top and four one-worker repositories, five slots, gives the plan 3 + 1 + 1' {
@@ -1589,7 +1615,7 @@ Start-Sleep -Seconds 120
         Assert-That ((Get-PlanKeys $r) -ceq 'big:S0001 big:S0002 big:S0003 r1:S0001 r2:S0001') "plan '$(Get-PlanKeys $r)'"
         Assert-That ((@($r.plan | ForEach-Object { $_.slot }) -join ',') -ceq '1,2,3,4,5') 'slots are not numbered 1-5'
         $alt = (@($r.candidates[0].alt | ForEach-Object { "$($_.repo)=$($_.why)" }) -join ',')
-        Assert-That ($alt -ceq 'r1=laterRow,r2=laterRow,r3=slotsFull') "alt of big: $alt"
+        Assert-That ($alt -ceq 'r1=laterRepoRank,r2=laterRepoRank,r3=slotsFull') "alt of big: $alt"
     }
 
     Test-Case 'rank: fill breadth - the same inputs give one worker to each of the first five rows' {
@@ -1622,14 +1648,15 @@ Start-Sleep -Seconds 120
         }
     }
 
-    Test-Case 'rank: an unlisted repository ranks after the whole file under both policies' {
+    Test-Case 'rank: an unlisted repository takes its place by registry rank under both policies, ahead of the listed repositories that rank below it' {
         . (Get-LibPath 'queue-file.ps1'); . (Get-LibPath 'rank.ps1')
         $reg = New-RankRegistry @((New-RankRepo 'u' -Concurrent $true -MaxWorkers 2 -Rank 1), (New-RankRepo 'f1'), (New-RankRepo 'f2'))
         $table = @{ u = @('S0001:99', 'S0002:99'); f1 = @('S0001:10', 'S0002:10'); f2 = @('S0001:10', 'S0002:10') }
+        $want = @{ depth = 'u:S0001 u:S0002 f1:S0001 f2:S0001'; breadth = 'u:S0001 f1:S0001 f2:S0001 u:S0002' }
         foreach ($fill in 'depth', 'breadth') {
             $r = Get-PqRank -Registry $reg -Queue (Read-QueueLines @('1', 'f1', 'f2')) -HeadProvider (New-FakeProvider $table) -Slots 5 -Fill $fill
-            Assert-That ((Get-CandidateKeys $r) -ceq 'f1:S0001 f2:S0001 u:S0001') "$fill candidates '$(Get-CandidateKeys $r)'"
-            Assert-That ((Get-PlanKeys $r) -ceq 'f1:S0001 f2:S0001 u:S0001 u:S0002') "$fill plan '$(Get-PlanKeys $r)'"
+            Assert-That ((Get-CandidateKeys $r) -ceq 'u:S0001 f1:S0001 f2:S0001') "$fill candidates '$(Get-CandidateKeys $r)'"
+            Assert-That ((Get-PlanKeys $r) -ceq $want[$fill]) "$fill plan '$(Get-PlanKeys $r)', expected '$($want[$fill])'"
         }
     }
 
@@ -1780,8 +1807,8 @@ Start-Sleep -Seconds 120
                 @{ key = 'tourist-mob'; path = 'C:\pq-fixture\Tourist_mob'; enabled = $true; role = 'internal' }
             ))
     }
-    $initExpected = @("# PORTFOLIO_QUEUE.md - the owner's file.", '# The order of the lines IS the priority of the projects: top = most important.',
-        "# Written once by 'pq queue -Init'. Edit it by hand; only pq pin, pq hold and pq release change it afterwards.", '', '1',
+    $initExpected = @("# PORTFOLIO_QUEUE.md - the owner's file.", '# The order of the projects is their rank in the registry (pq rank); the order of the lines is the order of work inside a project.',
+        "# Written once by 'pq queue -Init'. Edit it by hand; the sync adds new tickets to their project, pq arrange (and pq queue) lines it up in the order of work.", '', '1',
         'fms-a  # role: product', 'fms-win  # role: product', 'epub-2-html  # role: product', 'tourist-mob  # role: internal', 'fms-web  # role: product')
 
     # Rule 64: the order is the registry rank ascending, then array order; the owner's first order (fms-a and
@@ -1846,7 +1873,7 @@ Start-Sleep -Seconds 120
         $r = Invoke-Pq @('dry-run')
         Assert-That ($r.code -eq 0) "dry-run exited $($r.code): $($r.output)"
         $lines = @($r.stdout -split '\r?\n' | Where-Object { $_ })
-        $want = @('pq dry-run: fill=depth slots=5 enabled=2 candidates=2', ' 1. a:S0002  rule=queueFile  pri=80  Draft  task-two', '      alt b:S0001 - laterRow',
+        $want = @('pq dry-run: fill=depth slots=5 enabled=2 candidates=2', ' 1. a:S0002  rule=queueFile  pri=80  Draft  task-two', '      alt b:S0001 - laterRepoRank',
             ' 2. b:S0001  rule=queueFile  pri=90  Draft  task-one', 'slot 1: a:S0002', 'slot 2: b:S0001')
         Assert-That (($lines -join "`n") -ceq ($want -join "`n")) "dry-run printed:`n$($lines -join "`n")"
     }
@@ -1872,7 +1899,7 @@ Start-Sleep -Seconds 120
         Assert-That ($r.code -eq 0) "dry-run -Json exited $($r.code): $($r.output)"
         $o = $r.stdout | ConvertFrom-Json
         foreach ($k in 'candidates', 'plan', 'skipped', 'excluded', 'fill') { Assert-That ($null -ne $o.PSObject.Properties[$k]) "the JSON has no $k" }
-        Assert-That ($o.candidates[0].id -ceq 'S0002' -and $o.candidates[0].rule -ceq 'priority' -and $o.plan[0].id -ceq 'S0002' -and $o.fill -ceq 'depth') "JSON: $($r.stdout)"
+        Assert-That ($o.candidates[0].id -ceq 'S0002' -and $o.candidates[0].rule -ceq 'repoRank' -and $o.plan[0].id -ceq 'S0002' -and $o.fill -ceq 'depth') "JSON: $($r.stdout)"
         Assert-That ($o.skipped[0].repo -ceq 'off' -and $o.skipped[0].why -ceq 'disabled') 'the disabled repository is not in skipped'
     }
 

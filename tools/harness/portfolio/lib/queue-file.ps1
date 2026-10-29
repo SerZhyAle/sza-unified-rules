@@ -23,11 +23,13 @@
 #       re-hash of the target, the rename. The file's BOM and line ending are kept; no other line moves.
 #
 #   Sort-PqQueueByRank -Path -ProjectOrder <string[]> [-Log] [-BeforeRename <sb>]
-#       pq arrange: inside every scheduled package (the implicit one and each numbered one) the rows are put in
-#       project order - the keys as given, which pq takes from the registry (Get-PqRepoOrder: rank ascending, equal
-#       ranks in array order) - and a project's own rows keep their order. Only row lines move, and only among the row positions of their own package: headings, comments, blank
-#       lines and unparsable lines stay where they are; '--' and everything under hold are not touched. An unknown
-#       key sorts after every known one. @{ ok; changed; moved; error; message; hash }.
+#       pq arrange (rule 44): the active part - from the first heading or row to the hold heading - is rewritten in
+#       the order of work: one package '1', then the rows by project order - the keys as given, which pq takes from
+#       the registry (Get-PqRepoOrder: rank ascending, equal ranks in array order), an unknown key after every known
+#       one - each project's rows in the reader's order (package, then line), a blank line between two projects, then
+#       the comment-only and unparsable lines of the active part. The order the dispatcher reads does not change.
+#       Lines above the active part and everything under hold are not touched. @{ ok; changed; moved; error;
+#       message; hash }.
 #
 #   Initialize-PqQueueFile -Path -Registry [-Log]
 #       writes a first file only when none exists (rule 64): the comment header, package 1, one row per registered
@@ -56,8 +58,9 @@
 #       keeps the file the way a repository's plan tool keeps its RELEASE_QUEUE.md: a <repo>:<id> row whose ticket is
 #       still in its repository's queue gets that ticket's slug, changed time and status (an owner's # comment stays);
 #       a row whose ticket has left that queue (closed, or waiting for the owner's test) is removed; a queued ticket
-#       the file names nowhere, active or held, is added at the bottom of the active part, above the hold heading, in
-#       Sources order then queue order. No line moves. A repository whose rows are $null, and a key Sources
+#       the file names nowhere, active or held, is added right after the last active row of its repository (reader's
+#       order), or, for a repository with none, in a group of its own at the bottom of the active part, above the
+#       hold heading; Sources order then queue order. No line moves. A repository whose rows are $null, and a key Sources
 #       does not name, are left as they are. @{ ok; changed; added; updated; removed; error; message; hash }.
 #
 # A row may carry its ticket's slug and columns, as the sync writes it: 'fms-web:S0033_contract-sync  26-10-19 11:51
@@ -367,37 +370,50 @@ function Sort-PqQueueByRank {
     $script:PqArrangeMoved = 0
     $r = Write-PqQueueText -Path $Path -Log:$Log -BeforeRename $BeforeRename -Edit {
         param($lines)
-        # Row positions per scheduled package, in file order; a heading closes the group, hold and '--' open none.
-        $groups = [Collections.Generic.List[object]]::new()
-        $current = [Collections.Generic.List[int]]::new()
-        $sortable = $true
+        # The active part: from the first heading or row to the hold heading (or the end).
+        $start = -1; $end = $lines.Count
         for ($i = 0; $i -lt $lines.Count; $i++) {
             $p = Get-PqQueueLine $lines[$i]
-            if ($p.type -eq 'heading' -or $p.type -eq 'hold') {
-                if ($current.Count -gt 1) { $groups.Add($current) }
-                $current = [Collections.Generic.List[int]]::new()
-                $sortable = $p.type -eq 'heading' -and $p.packageText -cne '--'
-            }
-            elseif ($sortable -and $p.type -eq 'row') { $current.Add($i) }
+            if ($p.type -eq 'hold') { $end = $i; break }
+            if ($start -lt 0 -and ($p.type -eq 'heading' -or $p.type -eq 'row')) { $start = $i }
         }
-        if ($current.Count -gt 1) { $groups.Add($current) }
+        if ($start -lt 0) { return $false }
+        $rows = [Collections.Generic.List[object]]::new()
+        $others = [Collections.Generic.List[string]]::new()
+        $package = [long]-1
+        for ($i = $start; $i -lt $end; $i++) {
+            $p = Get-PqQueueLine $lines[$i]
+            if ($p.type -eq 'heading') { $package = $p.package; continue }
+            if ($p.type -eq 'row') {
+                # An unknown key goes after every known one, unknown keys among themselves in the order they first appear.
+                if (-not $order.ContainsKey($p.repo)) { $order[$p.repo] = $order.Count }
+                $rank = $order[$p.repo]
+                $rows.Add([pscustomobject]@{ text = $lines[$i]; repo = $p.repo; rank = $rank; package = $package; pos = $rows.Count })
+                continue
+            }
+            # A comment-only or unparsable line follows the rows; a blank line is written anew.
+            if ($lines[$i].Trim().Length -gt 0) { $others.Add($lines[$i]) }
+        }
+        # The order of work (rule 63): projects by rank, inside one the reader's order (package, then line).
+        $sorted = @($rows | Sort-Object -Stable -Property rank, package, pos)
+        $body = [Collections.Generic.List[string]]::new()
+        $body.Add('1')
+        $prev = $null
         $moved = 0
-        foreach ($g in $groups) {
-            $j = 0
-            $rows = @(foreach ($at in $g) {
-                    $key = (Get-PqQueueLine $lines[$at]).repo
-                    $rank = if ($order.ContainsKey($key)) { $order[$key] } else { [int]::MaxValue }
-                    [pscustomobject]@{ text = $lines[$at]; rank = $rank; pos = $j }
-                    $j++
-                })
-            $sorted = @($rows | Sort-Object -Stable -Property rank, pos)
-            for ($k = 0; $k -lt $g.Count; $k++) {
-                if ($sorted[$k].pos -ne $k) { $moved++ }
-                $lines[$g[$k]] = $sorted[$k].text
-            }
+        for ($k = 0; $k -lt $sorted.Count; $k++) {
+            if ($null -ne $prev -and $sorted[$k].repo -cne $prev) { $body.Add('') }
+            $body.Add($sorted[$k].text)
+            $prev = $sorted[$k].repo
+            if ($sorted[$k].pos -ne $k) { $moved++ }
         }
+        if ($others.Count -gt 0) { $body.Add(''); $body.AddRange($others) }
+        if ($end -lt $lines.Count) { $body.Add('') }
+        $old = $lines.GetRange($start, $end - $start)
+        if (($old -join "`n") -ceq ($body -join "`n")) { return $false }
+        $lines.RemoveRange($start, $end - $start)
+        $lines.InsertRange($start, [string[]]$body.ToArray())
         $script:PqArrangeMoved = $moved
-        return ($moved -gt 0)
+        return $true
     }
     $r.moved = $script:PqArrangeMoved
     return $r
@@ -415,8 +431,8 @@ function Initialize-PqQueueFile {
         })
     $lines = [Collections.Generic.List[string]]::new()
     $lines.Add("# PORTFOLIO_QUEUE.md - the owner's file.")
-    $lines.Add('# The order of the lines IS the priority of the projects: top = most important.')
-    $lines.Add("# Written once by 'pq queue -Init'. Edit it by hand; only pq pin, pq hold and pq release change it afterwards.")
+    $lines.Add('# The order of the projects is their rank in the registry (pq rank); the order of the lines is the order of work inside a project.')
+    $lines.Add("# Written once by 'pq queue -Init'. Edit it by hand; the sync adds new tickets to their project, pq arrange (and pq queue) lines it up in the order of work.")
     $lines.Add('')
     $lines.Add('1')
     foreach ($r in @($repos | Sort-Object -Stable -Property rank, index)) { $lines.Add("$($r.key)  # role: $($r.role)") }
@@ -915,21 +931,42 @@ function Sync-PqQueueFile {
             $new = Format-PqQueueTicketLine $p.repo $map[$p.id] $comment
             if ($new -cne $lines[$i]) { $lines[$i] = $new; $stats.updated++; $changed = $true }
         }
-        $add = [Collections.Generic.List[string]]::new()
+        # The last active row of every repository in the reader's order (package, then line), and the end of the active part.
+        $last = @{}
+        $end = $lines.Count
+        $package = [long]-1
+        for ($i = 0; $i -lt $lines.Count; $i++) {
+            $p = Get-PqQueueLine $lines[$i]
+            if ($p.type -eq 'hold') { $end = $i; break }
+            if ($p.type -eq 'heading') { $package = $p.package; continue }
+            if ($p.type -ne 'row') { continue }
+            if (-not $last.ContainsKey($p.repo) -or $package -ge $last[$p.repo].package) { $last[$p.repo] = @{ package = $package; at = $i } }
+        }
+        # A new ticket goes right after the last active row of its repository, so a project's rows stay together; a
+        # repository with no active row gets its own group at the bottom of the active part.
+        $inserts = [Collections.Generic.List[object]]::new()
+        $bottom = [Collections.Generic.List[string]]::new()
         foreach ($k in $queued.Keys) {
-            foreach ($id in $queued[$k].Keys) {
-                if (-not $named.Contains("${k}:$id")) { $add.Add((Format-PqQueueTicketLine $k $queued[$k][$id] $null)) }
+            $new = @(foreach ($id in $queued[$k].Keys) {
+                    if (-not $named.Contains("${k}:$id")) { Format-PqQueueTicketLine $k $queued[$k][$id] $null }
+                })
+            if ($new.Count -eq 0) { continue }
+            $stats.added += $new.Count; $changed = $true
+            if ($last.ContainsKey($k)) { $inserts.Add(@{ at = $last[$k].at + 1; lines = [string[]]$new }) }
+            else {
+                $bottom.Add('')
+                $bottom.AddRange([string[]]$new)
             }
         }
-        if ($add.Count -gt 0) {
-            # The bottom of the active part: right after its last non-blank line, so the blank lines above hold stay.
-            $end = $lines.Count
-            for ($i = 0; $i -lt $lines.Count; $i++) { if ((Get-PqQueueLine $lines[$i]).type -eq 'hold') { $end = $i; break } }
+        if ($bottom.Count -gt 0) {
+            # Right after the last non-blank line of the active part, so the blank lines above hold stay.
             $at = $end
             while ($at -gt 0 -and $lines[$at - 1].Trim().Length -eq 0) { $at-- }
-            $lines.InsertRange($at, [string[]]$add.ToArray())
-            $stats.added += $add.Count; $changed = $true
+            if ($at -eq 0 -or (Get-PqQueueLine $lines[$at - 1]).type -eq 'heading') { $bottom.RemoveAt(0) }
+            $lines.InsertRange($at, [string[]]$bottom.ToArray())
         }
+        # Bottom first, then from the last position up: an insertion never shifts one still to be made.
+        foreach ($x in @($inserts | Sort-Object -Property @{ Expression = { $_.at }; Descending = $true })) { $lines.InsertRange($x.at, $x.lines) }
         return $changed
     }
     $r.added = $stats.added; $r.updated = $stats.updated; $r.removed = $stats.removed

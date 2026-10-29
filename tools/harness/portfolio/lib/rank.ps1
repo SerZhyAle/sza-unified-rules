@@ -1,4 +1,4 @@
-# The cross-repository rank (TASK-FLOW rules 43, 44, 45 and 63; S0015 R59, R62, R66).
+# The cross-repository rank (TASK-FLOW 0.12 rules 43, 44, 45 and 63; S0015 R59, R62, R66).
 #
 # Dot-source this file; it defines functions only, sets no preference and prints nothing. State: none.
 # Get-PqRank is pure: it reads nothing and writes nothing but what its head provider does, and returns the payloads
@@ -16,10 +16,11 @@
 #
 #   The provider returns what Get-PqPickerHead returns: @{ ok; head; payload; why } ($Repo is the registry record).
 #
-#   Order: the queue file's active rows in the reader's order (a head row asks for the repository's own head, a
-#   ticket row for exactly that ticket); then every active repository the file does not mention, by head priority
-#   descending, registry rank ascending, array position. A row whose ticket is not offered is recorded as an
-#   alternative 'notOffered:<why>' and the walk goes on.
+#   Order (rule 63): the active repositories by registry rank ascending, array position on a tie - the owner's order
+#   of projects, which no package of the queue file outranks. Inside a repository, its rows of the queue file in
+#   the reader's order (a head row asks for the repository's own head, a ticket row for exactly that ticket); a
+#   repository the file does not mention offers its own head at its place. A row whose ticket is not offered is
+#   recorded as an alternative 'notOffered:<why>' and the walk goes on.
 #
 #   Returns @{ candidates; plan; skipped; excluded; autoSkipReasons; fill; heads; ms; queueRows; queueBad; events }:
 #     candidates  distinct first picks in global order, @{ repo; id; rule; source; score; package; row; priority;
@@ -163,9 +164,11 @@ function Get-PqRank {
         return $r
     }
 
-    # 2. Entries.
+    # 2. Entries: the repositories in registry rank order (rule 63); inside one, its rows of the queue file in the reader's
+    # order, or its own head when the file does not name it.
     $entries = [Collections.Generic.List[object]]::new()
     $mentioned = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    $rowsOf = @{}
     $ordinal = 0
     foreach ($row in $queueRows) {
         $ordinal++
@@ -176,22 +179,16 @@ function Get-PqRank {
         }
         $null = $mentioned.Add($row.repo)
         if (-not $active.Contains($row.repo)) { continue }
-        $entries.Add(@{ repo = $row.repo; kind = $row.kind; id = $row.id; source = 'queueFile'; rule = 'queueFile'; score = $ordinal
+        if (-not $rowsOf.ContainsKey($row.repo)) { $rowsOf[$row.repo] = [Collections.Generic.List[object]]::new() }
+        $rowsOf[$row.repo].Add(@{ repo = $row.repo; kind = $row.kind; id = $row.id; source = 'queueFile'; rule = 'queueFile'; score = $ordinal
                 package = $row.package; row = $row.line })
     }
-    $unlisted = [Collections.Generic.List[object]]::new()
-    foreach ($k in $active.Keys) {
-        if ($mentioned.Contains($k)) { continue }
-        $r = & $ask $k @() $null
-        $prio = if ($r.ok -and $null -ne $r.head) { [long](Get-PqRankValue $r.head 'priority' 0) } else { [long]::MinValue }
-        $unlisted.Add(@{ key = $k; priority = $prio; rank = $repos[$k].rank; index = $repos[$k].index; has = ($r.ok -and $null -ne $r.head) })
-    }
-    $sorted = @($unlisted | Sort-Object -Stable -Property @{ Expression = { $_.priority }; Descending = $true }, @{ Expression = { $_.rank } }, @{ Expression = { $_.index } })
-    foreach ($u in $sorted) {
-        $tie = @($sorted | Where-Object { $_.has -and $_.priority -eq $u.priority }).Count -gt 1
-        $entries.Add(@{ repo = $u.key; kind = 'head'; id = $null; source = $(if ($tie) { 'repoOrder' } else { 'priority' })
-                rule = $(if ($tie) { 'repoRank' } else { 'priority' }); score = $(if ($tie) { $u.rank } else { $u.priority })
-                package = $null; row = $null; unlisted = $true })
+    foreach ($k in @($active.Keys | Sort-Object -Stable -Property @{ Expression = { $repos[$_].rank } }, @{ Expression = { $repos[$_].index } })) {
+        if ($rowsOf.ContainsKey($k)) { foreach ($x in $rowsOf[$k]) { $entries.Add($x) } }
+        elseif (-not $mentioned.Contains($k)) {
+            $entries.Add(@{ repo = $k; kind = 'head'; id = $null; source = 'repoOrder'; rule = 'repoRank'; score = $repos[$k].rank
+                    package = $null; row = $null; unlisted = $true })
+        }
     }
 
     # One pick of an entry, with the ids already planned for its repository excluded. @{ head; why }.
@@ -238,7 +235,7 @@ function Get-PqRank {
         $active[$Entry.repo].used++
         $active[$Entry.repo].picks++
         $plan.Add([ordered]@{ slot = $plan.Count + 1; repo = $Entry.repo; id = $id; rule = $Entry.rule; source = $Entry.source
-                score = $(if ($Entry.source -ceq 'priority') { [long](Get-PqRankValue $Head 'priority' 0) } else { $Entry.score })
+                score = $Entry.score
                 priority = Get-PqRankValue $Head 'priority'; status = Get-PqRankValue $Head 'status'; title = Get-PqRankValue $Head 'name' })
     }
     if ($Fill -ceq 'depth') {
@@ -291,18 +288,12 @@ function Get-PqRank {
                 $notPlanned = -not $planned.Contains("$($oe.repo):$($o.id)")
                 if ($notPlanned -and $active[$oe.repo].used -ge $active[$oe.repo].cap) { $why = 'fillCap' }
                 elseif ($notPlanned -and $plan.Count -ge $Slots) { $why = 'slotsFull' }
-                elseif ($e.source -ceq 'queueFile' -and $oe.source -ceq 'queueFile') { $why = if ($oe.package -ne $e.package) { 'lowerPackage' } else { 'laterRow' } }
-                elseif ($e.source -ceq 'queueFile') { $why = 'lowerPackage' }
-                else {
-                    $myP = [long](Get-PqRankValue $w.head 'priority' 0)
-                    $oP = [long](Get-PqRankValue $o.head 'priority' 0)
-                    $why = if ($oP -lt $myP) { 'lowerPriority' } else { 'laterRepoRank' }
-                }
+                elseif ($e.repo -cne $oe.repo) { $why = 'laterRepoRank' }
+                else { $why = if ($oe.package -ne $e.package) { 'lowerPackage' } else { 'laterRow' } }
             }
             $alt.Add([ordered]@{ repo = $o.entry.repo; id = $o.id; why = $why })
         }
-        $score = if ($e.source -ceq 'priority') { [long](Get-PqRankValue $w.head 'priority' 0) } else { $e.score }
-        $candidates.Add([ordered]@{ repo = $e.repo; id = $w.id; rule = $e.rule; source = $e.source; score = $score; package = $e.package
+        $candidates.Add([ordered]@{ repo = $e.repo; id = $w.id; rule = $e.rule; source = $e.source; score = $e.score; package = $e.package
                 row = $e.row; priority = Get-PqRankValue $w.head 'priority'; status = Get-PqRankValue $w.head 'status'
                 title = Get-PqRankValue $w.head 'name'; alt = $alt.ToArray() })
     }

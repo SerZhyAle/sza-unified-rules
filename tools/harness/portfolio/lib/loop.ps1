@@ -296,6 +296,9 @@ function Invoke-PqPassChild {
     $psi.UseShellExecute = $false
     $psi.WorkingDirectory = $RepoPath
     $psi.Environment['SZA_PROJECT_ROOT'] = $RepoPath
+    # A usage limit ends the pass instead of being waited out inside the runner: the worker holds that provider and
+    # gives the ticket to the next one of agentOrder (rule 48).
+    $psi.Environment['SZA_PQ_EXIT_ON_LIMIT'] = '1'
     [void]$psi.Environment.Remove('SZA_PROFILE_PATH')
     Remove-PqAgentSessionEnv $psi.Environment
     $proc = $null
@@ -378,8 +381,11 @@ function Read-PqPassOutcome {
     if ($null -ne $rec) { $statusAfter = [string]$rec.status }
     $moved = ($statusAfter -cne $StatusBefore)
     $outcome = [string](Get-PqValue $journalRow 'outcome' '')
+    $limits = @($rows | Where-Object { $_.outcome -ceq 'limit-hit' }).Count
+    # Exit 5: the runner found the provider's usage limit already in force and launched nothing (-ExitOnLimit).
+    if ($ChildExitCode -eq 5) { $outcome = 'limit-hit'; $limits = [Math]::Max(1, $limits) }
     # A runner whose claim was lost to a sibling launched nothing and exits 3 (rule 27); its row says so (rule 46).
-    if ($ChildExitCode -ne 0 -and $outcome -cnotin @('limit-hit', 'killed', 'halted', 'timeout', 'launch-failed', 'claim-lost', 'claim-lost-before-launch')) {
+    elseif ($ChildExitCode -ne 0 -and $outcome -cnotin @('limit-hit', 'killed', 'halted', 'timeout', 'launch-failed', 'claim-lost', 'claim-lost-before-launch')) {
         $outcome = 'child-failed'
     }
     elseif (-not $outcome -or $outcome -ceq 'ok') { $outcome = if ($moved) { 'ok' } else { 'no-progress' } }
@@ -390,7 +396,7 @@ function Read-PqPassOutcome {
         moved = $moved
         outcome = $outcome
         launches = $rows.Count
-        limits = @($rows | Where-Object { $_.outcome -ceq 'limit-hit' }).Count
+        limits = $limits
     }
 }
 
@@ -496,6 +502,7 @@ function Start-PqLoop {
     $exitCode = 0
     $runSw = [Diagnostics.Stopwatch]::StartNew()
     $waiting = $false
+    $noAgentSaid = ''
     $errStreak = 0
 
     try {
@@ -538,7 +545,7 @@ function Start-PqLoop {
                 foreach ($r in @($Registry.repos)) { $byKey[[string]$r.key] = $r }
                 $occupied = Get-PqOccupiedRepos $Registry
 
-                # New tickets of every repository join the bottom of PORTFOLIO_QUEUE.md before the rank reads it. A failed
+                # New tickets of every repository join their project's rows of PORTFOLIO_QUEUE.md before the rank reads it. A failed
                 # sync (the owner saving the file at that moment) is retried on the next turn and never stops the loop.
                 try {
                     $qpSync = Get-PqQueuePath $Registry
@@ -691,10 +698,16 @@ function Start-PqLoop {
                 }
                 if (-not $pick.agent) {
                     $null = Write-PqEvent -Log $log -Ev 'dispatch.skip' -Run $runId -Repo $repoKey -Id $ticketId -Worker $slot -D ([ordered]@{ why = 'noAgent' })
-                    Write-Host "ticket $repoKey`:$ticketId - no agent may take it now ($((@($pick.fallbacks) | ForEach-Object { "$($_.from): $($_.why)" }) -join ', ')); waiting 30 s"
+                    # Said once per change, not every half minute: a weekly limit is a wait of days.
+                    $noAgentWhy = Get-PqNoAgentSummary -Pick $pick -Registry $Registry
+                    if ($noAgentWhy -cne $noAgentSaid) {
+                        Write-Host "ticket $repoKey`:$ticketId - no provider of the order may take it now ($noAgentWhy); checking again every 30 s"
+                        $noAgentSaid = $noAgentWhy
+                    }
                     for ($w = 0; $w -lt 30 -and -not [IO.File]::Exists($stopPath); $w++) { Start-Sleep -Seconds 1 }
                     continue
                 }
+                $noAgentSaid = ''
                 $agentName = [string]$pick.agent
                 $agentArgs = if ($agentName -ceq 'claude') { @() } else { Get-PqAgentPassArgs $pick }
 
@@ -791,23 +804,34 @@ function Start-PqLoop {
                     })
                 }
 
-                # Rule 48 for an agent other than claude: its limit text is never read, so a fast failure that moved nothing
-                # is a probable limit. The agent is held and polled, the pass is neutral to the ticket, and the next pass
-                # offers the same ticket to the next agent of agentOrder. A pass that did not fail fast clears a hold: it
-                # was the probe.
+                # Rule 48: the only thing that moves a ticket to the next provider of agentOrder is the provider's usage
+                # limit, read from its own output (claude: its transcript; the others: the record's limitDetector
+                # pattern in the pass's log). The provider is held machine-wide - until the reset time the runner read,
+                # else for limitPollMinutes and then one probe pass - and the ticket is neither dropped nor counted
+                # against: a limit is nothing the ticket did. A failure with no limit text in it is an ordinary failed
+                # pass and is never taken for a limit. A pass that ends without a limit clears a poll hold: it was the probe.
                 $agentHeldNow = $false
-                if ($agentName -cne 'claude' -and -not $childRes.killed) {
-                    $fastFail = (-not $outcomeRes.moved) -and $elapsedSec -lt $script:PqFastFailureSeconds -and $outcomeRes.outcome -cin @('child-failed', 'no-progress', 'launch-failed')
-                    if ($fastFail) {
-                        Set-PqAgentHold -Name $agentName -Pass $passId -Source 'fastFailure' -Detector 'unproven'
+                if (-not $childRes.killed -and -not $childRes.failed) {
+                    if ($outcomeRes.limits -gt 0) {
+                        $heldUntil = Get-PqRunnerLimitUntil -RepoPath $repoPath -Agent $agentName
+                        Set-PqAgentHold -Name $agentName -Pass $passId -Source 'log' -Detector 'proven' -Until $heldUntil
                         $agentHeldNow = $true
+                        $null = Write-PqEvent -Log $log -Ev 'agent.hold' -Run $runId -Repo $repoKey -Id $ticketId -Pass $passId -Worker $slot -Agent $agentName -D ([ordered]@{ agent = $agentName; until = $heldUntil; source = 'log'; detector = 'proven' })
                         $poll = [int](Get-PqValue $pick.record 'limitPollMinutes' 30)
-                        $null = Write-PqEvent -Log $log -Ev 'agent.hold' -Run $runId -Repo $repoKey -Id $ticketId -Pass $passId -Worker $slot -Agent $agentName -D ([ordered]@{ agent = $agentName; until = $null; source = 'fastFailure'; detector = 'unproven' })
-                        $null = Write-PqEvent -Log $log -Ev 'agent.unproven' -Run $runId -Worker $slot -Agent $agentName -D ([ordered]@{ agent = $agentName; signal = 'fastFailureNoMove'; count = 1 })
-                        Write-Host "agent $agentName failed fast (${elapsedSec}s, $($outcomeRes.outcome)) - held as a probable limit, probed again in $poll min; the ticket goes to the next agent"
+                        $when = if ($heldUntil) { "until $(([DateTimeOffset]::Parse($heldUntil)).LocalDateTime.ToString('yyyy-MM-dd HH:mm'))" } else { "no reset time given, probed again in $poll min" }
+                        Write-Host "provider $agentName has spent its usage limit - held $when; the ticket goes to the next provider of the order"
                     }
-                    elseif (Remove-PqAgentHold -Name $agentName) {
-                        $null = Write-PqEvent -Log $log -Ev 'agent.resume' -Run $runId -Worker $slot -Agent $agentName -D ([ordered]@{ agent = $agentName; by = 'probe' })
+                    else {
+                        $oldHold = Get-PqAgentHold $agentName
+                        $oldUntil = Get-PqValue $oldHold 'until'
+                        $stillFuture = $false
+                        if ($oldUntil) { try { $stillFuture = [DateTimeOffset]::Parse([string]$oldUntil) -gt [DateTimeOffset]::UtcNow } catch { } }
+                        if (-not $stillFuture -and (Remove-PqAgentHold -Name $agentName)) {
+                            $null = Write-PqEvent -Log $log -Ev 'agent.resume' -Run $runId -Worker $slot -Agent $agentName -D ([ordered]@{ agent = $agentName; by = 'probe' })
+                        }
+                        if ($agentName -cne 'claude' -and -not $outcomeRes.moved -and $elapsedSec -lt $script:PqFastFailureSeconds -and $outcomeRes.outcome -cin @('child-failed', 'launch-failed')) {
+                            Write-Host "provider $agentName failed fast (${elapsedSec}s, $($outcomeRes.outcome)) and no usage-limit text was found in its output - not taken for a limit, so the order does not move on; if it was one, extend limitDetector.pattern of the '$agentName' record (the pass's output is in the repository's runs folder, $ticketId.log)"
+                        }
                     }
                 }
 

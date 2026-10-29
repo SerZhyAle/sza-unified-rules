@@ -163,8 +163,9 @@ try {
     $registry = Get-Content -Raw $registryFile | ConvertFrom-Json
     $registry | Add-Member -NotePropertyName permissionMode -NotePropertyValue acceptEdits
     $registry | Add-Member -NotePropertyName pollSeconds -NotePropertyValue 1 -Force
+    # The owner's order of projects is the registry rank (rule 63): the lower-priority repository is ranked first.
+    foreach ($rec in @($registry.repos)) { $rec | Add-Member -NotePropertyName rank -NotePropertyValue $(if ($rec.key -ceq 'repo-b') { 1 } else { 2 }) -Force }
     $registry | ConvertTo-Json -Depth 32 | Set-Content $registryFile
-    # The owner's queue puts the lower-priority repository first.
     "# 1`nrepo-b`nrepo-a`n" | Set-Content (Join-Path $portfolioRoot 'PORTFOLIO_QUEUE.md')
 
     # Fake runner script

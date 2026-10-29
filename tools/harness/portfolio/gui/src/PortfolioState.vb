@@ -265,6 +265,54 @@ Public Class PortfolioState
         Return info
     End Function
 
+    ' ---- providers ----
+
+    ' The order in which providers spend tokens, 'codex > claude', each marked while its usage limit is spent:
+    ' agentOrder in repos.json (claude alone when absent) and holds\<agent>.json, as lib/agents.ps1 writes them.
+    ' A hold without a reset time is polled after limitPollMinutes, which the record may set; 30 is the contract's default.
+    Public Shared Function GetProviderLine() As String
+        Try
+            Dim order As New List(Of String)
+            Using doc = ReadJson(GetReposJsonPath())
+                If doc IsNot Nothing AndAlso doc.RootElement.ValueKind = JsonValueKind.Object Then
+                    Dim arr As JsonElement
+                    If doc.RootElement.TryGetProperty("agentOrder", arr) AndAlso arr.ValueKind = JsonValueKind.Array Then
+                        For Each x In arr.EnumerateArray()
+                            If x.ValueKind = JsonValueKind.String Then order.Add(If(x.GetString(), ""))
+                        Next
+                    End If
+                End If
+            End Using
+            If order.Count = 0 Then order.Add("claude")
+
+            Dim parts As New List(Of String)
+            For Each name In order
+                Dim mark As String = ""
+                Dim holdFile = Path.Combine(PortfolioRoot, "holds", name & ".json")
+                If File.Exists(holdFile) Then
+                    Using h = ReadJson(holdFile)
+                        If h IsNot Nothing Then
+                            Dim untilText = Str(h.RootElement, "until")
+                            Dim moment As DateTimeOffset
+                            If untilText <> "" Then
+                                If DateTimeOffset.TryParse(untilText, CultureInfo.InvariantCulture, DateTimeStyles.None, moment) AndAlso moment > DateTimeOffset.UtcNow Then
+                                    mark = " (limit spent until " & moment.LocalDateTime.ToString("HH:mm") & ")"
+                                End If
+                            ElseIf DateTimeOffset.TryParse(Str(h.RootElement, "writtenAt"), CultureInfo.InvariantCulture, DateTimeStyles.None, moment) Then
+                                Dim probe = moment.AddMinutes(30)
+                                If probe > DateTimeOffset.UtcNow Then mark = " (limit spent, probe " & probe.LocalDateTime.ToString("HH:mm") & ")"
+                            End If
+                        End If
+                    End Using
+                End If
+                parts.Add(name & mark)
+            Next
+            Return String.Join(" > ", parts)
+        Catch
+            Return ""
+        End Try
+    End Function
+
     ' ---- PORTFOLIO_QUEUE.md (the grammar of lib/queue-file.ps1 Get-PqQueueLine) ----
 
     Private Shared ReadOnly RowPattern As New Regex("^(?<repo>[a-z][a-z0-9-]*)(?::(?<id>\*|[^\s:#_]+)(?:_[^\s#]*)?)?$")

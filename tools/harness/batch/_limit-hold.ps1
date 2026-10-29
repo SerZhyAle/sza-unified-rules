@@ -52,9 +52,12 @@ function Get-LimitHoldPath {
         root as an argument keeps the runner and the monitor on the same path whatever the process
         was started from.
     #>
-    param([Parameter(Mandatory)][string] $RepoRoot)
+    param([Parameter(Mandatory)][string] $RepoRoot, [string] $Agent = '')
     $runDir = Join-Path $RepoRoot (Get-SzaPath 'queueRunsDir' -Relative)
-    return (Join-Path $runDir $script:LimitHoldFileName)
+    # One account, one limit: the file is the claude agent's. Another provider's pass (the portfolio's -AgentJson) has a
+    # limit of its own, so it keeps its own file and never waits on, or sets, claude's wall (and the reverse).
+    $name = if ([string]::IsNullOrWhiteSpace($Agent) -or $Agent -ceq 'claude') { $script:LimitHoldFileName } else { 'limit-hold.{0}.json' -f $Agent }
+    return (Join-Path $runDir $name)
 }
 
 function ConvertTo-LimitOffset {
@@ -190,6 +193,28 @@ function Read-TranscriptLastAssistant {
     }
 }
 
+function ConvertFrom-LimitRetryText {
+    <#
+    .SYNOPSIS
+        The reset time a CLI names as a duration - "try again in 3 days 2 hours 5 minutes", "retry in 45 min" - as unix
+        seconds, or $null when the text carries none or one past a month (garbage must not become a long wait).
+    #>
+    param([string] $Text)
+    if ($Text -notmatch '(?i)(?:try again|retry|resets?|available again)\s+in\s+(?<span>(?:\d+\s*[a-z]+(?:\s*,\s*|\s+and\s+|\s+)?)+)') { return $null }
+    $total = [int64]0
+    foreach ($m in [regex]::Matches($Matches['span'], '(?i)(\d+)\s*(d|h|m|s)')) {
+        $n = [int64]$m.Groups[1].Value
+        switch ($m.Groups[2].Value.ToLowerInvariant()) {
+            'd' { $total += $n * 86400 }
+            'h' { $total += $n * 3600 }
+            'm' { $total += $n * 60 }
+            's' { $total += $n }
+        }
+    }
+    if ($total -le 0 -or $total -gt 31 * 86400) { return $null }
+    return ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds() + $total)
+}
+
 function Get-LimitSignal {
     <#
     .SYNOPSIS
@@ -211,7 +236,9 @@ function Get-LimitSignal {
     param(
         [string] $TranscriptPath = '',
         [string] $LogBody = '',
-        $ExitCode = $null
+        $ExitCode = $null,
+        # The limit text of a provider other than claude (its agent record's limitDetector.pattern); empty = claude's own prose.
+        [string] $Pattern = ''
     )
 
     if (-not [string]::IsNullOrWhiteSpace($TranscriptPath) -and (Test-Path -LiteralPath $TranscriptPath -PathType Leaf)) {
@@ -237,8 +264,15 @@ function Get-LimitSignal {
 
     if (-not [string]::IsNullOrWhiteSpace($LogBody) -and ($null -eq $ExitCode -or [int64]$ExitCode -ne 0)) {
         $tail = if ($LogBody.Length -gt 4000) { $LogBody.Substring($LogBody.Length - 4000) } else { $LogBody }
-        if ($tail -match 'hit your (.{1,40}?) limit') {
-            return [pscustomobject]@{ Source = 'log'; ResetsAt = $null; RateLimitType = $Matches[1].Trim() }
+        if ([string]::IsNullOrWhiteSpace($Pattern)) {
+            if ($tail -match 'hit your (.{1,40}?) limit') {
+                return [pscustomobject]@{ Source = 'log'; ResetsAt = $null; RateLimitType = $Matches[1].Trim() }
+            }
+        }
+        elseif ($tail -match $Pattern) {
+            $type = if ($Matches.Count -gt 1) { ([string]$Matches[1]).Trim() } else { '' }
+            if ([string]::IsNullOrWhiteSpace($type)) { $type = 'usage' }
+            return [pscustomobject]@{ Source = 'log'; ResetsAt = (ConvertFrom-LimitRetryText $tail); RateLimitType = $type }
         }
     }
     return $null

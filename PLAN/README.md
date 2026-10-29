@@ -13,3 +13,4 @@
 - [S0018 - Synchronize project and portfolio queues](S0018_portfolio-queue-sync.md)
 - [S0019 - The queue runner's kill reaches every headless agent on the machine](DONE/S0019_runner-kill-scope.md)
 - [S0020 - Align PQShell UI/UX with SZA Contracts](S0020_pqshell-contracts-alignment.md)
+- [S0021 - assert-portable red on the queue-file.ps1 candidate list](S0021_assert-portable-queue-candidates.md)

@@ -16,6 +16,7 @@ Partial Class MainForm
     Friend btnDoctor As Button
     Friend btnGuide As Button
     Friend btnRegister As Button
+    Friend btnProviders As Button
 
     Friend pnlBanner As Panel
     Friend lblStatus As Label
@@ -82,6 +83,7 @@ Partial Class MainForm
         Me.btnDoctor = New Button()
         Me.btnGuide = New Button()
         Me.btnRegister = New Button()
+        Me.btnProviders = New Button()
 
         Me.pnlBanner = New Panel()
         Me.lblStatus = New Label()
@@ -217,7 +219,15 @@ Partial Class MainForm
         Me.btnRegister.AccessibleRole = AccessibleRole.PushButton
         Me.tipMain.SetToolTip(Me.btnRegister, "Registers a repository into the portfolio registry repos.json ('pq register') (Ctrl+R)")
 
-        Me.pnlTopActions.Controls.AddRange({Me.btnStartLoop, Me.btnStartOne, Me.btnStartDrain, Me.btnStop, Me.btnKill, Me.btnNewSpec, Me.btnDoctor, Me.btnGuide, Me.btnRegister})
+        ' Parameterized command with ellipsis: which model providers spend tokens, and in what order
+        Me.btnProviders.Name = "btnProviders"
+        Me.btnProviders.Text = "🔀 Pro&viders..."
+        Me.btnProviders.Size = New Size(125, 36)
+        Me.btnProviders.AccessibleName = "Model Providers"
+        Me.btnProviders.AccessibleRole = AccessibleRole.PushButton
+        Me.tipMain.SetToolTip(Me.btnProviders, "Chooses which model providers (OpenAI, Anthropic, Gemini, z.ai) spend tokens and in what order ('pq agents')")
+
+        Me.pnlTopActions.Controls.AddRange({Me.btnStartLoop, Me.btnStartOne, Me.btnStartDrain, Me.btnStop, Me.btnKill, Me.btnNewSpec, Me.btnDoctor, Me.btnGuide, Me.btnRegister, Me.btnProviders})
 
         ' --- pnlBanner ---
         Me.pnlBanner.Name = "pnlBanner"
@@ -297,7 +307,7 @@ Partial Class MainForm
         Me.btnArrange.Size = New Size(100, 32)
         Me.btnArrange.Dock = DockStyle.Right
         Me.btnArrange.AccessibleName = "Arrange Queue File"
-        Me.tipMain.SetToolTip(Me.btnArrange, "Re-arranges PORTFOLIO_QUEUE.md to match ranking order ('pq queue -Arrange')")
+        Me.tipMain.SetToolTip(Me.btnArrange, "Lines PORTFOLIO_QUEUE.md up in the order of work: projects as in this list, each project's rows together ('pq arrange')")
 
         Me.pnlLeftHeader.Controls.AddRange({lblLeftTitle, Me.btnArrange, Me.btnDryRun, Me.btnOpenQueue})
 
@@ -521,6 +531,7 @@ Partial Class MainForm
         Me.btnDoctor.TabIndex = 6
         Me.btnGuide.TabIndex = 7
         Me.btnRegister.TabIndex = 8
+        Me.btnProviders.TabIndex = 9
         Me.btnTheme.TabIndex = 9
         Me.btnOpenQueue.TabIndex = 10
         Me.btnDryRun.TabIndex = 11

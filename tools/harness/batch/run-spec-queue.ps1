@@ -131,6 +131,12 @@
     steps, after which one child is launched as the probe. There is no cap on the wait and no new
     exit code: a runner that sleeps and resumes exits as it always did.
 
+    -ExitOnLimit is the one exception, for a dispatcher that has another provider to give the ticket to: the
+    limit is written to the hold as above, then the run ends (exit 0 after a launch that hit the limit; exit 5
+    when the hold was already in force and nothing launched). A pass of another provider (-AgentJson with a
+    name other than claude) reads and writes <runs dir>/limit-hold.<name>.json, so one provider's wall never
+    holds another's pass, and it recognises its limit by the record's limitDetector.pattern in the -Quiet log.
+
     Stopping: `.\a.ps1 rs`, or this script with -Stop, writes temp/STOP-SPEC-QUEUE and every instance
     finishes the ticket it is on, then stops cleanly; -Stop -Instance b stops one instance only, and
     -Stop -Kill also terminates the headless children instead of letting them finish. Ctrl+C stops
@@ -233,6 +239,11 @@ param(
     # runner.*; the model comes in through -ModelPolicy fixed -Model. Empty = the profile, as before.
     [string] $AgentJson = '',
 
+    # The portfolio dispatcher's mode: a usage limit ends this run instead of being waited out here, so the
+    # dispatcher can give the ticket to the next provider of its order. The hold is still written (the limit is
+    # real); a run that finds one in force before its first launch exits 5 and launches nothing.
+    [switch] $ExitOnLimit,
+
     [switch] $Help
 )
 
@@ -240,6 +251,9 @@ param(
 . (Join-Path $PSScriptRoot '_idle-runs.ps1')
 . (Join-Path $PSScriptRoot '_limit-hold.ps1')
 if ([string]::IsNullOrWhiteSpace($RepoRoot)) { $RepoRoot = Get-SzaProjectRoot }
+# The portfolio dispatcher sets this in the pass's environment rather than passing the switch, so a runner stand-in
+# with a fixed parameter list keeps working.
+if ($env:SZA_PQ_EXIT_ON_LIMIT -ceq '1') { $ExitOnLimit = $true }
 
 if ($Help) {
     Show-SzaHelp $PSCommandPath
@@ -530,7 +544,10 @@ function Get-ActiveQueueChildren {
     }
     return $results
 }
-$limitHoldPath = Get-LimitHoldPath -RepoRoot $RepoRoot
+$agentScope = if ($null -ne $script:AgentRecord -and (Test-SzaHasProperty -Object $script:AgentRecord -Name 'name')) { [string]$script:AgentRecord.name } else { '' }
+$agentLimitPattern = ''
+if ($null -ne $script:AgentRecord -and (Test-SzaHasProperty -Object $script:AgentRecord -Name 'limitPattern')) { $agentLimitPattern = [string]$script:AgentRecord.limitPattern }
+$limitHoldPath = Get-LimitHoldPath -RepoRoot $RepoRoot -Agent $agentScope
 
 # ---------------------------------------------------------------------------------------------
 # Stop mode - write the flag the running loops read, then leave. Nothing else in this script runs.
@@ -1205,6 +1222,7 @@ $handled = 0
 $results = New-Object System.Collections.Generic.List[object]
 $explicitIndex = 0
 $ranAny = $false
+$endedOnLimit = $false
 # Context handoffs (Read-ContextHandoff): the ticket to relaunch next, and how many times each
 # ticket has been handed back in this process. The cap keeps a child that crosses the threshold
 # right after its own start from being relaunched forever.
@@ -1304,6 +1322,14 @@ while ($true) {
         if ($reservation) { Undo-ChildLeaseClaim -Id $id -Lease $reservation }
         if ($pickedFrom -eq 'relaunch') { $relaunchId = $id }
         elseif ($pickedFrom -eq 'explicit') { $explicitIndex-- }
+        if ($ExitOnLimit) {
+            # The dispatcher has another provider for this ticket; sleeping here would only keep it from them.
+            $heldState = Get-LimitHoldState -Path $limitHoldPath
+            Write-Host ("run-spec-queue: the {0} usage limit is in force until {1} - nothing launched, ending the run (-ExitOnLimit)." -f `
+                    $(if ($heldState.RateLimitType) { $heldState.RateLimitType } else { 'usage' }), $heldState.Until.LocalDateTime.ToString('yyyy-MM-dd HH:mm:ss')) -ForegroundColor Magenta
+            $endedOnLimit = $true
+            break
+        }
         # False means a stop file appeared; the stop checks at the top of the loop act on it.
         [void](Wait-LimitHold -Path $limitHoldPath -StopFile @($stopFileMine, $stopFileAll) -Instance $Instance)
         continue
@@ -1381,6 +1407,23 @@ while ($true) {
     foreach ($a in $childArgs) { $psi.ArgumentList.Add([string]$a) }
     $psi.WorkingDirectory = $RepoRoot
     $psi.UseShellExecute = $false
+    # A provider that is reached through another CLI's environment (z.ai through Claude Code: base URL and token)
+    # declares it in its record. A value may name a variable as %NAME%, so the secret stays in the owner's
+    # environment and never reaches the registry or an argument list.
+    if ($null -ne $script:AgentRecord -and (Test-SzaHasProperty -Object $script:AgentRecord -Name 'env') -and $null -ne $script:AgentRecord.env) {
+        foreach ($pair in $script:AgentRecord.env.PSObject.Properties) {
+            # This process first, then the owner's user and machine values: a key set after this runner's parent started
+            # is in the registry but not in the environment it handed down.
+            $psi.Environment[[string]$pair.Name] = [regex]::Replace([string]$pair.Value, '%([A-Za-z0-9_]+)%', {
+                    param($m)
+                    $n = $m.Groups[1].Value
+                    $v = [Environment]::GetEnvironmentVariable($n)
+                    if (-not $v) { $v = [Environment]::GetEnvironmentVariable($n, 'User') }
+                    if (-not $v) { $v = [Environment]::GetEnvironmentVariable($n, 'Machine') }
+                    [string]$v
+                })
+        }
+    }
     if ($sessionId) {
         # The identity chain reads <envPrefix>_AGENT_ID before the runtime's own session id, so this
         # pins the child - and every subagent it starts - to the id the reservation was made for.
@@ -1590,7 +1633,7 @@ while ($true) {
     if ($outcome -eq 'ok' -or $outcome -eq 'timeout') {
         try {
             $transcript = if ($sessionId) { Find-ChildTranscript -SessionId $sessionId } else { $null }
-            $limitSignal = Get-LimitSignal -TranscriptPath $transcript -LogBody $logBody -ExitCode $exitCode
+            $limitSignal = Get-LimitSignal -TranscriptPath $transcript -LogBody $logBody -ExitCode $exitCode -Pattern $agentLimitPattern
         } catch {
             $limitSignal = $null
         }
@@ -1678,6 +1721,7 @@ while ($true) {
         Write-Host ("  it is marked [idle {0}, {1}] in {2}; run it by name to override." -f `
                 $series.Count, $series.LastOutcome, (Get-SzaPath 'releaseQueue' -Relative)) -ForegroundColor DarkGray
     }
+    if ($ExitOnLimit -and $outcome -eq 'limit-hit') { $endedOnLimit = $true; break }
 }
 
 # ---------------------------------------------------------------------------------------------
@@ -1716,5 +1760,8 @@ if ($summaryHold.Active) {
 Write-Host ''
 try { $host.UI.RawUI.WindowTitle = "run-spec-queue ($Instance) - done" } catch { }
 
+# 5: the usage limit was already in force and -ExitOnLimit launched nothing; a launch that hit the limit exits 0
+# and says so in its journal row (limit-hit).
+if (-not $ranAny -and $endedOnLimit) { exit 5 }
 if (-not $ranAny) { exit 3 }
 exit 0

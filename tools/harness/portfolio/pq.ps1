@@ -12,9 +12,9 @@
     pq list [-Json]                                 the registered repositories
     pq dry-run [-Slots <n>] [-Json]                 the global order and the slot plan; launches and writes nothing
     pq queue [-Init] [-NoOpen]                      open PORTFOLIO_QUEUE.md, synced first: every registered
-                                                   repository's queued tickets, new ones added at the bottom, changed
-                                                   and status refreshed, closed ones removed, no line moved; -Init
-                                                   writes a first one when none exists
+                                                   repository's queued tickets, new ones added to their project's
+                                                   rows, changed and status refreshed, closed ones removed; then
+                                                   arranged as pq arrange; -Init writes a first one when none exists
     pq tickets [<repo>] [-NoOpen]                   open a repository's own ticket queue file (PLAN/RELEASE_QUEUE.md
                                                    unless its profile says otherwise); without a key, list every
                                                    registered repository with that file's path
@@ -22,14 +22,22 @@
                                                    array order); with <repo> -Rank set one repository's rank; with
                                                    -Order put the listed projects first in that order, the rest
                                                    after them, and write ranks 10, 20, 30, ..; bare, list it
-    pq arrange                                      sort every scheduled package of PORTFOLIO_QUEUE.md by project
-                                                   order; a project's own rows keep their order; '--' and hold are
-                                                   not touched, and only row lines move
+    pq arrange                                      line PORTFOLIO_QUEUE.md up in the order of work: one package 1,
+                                                   the projects by rank, each project's rows in their own order;
+                                                   hold is not touched, and the order of work does not change
     pq pin <repo:id>                                put a ticket at the top of the first numbered package
     pq sync [-Path <repository>]                    refresh the portfolio projection, optionally for one repository
     pq hold <repo[:id]>                             move a row under the hold heading
     pq release <repo[:id]>                          remove a row from under hold; a bare key also clears the
                                                     registry hold of that repository (TASK-FLOW rule 41)
+    pq agents [-Order <p1,p2,..>] [-Release <p>] [-Json]
+                                                   the model providers (openai, anthropic, gemini, zai) and the
+                                                   order in which they spend tokens; bare, list them with their
+                                                   position, CLI and usage-limit hold; with -Order choose the
+                                                   providers and their order (the first works until its limit is
+                                                   spent, the next takes over only then) - a provider without a
+                                                   record gets the shipped one; with -Release clear a provider's
+                                                   limit hold, so it is tried again at once
     pq doctor [-All]                                check the enabled repositories (all with -All); writes nothing
     pq start [-Drain] [-MaxTickets <n>]             run one worker; wait when empty, or exit with -Drain
     pq stop [-Kill]                                 stop after current passes; -Kill kills each worker's own pass tree
@@ -66,6 +74,7 @@ param(
     [string]$Ev,
     [string]$Rank,
     [string[]]$Order,
+    [string]$Release,
     [switch]$Help
 )
 
@@ -258,6 +267,42 @@ function Invoke-PqRank {
     return 0
 }
 
+function Invoke-PqAgents {
+    $read = Get-PqRegistryOrFail
+    if ($null -eq $read) { return 2 }
+    $names = @(@($Order) | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    if ($names.Count -gt 0 -and $Release) { Write-PqError 'ArgumentConflict' 'agents takes either -Order or -Release, not both'; return 2 }
+    if ($Release) {
+        $p = Resolve-PqProvider $Release
+        if ($null -eq $p) { Write-PqError 'UnknownProvider' "no provider '$Release'"; return 2 }
+        $released = Remove-PqAgentHold -Name $p.agent
+        Write-PqOwnerAction 'agents'
+        if (-not $Json) { if ($released) { "released $($p.id) - its limit hold is cleared" } else { "$($p.id) was not held" } }
+    }
+    elseif ($names.Count -gt 0) {
+        $r = Set-PqAgentOrder -Names $names -Log
+        if (-not $r.ok) { Write-PqError $r.error $r.message; return 2 }
+        if ($r.changed) { Write-PqOwnerAction 'agents' }
+        $read = Get-PqRegistryOrFail
+        if ($null -eq $read) { return 2 }
+        if (-not $Json -and -not $r.changed) { 'agents - no change' }
+    }
+    $rows = @(Get-PqProviderStatus -Registry $read.registry)
+    if ($Json) { ConvertTo-Json -InputObject $rows -Depth 6; return 0 }
+    foreach ($row in ($rows | Sort-Object { if ($_.position -gt 0) { $_.position } else { 99 } })) {
+        $pos = if ($row.position -gt 0) { '{0,2}.' -f $row.position } else { ' -' }
+        $state = @()
+        if ($row.position -eq 0) { $state += 'not in the order' }
+        if (-not $row.cliFound) { $state += $row.cliNote }
+        if ($row.held) {
+            $at = ([DateTimeOffset]::Parse([string]$row.holdUntil)).LocalDateTime.ToString('yyyy-MM-dd HH:mm')
+            $state += $(if ($row.holdKind -ceq 'resets') { "usage limit spent, back at $at" } else { "usage limit spent, probed again at $at" })
+        }
+        '{0} {1,-9} {2,-20} {3}' -f $pos, $row.id, $row.label, ($state -join '; ')
+    }
+    return 0
+}
+
 function Invoke-PqArrange {
     $read = Get-PqRegistryOrFail
     if ($null -eq $read) { return 2 }
@@ -292,12 +337,17 @@ function Invoke-PqQueue {
         return 0
     }
     if (-not [IO.File]::Exists($qp)) { Write-PqError 'QueueFileMissing' "run 'pq queue -Init'"; return 2 }
-    # Bring the file up to date before the owner sees it: new tickets at the bottom, changed and status current.
+    # Bring the file up to date before the owner sees it: new tickets added, changed and status current, then the rows
+    # in the order of work, so the file reads like the project list of PQ Control Panel (rule 44).
     if ($null -ne $registry) {
         $null = Open-PqLog -Writer cli
         $s = Sync-PqRegisteredQueues -Path $qp -Registry $registry -Log
         if (-not $s.ok) { Write-PqError $s.error "sync skipped: $($s.message)" }
         elseif ($s.changed) { "synced $qp - $($s.added) added, $($s.updated) updated, $($s.removed) removed" }
+        $keys = [string[]]@(Get-PqRepoOrder $registry | ForEach-Object { $_.key })
+        $a = Sort-PqQueueByRank -Path $qp -ProjectOrder $keys -Log
+        if (-not $a.ok) { Write-PqError $a.error "arrange skipped: $($a.message)" }
+        elseif ($a.changed) { "arranged $qp - $($a.moved) rows moved" }
     }
     if ($NoOpen) { $qp; return 0 }
     Open-PqEditor $qp
@@ -633,7 +683,7 @@ $verbs = [ordered]@{
     start = { Invoke-PqStart }; stop = { Invoke-PqStop }; status = { Invoke-PqStatus }; log = { Invoke-PqLog }
     watch = $null; tail = $null; page = $null; pause = $null; resume = $null
     hold = { Invoke-PqQueueWriter 'hold' }; release = { Invoke-PqQueueWriter 'release' }; pin = { Invoke-PqQueueWriter 'pin' }
-    rank = { Invoke-PqRank }; arrange = { Invoke-PqArrange }
+    rank = { Invoke-PqRank }; arrange = { Invoke-PqArrange }; agents = { Invoke-PqAgents }
     queue = { Invoke-PqQueue }; sync = { Invoke-PqSync }; tickets = { Invoke-PqTickets }; register = { Invoke-PqRegister }; list = { Invoke-PqList }; 'dry-run' = { Invoke-PqDryRun }
     report = $null; trace = $null; problems = $null; export = $null; compare = $null; analyze = $null; improve = $null
     doctor = { Invoke-PqDoctor }

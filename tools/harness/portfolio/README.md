@@ -27,9 +27,10 @@ projects. Missing or unreadable local queues are left untouched; registration al
 Edit, save, and the next rank reads the new order: no restart, and a worker that is waiting picks it up in its next look.
 `PQ Dry-run` prints the order the loop would take, launches nothing, and is the way to check an edit.
 
-The first ticket is found like this: walk the project queue top to bottom; a row naming a repository asks that
-repository's own ticket queue for its head, a row naming a ticket takes exactly that ticket; repositories the file does not
-mention come after it, by the priority of their head ticket.
+The first ticket is found like this: walk the projects by their `rank` in the registry, the lowest first (the `#` column of
+PQ Control Panel); for each project take its rows of the project queue in package and line order - a row naming a repository
+asks that repository's own ticket queue for its head, a row naming a ticket takes exactly that ticket - or, when the file
+does not mention the project, its own head. No package outranks another project.
 
 ### The project queue
 
@@ -53,9 +54,9 @@ fms-web:S0030           # a held ticket is skipped, the project's next one is ta
 | package heading | a line of only digits, or `--`; the rows below it belong to it |
 | `hold` heading | a line of only the word `hold`; every row below it is out of reach until the row is removed |
 | row | `<key>`, `<key>:*` or `<key>:<id>`; the key is the one `pq list` prints; anything after the key is a comment |
-| order | numbered packages ascending, then `--`, then repositories the file does not mention; inside a package, line order |
-| a repository named only by `<key>:<id>` rows | offers those named tickets; synchronization adds every other locally queued ticket at the bottom |
-| a repository the file does not mention | still worked when it is enabled, after everything the file lists; put it under `hold` to keep it out |
+| order | projects by registry `rank`; inside one project, numbered packages ascending, then `--`; inside a package, line order |
+| a repository named only by `<key>:<id>` rows | offers those named tickets; synchronization adds every other locally queued ticket right after that project's last row |
+| a repository the file does not mention | still worked when it is enabled, at its place by `rank`, from its own head; put it under `hold` to keep it out |
 | a bad row | an unknown key or ticket is reported by `PQ Doctor` and skipped; it never stops the queue |
 
 ### The ticket queue
@@ -80,10 +81,10 @@ rows in line order. Moving a line is the whole edit; the status and time columns
 
 | You want | Edit |
 | --- | --- |
-| the projects in a set order, every ticket lined up by it | set the order with `pq rank` (or **▲ / ▼** in PQ Control Panel), then `pq arrange` (**Arrange**) |
-| a project to go before another | move its line up in the project queue |
+| the projects in a set order | set the order with `pq rank` (or **▲ / ▼** in PQ Control Panel); the runner follows it at its next rank, `pq arrange` (**Arrange**, also run by **Open Portfolio Queue**) only lines the file up for reading |
+| a project to go before another | move it up with `pq rank` or **▲** |
 | a project paused | move its line under `hold` (`pq hold <key>`); `pq release <key>` takes it out again |
-| one ticket done next, anywhere | `pq pin <key>:<id>`, or a `<key>:<id>` line at the top |
+| one ticket done next in its project | `pq pin <key>:<id>`, or a `<key>:<id>` line at the top of that project's rows; to make it next in the whole portfolio, its project must also be first in the project order |
 | exactly one ticket of a project and nothing else | put its other ticket rows under `hold` and do not add a bare project row |
 | one ticket never taken | its `<key>:<id>` line under `hold` |
 | the tickets of a project in another order | move their rows in that project's ticket queue (**PQ Tickets `<key>`**) |
@@ -105,11 +106,14 @@ pq arrange                                 # line PORTFOLIO_QUEUE.md up by that 
 ```
 
 `-Order` writes ranks 10, 20, 30, .. for the whole list, so there is room to slot a project in later with `-Rank`.
-`pq arrange` sorts the rows of every package (`1`, `2`, ..) by project order and keeps the order of each project's
-own rows, as its ticket queue set them. Only row lines move, and only inside their own package: package headings,
-comments and blank lines stay where they are, and the `--` package and everything under `hold` are not touched. A
-ticket you want ahead of everything stays ahead when it sits in a package of its own above the rest (`1` for it,
-`2` for the others). Changing the order does not rearrange the file by itself: run `pq arrange` when you want it.
+`pq arrange` rewrites everything above `hold` in the order of work: one package `1`, then the projects in the order
+of the panel, each project's rows together in the order the runner takes them (its packages ascending, then `--`,
+then line order), a blank line between two projects. Comment-only lines follow the rows; the lines above the first
+package and everything under `hold` are not touched. The runner's order is the same before and after: the order
+between projects is the `rank`, never the position of a line, and the order inside a project is kept. `pq queue`
+(**Open Portfolio Queue**) arranges the file every time it opens it, and the sync adds a new ticket right after the
+last row of its project, so the file and the project list read the same; after **▲ / ▼** press **Arrange** or open
+the file again.
 
 ## The shortcuts
 
@@ -163,6 +167,7 @@ runs every change through `pq.ps1`, so it never writes a file of its own.
 | Ticket / Project box | `pq pin`, `pq hold`, `pq release` on what it holds; a click on a project or a double-click on a worker or a pass fills it |
 | Queue top | the first scheduled row of an enabled project nothing holds - the file's own answer; **Dry-Run** prints pq's exact plan |
 | New Spec, Register, Doctor | `spec-draft.ps1`, `pq register`, `pq doctor -All` |
+| Providers | which model providers spend tokens and in what order (`pq agents`, see Model providers below); the window title shows the order, with a provider marked while its usage limit is spent |
 
 ```powershell
 pwsh -NoProfile -File tools/harness/portfolio/gui/build.ps1 publish -Configuration Release   # build and copy the exe
@@ -229,8 +234,9 @@ empty: sleep up to pollSeconds (60) in short slices, rank again
   ticket. The drop remembers the ticket's status, its `updated` time and its spec file's time as they were when the pass
   ended; when any of the three changes - you tested it and set `Broken`, answered its questions, edited its spec - the next
   turn offers it again (`ticket <key>:<id> changed (status) - offered again`). The pass's own writes never lift its drop.
-- A usage-limit stop is not a failure: the runner records it and waits out its own hold before the next launch. For Claude
-  the hold is per repository, so an account-wide limit is met once in each repository.
+- A usage-limit stop is not a failure and is the only thing that moves a ticket to the next provider (see Model
+  providers): the provider is held machine-wide until its limit lifts, the ticket is offered to the next provider of the
+  order at once, and when every provider is spent the worker says so once and checks again every 30 seconds.
 - A spec line `Blocker: <key>:<id>` (or `Блокер: <key>:<id>`) names a ticket of another registered repository. The ticket
   is not offered until that blocker is `Implemented`, `Verified` or `BlockNeedUserTest` with its tactical plan finished, or
   `Archived` - the rule the repository's own picker applies to a local blocker. A key that is not registered, a blocker id
@@ -261,9 +267,57 @@ stamped folder that is not ready is announced once per worker (`found .. - not j
 nothing is written into it: run `task-flow-init` there, which ends in `pq register`. To keep a repository out, set its
 `enabled` to `false` or put it under `hold`; to stop joining altogether, set `autoEnable` to `false`.
 
+## Model providers
+
+You choose who spends tokens, and in what order. Four providers are known:
+
+| Provider | Agent record | Needs |
+| --- | --- | --- |
+| `openai` | `codex` | the Codex CLI (`npm install -g @openai/codex`) |
+| `anthropic` | `claude` | Claude Code on PATH |
+| `gemini` | `gemini` | Antigravity CLI `agy` (`irm https://antigravity.google/cli/install.ps1 \| iex`), signed in with Google; it reuses the Antigravity sign-in. The Gemini CLI no longer serves personal Google sign-ins (closed 2026-06-18) |
+| `zai` | `zai` | Claude Code and the user environment variable `ZAI_API_KEY` (a key from z.ai/manage-apikey); the pass is Claude Code pointed at z.ai's Anthropic-compatible endpoint |
+
+```powershell
+pq agents                                  # the four, with their place in the order, CLI and limit hold
+pq agents -Order openai,anthropic          # these spend tokens, the first one first
+pq agents -Release openai                  # forget openai's limit hold, try it again now
+```
+
+The same choice is **Providers..** in PQ Control Panel: check the providers, put them in order with **▲ / ▼**, **Apply**.
+A provider whose CLI is not found cannot be checked and the line says what to install. `-Order` writes `agentOrder` in
+`repos.json` and, for a provider with no record there yet, the shipped record built against the CLI found on this
+machine; a record you already have is never touched. A running worker applies the new order to the next ticket it takes.
+
+The first provider of the order works until its usage limit is spent. Only then does the next one take the ticket - the
+limit is read from the provider's own output (Claude: its transcript; the others: the record's `limitDetector.pattern`
+in the pass's output, which is why those passes are quiet in the console and keep their output in the repository's runs
+folder as `<ticket>.log`), and a failure with no limit text in it is an ordinary failed pass that never moves the order
+on. The spent provider is held machine-wide until the reset time its message gave; with none it is tried again every
+`limitPollMinutes` (30) by one pass, and the first pass that ends without a limit puts it back at the head. The ticket is
+neither dropped nor counted against while this happens. If a provider's real limit message is not matched, the worker
+says `failed fast .. no usage-limit text was found` - extend `limitDetector.pattern` of its record.
+
+A provider that is installed but not signed in (Gemini without a sign-in, z.ai without its key) is listed but cannot be
+checked: such a pass would end in a second with no limit text and count as a failed one. The key is read from this process
+first and then from your user and machine environment, so a key set with `setx` reaches a worker that was already running.
+
+z.ai is reached through Claude Code with `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN` (`%ZAI_API_KEY%`) and
+`API_TIMEOUT_MS` set **for that pass only**, as z.ai's own Claude Code guide describes. Do not put those in
+`~/.claude/settings.json` or your user environment: `anthropic` would then spend z.ai's plan too. The model is left to
+z.ai's mapping of `opus`. Gemini runs as `agy --model gemini-3.8-flash-high --dangerously-skip-permissions --print`; the
+slug carries the effort, `agy models` lists the others, and each model has its own quota - change `model` in the record to
+switch. ZCode's own CLI is not used: it needs the desktop app's runtime files.
+
+The z.ai pattern follows z.ai's error code list (1308, 1310, 1316-1321 `Usage limit reached` / `Limit Exhausted`, 1113
+`Insufficient balance`, 1302 `Rate limit reached`); the Gemini one matches agy's real message, `Individual quota reached.
+.. Resets in 57h10m24s.` (`RESOURCE_EXHAUSTED`, exit 3), whose reset time is read. Neither has run a whole pass yet, so
+`limitDetector.status` stays `unproven`. z.ai's `reset at` names no time this runner reads, so its hold polls every
+`limitPollMinutes`.
+
 ## Other agents
 
-`agentOrder` in `repos.json` is the spend order, and Claude comes last: for each pass the worker takes the first agent that
+`agentOrder` in `repos.json` is the spend order (Model providers above): for each pass the worker takes the first agent that
 is not held, is under its `maxParallel`, whose `levels` admit the ticket's level (a spec without a Complexity line counts
 as `medium`) and that can reach the repository's pipeline. An agent without slash commands (`promptForm: file`) is told to
 open the pipeline's command file - `.claude/commands/spec-all.md` for a repository whose prompt is `/spec-all {id}`, the
@@ -293,11 +347,11 @@ A record for Codex, beside the Claude record (once `agents` is present, Claude n
 ```
 
 The command is `node` with Codex's own script, because the `codex` on PATH is a PowerShell shim a process cannot start
-directly. The record is the whole launch: `{model}` and `{effort}` come from the record, `{prompt}` from the repository. A
-pass of a non-Claude agent that fails fast - under two minutes, nothing moved - is taken as its usage limit: the agent is
-held in `holds\<agent>.json`, the ticket is not dropped, the next pass gives it to the next agent, and after
-`limitPollMinutes` one probe pass decides - a probe that does not fail fast clears the hold. Its limit text is never read,
-so the detector stays `unproven`.
+directly. The record is the whole launch: `{model}` and `{effort}` come from the record, `{prompt}` from the repository. An
+optional `env` object sets environment variables for the pass only (a value may name a variable as `%NAME%`, so a key stays
+in your environment and never reaches the registry); the shipped `zai` record uses it. A pass whose output matches
+`limitDetector.pattern` and that exited non-zero has spent its provider's limit: the provider is held in
+`holds\<agent>.json` and the ticket goes to the next one (Model providers above).
 
 ## Stopping
 
