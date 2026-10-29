@@ -1,5 +1,5 @@
 <#
-deploy.ps1 - stage everything in this repo, commit, push.
+deploy.ps1 - stage everything in this repo, commit, push, then update this machine's plugin.
 
 Operator tool: the owner runs it. An agent does not run it on its own initiative - committing and
 pushing happen only when asked (INVARIANTS 18).
@@ -22,6 +22,13 @@ nothing to a consumer.
   pwsh -File deploy.ps1 -DryRun              # gate + show what would be committed and bumped, change nothing
   pwsh -File deploy.ps1 -Yes                 # no prompt (for a scheduled or piped run)
   pwsh -File deploy.ps1 -NoVersionBump       # commit without raising the version
+  pwsh -File deploy.ps1 -NoPluginUpdate      # push, but leave this machine's plugin where it is
+
+After the push, on main and when this machine's plugin cache is behind the pushed version, it runs
+`claude plugin marketplace update sza-unified-rules` and `claude plugin update sza@sza-unified-rules`
+and checks that the cache reached the version. A failure there only warns and prints the commands to
+run by hand; it never changes the exit code, because the commit is already on the remote. Open Claude
+sessions keep what they loaded - restart them.
 
 Exit codes: 0 = pushed, or nothing to push; 1 = gate failed, the version bump failed, or a git step
 failed; 2 = cannot verify (not a repo, gate script missing, no remote, version files unreadable).
@@ -31,7 +38,8 @@ param(
     [Parameter(Position = 0)][string]$Message,
     [switch]$DryRun,
     [switch]$Yes,
-    [switch]$NoVersionBump
+    [switch]$NoVersionBump,
+    [switch]$NoPluginUpdate
 )
 
 $ErrorActionPreference = 'Stop'
@@ -165,24 +173,68 @@ $sha = (git -C $root rev-parse --short HEAD)
 Write-Host ''
 Write-Host "deploy: pushed $sha to $remote/$branch - $Message" -ForegroundColor Green
 
-# --- 5. Say out loud whether this machine's plugin cache actually carries the version just pushed. --
-# The cache is a directory named for the version, so a stale one is readable without a network call.
-# This reports, it never fails: updating the plugin is the operator's action, not the deploy's, and a
-# deploy that pushed correctly has done its job.
-$cacheRoot = Join-Path ([Environment]::GetFolderPath('UserProfile')) '.claude\plugins\cache\sza-unified-rules\sza'
-if (Test-Path -LiteralPath $cacheRoot) {
-    $pluginText = Get-Content -LiteralPath (Join-Path $root '.claude-plugin/plugin.json') -Raw
-    if ($pluginText -match '"version"\s*:\s*"([^"]+)"') {
-        $pushedVersion = $Matches[1]
-        $cached = Get-ChildItem -LiteralPath $cacheRoot -Directory -ErrorAction SilentlyContinue |
+# --- 5. Bring this machine's plugin cache to the version just pushed. ------------------------------
+# The cache is a directory named for the version, so "is this machine current" is readable without a
+# network call. The update is part of the deploy because it was the step left to the operator and the one
+# that was forgotten: the push succeeded and the machine kept running the previous copy (2026-10-29: three
+# deploys in, the cache still held the version from before the first). Two calls, in this order - the
+# marketplace refresh is what makes the new version visible, the plugin update is what installs it.
+# Only on main: the marketplace is a GitHub source with no ref and follows main, so an update after a push
+# from another branch delivers nothing. This never fails the deploy - the commit is on the remote either
+# way - it says what happened and prints the manual commands when it could not finish. The new version is
+# loaded by a session that starts after this; an open one keeps what it loaded.
+function Update-PluginCache {
+    param(
+        [Parameter(Mandatory)][string]$Root,
+        [Parameter(Mandatory)][string]$Branch,
+        [string]$CacheRoot = (Join-Path ([Environment]::GetFolderPath('UserProfile')) '.claude\plugins\cache\sza-unified-rules\sza'),
+        [string]$Cli = 'claude',
+        [switch]$Skip
+    )
+    $manual = 'claude plugin marketplace update sza-unified-rules; claude plugin update sza@sza-unified-rules'
+    if (-not (Test-Path -LiteralPath $CacheRoot)) { return 'no-cache' }
+    $pluginText = Get-Content -LiteralPath (Join-Path $Root '.claude-plugin/plugin.json') -Raw
+    if ($pluginText -match '"version"\s*:\s*"([^"]+)"') { $pushed = $Matches[1] } else { return 'no-version' }
+
+    $newest = {
+        Get-ChildItem -LiteralPath $CacheRoot -Directory -ErrorAction SilentlyContinue |
             ForEach-Object { $_.Name } |
             Sort-Object -Property { try { [version]$_ } catch { [version]'0.0.0' } } |
             Select-Object -Last 1
-        if ($cached -and $cached -ne $pushedVersion) {
-            Write-Host ''
-            Write-Host "deploy: the plugin cache on this machine is at $cached, the canon is now at $pushedVersion" -ForegroundColor Yellow
-            Write-Host 'deploy: run `claude plugin update sza` - until then this machine keeps running the cached copy' -ForegroundColor Yellow
-        }
     }
+    $cached = & $newest
+    if (-not $cached -or $cached -eq $pushed) { return 'current' }
+
+    Write-Host ''
+    Write-Host "deploy: the plugin cache on this machine is at $cached, the canon is now at $pushed" -ForegroundColor Yellow
+    if ($Skip) {
+        Write-Host "deploy: -NoPluginUpdate - run: $manual" -ForegroundColor Yellow
+        return 'skipped'
+    }
+    if ($Branch -ne 'main') {
+        Write-Host "deploy: this was pushed from '$Branch' and the marketplace follows main - fast-forward main and push it, then run: $manual" -ForegroundColor Yellow
+        return 'not-main'
+    }
+    if (-not (Get-Command $Cli -ErrorAction SilentlyContinue)) {
+        Write-Host "deploy: '$Cli' is not on PATH - run: $manual" -ForegroundColor Yellow
+        return 'no-cli'
+    }
+
+    Write-Host 'deploy: updating the plugin on this machine' -ForegroundColor Cyan
+    try {
+        & $Cli plugin marketplace update sza-unified-rules | Out-Host
+        & $Cli plugin update 'sza@sza-unified-rules' | Out-Host
+    }
+    catch { Write-Host "deploy: the plugin update failed - $($_.Exception.Message)" -ForegroundColor Yellow }
+
+    $cached = & $newest
+    if ($cached -eq $pushed) {
+        Write-Host "deploy: this machine now has plugin $pushed - restart open Claude sessions to load it" -ForegroundColor Green
+        return 'updated'
+    }
+    Write-Host "deploy: the cache is still at $cached, the canon is at $pushed - run: $manual" -ForegroundColor Yellow
+    return 'stale'
 }
+
+$null = Update-PluginCache -Root $root -Branch $branch -Skip:$NoPluginUpdate
 exit 0

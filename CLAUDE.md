@@ -57,6 +57,12 @@ does not apply here; this is where fixes land. It applies everywhere else.
   "already at the latest version". `-NoVersionBump` is the way out for a commit that reaches no consumer;
   the deploy also skips the bump on its own when the whole change set is `README.md`, `LICENSE`,
   `.gitignore` or `rules/contrib/`.
+- **The deploy also brings this machine's plugin to the pushed version** (from 2026-10-29): after the push, on `main`,
+  when the cache is behind, it runs `claude plugin marketplace update sza-unified-rules` and `claude plugin update
+  sza@sza-unified-rules` and checks that the cache reached the version. A failure only warns and prints the commands;
+  off `main` it does nothing (the marketplace follows `main`); `-NoPluginUpdate` skips it. Open sessions keep what
+  they loaded - restart them. [tools/tests/deploy-plugin-update.tests.ps1](tools/tests/deploy-plugin-update.tests.ps1)
+  covers it with a stub `claude`.
 - **This was a manual step until 2026-09-07 and it was missed twice.** The portfolio first ran five canon
   updates against a plugin cache frozen at `2026.07.27`, and no session anywhere loaded them; then, four
   days after that was written down here, `ec00587` shipped three `tools/harness/spec_catalog/` files under
