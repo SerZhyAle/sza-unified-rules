@@ -140,7 +140,7 @@ function Get-PqPickerHead {
     }
     if ((Get-PqPayloadIds $payload.leased_ids) -ccontains $ForceId) { return @{ ok = $true; head = $null; payload = $payload; why = 'leased'; error = $null; ms = $ms } }
     if ((Get-PqPayloadIds $payload.excluded_ids) -ccontains $ForceId) { return @{ ok = $true; head = $null; payload = $payload; why = 'excluded'; error = $null; ms = $ms } }
-    $ranked = Get-PqPayloadIds $payload.ranked
+    $ranked = @(Get-PqPayloadIds $payload.ranked)
     $at = [array]::IndexOf([string[]]$ranked, $ForceId)
     if ($at -lt 0) {
         $why = if ((Get-PqPayloadIds $payload.malformed) -ccontains $ForceId) { 'malformed' } else { 'notRanked' }

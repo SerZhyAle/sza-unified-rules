@@ -122,7 +122,7 @@ Ids that were allocated and later removed from both journals. Row shape: `id`, `
 - `New-CatalogId` takes its maximum over the active journal, the archive **and** this registry. Deleting a record is the one way an id can silently return to circulation, and two tickets answering to one id would make every dev-log row, changelog entry and commit message already naming it ambiguous after the fact.
 - `validate.ps1` subtracts registered ids from the `Monotonicity` gap list, so a deliberate hole reads as accounted for and a genuinely lost record still surfaces. Without this a single cleanup buries the check under known holes forever.
 - `validate.ps1` also reads a `PLAN/<id>_*` file whose id is registered as accounted for: the id was spent and the ledger deliberately does not hold it. This is how a project that kept its tickets by hand before it had a ledger joins the catalog without importing them: it registers every id it has spent (reason `predates the ledger`), the next id is one past the highest, and only the tickets created from then on are ledger records. A file whose id is neither a record nor registered is still an orphan.
-- Written only by `purge-probe-records.ps1`. No command removes a row.
+- Written by `purge-probe-records.ps1`, and once by hand when a project with hand-numbered tickets joins (reason `predates the ledger`, above). No command removes a row.
 
 ## The id grammar
 
