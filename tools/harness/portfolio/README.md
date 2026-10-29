@@ -177,6 +177,15 @@ pwsh -NoProfile -File tools/harness/portfolio/gui/install-gui-shortcut.ps1      
 The exe finds `pq.ps1` through `SZA_PQ_SCRIPT`, then beside itself or in a checkout above it, then at the canon working
 tree's own path.
 
+## Answering a project's questions
+
+A ticket that needs the owner's call leaves the queue as `BlockQuestions`, and `pq` never takes it back by itself.
+The `spec-quiz` skill (`/spec-quiz` or `/sq`, with `quiz-list.ps1` in this folder) is the exit: it lists the waiting
+tickets of the current project, of a named one (`<key>:<id>`) or of all (`--all`), asks only the decisions the code and
+the records do not settle, writes the answers into each ticket and restores it one level - after which `pq` offers it
+again, unless its project is on hold. `quiz-list.ps1 -Id S0021` is the lookup for an id that exists in several
+projects: it prints the id's status in the current project and every project where it waits. The script reads only.
+
 ## Putting a task into a project's queue
 
 The `spec-draft` skill (`/spec-draft`, or `spec-draft.ps1` in this folder) captures a task or a problem into any

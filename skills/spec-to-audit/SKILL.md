@@ -315,7 +315,9 @@ written PASS/FAIL verdict where FAIL blocks the release.
 ## Quiz mode - draining the owner's questions
 
 A ticket enters `BlockQuestions` in one line; this is how it leaves. Like Sweep mode it is a **sitting, not
-an interruption**: the block exists so the questions wait for an owner who is ready to answer them.
+an interruption**: the block exists so the questions wait for an owner who is ready to answer them. The owner
+starts it with `/spec-quiz` (`/sq`) - the [spec-quiz](../spec-quiz/SKILL.md) skill finds the waiting tickets in
+any project and carries the mechanics; the procedure below is its authority.
 
 1. **Resolve each ticket from its authoritative record**, never from a filename. Only `BlockQuestions`
    clears here. `BlockNeedUserTest` needs a run (Sweep mode), `BlockExternal` needs the outside party, and

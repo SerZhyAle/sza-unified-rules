@@ -77,6 +77,7 @@ compliance gate read instead of guessing.
 | [`promote`](skills/promote/SKILL.md) | free promotion: the positioning worksheet, indexing on github.io project pages and the host root, search consoles, free channels by product shape, launch moments, metrics without telemetry, and the one promotion ticket per product |
 | [`task-flow-init`](skills/task-flow-init/SKILL.md) | day 0 of a project's tasks: the numbered ledger, the queue and ready/done plan files, a ticket template, an R0 runner rendered from the profile, and the rehearsal that gates the first unattended run |
 | [`spec-draft`](skills/spec-draft/SKILL.md) | a task or a problem for any project as a Draft ticket in one call: the owner's words verbatim, the row in the project's ticket queue, and a plain report of whether and when the portfolio queue (pq) takes it |
+| [`spec-quiz`](skills/spec-quiz/SKILL.md) (`/sq`) | the exit from `BlockQuestions` in any project: finds the waiting tickets from the ledgers (an id is unique only inside one project), asks the owner only the real decisions as multiple choice, writes the answers into each ticket and restores it one level |
 | [`agent-cost`](skills/agent-cost/SKILL.md) | measuring what a session actually costs, with the five corrections without which every token figure is inflated roughly threefold - and the subagent model tier, the largest single lever that measurement reaches |
 | [`caveman`](skills/caveman/SKILL.md) | terse mode - prose compressed, every exact string and every gate reason left intact; plus the commit and review shapes |
 

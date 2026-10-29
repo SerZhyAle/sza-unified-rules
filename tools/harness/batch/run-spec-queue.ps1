@@ -428,6 +428,17 @@ if (-not (Test-Path $runDir)) { New-Item -ItemType Directory -Path $runDir | Out
 $journal = Join-Path $runDir ("runs-{0}.jsonl" -f $Instance)
 $activeChildFile = Join-Path $runDir ("child-{0}.json" -f $Instance)
 
+function Confirm-RunDir {
+    <#
+        The runs directory sits under the repo's temp\, and a project's own build clean-up is free to
+        empty that while a child works: FastMediaSorter_Lite's build.ps1 runs Clean-Build.ps1 -Temp,
+        and a child that builds takes the journal, the logs and the leases down with the scratch files.
+        Created once at start, the directory is gone by the time the row is written, so every write
+        that follows a child asks for it again instead of trusting the start-up check.
+    #>
+    if (-not (Test-Path -LiteralPath $runDir)) { New-Item -ItemType Directory -Path $runDir -Force | Out-Null }
+}
+
 function Stop-ProcessTree {
     param([int] $ProcessId)
     # taskkill /T reaches the node and gradle children the CLI spawns; Stop-Process alone leaves them
@@ -1004,7 +1015,17 @@ function Add-RunRecord {
         finishedAt   = (Get-Date).ToString('s')
     }
     $results.Add($record)
-    Add-Content -Path $journal -Value (($record | ConvertTo-Json -Compress)) -Encoding UTF8
+    # A row that cannot be written must not end the loop. This runs after the child is gone, so the
+    # work is done and the ticket has moved; $ErrorActionPreference is 'Stop', and an unguarded
+    # Add-Content here took the whole instance down after a 9-minute child (L0279, 2026-10-29) and
+    # left the pass reported as child-failed. The row stays in $results for the summary, and the
+    # warning says it is missing from the journal.
+    try {
+        Confirm-RunDir
+        Add-Content -LiteralPath $journal -Value (($record | ConvertTo-Json -Compress)) -Encoding UTF8
+    } catch {
+        Write-Host ("  run-spec-queue: could not journal {0} - {1}" -f $Id, $_.Exception.Message) -ForegroundColor DarkYellow
+    }
     return $record
 }
 
@@ -1461,6 +1482,9 @@ while ($true) {
             runnerPid  = $PID
             startedAt  = (Get-Date).ToString('s')
         }
+        # The previous child may have cleaned temp\ away; a throw here lands in the catch below as
+        # 'launch-failed' while this child is already running untracked.
+        Confirm-RunDir
         [System.IO.File]::WriteAllText($activeChildFile, ($childRecord | ConvertTo-Json -Compress), [System.Text.Encoding]::UTF8)
 
         # Start draining before waiting. A redirected pipe that fills while nobody reads it blocks
@@ -1580,6 +1604,7 @@ while ($true) {
                 if ($outTask -and $outTask.IsCompleted) { $body += $outTask.Result }
                 if ($errTask -and $errTask.IsCompleted -and $errTask.Result) { $body += "`n--- stderr ---`n" + $errTask.Result }
                 $logBody = $body
+                Confirm-RunDir
                 [System.IO.File]::WriteAllText($logFile, $body, [System.Text.Encoding]::UTF8)
             } catch {
                 Write-Host ("  run-spec-queue: could not write {0} - {1}" -f $logFile, $_.Exception.Message) -ForegroundColor DarkYellow

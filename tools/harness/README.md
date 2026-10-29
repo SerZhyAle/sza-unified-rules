@@ -109,5 +109,11 @@ registered project and reports, read only, whether `pq` will work the ticket and
 project's own queue (a hold, a disabled project or a missing registration is reported, never undone).
 `pwsh -NoProfile -File tools/tests/spec-draft.tests.ps1` checks it over throwaway repositories.
 
+`portfolio/quiz-list.ps1` is the mechanical half of the `spec-quiz` skill (`/spec-quiz`, `/sq`): it reads the ledgers
+of the current project, a named one or every registered one and lists the tickets in `BlockQuestions` with their
+reason notes, and for an id says what that id is in the current project and where else it waits (ids repeat across
+projects). It writes nothing. `pwsh -NoProfile -File tools/tests/quiz-list.tests.ps1` checks it over throwaway
+repositories in a few seconds.
+
 Check this flow with `pwsh -NoProfile -File tools/tests/smoke-portfolio-runner.ps1` from the canon root.
 It uses throwaway repositories and fake children; it starts no agent.

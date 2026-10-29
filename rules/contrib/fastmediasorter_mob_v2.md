@@ -2633,6 +2633,8 @@ $out | ConvertTo-Json -Depth 5 -Compress
 - [ ] `spec-quiz.md` Stage 2: allow a round to mix tickets; Stage 6 report becomes one block per ticket.
 - [ ] Re-read `spec-quiz.md` against the canon's Quiz mode steps 5 and 7 (write-back before the move; a skipped answer narrows the reason note and keeps the block) and record any remaining divergence here.
 
+2026-10-29: the plugin now ships the same exit to every project as the `spec-quiz` skill (`/spec-quiz`, short form `/sq`, with the lookup `portfolio/quiz-list.ps1`), because the overlay command reached only this repository. In this repository the overlay's `.claude/commands/spec-quiz.md` keeps winning for the unprefixed name and keeps the catalog script paths, `--chain`, `--dry`, `--here` and the dev-log line; it stays the reference implementation. It has no `/sq`, and this repository has no `tools/harness.ps1` forwarder (its tools are `scripts/spec_catalog/`), so the plugin's `/sq` finds the waiting tickets here with `quiz-list.ps1` and takes the tool paths from this repository's `CLAUDE.md` (the skill's Step 2); an FMS_A session adds an `sq.md` beside `spec-quiz.md` if the owner wants the short name to run the overlay's own paths.
+
 ## Agent-memory candidates - lifted into the canon 2026-10-26 (source: `temp/scratch/canon-candidates-20261026.md`)
 
 - An FMS_A session classified all 669 agent-memory files against canon `2026.10.25.2` and proposed 73 universal items. The file promised a per-item canon verdict and carried none; the canon session judged each against the live rule text. The owner approved the plan and settled the four conflicts on 2026-10-26.
