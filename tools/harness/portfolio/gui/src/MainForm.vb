@@ -331,8 +331,9 @@ Partial Class MainForm
                 Dim row = dgvRepos.Rows(idx)
                 row.Tag = r
                 row.Cells("colKey").ToolTipText = r.Path
-                row.Cells("colQueued").ToolTipText = $"{r.RunnableRows} the runner would take, of {r.QueuedRows} rows in the queue file (blocked, held and unknown rows are not taken)"
-                row.Cells("colBlocked").ToolTipText = "open tickets in a Block status - waiting for an answer, a test, another ticket or something outside"
+                row.Cells("colQueued").ToolTipText = $"{r.RunnableRows} the runner would take, of {r.QueuedRows} rows in the queue file (blocked, idle-held, held and unknown rows are not taken)"
+                row.Cells("colBlocked").ToolTipText = "open tickets in a Block status - waiting for an answer, a test, another ticket or something outside" &
+                    If(r.IdleRows > 0, $"; {r.IdleRows} of them idle-held: the last runs of each ended without moving its status, so the runner passes it over until a run of it moves the status (naming the ticket runs it anyway)", "")
                 If r.BlockedRows > 0 Then row.Cells("colBlocked").Style.ForeColor = p.StatusWarning
                 row.Cells("colOrder").ToolTipText = $"rank {r.Rank}"
 

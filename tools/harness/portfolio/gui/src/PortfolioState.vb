@@ -27,8 +27,12 @@ Public Class RepoInfo
     ' work (disabled or held).
     Public Property RunnableRows As Integer = 0
     ' Ticket rows in a Block* status (BlockQuestions, BlockNeedUserTest, BlockByOtherTask, BlockExternal), active or held:
-    ' open, and waiting on someone or something before the runner can move them.
+    ' open, and waiting on someone or something before the runner can move them. The idle-held rows below are counted
+    ' here as well: the pickers pass them over just the same.
     Public Property BlockedRows As Integer = 0
+    ' Runnable-status rows the pickers pass over for their idle series (PortfolioState.GetIdleHeldIds), part of BlockedRows.
+    Public Property IdleRows As Integer = 0
+    Public Property IdleIds As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
 
     Public ReadOnly Property IsHeld As Boolean
         Get
@@ -317,10 +321,12 @@ Public Class PortfolioState
 
     Private Shared ReadOnly RowPattern As New Regex("^(?<repo>[a-z][a-z0-9-]*)(?::(?<id>\*|[^\s:#_]+)(?:_[^\s#]*)?)?$")
     Private Shared ReadOnly HeaderPattern As New Regex("^ticket\s+changed\s+status$")
-    ' The columns the sync writes after the token: 'yy-MM-dd HH:mm  <status>'.
-    ' The status word after the optional changed date and time ('26-10-29 01:37  Approved', '26-10-29  Approved',
-    ' 'Approved (owner order..)'); the rest of the line is a note.
-    Private Shared ReadOnly StatusPattern As New Regex("^(?:\d{2}-\d{2}-\d{2}(?:\s+\d{2}:\d{2})?\s+)?(?<status>In Progress|[A-Za-z]+)")
+    ' The columns after the token: 'yy-MM-dd HH:mm  <status>' as the sync writes them, and 'yyyy-MM-dd HH:mm  <status>' as
+    ' the rows added by hand or by the project's own tools carry them - the file holds both. The status word follows the
+    ' optional changed date and time ('26-10-29 01:37  Approved', '2026-10-29 11:10  Draft', '26-10-29  Approved',
+    ' 'Approved (owner order..)'); the rest of the line is a note. A date this pattern does not skip leaves the status
+    ' empty, and an empty status is counted as runnable.
+    Private Shared ReadOnly StatusPattern As New Regex("^(?:(?:\d{4}|\d{2})-\d{2}-\d{2}(?:\s+\d{2}:\d{2})?\s+)?(?<status>In Progress|[A-Za-z]+)")
 
     ' The statuses the picker offers on their own (spec-next-preflight.ps1 $eligibleStatuses), less BlockByOtherTask,
     ' which it offers only once the blocker is closed - in a night's queue almost never. A row with no status column
@@ -395,6 +401,123 @@ Public Class PortfolioState
         Return snap
     End Function
 
+    ' ---- idle-run series (the walk of batch/_idle-runs.ps1 Get-IdleRunMap) ----
+
+    ' Outcomes that count as idle when the repository's profile (runner.idleOutcomes) does not say, and the one that is
+    ' neutral: a run that ended on the account's usage limit says nothing about the ticket, so the walk steps over it.
+    Private Shared ReadOnly IdleDefaultOutcomes As String() = {"ok", "timeout", "claim-lost", "claim-lost-before-launch", "no-progress-or-claim-lost", "launch-failed"}
+    Private Shared ReadOnly IdleNeutralOutcomes As String() = {"limit-hit"}
+
+    Private Class IdleRun
+        Public At As DateTime
+        Public Moved As Boolean
+        Public Outcome As String
+    End Class
+
+    Private Shared ReadOnly IdleCache As New Dictionary(Of String, KeyValuePair(Of String, HashSet(Of String)))(StringComparer.OrdinalIgnoreCase)
+
+    ' The tickets of one repository the pickers pass over automatically (spec-next-preflight 'idle-hold'): the last
+    ' runner.idleRunThreshold runs of the ticket (2 unless the profile says) all ended without moving its status. The series is
+    ' derived, never stored: from the end of the repository's own runs-*.jsonl, oldest first by finishedAt, back to the first
+    ' run that moved the status. Only a run that moves it ends the series - a status edited by hand does not. Cached
+    ' per repository until a journal or the profile changes. Empty for a repository without journals.
+    Public Shared Function GetIdleHeldIds(repoPath As String) As HashSet(Of String)
+        Dim result As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
+        If String.IsNullOrWhiteSpace(repoPath) Then Return result
+        Try
+            Dim runsRel = "temp/spec-queue"
+            Dim threshold = 2
+            Dim outcomes As String() = IdleDefaultOutcomes
+            Dim profileFile = Path.Combine(repoPath, ".sza-profile.json")
+            Try
+                Using doc = ReadJson(profileFile)
+                    If doc IsNot Nothing AndAlso doc.RootElement.ValueKind = JsonValueKind.Object Then
+                        Dim paths As JsonElement
+                        If doc.RootElement.TryGetProperty("paths", paths) Then
+                            Dim rel = Str(paths, "queueRunsDir")
+                            If Not String.IsNullOrWhiteSpace(rel) Then runsRel = rel
+                        End If
+                        Dim runner As JsonElement
+                        If doc.RootElement.TryGetProperty("runner", runner) AndAlso runner.ValueKind = JsonValueKind.Object Then
+                            Dim t = CInt(Num(runner, "idleRunThreshold", 2))
+                            If t >= 1 Then threshold = t
+                            Dim listed As JsonElement
+                            If runner.TryGetProperty("idleOutcomes", listed) AndAlso listed.ValueKind = JsonValueKind.Array Then
+                                Dim names = listed.EnumerateArray().Select(Function(x) If(x.ValueKind = JsonValueKind.String, x.GetString(), x.GetRawText())).ToArray()
+                                If names.Length > 0 Then outcomes = names
+                            End If
+                        End If
+                    End If
+                End Using
+            Catch
+                ' A profile that does not read leaves the canon's defaults, as _idle-runs.ps1 does for a key it cannot find.
+            End Try
+
+            Dim runsDir = If(Path.IsPathFullyQualified(runsRel), runsRel, Path.Combine(repoPath, runsRel.Replace("/"c, Path.DirectorySeparatorChar)))
+            If Not Directory.Exists(runsDir) Then Return result
+            Dim files = Directory.GetFiles(runsDir, "runs-*.jsonl")
+            Array.Sort(files, StringComparer.OrdinalIgnoreCase)
+
+            Dim sig As New StringBuilder()
+            sig.Append(runsDir).Append("#"c).Append(threshold).Append("#"c).Append(String.Join(",", outcomes))
+            For Each f In files
+                Dim fi As New FileInfo(f)
+                sig.Append("|"c).Append(f).Append(":"c).Append(fi.Length).Append(":"c).Append(fi.LastWriteTimeUtc.Ticks)
+            Next
+            Dim signature = sig.ToString()
+            SyncLock IdleCache
+                Dim hit As KeyValuePair(Of String, HashSet(Of String))
+                If IdleCache.TryGetValue(repoPath, hit) AndAlso hit.Key = signature Then Return hit.Value
+            End SyncLock
+
+            Dim byId As New Dictionary(Of String, List(Of IdleRun))(StringComparer.OrdinalIgnoreCase)
+            For Each f In files
+                Dim lines As String()
+                Try
+                    lines = ReadAllTextShared(f).Split({vbCrLf, vbLf}, StringSplitOptions.RemoveEmptyEntries)
+                Catch
+                    Continue For
+                End Try
+                For Each line In lines
+                    ' A half-written last line is normal while a run appends; one unreadable record can only shorten a series.
+                    Try
+                        Using doc = JsonDocument.Parse(line)
+                            Dim id = Str(doc.RootElement, "id")
+                            If String.IsNullOrWhiteSpace(id) Then Continue For
+                            Dim at = DateTime.MinValue
+                            If Not DateTime.TryParse(Str(doc.RootElement, "finishedAt"), CultureInfo.InvariantCulture, DateTimeStyles.None, at) Then at = DateTime.MinValue
+                            Dim runs As List(Of IdleRun) = Nothing
+                            If Not byId.TryGetValue(id, runs) Then
+                                runs = New List(Of IdleRun)()
+                                byId(id) = runs
+                            End If
+                            runs.Add(New IdleRun With {.At = at, .Moved = Bool(doc.RootElement, "moved", False), .Outcome = Str(doc.RootElement, "outcome")})
+                        End Using
+                    Catch
+                    End Try
+                Next
+            Next
+
+            For Each kv In byId
+                Dim ordered = kv.Value.OrderBy(Function(x) x.At).ToList()
+                Dim count = 0
+                For i = ordered.Count - 1 To 0 Step -1
+                    Dim run = ordered(i)
+                    If run.Moved Then Exit For
+                    If IdleNeutralOutcomes.Contains(run.Outcome, StringComparer.OrdinalIgnoreCase) Then Continue For
+                    If Not outcomes.Contains(run.Outcome, StringComparer.OrdinalIgnoreCase) Then Exit For
+                    count += 1
+                Next
+                If count >= threshold Then result.Add(kv.Key)
+            Next
+            SyncLock IdleCache
+                IdleCache(repoPath) = New KeyValuePair(Of String, HashSet(Of String))(signature, result)
+            End SyncLock
+        Catch
+        End Try
+        Return result
+    End Function
+
     ' ---- registry ----
 
     Public Shared Function GetRepos(Optional queue As QueueSnapshot = Nothing) As List(Of RepoInfo)
@@ -405,7 +528,7 @@ Public Class PortfolioState
         Dim counts = queue.Rows.Concat(queue.Held.Where(Function(r) r.Id IsNot Nothing)).GroupBy(Function(r) r.Repo).ToDictionary(Function(g) g.Key, Function(g) g.Count(), StringComparer.Ordinal)
         Dim heldTickets As New HashSet(Of String)(queue.Held.Where(Function(r) r.Id IsNot Nothing).Select(Function(r) r.Target), StringComparer.Ordinal)
         Dim blocked = queue.Rows.Concat(queue.Held).Where(Function(r) r.Id IsNot Nothing AndAlso r.Status IsNot Nothing AndAlso r.Status.StartsWith("Block", StringComparison.Ordinal)).GroupBy(Function(r) r.Repo).ToDictionary(Function(g) g.Key, Function(g) g.Count(), StringComparer.Ordinal)
-        Dim runnable = queue.Rows.Where(Function(r) IsRunnable(r) AndAlso Not heldTickets.Contains(r.Target)).GroupBy(Function(r) r.Repo).ToDictionary(Function(g) g.Key, Function(g) g.Count(), StringComparer.Ordinal)
+        Dim runnable = queue.Rows.Where(Function(r) IsRunnable(r) AndAlso Not heldTickets.Contains(r.Target)).ToLookup(Function(r) r.Repo, StringComparer.Ordinal)
 
         Try
             Using doc = ReadJson(GetReposJsonPath())
@@ -434,8 +557,14 @@ Public Class PortfolioState
                     r.QueueHold = heldKeys.Contains(r.Key)
                     Dim n As Integer
                     If counts.TryGetValue(r.Key, n) Then r.QueuedRows = n
-                    If r.Enabled AndAlso Not r.IsHeld AndAlso runnable.TryGetValue(r.Key, n) Then r.RunnableRows = n
                     If blocked.TryGetValue(r.Key, n) Then r.BlockedRows = n
+                    If r.Enabled AndAlso Not r.IsHeld Then
+                        r.IdleIds = GetIdleHeldIds(r.Path)
+                        For Each row In runnable(r.Key)
+                            If r.IdleIds.Contains(row.Id) Then r.IdleRows += 1 Else r.RunnableRows += 1
+                        Next
+                        r.BlockedRows += r.IdleRows
+                    End If
                     list.Add(r)
                 Next
             End Using
@@ -458,6 +587,7 @@ Public Class PortfolioState
             If Not byKey.TryGetValue(row.Repo, repo) OrElse Not repo.Enabled OrElse repo.IsHeld Then Continue For
             If row.Id IsNot Nothing AndAlso heldTickets.Contains(row.Target) Then Continue For
             If row.Id IsNot Nothing AndAlso Not IsRunnable(row) Then Continue For
+            If row.Id IsNot Nothing AndAlso repo.IdleIds.Contains(row.Id) Then Continue For
             Return New CandidateInfo With {.Repo = row.Repo, .Id = row.Id, .Status = row.Status}
         Next
         Return Nothing

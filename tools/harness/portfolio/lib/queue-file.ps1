@@ -56,7 +56,8 @@
 #       machine-wide sync lock; the result carries registered.
 #   Sync-PqQueueFile -Path -Sources <IDictionary> [-Log] [-BeforeRename <sb>]
 #       keeps the file the way a repository's plan tool keeps its RELEASE_QUEUE.md: a <repo>:<id> row whose ticket is
-#       still in its repository's queue gets that ticket's slug, changed time and status (an owner's # comment stays);
+#       still in its repository's queue gets that ticket's slug, changed time ('yy-MM-dd HH:mm' whatever shape the source
+#       has) and status (an owner's # comment stays, a note repeated in it back to back is cut to one);
 #       a row whose ticket has left that queue (closed, or waiting for the owner's test) is removed; a queued ticket
 #       the file names nowhere, active or held, is added right after the last active row of its repository (reader's
 #       order), or, for a repository with none, in a group of its own at the bottom of the active part, above the
@@ -882,9 +883,31 @@ function Sync-PqRegisteredQueues {
     }
 }
 
+# The tail of a ticket row as the file carries it. A '#' is dropped: a note such as 'slices #115 and #116' would read back
+# as the start of the owner's comment, and every later sync would keep that piece as a comment and write the tail again in
+# front of it. The changed column is 'yy-MM-dd HH:mm', the shape the plan tools write; a ledger gives the year in full
+# (and may add seconds), which would shift the status column of every row it feeds.
+function ConvertTo-PqQueueTail([string]$Tail) {
+    $t = $Tail.Replace('#', '')
+    return [regex]::Replace($t, '^20(\d{2}-\d{2}-\d{2})[ T](\d{2}:\d{2})(?::\d{2}(?:\.\d+)?)?(?=\s|$)', '$1 $2')
+}
+
+# A comment that is one note written several times in a row ('# n  # n  # n') is that note once. The rows the sync wrote
+# before it dropped the '#' of the tail carry such a run: each sync took everything from the first '#' as the owner's
+# comment and wrote the tail, with the same note in it, in front of it, so the note doubled and never went away.
+$script:PqQueueRepeatedComment = [regex]::new('^(?<s>#.{7,}?)(?:\s+\k<s>)+$', [Text.RegularExpressions.RegexOptions]::CultureInvariant, [TimeSpan]::FromSeconds(1))
+
+function Compress-PqQueueComment([string]$Comment) {
+    if (-not $Comment) { return $Comment }
+    try {
+        $m = $script:PqQueueRepeatedComment.Match($Comment)
+        if ($m.Success) { return $m.Groups['s'].Value }
+    }
+    catch [Text.RegularExpressions.RegexMatchTimeoutException] { }
+    return $Comment
+}
+
 # One ticket row as the sync writes it: '<repo>:<token>', padded, then the tail, then the owner's comment if any.
-# A '#' in the tail (a note such as 'slices #115 and #116') is dropped: it would read back as the start of the owner's
-# comment, and every later sync would keep that piece as a comment and write the tail again in front of it.
 # The row's id ends at the first '_', so a token whose slug joins the id by another character ('TASK-10-contract-sync')
 # is written as '<id>_<slug>': read back as a longer id, the row would be removed and added again by every sync.
 function Format-PqQueueTicketLine([string]$Repo, $Row, [string]$Comment) {
@@ -895,7 +918,7 @@ function Format-PqQueueTicketLine([string]$Repo, $Row, [string]$Comment) {
         $token = if ($slug) { "${id}_$slug" } else { $id }
     }
     $line = "$($Repo):$token"
-    $tail = ([string]$Row.tail).Replace('#', '')
+    $tail = ConvertTo-PqQueueTail ([string]$Row.tail)
     if ($tail) { $line = $line.PadRight([Math]::Max($script:PqQueueTicketWidth, $line.Length + 2)) + $tail }
     if ($Comment) { $line += '  ' + $Comment }
     return $line
@@ -927,7 +950,7 @@ function Sync-PqQueueFile {
             }
             $null = $named.Add("$($p.repo):$($p.id)")
             $at = $lines[$i].IndexOf('#')
-            $comment = if ($at -ge 0) { $lines[$i].Substring($at).TrimEnd() } else { $null }
+            $comment = if ($at -ge 0) { Compress-PqQueueComment $lines[$i].Substring($at).TrimEnd() } else { $null }
             $new = Format-PqQueueTicketLine $p.repo $map[$p.id] $comment
             if ($new -cne $lines[$i]) { $lines[$i] = $new; $stats.updated++; $changed = $true }
         }

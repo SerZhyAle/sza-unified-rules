@@ -203,7 +203,7 @@ Public Class FormNewSpec
         ' Row 2: Ticket Slug & Pin
         Dim lblSlug As New Label With {
             .Name = "lblSlug",
-            .Text = "Ticket &Slug:",
+            .Text = "Ticket &Slug (optional):",
             .AutoSize = True,
             .Font = New Font("Segoe UI", 9.0F, FontStyle.Bold),
             .Anchor = AnchorStyles.Left,
@@ -354,12 +354,7 @@ Public Class FormNewSpec
             Return
         End If
 
-        If String.IsNullOrWhiteSpace(slug) Then
-            SetStatus("Please enter a ticket slug (e.g. 'player-crash-on-seek').", isError:=True)
-            txtSlug.Focus()
-            Return
-        End If
-
+        ' An empty slug or the bare type prefix is fine: spec-draft names the ticket from the description.
         If String.IsNullOrWhiteSpace(desc) Then
             SetStatus("Please provide a description of the task or defect.", isError:=True)
             txtDescription.Focus()

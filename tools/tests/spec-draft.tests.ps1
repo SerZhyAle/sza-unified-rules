@@ -236,7 +236,7 @@ exit 0
         $cases = @(
             @{ n = 'bad slug'; a = @('-Project', $repoFree, '-Slug', 'Bad_Slug', '-TextFile', $good); m = 'invalid -Slug' },
             @{ n = 'spec_ slug'; a = @('-Project', $repoFree, '-Slug', 'spec_x', '-TextFile', $good); m = 'invalid -Slug' },
-            @{ n = 'a bare prefix names nothing'; a = @('-Project', $repoFree, '-Slug', 'hotfix-', '-TextFile', $good); m = 'ends with a separator' },
+            @{ n = 'a bare prefix names nothing'; a = @('-Project', $repoFree, '-Slug', 'foo-', '-TextFile', $good); m = 'ends with a separator' },
             @{ n = 'no text file'; a = @('-Project', $repoFree, '-Slug', 'ok-slug'); m = '-TextFile' },
             @{ n = 'empty text'; a = @('-Project', $repoFree, '-Slug', 'ok-slug', '-TextFile', $empty); m = 'text is empty' },
             @{ n = 'unknown project'; a = @('-Project', 'no-such-key', '-Slug', 'ok-slug', '-TextFile', $good); m = 'registered: repo-a' },
@@ -313,6 +313,29 @@ exit 0
         Assert-That ($r.code -eq 2 -and $r.stdout -match 'contradict') "-Pin -NoPin: exit $($r.code): $($r.output)"
         $r = Invoke-Draft @('-Project', 'repo-b', '-Slug', 'bugfix-plain-bug', '-TextFile', $f)
         Assert-That ($r.code -eq 0 -and $r.stdout -notmatch 'pq: pinned') "a bugfix- was pinned: $($r.output)"
+    }
+
+    Run-Case '11 no ticket name, or a bare bugfix-/hotfix- (what the dialog pre-fills): named from the text' {
+        $plain = Join-Path $scratch 'unnamed'; New-Item -ItemType Directory -Path $plain | Out-Null
+        $ru = Write-Text 'owner13.txt' 'Не работает кнопка "следующий файл" в плеере'
+        $none = Write-Text 'owner14.txt' '!!! ??? 12'
+        $cases = @(
+            @{ n = 'bare bugfix-'; a = @('-Slug', 'bugfix-', '-TextFile', $ru); m = "named it 'bugfix-rabotaet-knopka-sleduyushchiy-fayl-pleere'" },
+            @{ n = 'bare hotfix-'; a = @('-Slug', 'hotfix-', '-TextFile', $ru); m = "named it 'hotfix-rabotaet-knopka-sleduyushchiy-fayl-pleere'" },
+            @{ n = 'no slug at all'; a = @('-TextFile', $ru); m = "named it 'rabotaet-knopka-sleduyushchiy-fayl-pleere'" },
+            @{ n = 'no words to name it from'; a = @('-Slug', 'bugfix-', '-TextFile', $none); m = 'bugfix-captured-' }
+        )
+        foreach ($c in $cases) {
+            $r = Invoke-Draft (@('-Project', $plain, '-WhatIf') + $c.a)
+            Assert-That ($r.code -eq 0) "$($c.n): exit $($r.code): $($r.output)"
+            Assert-That ($r.stdout.Contains($c.m)) "$($c.n): lacks '$($c.m)': $($r.output)"
+        }
+        # A real capture into a project with a ledger carries the derived name into the file, and a derived bugfix- keeps its priority.
+        $r = Invoke-Draft @('-Project', 'repo-a', '-Slug', 'bugfix-', '-TextFile', $ru)
+        Assert-That ($r.code -eq 0 -and $r.last -match '^drafted repo-a:S\d{4} file=PLAN/S\d{4}_bugfix-rabotaet-knopka-sleduyushchiy-fayl-pleere\.md priority=90 ') "real capture: exit $($r.code): $($r.output)"
+        # Any other slug ending in a separator is still refused: only the dialog's own pre-fill is read as "name it".
+        $r = Invoke-Draft @('-Project', $plain, '-Slug', 'foo-', '-TextFile', $ru, '-WhatIf')
+        Assert-That ($r.code -eq 2) "foo-: exit $($r.code): $($r.output)"
     }
 }
 finally {

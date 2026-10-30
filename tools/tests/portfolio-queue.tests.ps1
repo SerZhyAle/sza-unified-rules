@@ -1193,6 +1193,28 @@ try {
         Assert-That ($again.ok -and -not $again.changed) 'a second sync changed the file'
     }
 
+    Test-Case 'queue-sync: the changed column has one shape whatever the source writes, and a note repeated back to back in a comment is cut to one' {
+        . (Get-LibPath 'queue-file.ps1')
+        $note = '#115 and #116 touched (both done)'
+        $file = New-QueueFile @('1', "a:S0001_x  2026-10-29 17:57  BlockByOtherTask  $note  $note  $note", 'a:S0002  # keep this  # keep that', 'a:S0003  # same  # same')
+        $src = [ordered]@{
+            a = @(
+                [ordered]@{ id = 'S0001'; token = 'S0001_x'; tail = '2026-10-29 17:57:33  BlockByOtherTask'; unscheduled = $false },
+                [ordered]@{ id = 'S0002'; token = 'S0002'; tail = '2026-10-29 17:57  Draft'; unscheduled = $false },
+                [ordered]@{ id = 'S0003'; token = 'S0003'; tail = '26-10-29 17:57  Draft'; unscheduled = $false },
+                [ordered]@{ id = 'S0004'; token = 'S0004'; tail = '2026-10-30T09:05  Approved [idle 2, ok]'; unscheduled = $false })
+        }
+        $r = Sync-PqQueueFile -Path $file -Sources $src
+        Assert-That ($r.ok -and $r.changed -and $r.added -eq 1 -and $r.updated -eq 3) "ok $($r.ok) added $($r.added) updated $($r.updated)"
+        $l = @(Get-FileLines $file)
+        $expect = @('1', ('a:S0001_x'.PadRight(74) + "26-10-29 17:57  BlockByOtherTask  $note"),
+            ('a:S0002'.PadRight(74) + '26-10-29 17:57  Draft  # keep this  # keep that'), ('a:S0003'.PadRight(74) + '26-10-29 17:57  Draft  # same  # same'),
+            ('a:S0004'.PadRight(74) + '26-10-30 09:05  Approved [idle 2, ok]'))
+        Assert-That (($l -join '|') -ceq ($expect -join '|')) "file after sync: $($l -join '|')"
+        $again = Sync-PqQueueFile -Path $file -Sources $src
+        Assert-That ($again.ok -and -not $again.changed) 'a second sync changed the file'
+    }
+
     Test-Case 'queue-sync: a project with no active row gets its new tickets as a group of its own at the bottom of the active part' {
         . (Get-LibPath 'queue-file.ps1')
         $file = New-QueueFile @('1', 'a:S0001', '', 'hold', 'b:S0007')

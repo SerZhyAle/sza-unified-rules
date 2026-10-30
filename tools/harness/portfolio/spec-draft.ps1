@@ -50,7 +50,9 @@
 
 .PARAMETER Slug
     Kebab-case ticket name, [a-z0-9][a-z0-9_-]*, not starting with `spec_`, not ending in `-` or `_` (a bare
-    `hotfix-` names nothing). A bug takes `bugfix-`, an urgent one `hotfix-`.
+    `foo-` names nothing). A bug takes `bugfix-`, an urgent one `hotfix-`. Left out, or just `bugfix-` / `hotfix-`
+    (what the New Specification dialog pre-fills), the name is made from the first words of the text, Cyrillic
+    transliterated, and printed; a caller that can write a better name passes it.
 
 .PARAMETER TextFile
     UTF-8 file holding the owner's text, written exactly as the owner gave it. The only way in: a command line
@@ -141,7 +143,49 @@ function Invoke-Pq([string[]] $PqArgs) {
     return [pscustomobject]@{ code = $LASTEXITCODE; text = (($out | ForEach-Object { "$_" }) -join "`n") }
 }
 
+# The name a ticket gets when the owner gave none: the first words of the owner's text, Cyrillic transliterated.
+# ASCII-only source on purpose - the letters are code points, so the file reads the same under any encoding.
+function ConvertTo-SlugFromText([string] $Text) {
+    # U+0430..U+044F in order (a b v g d e zh z i y k l m n o p r s t u f kh ts ch sh shch hard-sign y soft-sign e yu ya)
+    $ru = @('a', 'b', 'v', 'g', 'd', 'e', 'zh', 'z', 'i', 'y', 'k', 'l', 'm', 'n', 'o', 'p', 'r', 's', 't', 'u', 'f', 'kh', 'ts', 'ch', 'sh', 'shch', '', 'y', '', 'e', 'yu', 'ya')
+    $extra = @{ 0x0451 = 'yo'; 0x0456 = 'i'; 0x0457 = 'yi'; 0x0454 = 'ye'; 0x0491 = 'g' }
+    $sb = [Text.StringBuilder]::new()
+    foreach ($ch in $Text.ToLowerInvariant().ToCharArray()) {
+        $cp = [int]$ch
+        if ($cp -ge 0x0430 -and $cp -le 0x044F) { [void]$sb.Append($ru[$cp - 0x0430]) }
+        elseif ($extra.ContainsKey($cp)) { [void]$sb.Append($extra[$cp]) }
+        elseif (($cp -ge 0x61 -and $cp -le 0x7A) -or ($cp -ge 0x30 -and $cp -le 0x39)) { [void]$sb.Append($ch) }
+        else { [void]$sb.Append(' ') }
+    }
+    # Up to 5 words of 3+ letters (the one- and two-letter ones are prepositions), 50 characters at most.
+    $kept = [Collections.Generic.List[string]]::new()
+    $len = 0
+    foreach ($w in ($sb.ToString() -split ' ' | Where-Object { $_.Length -ge 3 })) {
+        if ($kept.Count -ge 5 -or $len + $w.Length + $(if ($kept.Count) { 1 } else { 0 }) -gt 50) { break }
+        $kept.Add($w)
+        $len += $w.Length + $(if ($kept.Count -gt 1) { 1 } else { 0 })
+    }
+    if ($kept.Count -eq 0) { return '' }
+    return ($kept -join '-')
+}
+
 # ---- 1. the invocation, checked before anything is created ----
+if (-not $TextFile -or -not (Test-Path -LiteralPath $TextFile -PathType Leaf)) {
+    Stop-Draft 2 "-TextFile '$TextFile' does not exist - write the owner's words to a UTF-8 file and pass it"
+}
+$textFull = (Resolve-Path -LiteralPath $TextFile).Path
+$ownerText = [IO.File]::ReadAllText($textFull, [Text.Encoding]::UTF8)
+if ([string]::IsNullOrWhiteSpace($ownerText)) {
+    Stop-Draft 2 'the text is empty - a ticket with no words has nothing to be worked from'
+}
+# The New Specification dialog pre-fills the slug box with the type prefix and the owner types only the description, so
+# no slug at all and a bare bugfix-/hotfix- are both "name it from the text". Any other bare prefix is still refused.
+if ($Slug -cmatch '^(?<prefix>(bugfix-|hotfix-)?)$') {
+    $named = ConvertTo-SlugFromText $ownerText
+    if (-not $named) { $named = 'captured-' + (Get-Date -Format 'yyyyMMdd-HHmmss') }
+    $Slug = $Matches['prefix'] + $named
+    Write-Host "spec-draft: no ticket name given - named it '$Slug' from the text"
+}
 if ($Slug -cnotmatch '^[a-z0-9][a-z0-9_-]*$' -or $Slug -match '^spec_') {
     Stop-Draft 2 "invalid -Slug '$Slug' - lowercase [a-z0-9_-], starting alphanumeric, not starting with 'spec_'"
 }
@@ -154,13 +198,6 @@ if ($Slug -like 'hotfix-*' -and -not $NoPin) { $Pin = $true }
 # A bare level is what the New Specification dialog sends; the capture scripts want '<level> - <reason>'.
 if ($Complexity -cmatch '^(light|medium|hard)$') {
     $Complexity = "$Complexity - " + $(if ($Complexity -ceq 'medium') { 'not assessed at capture' } else { 'level picked by the owner at capture' })
-}
-if (-not $TextFile -or -not (Test-Path -LiteralPath $TextFile -PathType Leaf)) {
-    Stop-Draft 2 "-TextFile '$TextFile' does not exist - write the owner's words to a UTF-8 file and pass it"
-}
-$textFull = (Resolve-Path -LiteralPath $TextFile).Path
-if ([string]::IsNullOrWhiteSpace([IO.File]::ReadAllText($textFull, [Text.Encoding]::UTF8))) {
-    Stop-Draft 2 'the text is empty - a ticket with no words has nothing to be worked from'
 }
 
 # ---- 2. the project ----
