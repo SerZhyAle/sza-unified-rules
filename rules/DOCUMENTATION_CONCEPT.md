@@ -106,8 +106,14 @@ For any product with a public site. The minimum set for a credible, store-linked
 > local-but-sensitive tool (keyboard hook, clipboard, capture) still hosts it. Rule and boundary in one
 > home: [SECURITY_AND_PRIVACY.md](SECURITY_AND_PRIVACY.md) §5.
 
-Buttons point at durable URLs (`/releases/latest`, the package id, the store product page), never a
-hard-coded version, so the site never goes stale between releases.
+**Release facts on a page are build-time facts.** The version, the asset link with its size and checksum, and the
+release date a page shows are rendered from the release manifest by the release flow - the manifest the JSON-LD
+`softwareVersion` comes from ([PROMOTION.md](PROMOTION.md) §3) - and re-rendered by every release, so they never
+go stale between releases. They are never typed by hand, and never fetched by the visitor's browser from
+`api.github.com` as their only source: unauthenticated calls are capped at 60 an hour per IP, shared by everyone
+behind the same NAT, and a crawler makes none, so the indexed page would carry no version at all. A runtime call
+may refine a rendered fact; it is never the fact. Beside the versioned link, a button keeps its durable fallback
+(`/releases/latest`, the package id, the store product page).
 
 For a product with optional components, installation documentation distinguishes the job a visitor came for,
 the components selected by that installer profile, and the capabilities permitted by that distribution channel.

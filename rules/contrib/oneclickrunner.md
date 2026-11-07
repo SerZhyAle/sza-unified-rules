@@ -292,6 +292,7 @@ together with the re-sync so the record exists. Per the canon, committing is on 
 ## Promotion campaign (2026-10-09)
 
 - Ticket `PLAN/T0028_free-promotion-campaign.md` (new), positioning through T0026; [PROMOTION](../PROMOTION.md).
+- 2026-11-07, site audit: 3 HIGH, 23 MED (of 77 findings) recorded in ticket T0028 (Draft); the 2026-11-03 baseline re-measured: 9 open, 1 partial, 0 fixed, the console half of row 1 not re-measured; criterion 14 added.
 
 ## In-app help (2026-10-16)
 

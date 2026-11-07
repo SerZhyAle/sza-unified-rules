@@ -174,6 +174,13 @@ added):
 
 - `agent-cost` - introduced with the 2026-08-02 spread-back; a fifth measurement defect added 2026-08-05.
 - `caveman` - FMS's `/caveman`, `/caveman-commit` and `/caveman-review` merged into one skill, 2026-08-08.
+- `site-audit` - the seven prompts and two tools distilled from the 2026-11-03 audit of the hub and nine product
+  sites, reconciled with the canon and run as one workflow, 2026-11-07. The audit itself added three canon rules:
+  release facts are build-time facts, every tracked file under a served root is public, and a campaign closes only
+  on an audit without a HIGH finding. Its first run (10 hosts, 91 agents) met a harness rule no doc had named: a
+  subagent's write of a file whose name says "report" is refused ("Subagents should return findings as text"), so
+  all ten site reports came back only inside the refused calls. The report stages now return their text and the main
+  session saves it (`tools/site-audit/save-reports.ps1`).
 
 ### Measured lessons - and whether the kit has them
 

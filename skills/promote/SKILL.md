@@ -54,6 +54,9 @@ is withdrawn through the store's own rule.
 A number that cannot be read is written "unknown". Never a range, never an estimate, never a competitor's star
 count from memory.
 
+The page-head, sitemap, `robots.txt` and mandatory-page items are the [site-audit](../site-audit/SKILL.md) skill's
+measurement: cite its latest `temp/site-audit/<date>/report.md`, or run it, instead of measuring them a second way.
+
 ## Step 3 - Positioning worksheet
 
 Find the existing positioning source (a `POSITIONING.md`, a positioning JSON bound by `SITE-REPRESENTATION`, a

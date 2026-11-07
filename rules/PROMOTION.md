@@ -320,7 +320,9 @@ Required sections:
    10. every text names the author, answers the AI rule, and carries no forbidden term;
    11. the mandatory pages of DOCUMENTATION_CONCEPT §4 exist and are in the sitemap;
    12. discoverability fields agree across channels;
-   13. every outward act has a go-ledger row; every A→O and O act was the owner's.
+   13. every outward act has a go-ledger row; every A→O and O act was the owner's;
+   14. the latest `site-audit` run of the site reports no HIGH finding, and every MED finding is fixed or refused
+       in the ticket with its reason.
    Criteria that the product's shape makes void are listed as void with the reason, not deleted.
 7. **Channel outcomes**, **Metrics**, **Risks**, **Open questions** - the record.
 8. A **tactical folder** once the ticket is approved: phases in dependency order (baseline, owned surfaces,
@@ -333,7 +335,9 @@ Portfolio-level work - the host-root `robots.txt` and console property, the hub'
 ## 9. Applying to a project
 
 1. Run the `promote` skill in a session started in the product repo; it measures the baseline, writes or
-   corrects the ticket in the repo's own store, and records the result in the repo's contrib record.
+   corrects the ticket in the repo's own store, and records the result in the repo's contrib record. The
+   [site-audit](../skills/site-audit/SKILL.md) skill's latest report is that baseline for the page heads, the
+   sitemap and the mandatory pages; the ticket cites it rather than measuring them again.
 2. Write the positioning worksheet before any field is filled.
 3. Execute phase A (§4) and the indexing work (§3) before any directory or community step.
 4. Fire the one-shot moments only behind the gate of §6.

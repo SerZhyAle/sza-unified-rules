@@ -751,6 +751,7 @@ product asks.
 
 - Ticket `DEV/plan/111_2026-10-09_free-promotion-campaign.md` (new; 110 was taken the same day by a parallel session), positioning from `docs/POSITIONING.md`; [PROMOTION](../PROMOTION.md).
 - 2026-10-09, state: ticket 111 In Progress. Phases 01-07 done as far as tag A allows (metrics script and baseline checkpoint, worksheet and research note, `docs/discoverability.json`, social card, page heads with sitemap `lastmod`, 13-locale winget, Store and extension fields, demo, AlternativeTo draft). Every outward step waits for a go in the ticket's go ledger; Q1, Q2 part 1 and Q4-Q6 are open.
+- 2026-11-07, site audit: 72 findings (3 HIGH, 28 MED, 31 LOW, 10 INFO; 0 refuted) recorded in ticket `DEV/plan/E0111_free-promotion-campaign.md` (BlockQuestions), section 15; the 7 rows of the 2026-11-03 baseline re-measured: #1 fixed in its repository part only (its search part still open, its console steps not re-measured), the other 6 still open (#38 re-graded INFO and the help row not carried as a defect, no fix owed for either); criterion 14 added to section 6, open.
 
 ## In-app help (2026-10-16)
 

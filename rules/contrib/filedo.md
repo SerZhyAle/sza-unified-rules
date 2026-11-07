@@ -746,6 +746,7 @@ The decision is the owner's: split now, or accept `SZA-RULES05` as a standing no
 ## Promotion campaign (2026-10-09)
 
 - Ticket `PLAN/SP-0166 free-promotion-campaign.md` (Draft), aligned to canon [PROMOTION](../PROMOTION.md). It replaces the open draft that wrongly carried `SP-0149`, an id owned by the closed `done/SP-0149` disk-sharing spec; invented traffic, install and star figures were replaced by a measured baseline. Depends on the hub ticket for the host-root `robots.txt` and console property.
+- 2026-11-07, site audit: 0 HIGH, 27 MED (of 75 findings) recorded in ticket SP-0166, section 12; the ticket, closed before 2026-10-29 (Status "Implemented in the tree 2026-10-09", file in `PLAN/done/`, id on the ledger's burned list), was reopened the same day on the owner's word, status Partial, file `PLAN/SP-0166_free-promotion-campaign.md`; the 2026-11-03 baseline re-measured: 6 open, 0 partial, 0 fixed; criterion 14 added, failing until every MED is fixed or refused in the ticket.
 
 ## In-app help (2026-10-16)
 

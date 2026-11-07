@@ -650,6 +650,7 @@ the lines that still address a programmer; the owner's model is that the kit als
 ## Promotion campaign (2026-10-09)
 
 - Spec `docs/specifications/SPECIFICATION_FREE_PROMOTION_CAMPAIGN.md` (new, shape K - package channels void); writing the positioning source is its first step; [PROMOTION](../PROMOTION.md).
+- 2026-11-07, site audit: 0 HIGH, 22 MED (of 59 findings) recorded in ticket S0006 `docs/specifications/S0006_free-promotion-campaign.md` (Draft); the 2026-11-03 baseline re-measured: 8 open, 0 partial, 0 fixed (parts of 5 rows did not reproduce); criterion 14 added (numbered 15 in the ticket).
 
 ## Canon re-sync 2026-10-09 - canon `2026.10.02.3`
 

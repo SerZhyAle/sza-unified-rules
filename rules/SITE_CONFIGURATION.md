@@ -20,13 +20,21 @@ This file is only: where a site lives, how its domain resolves, and how a change
   given property plays) is in the web style guide.
 - **`.nojekyll`** at the served root (repo root, or `docs/.nojekyll` when serving from `/docs`) when the
   site is hand-authored HTML, so Pages serves files verbatim without Jekyll processing.
+- **Every tracked file under the served root is public.** For a site served from the repository root that is
+  the whole repository: a prompt, a spec, an audit report or a ticket workspace committed there is published
+  and indexed - on 2026-11-03 the hub repository's `kit/prompts/*.md` outranked the hub itself for a product
+  query. Internal material stays in a git-ignored folder ([REPOSITORY_LAYOUT.md](REPOSITORY_LAYOUT.md), the
+  role map's rows marked **no**) or outside the served root, and a deploy that stages everything is only as
+  safe as the `.gitignore` under it.
 
 ## 2. Custom domain
 
 - A `CNAME` file at repo root holds the custom domain (hub example: `sza.od.ua`). One domain per Pages
   site.
-- **Durable URLs only** in buttons and cross-links: `/releases/latest`, the package id, the store
-  product page - never a hard-coded version, so a page never goes stale between releases.
+- **Durable URLs** in cross-links, and as the fallback of every download button: `/releases/latest`, the
+  package id, the store product page. A versioned link and the version beside it are rendered from the release
+  manifest by the release flow, never hand-typed and never left to a browser-side API call
+  ([DOCUMENTATION_CONCEPT.md](DOCUMENTATION_CONCEPT.md) §4).
 - Cross-property links use the public domain, not a relative path into a sibling repo.
 
 ## 3. Redirects & bridges
@@ -76,3 +84,13 @@ release flow instead - see [GITHUB_INTERACTION.md](GITHUB_INTERACTION.md) §4.
 3. Copy the `deploy.bat` shape; point `origin` at the new repo.
 4. Add the SEO block + mandatory pages (DOCUMENTATION_CONCEPT §3-4) and build from the style-guide
    components.
+5. Run the [site-audit](../skills/site-audit/SKILL.md) skill against the live URL after the first publish (§7).
+
+## 7. Auditing a live site
+
+The [site-audit](../skills/site-audit/SKILL.md) skill measures a published site as a crawler without
+JavaScript and a first-time visitor meet it, through read-only lenses - robot, UX, release facts, structured
+data, languages, docs - re-measures every serious finding before it reports it, and compares the run with the
+previous one. Its `prepublish` lens is the gate before a push to the branch Pages builds from. A run writes only
+to the git-ignored `temp/site-audit/` (§1); the findings that matter go into the product's promotion ticket
+([PROMOTION.md](PROMOTION.md) §8).

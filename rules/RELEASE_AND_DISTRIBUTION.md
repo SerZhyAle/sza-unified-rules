@@ -244,7 +244,9 @@ A release is not "done" until proven live:
 - The listing / store page renders the new version and notes - **checked at the public address**, not
   through the publishing API: an API readback proves the submission, not what a visitor sees. Fetch the
   public page and compare the version, the first lines of the text and the image bytes.
-- Durable-URL CTAs on the site resolve (`/releases/latest`, package id, store page).
+- Durable-URL CTAs on the site resolve (`/releases/latest`, package id, store page), and the version, asset
+  link and checksum the site renders are this release's - read from the public page, not from the repository
+  ([DOCUMENTATION_CONCEPT.md](DOCUMENTATION_CONCEPT.md) §4).
 - **The update path works from a real prior install** - a frozen-anchor mistake (changed package id /
   identity / signing key) orphans existing users and only shows up here. Verify an update, not just a
   fresh install.

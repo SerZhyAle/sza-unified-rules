@@ -686,6 +686,7 @@ account-name redaction (catalog `CAPTURE-OUTPUT` proposal of 2026-10-01 and `DIA
 ## Promotion campaign (2026-10-09)
 
 - Ticket `PLAN/S0024_free-promotion-campaign.md` (Partial) rewritten in English to the [PROMOTION](../PROMOTION.md) shape, stage-0 progress kept. Found: `punto-switcher-alternative` is a live GitHub topic and winget tag - a competitor name as a keyword, open question Q10. `RELEASE_QUEUE.md` still lists S0017 as Partial though it is Implemented.
+- 2026-11-07, site audit: 3 HIGH, 31 MED (of 80 findings) recorded in ticket `PLAN/S0024_free-promotion-campaign.md` (In Progress), section "Site audit 2026-11-07"; the 2026-11-03 baseline re-measured: 9 open, 1 partial (#1), 0 fixed, the console clause of #1 and the product row's 71 KB not re-measured; criterion 14 added.
 
 ## In-app help (2026-10-16)
 

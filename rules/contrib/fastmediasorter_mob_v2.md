@@ -1969,6 +1969,7 @@ dialog's default focus is the safe answer (desktop) or the confirm (FMS: Enter c
 ## Promotion campaign (2026-10-09)
 
 - Ticket `PLAN/S1268_search-engine-registration-and-free-promotion.md` (BlockExternal) corrected and extended to the [PROMOTION](../PROMOTION.md) shape; its done-claims were re-verified (the IndexNow key file it claimed is not served). The site pages carry `meta keywords`, which `check-compliance` now reports as `SZA-SURF04`. Applies to the `FastMediaSorter_release` worktree too.
+- 2026-11-07, site audit: 3 HIGH, 44 MED (of 106 findings) recorded in ticket S1268 (BlockExternal), section 14; the 2026-11-03 baseline re-measured: of its 9 rows 7 open, 2 partial (one part of each fixed), 0 fixed, the console half of row 1 not re-measured; canon criterion 14 added as the ticket's criterion 15, failing until no HIGH is left and every MED is fixed or refused.
 
 ## Efficiency audit 2026-10-13 - seven candidates raised (source ticket S4190)
 

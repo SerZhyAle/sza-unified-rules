@@ -237,6 +237,7 @@ on the intent to monetise: a network-surface row for third-party scripts in SECU
 ## Promotion campaign (2026-10-09)
 
 - Plan `docs/PLAN-2026-10-09-free-promotion-campaign.md` (new) - the **portfolio** ticket every product ticket depends on: host-root `robots.txt` and Search Console property through `SerZhyAle/SerZhyAle.github.io` (sourced from `github-root-redirect/`), the redirect http to https, the hub's own indexing, and the AdSense decision before any outreach - keep it as a declared non-intrusive slot or remove it (rule clarified 2026-10-09: no intrusive advertising and none dedicated to others' products); [PROMOTION](../PROMOTION.md).
+- 2026-11-07, site audit: 2 HIGH, 17 MED (of 57 findings) recorded in the hub's campaign ticket, section "Site audit 2026-11-07"; the ticket (Status OPEN, filed under `docs/DONE/`, no ledger row) was registered the same day on the owner's word as S0007, status Partial, file `PLAN/S0007_free-promotion-campaign.md`, and the hub's pq hold ("no ticket queue", stale since the hub got its ledger) was released; the 2026-11-03 baseline, 29 rows of this site: 23 open, 2 partial (one part fixed, the profile's website field), 0 fixed, 3 not re-measured, 1 obsolete; criterion 14 added, failing. The same section carries the portfolio summary (777 findings on 10 sites, HIGH 20) and eltr.od.ua (5 HIGH, 45 MED of 94; no repository).
 
 ## In-app help (2026-10-16)
 

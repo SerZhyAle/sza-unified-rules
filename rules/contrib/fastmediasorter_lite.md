@@ -805,6 +805,7 @@ repo's specification 109, whose section 3 checklist carried this re-sync plus si
 ## Promotion campaign (2026-10-09)
 
 - Ticket `docs/specifications/186_SPECIFICATION_FREE_PROMOTION_CAMPAIGN.md` (new), positioning from `done/132`; [PROMOTION](../PROMOTION.md).
+- 2026-11-07, site audit: 1 HIGH, 33 MED (of 81 findings) recorded in ticket 207 (renumbered from 186 on 2026-10-12), section 12; the ticket, closed in `done/` since 2026-10-14, was reopened the same day on the owner's word as L0207, status Partial, file `docs/specifications/L0207_free-promotion-campaign.md`; the 2026-11-03 baseline re-measured: 7 open, 1 partial, 0 fixed; criterion 14 added (the ticket's criterion 15).
 
 ## In-app help (2026-10-16)
 
