@@ -778,3 +778,7 @@ product asks.
 ## Fast checks between releases (2026-10-29)
 
 - Ticket `DEV/plan/124_2026-10-29_fast-checks-between-releases.md` (Approved, first in release 1 of `DEV/plan/RELEASE_QUEUE.md`; `next-ticket-number` moved to 125), created by the canon session from the owner's order of 2026-10-29 to switch off full builds and tests longer than 5 s between releases (canon TESTING_AND_QA section 2, highest priority). The product has to make `scripts/build-local.ps1` and the full `scripts/check.ps1` gate a release action, give `AGENTS.md`, `.claude/commands/` and `/build` a fast tier instead, and have `scripts/release.ps1` and `DEV/RELEASE.md` run the full gate themselves, so the tag still takes the full-plan evidence.
+
+## Free promotion campaign, site audit findings (2026-11-08)
+
+- Ticket E0111, phase 10: the extension's `ext-cws-v` / `ext-edge-v` tags now name the version recorded in `docs/release-notes.json` by `node extension/build.mjs record-version`, and the store build stamps it and stops on any other (RELEASE_AND_DISTRIBUTION section 4; the tag suffix was a free label before). Open for the owner: whether the tracked `DEV/` umbrella stays public now that SITE_CONFIGURATION section 1 says every tracked file under the served root is public (this record's `DEV/` DIVERGE lines predate that sentence).
