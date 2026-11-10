@@ -178,13 +178,15 @@ function Get-PqAgentLiveCount([Parameter(Mandatory)][string]$Name) {
 }
 
 function Select-PqAgent {
-    param([Parameter(Mandatory)]$Registry, [Parameter(Mandatory)][string]$RepoPath, [Parameter(Mandatory)][string]$Level)
+    # -Skip names agents the owner's `STOP-agent__<name>` keeps out of new work while a pass of it is still running (rule 47).
+    param([Parameter(Mandatory)]$Registry, [Parameter(Mandatory)][string]$RepoPath, [Parameter(Mandatory)][string]$Level, [string[]]$Skip = @())
     $byName = @{}
     foreach ($a in @($Registry.agents)) { $byName[[string]$a.name] = $a }
     $fallbacks = [Collections.Generic.List[object]]::new()
     foreach ($name in @($Registry.agentOrder)) {
         $a = $byName[[string]$name]
         if ($null -eq $a) { continue }
+        if (@($Skip) -ccontains [string]$name) { $fallbacks.Add(@{ from = $name; why = 'stopped' }); continue }
         if (Test-PqAgentHeld (Get-PqAgentHold $name) $a) { $fallbacks.Add(@{ from = $name; why = 'limit' }); continue }
         $levels = @(Get-PqValue $a 'levels' @('light', 'medium', 'hard'))
         if ($levels -cnotcontains $Level) { $fallbacks.Add(@{ from = $name; why = 'levelNotAllowed' }); continue }
@@ -259,6 +261,57 @@ function Get-PqRunnerLimitUntil {
         $at = [DateTimeOffset]::FromUnixTimeSeconds($n).AddSeconds(60)
         if ($at -le [DateTimeOffset]::UtcNow) { return $null }
         return $at.UtcDateTime.ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
+    }
+    catch { return $null }
+}
+
+# When the limit lifts, read from the text of a limit message (S0016, the real z.ai message of 2026-11-10):
+#   `Usage limit reached for 5 hour. Your limit will reset at 2026-11-11 00:34:51`   a clock time, in the provider's zone
+#   `Individual quota reached. .. Resets in 57h10m24s.`                              a span from now
+# -Offset is the provider's UTC offset for the clock form (`+08:00` for z.ai: its reset time reads 1 h 20 min after the
+# call, against 7 h 20 min if it were Kyiv time and 9 h 20 min if UTC, for a five hour window); empty reads it as this
+# machine's local time. The result is the ISO UTC time the machine-wide hold takes (a minute's margin past it), or $null
+# when the text names no time or names one already past.
+function ConvertFrom-PqLimitText {
+    param([string]$Text, [string]$Offset = '', [DateTimeOffset]$Now = [DateTimeOffset]::UtcNow)
+    if ([string]::IsNullOrWhiteSpace($Text)) { return $null }
+    $at = $null
+    $m = [regex]::Match($Text, '(?i)reset(?:s)?\s+(?:at|on)\s+(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}(?::\d{2})?)')
+    if ($m.Success) {
+        $stamp = "$($m.Groups[1].Value)T$($m.Groups[2].Value)"
+        $parsed = [datetime]::MinValue
+        if ([datetime]::TryParse($stamp, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref]$parsed)) {
+            $zone = $null
+            if ($Offset -match '^\s*([+-]?)(\d{1,2}):(\d{2})\s*$') {
+                $zone = [timespan]::new([int]$Matches[2], [int]$Matches[3], 0)
+                if ($Matches[1] -ceq '-') { $zone = $zone.Negate() }
+            }
+            $at = if ($null -ne $zone) { [DateTimeOffset]::new($parsed, $zone) } else { [DateTimeOffset]::new($parsed) }
+        }
+    }
+    else {
+        $m = [regex]::Match($Text, '(?i)resets?\s+in\s+(?:(\d+)\s*d[a-z]*\s*)?(?:(\d+)\s*h[a-z]*\s*)?(?:(\d+)\s*m[a-z]*\s*)?(?:(\d+)\s*s[a-z]*)?')
+        if ($m.Success -and ($m.Groups[1].Success -or $m.Groups[2].Success -or $m.Groups[3].Success -or $m.Groups[4].Success)) {
+            $g = { param($i) if ($m.Groups[$i].Success) { [int]$m.Groups[$i].Value } else { 0 } }
+            $at = $Now.Add([timespan]::new((& $g 1), (& $g 2), (& $g 3), (& $g 4)))
+        }
+    }
+    if ($null -eq $at) { return $null }
+    $at = $at.AddSeconds(60)
+    if ($at -le $Now) { return $null }
+    return $at.UtcDateTime.ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
+}
+
+# The reset time in the pass's own log (<runs folder>\<ticket>.log, written because a record with a limit pattern runs the
+# runner -Quiet): for the providers whose limit the runner could not time (resetsAt null). $null when there is none.
+function Get-PqLogLimitUntil {
+    param([Parameter(Mandatory)][string]$RepoPath, [Parameter(Mandatory)][string]$TicketId, $Record)
+    try {
+        $paths = Get-PqRepoPaths -RepoPath $RepoPath
+        $file = Join-Path $paths.RunsDir "$TicketId.log"
+        if (-not [IO.File]::Exists($file)) { return $null }
+        $offset = [string](Get-PqValue (Get-PqValue $Record 'limitDetector') 'resetOffset' '')
+        return (ConvertFrom-PqLimitText -Text ([IO.File]::ReadAllText($file)) -Offset $offset)
     }
     catch { return $null }
 }
@@ -390,7 +443,9 @@ function New-PqProviderRecord([string]$Id) {
                 headlessMatch = '(?i)\bclaude(\.exe)?\s.*(-p|--print)\b'; promptForm = 'slash'
                 env = [ordered]@{ ANTHROPIC_BASE_URL = 'https://api.z.ai/api/anthropic'; ANTHROPIC_AUTH_TOKEN = '%ZAI_API_KEY%'; API_TIMEOUT_MS = '3000000' }
                 model = 'opus'; effort = 'default'; maxParallel = 2; contractFile = 'CLAUDE.md'
-                limitDetector = [ordered]@{ kind = 'transcript'; pattern = '(?i)usage limit reached|limit (will )?reset|limit exhausted|rate limit reached|insufficient balance|no resource package|package has expired'; status = 'unproven' }
+                # Seen on 2026-11-10 (a real pass, exit 0, 197 s): "API Error: Request rejected (429) · [1308][Usage limit reached
+                # for 5 hour. Your limit will reset at 2026-11-11 00:34:51]". The clock is China time, UTC+8.
+                limitDetector = [ordered]@{ kind = 'transcript'; pattern = '(?i)usage limit reached|limit (will )?reset|limit exhausted|rate limit reached|insufficient balance|no resource package|package has expired'; status = 'proven'; resetOffset = '+08:00' }
             }
         }
     }

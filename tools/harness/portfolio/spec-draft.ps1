@@ -81,6 +81,10 @@
 .PARAMETER NoPin
     Do not pin a hotfix- ticket; it stays at the end of its package.
 
+.PARAMETER QueueTimeoutSeconds
+    Overall deadline in seconds for post-capture portfolio preview (default 10). If the check
+    times out or fails, reports pq=unknown and refuses pinning.
+
 .PARAMETER Help
     Print this help.
 
@@ -106,6 +110,8 @@ param(
     [string] $Attach = '',
     [switch] $Pin,
     [switch] $NoPin,
+    [ValidateRange(1, 300)]
+    [int]    $QueueTimeoutSeconds = 10,
     [switch] $Help
 )
 
@@ -117,7 +123,7 @@ if ($Help) {
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$pq = Join-Path $PSScriptRoot 'pq.ps1'
+$pq = if ($env:SZA_PQ_SCRIPT) { $env:SZA_PQ_SCRIPT } else { Join-Path $PSScriptRoot 'pq.ps1' }
 $harness = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $pwshExe = (Get-Process -Id $PID).Path
 . (Join-Path $PSScriptRoot 'lib/picker.ps1')
@@ -138,9 +144,39 @@ function Get-Prop($Object, [string] $Name, $Default = $null) {
 
 function ConvertTo-PathKey([string] $Path) { return [IO.Path]::GetFullPath($Path).TrimEnd('\', '/').ToLowerInvariant() }
 
-function Invoke-Pq([string[]] $PqArgs) {
-    $out = & $pwshExe -NoProfile -File $pq @PqArgs 2>&1
-    return [pscustomobject]@{ code = $LASTEXITCODE; text = (($out | ForEach-Object { "$_" }) -join "`n") }
+function Invoke-Pq([string[]] $PqArgs, [int] $TimeoutSeconds = 0) {
+    $psi = [Diagnostics.ProcessStartInfo]::new($pwshExe)
+    $psi.ArgumentList.Add('-NoProfile')
+    $psi.ArgumentList.Add('-File')
+    $psi.ArgumentList.Add($pq)
+    foreach ($a in $PqArgs) { $psi.ArgumentList.Add([string]$a) }
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.WorkingDirectory = $PSScriptRoot
+    $proc = [Diagnostics.Process]::Start($psi)
+    $out = $proc.StandardOutput.ReadToEndAsync()
+    $err = $proc.StandardError.ReadToEndAsync()
+    $timedOut = $false
+    if ($TimeoutSeconds -gt 0) {
+        if (-not $proc.WaitForExit($TimeoutSeconds * 1000)) {
+            $timedOut = $true
+            try { $proc.Kill($true) } catch { }
+            if ($IsWindows) {
+                try { & taskkill.exe /PID $proc.Id /T /F 2>&1 | Out-Null } catch { }
+            }
+            [void]$proc.WaitForExit(5000)
+        }
+    }
+    else {
+        $proc.WaitForExit()
+    }
+    if ($timedOut) {
+        return [pscustomobject]@{ code = 124; text = 'timed out'; timedOut = $true }
+    }
+    $proc.WaitForExit()
+    $all = @($out.Result, $err.Result) | Where-Object { $_ }
+    return [pscustomobject]@{ code = $proc.ExitCode; text = ($all -join "`n"); timedOut = $false }
 }
 
 # The name a ticket gets when the owner gave none: the first words of the owner's text, Cyrillic transliterated.
@@ -409,8 +445,13 @@ $fileShown = if (Test-Path -LiteralPath (Join-Path $root $fileRel) -PathType Lea
 
 # Project-owned capture tools may not use the shared catalog writer. Reconcile their result too.
 if ($rec) {
-    $sync = Invoke-Pq @('sync', '-Path', $root)
-    if ($sync.code -ne 0) { Write-Host "pq: sync failed after capture: $($sync.text.Trim()); repair with pq sync -Path `"$root`"" }
+    $sync = Invoke-Pq @('sync', '-Path', $root) -TimeoutSeconds $QueueTimeoutSeconds
+    if ($sync.timedOut) {
+        Write-Host "pq: sync timed out after capture; repair with pq sync -Path `"$root`""
+    }
+    elseif ($sync.code -ne 0) {
+        Write-Host "pq: sync failed after capture: $($sync.text.Trim()); repair with pq sync -Path `"$root`""
+    }
 }
 
 # ---- 4. what pq will do with it (read only) ----
@@ -425,73 +466,128 @@ if (-not $rec) {
     $notes.Add("pq: NOT registered - $root is not in the portfolio registry, so pq never looks at it. Registering is the owner's call (it picks the permission mode): pwsh -NoProfile -File `"$pq`" register -Path `"$root`" -Enable -PermissionMode <mode>")
 }
 else {
-    $skip = $null
-    $dry = Invoke-Pq @('dry-run', '-Json')
-    if ($dry.code -eq 0) {
+    $deadlineSw = [Diagnostics.Stopwatch]::StartNew()
+    function Get-PqRemainingSeconds([int]$LimitSec) {
+        $rem = ($LimitSec * 1000) - $deadlineSw.ElapsedMilliseconds
+        if ($rem -le 0) { return 0 }
+        return [Math]::Max(1, [int][Math]::Ceiling($rem / 1000.0))
+    }
+
+    $dryRem = Get-PqRemainingSeconds $QueueTimeoutSeconds
+    $dry = if ($dryRem -gt 0) {
+        Invoke-Pq @('dry-run', '-Json') -TimeoutSeconds $dryRem
+    } else {
+        [pscustomobject]@{ code = 124; text = 'timed out'; timedOut = $true }
+    }
+
+    if ($dry.timedOut) {
+        $verdict = 'unknown'
+        $notes.Add("pq: queue check timed out after ${QueueTimeoutSeconds}s; eligibility of $label could not be established - run pq dry-run or pq pin manually")
+    }
+    elseif ($dry.code -ne 0) {
+        $verdict = 'unknown'
+        $notes.Add("pq: dry-run failed (exit $($dry.code)); eligibility of $label could not be read: $($dry.text.Trim()) - run pq dry-run or pq pin manually")
+    }
+    else {
+        $skip = $null
         try {
             $dryDoc = ConvertFrom-Json -InputObject $dry.text -DateKind String
             $skip = @(Get-Prop $dryDoc 'skipped' @()) | Where-Object { [string]$_.repo -ceq $label } | Select-Object -First 1
         }
-        catch { $skip = $null }
-    }
-    else { $notes.Add("pq: dry-run failed (exit $($dry.code)); eligibility of $label could not be read: $($dry.text.Trim())") }
+        catch { $skip = $null; $dryDoc = $null }
 
-    $reason = if ($skip) { [string]$skip.why } else { '' }
-    $verdict = switch ($reason) {
-        ''            { 'dispatchable' }
-        'occupied'    { 'dispatchable' }
-        'heldByQueue' { 'held-by-queue' }
-        'hold'        { 'held' }
-        'disabled'    { 'disabled' }
-        default       { $reason }
-    }
-    switch ($verdict) {
-        'held-by-queue' { $notes.Add("pq: NOT dispatched - $label sits under 'hold' in PORTFOLIO_QUEUE.md. The ticket waits; lifting the hold is the owner's call (pq release $label)") }
-        'held'          { $notes.Add("pq: NOT dispatched - $label is on hold in the registry (pq release $label clears it). The ticket waits; that is the owner's call") }
-        'disabled'      { $notes.Add("pq: NOT dispatched - $label is registered but not enabled (enabled=false in repos.json). Enabling is the owner's call") }
-        'dispatchable'  { if ($reason -ceq 'occupied') { $notes.Add("pq: a worker is in $label right now; the ticket is taken in a later pass") } }
-        default         { $notes.Add("pq: NOT dispatched - the rank skips $label ($reason)") }
+        if ($null -eq $dryDoc) {
+            $verdict = 'unknown'
+            $notes.Add("pq: dry-run returned invalid JSON; eligibility of $label could not be parsed - run pq dry-run or pq pin manually")
+        }
+        else {
+            $reason = if ($skip) { [string]$skip.why } else { '' }
+            $verdict = switch ($reason) {
+                ''            { 'dispatchable' }
+                'occupied'    { 'dispatchable' }
+                'heldByQueue' { 'held-by-queue' }
+                'hold'        { 'held' }
+                'disabled'    { 'disabled' }
+                default       { $reason }
+            }
+            switch ($verdict) {
+                'held-by-queue' { $notes.Add("pq: NOT dispatched - $label sits under 'hold' in PORTFOLIO_QUEUE.md. The ticket waits; lifting the hold is the owner's call (pq release $label)") }
+                'held'          { $notes.Add("pq: NOT dispatched - $label is on hold in the registry (pq release $label clears it). The ticket waits; that is the owner's call") }
+                'disabled'      { $notes.Add("pq: NOT dispatched - $label is registered but not enabled (enabled=false in repos.json). Enabling is the owner's call") }
+                'dispatchable'  { if ($reason -ceq 'occupied') { $notes.Add("pq: a worker is in $label right now; the ticket is taken in a later pass") } }
+                default         { $notes.Add("pq: NOT dispatched - the rank skips $label ($reason)") }
+            }
+        }
     }
 
     $mode = [string](Get-Prop $rec 'permissionMode' ([string](Get-Prop $registry 'permissionMode' '')))
     if (-not $mode) { $notes.Add("pq: warning - $label has no permissionMode (on its record or at the top of repos.json); pq start refuses unattended work there until one is set") }
 
-    # Position in the project's own ranking: the picker pq itself asks, so the figure is the one pq acts on.
-    $pick = Invoke-PqPicker -RepoPath $root
-    if (-not $pick.ok) {
-        $notes.Add("pq: the picker failed for ${label}: $($pick.message)")
-        if ($verdict -ceq 'dispatchable') { $verdict = 'picker-failed' }
-    }
-    else {
-        $payload = $pick.payload
-        $ranked = @(Get-PqPayloadIds $payload.ranked)
-        $total = $ranked.Count
-        $at = [array]::IndexOf([string[]]$ranked, $id)
-        $head = if ($null -ne $payload.selected) { [string]$payload.selected.id } else { '' }
-        if ($at -ge 0) {
-            $position = $at + 1
-            $ahead = $at
-            $note = if ($ahead -eq 0) { "pq: ${label}:${id} is first in its own queue" } else { "pq: ${label}:${id} is #$position of $total in its own queue; $ahead run before it (head: $head), because a new ticket lands at the end of the current package" }
-            $notes.Add($note)
+    # Position in the project's own ranking: only query if queue check has not timed out or failed.
+    if ($verdict -ne 'unknown') {
+        $pickRem = Get-PqRemainingSeconds $QueueTimeoutSeconds
+        if ($pickRem -le 0) {
+            if ($verdict -ceq 'dispatchable') { $verdict = 'unknown' }
+            $notes.Add("pq: queue check timed out before reading position - run pq dry-run or pq pin manually")
         }
         else {
-            $why = if ((Get-PqPayloadIds $payload.leased_ids) -ccontains $id) { 'leased' }
-            elseif ((Get-PqPayloadIds $payload.excluded_ids) -ccontains $id) { 'excluded' }
-            elseif ((Get-PqPayloadIds $payload.malformed) -ccontains $id) { 'malformed' }
-            else { Get-PqAutoSkipReason $payload $id }
-            if (-not $why) { $why = 'not offered by the project picker' }
-            $notes.Add("pq: ${label}:${id} is not ranked in its own queue ($why)")
-            if ($verdict -ceq 'dispatchable') { $verdict = 'not-offered' }
+            $pick = Invoke-PqPicker -RepoPath $root -TimeoutSeconds $pickRem
+            if ($pick.timedOut -or $pick.error -ceq 'PickerTimeout') {
+                if ($verdict -ceq 'dispatchable') { $verdict = 'unknown' }
+                $notes.Add("pq: the picker timed out after ${QueueTimeoutSeconds}s - run pq dry-run or pq pin manually")
+            }
+            elseif (-not $pick.ok) {
+                $notes.Add("pq: the picker failed for ${label}: $($pick.message)")
+                if ($verdict -ceq 'dispatchable') { $verdict = 'picker-failed' }
+            }
+            else {
+                $payload = $pick.payload
+                $ranked = @(Get-PqPayloadIds $payload.ranked)
+                $total = $ranked.Count
+                $at = [array]::IndexOf([string[]]$ranked, $id)
+                $head = if ($null -ne $payload.selected) { [string]$payload.selected.id } else { '' }
+                if ($at -ge 0) {
+                    $position = $at + 1
+                    $ahead = $at
+                    $note = if ($ahead -eq 0) { "pq: ${label}:${id} is first in its own queue" } else { "pq: ${label}:${id} is #$position of $total in its own queue; $ahead run before it (head: $head), because a new ticket lands at the end of the current package" }
+                    $notes.Add($note)
+                }
+                else {
+                    $why = if ((Get-PqPayloadIds $payload.leased_ids) -ccontains $id) { 'leased' }
+                    elseif ((Get-PqPayloadIds $payload.excluded_ids) -ccontains $id) { 'excluded' }
+                    elseif ((Get-PqPayloadIds $payload.malformed) -ccontains $id) { 'malformed' }
+                    else { Get-PqAutoSkipReason $payload $id }
+                    if (-not $why) { $why = 'not offered by the project picker' }
+                    $notes.Add("pq: ${label}:${id} is not ranked in its own queue ($why)")
+                    if ($verdict -ceq 'dispatchable') { $verdict = 'not-offered' }
+                }
+            }
         }
     }
 
     if ($Pin) {
         if ($verdict -ceq 'dispatchable') {
-            $pinRun = Invoke-Pq @('pin', "${label}:${id}")
-            if ($pinRun.code -eq 0) { $pinned = $true; $notes.Add("pq: pinned - ${label}:${id} is first in the first numbered package of PORTFOLIO_QUEUE.md") }
-            else { $notes.Add("pq: pin failed (exit $($pinRun.code)): $($pinRun.text.Trim())") }
+            $pinRem = Get-PqRemainingSeconds $QueueTimeoutSeconds
+            if ($pinRem -le 0) {
+                $notes.Add("pq: pin refused - queue check timed out (pq=unknown); run pq dry-run or pq pin manually")
+            }
+            else {
+                $pinRun = Invoke-Pq @('pin', "${label}:${id}") -TimeoutSeconds $pinRem
+                if ($pinRun.code -eq 0) {
+                    $pinned = $true
+                    $notes.Add("pq: pinned - ${label}:${id} is first in the first numbered package of PORTFOLIO_QUEUE.md")
+                }
+                else {
+                    $notes.Add("pq: pin failed (exit $($pinRun.code)): $($pinRun.text.Trim())")
+                }
+            }
         }
-        else { $notes.Add("pq: pin refused - pq will not dispatch $label ($verdict); a pin would not be worked, and lifting that is the owner's call") }
+        elseif ($verdict -ceq 'unknown') {
+            $notes.Add("pq: pin refused - queue check did not confirm dispatchability (pq=unknown); run pq dry-run or pq pin manually")
+        }
+        else {
+            $notes.Add("pq: pin refused - pq will not dispatch $label ($verdict); a pin would not be worked, and lifting that is the owner's call")
+        }
     }
     elseif ($Slug -like 'hotfix-*' -and $position -gt 1 -and $verdict -ceq 'dispatchable') {
         $notes.Add("pq: this hotfix is #$position (-NoPin left it in place) - pq pin ${label}:${id} puts it first")

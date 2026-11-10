@@ -28,6 +28,9 @@
       PQ Log              pq log -Last 60           the last events across all writers
       PQ Stop             pq stop                   workers end after the pass they are on
       PQ Stop Kill        pq stop -Kill             also ends the runner children now (the ticket in flight is lost)
+      PQ Pause            pq pause                  no worker launches a new pass until PQ Resume
+      PQ Resume           pq resume                 undo PQ Pause
+      PQ Report           pq report                 the last seven days in numbers, with the open findings
       PQ Doctor           pq doctor                 check the enabled repositories and the queue file
       PQ Repos            pq list                   the registered repositories
       PQ Guide            README.md of this folder  the operator's instruction
@@ -132,6 +135,9 @@ $set.Add(@{ Name = 'PQ Status'; Pq = 'status'; Text = 'Portfolio queue: workers,
 $set.Add(@{ Name = 'PQ Log'; Pq = 'log -Last 60'; Text = 'Portfolio queue: the last 60 events across all writers' })
 $set.Add(@{ Name = 'PQ Stop'; Pq = 'stop'; Text = 'Portfolio queue: workers end after the pass they are on' })
 $set.Add(@{ Name = 'PQ Stop Kill'; Pq = 'stop -Kill'; Text = 'Portfolio queue: stop now - the runner children are terminated and the ticket in flight is abandoned' })
+$set.Add(@{ Name = 'PQ Pause'; Pq = 'pause'; Text = 'Portfolio queue: no worker launches a new pass until PQ Resume' })
+$set.Add(@{ Name = 'PQ Resume'; Pq = 'resume'; Text = 'Portfolio queue: undo PQ Pause' })
+$set.Add(@{ Name = 'PQ Report'; Pq = 'report'; Text = 'Portfolio queue: the last seven days in numbers, with the open findings' })
 $set.Add(@{ Name = 'PQ Doctor'; Pq = 'doctor'; Text = 'Portfolio queue: check the enabled repositories and the queue file' })
 $set.Add(@{ Name = 'PQ Repos'; Pq = 'list'; Text = 'Portfolio queue: the registered repositories' })
 $set.Add(@{ Name = 'PQ Guide'; Guide = $true; Text = 'Portfolio queue: the operator''s instruction' })

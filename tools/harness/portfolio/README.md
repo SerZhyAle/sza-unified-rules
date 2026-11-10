@@ -144,6 +144,9 @@ of ours is left alone.
 | PQ Log | `pq log -Last 60` | read the last 60 events across all writers |
 | PQ Stop | `pq stop` | let every worker finish the pass it is on, then end |
 | PQ Stop Kill | `pq stop -Kill` | end now: runner children are terminated and the ticket in flight is abandoned |
+| PQ Pause | `pq pause` | no worker launches a new pass until PQ Resume |
+| PQ Resume | `pq resume` | undo PQ Pause |
+| PQ Report | `pq report` | the last seven days in numbers, with the open findings |
 | PQ Doctor | `pq doctor` | check the enabled repositories and the queue file |
 | PQ Repos | `pq list` | list the registered repositories |
 | PQ Guide | - | open this file |
@@ -225,16 +228,38 @@ profile, a ticket ledger and a runner, which `task-flow-init` sets up.
 ## What a worker does
 
 ```
-loop:  STOP file?  -> end
+loop:  stop files? -> end (see Stopping); paused? -> wait; end time (-Until) reached? -> end
        new stamped repositories under the discovery roots?  -> join (at start, then every 10 minutes)
        dropped tickets that changed, blockers released?     -> offer them again
        rank        -> first candidate not excluded
        blocker in another repository not released?          -> exclude it, rank again
+       the owner in that repository?                        -> skip it for half a minute, rank again
        agent       -> first of agentOrder that may take it
+       the build / emulator resource the ticket's Verify: level needs is taken?  -> skip it for a minute, rank again
        repository lock -> worker slot -> run-spec-queue.ps1 -Ids <id> -MaxTickets 1 -Instance pq<k>   (waits for it)
        read the outcome -> runs.jsonl + events -> drop the ticket if its status did not move
-empty: sleep up to pollSeconds (60) in short slices, rank again
+empty: wait, see Waiting
 ```
+
+- **The robot yields to you.** In a repository that is not `concurrent`, a pass is not started while a session of yours is
+  live there: a Claude Code transcript of that repository written within `occupiedMinutes` (registry, 3 minutes here; the
+  shipped default is 10) that is not one of `pq`'s own passes, or a live ticket lease whose holder is not a `pq` pass. The
+  worker prints `repository <key> is occupied (transcript, 55 s ago) - the robot waits for the owner`, takes the next
+  repository of the rank, looks at that one again after half a minute, and prints `is free again`. A pass already running
+  is never interrupted when you arrive. The passes' own sessions are told apart by the session id the pass runs under,
+  kept in `run\pass-sessions.json`. Not seen: an agent that writes no Claude transcript (Codex, Gemini), and a build or
+  code lock whose holder has neither a transcript nor a lease.
+- **Shared resources.** A ticket's `**Verify:** <level> - <why>` line names what proves it: `edit` takes nothing, `build`
+  one `build` token, `emulator` a `build` and the `emulator` token, `device` is never given to a robot (the hardware is
+  yours). No line, or a word outside the four, is `build`. The caps are `resources.build` (3) and `resources.emulator`
+  (1) in the registry; a token is a file `resources\<token>\<key>__<id>.json` of the dispatcher that holds it, and one
+  whose process is gone is cleared. A ticket that cannot get its token is skipped for a minute.
+- **`concurrent` and `fill`.** A `concurrent` repository takes at most its `maxWorkers` workers at once. With `fill`
+  `breadth` in the registry, a repository that already has a worker waits for the projects that have none; `depth` (the
+  default) lets the project at the top take every worker it may have first.
+- **Robot-filed tickets.** A ticket that is new in a repository after a pass is one the pass filed. The first
+  `robotDraftCap` of them (20, per repository per run) are worked like any other; each one beyond is kept out of the rank,
+  and `inbox.add` and a console line tell you (`pq report` counts them, and `PQ-SAFE02` appears in `pq problems`).
 
 - For Claude the model is not chosen by `pq`. The runner reads the ticket's `**Complexity:** <light|medium|hard> - <why>`
   line at every launch: `light` is haiku, `medium` sonnet, `hard` opus. A spec without the line keeps the runner's earlier
@@ -252,8 +277,11 @@ empty: sleep up to pollSeconds (60) in short slices, rank again
   that is not in its ledger, or two tickets that block each other keep the ticket out, and the worker prints why
   (`ticket fms-web:S0040 waits on fms-a:S4470 (open: fms-a:S4470 is In Progress)`). Only `pq` reads the qualified form; the
   repository's own runner and a manual session ignore it, so such a ticket keeps its working status.
+- A ticket whose drop was lifted three times within an hour keeps coming back unmoved, so something rewrites its row after
+  every pass: it stays dropped for an hour (`ticket.thrash`) and is tried again after.
 - `pq start -Drain` exits instead of waiting: 0 after at least one pass, 3 when nothing ran. `-MaxTickets N` ends the loop
-  after N passes.
+  after N passes; `-Until <time>` (`HH:mm`, or a date and time) ends it at a clock time - no new pass after it, and a
+  waiting worker ends at once.
 - A pass child does not inherit the starting agent's session variables, so `pq` may be started from an agent's shell as well
   as from a shortcut.
 
@@ -362,15 +390,69 @@ in your environment and never reaches the registry); the shipped `zai` record us
 `limitDetector.pattern` and that exited non-zero has spent its provider's limit: the provider is held in
 `holds\<agent>.json` and the ticket goes to the next one (Model providers above).
 
+## Waiting
+
+When nothing is offerable the worker does not rank again every minute. The wait costs no agent and no picker: once per
+`pollSeconds` it compares the sizes and write times of the files a change in which could matter - per enabled repository the
+ledger, archive, ticket queue, ready and done files, the names of the files in its lease folder (a lease's own heartbeat is
+not a change, a claim or a release is), its shared stop file, and the spec file of every ticket it has dropped; and the
+registry, `PORTFOLIO_QUEUE.md`, the folder of provider holds and the resource tokens. A change is acted on after one more
+quiet poll (you who just captured a Draft may still be editing it), so a ticket is taken within about two polls of its
+change. With no change a rank still runs every tenth poll, because some eligibility is a matter of time (a provider's limit,
+your occupancy window), and every poll while the worker itself holds something back for a moment. The worker says why it
+waits, once per change: `waiting for tickets (poll 60s) - nothing offerable: occupied 1, dropped 2`. `wait.enter` carries
+the same counts, `poll.change` names what changed, and one `poll.summary` per hour counts the polls, the changes and the
+ranks skipped as unchanged.
+
 ## Stopping
 
-`PQ Stop` writes `STOP` in the portfolio root. Each worker checks it before every rank and in every sleep slice and ends after
-the pass in progress. With `PQ Stop Kill` each worker kills the process tree of its own pass and nothing else - a local
-runner's agent and a session of yours in any repository are never touched: the pass is journalled
-as `killed`, the lease the pass made is released so the ticket is offered again at once, and its status stays where the agent
-left it. Ctrl+C in a worker window ends that worker and its pass tree at once and releases the lease the same way; the
-interrupted pass writes no `runs.jsonl` row (its `pass.launch` has no `pass.end`). Starting a worker with a `STOP` present
-clears it and says so; if workers from the previous stop are still draining, the start exits 3 instead.
+`pq stop` writes a stop file in the portfolio root; the workers read the stop files every second, and a waiting worker at
+once. The default is `STOP`, every worker, level `pass`: each worker ends after the pass in progress. Levels (`-Level`):
+
+| Level | What happens |
+| --- | --- |
+| `drain` | take no new ticket; the ticket whose pass was in flight goes on with its next passes while they move it, then the worker ends |
+| `pass` (default) | no new pass, not even the next one of the same ticket; the passes in flight end, then the worker ends |
+| `halt` | end the pass now; every agent record says `halt: none` (no polite interrupt exists), so it is a kill that is recorded as `pass.halt` |
+| `kill` (`PQ Stop Kill`, `-Kill`) | kill the process tree of the pass now |
+
+A target narrows it: `-Worker <n>`, `-Repo <key>`, `-Agent <name>` or `-Ticket <key:id>` (one of them). While the file
+exists the target gets no new work and its passes stop at the level; once nothing runs under it any more the file is deleted.
+A repository stop leaves the repository on hold (`pq release <key>` clears it); the others leave nothing, the target is
+eligible again at the next pick, and a ticket you want kept out is held (`pq hold`). Exit 0 when the request was recorded,
+2 when nothing matched the target (unknown repository, agent or ticket key, no worker with that slot), 3 when no worker
+is running at all (nothing is written). `drain` continues a ticket only for a stop of everything or of one worker.
+
+Each worker kills the process tree of its own pass and nothing else - a local runner's agent and a session of yours in any
+repository are never touched. A halted or killed pass is journalled as `halted` or `killed`, the lease the pass made is
+released so the ticket is offered again at once, the build and emulator tokens it held are released, the repository's ledger
+is validated (`validate` in `pass.halt` / `pass.kill`) and `inbox.add` records it; its status stays where the agent left
+it, and a stop never decides a status. Ctrl+C in a worker window ends that worker and its pass tree at once and releases
+the lease the same way; the interrupted pass writes no `runs.jsonl` row (its `pass.launch` has no `pass.end`). Starting a
+worker with a `STOP` present clears it and says so; if workers from the previous stop are still draining, the start exits 3
+instead. A stop of one worker slot that an earlier run left behind is cleared when a worker takes that slot.
+
+`pq pause` makes every worker launch no new pass (`paused - pq resume continues`); passes in flight finish, a stop still
+ends a paused worker, and the pause outlives workers until `pq resume`. `pq status` shows the stop files, the pause and the
+workers.
+
+## Following a pass and reading the numbers
+
+`pq tail [<key:id>] [-Worker <n>]` follows what the agent of a running Claude pass is doing, from the transcript the pass
+writes as it works (`> the agent's words`, `. Read path` for a tool it called, `! text` for a tool error); it ends with the
+pass or on Ctrl+C and never touches the pass. The runner buffers another agent's output until its pass ends, so there is
+nothing to follow for a Codex or Gemini pass.
+
+| Command | Shows |
+| --- | --- |
+| `pq report [-Days n]` | the last n days (7): passes, moved and ok shares, outcomes, the splits by agent, model, complexity and repository (only where n is at least 5), waiting, occupancy, resources, stops, robot-filed tickets, limits, log health and the open findings; `-Json` for the object |
+| `pq problems [-Days n]` | the open findings only, severity first, each with the events behind it: `PQ-RACE01` (a lost claim), `PQ-SAFE01` (a tripwire), `PQ-SAFE02` (the robot-filed cap), `PQ-LIMIT01` (a limit with no reset time), `PQ-THRASH01`, `PQ-RES03` (a token waited on for 30 minutes), `PQ-STALL01`, `PQ-XREPO01` (a blocker cycle), `PQ-DATA01` (a log gap or error), `PQ-COST02` (`light` that needed three passes), `PQ-ADOPT01` (a repository far below the median) |
+| `pq trace <key:id>` | every event of one ticket in time order, grouped by pass |
+| `pq export [-What runs|events] [-Format jsonl|csv] [-Days n]` | the run rows (default) or the events, to stdout |
+| `pq compare [-By canon|plugin|registryHash|profileHash|agent|model|complexity|repo] [-Days n]` | the run rows split by that field in the order its values first appear, with n, ok share, and a verdict between the last two values: `better` or `worse` at 15 points and n of at least 5 each, else `no evidence` |
+
+They only read `runs.jsonl` and the event files and compute each time; nothing is filed or written. The finding lifecycle
+(`finding.open` and `finding.close`), the daily digest and the `from-telemetry` tickets are not built.
 
 A repository's own queue stop works on the portfolio too. While its shared stop file (`temp/STOP-SPEC-QUEUE`, written by
 its `rs` or by a release freeze) exists, `pq` takes no ticket there and `PQ Dry-run` prints `skip <key> - stopped`; it
@@ -384,8 +466,11 @@ The portfolio root is `SZA_PORTFOLIO_ROOT`, else `%USERPROFILE%\.sza\portfolio`.
 | --- | --- |
 | `PORTFOLIO_QUEUE.md` | file one: the owner's order; synchronization refreshes ticket rows, and `pin`, `hold`, `release` change their order or hold |
 | `repos.json` | the registry: repositories, `enabled`, `permissionMode`, `maxWorkers`, `pollSeconds` |
-| `STOP` | present while a stop is requested |
+| `STOP`, `STOP-worker__<n>`, `STOP-repo__<key>`, `STOP-agent__<name>`, `STOP-ticket__<key>__<id>` | present while a stop is requested, for everything or for one target; the level is in the file |
+| `PAUSE` | present while `pq pause` is in force |
 | `run\worker-<k>.json` | one live worker: pid, repository, ticket, agent, since |
+| `run\pass-sessions.json` | the newest 200 session ids `pq`'s own passes ran under, so their transcripts are not taken for yours |
+| `resources\<build\|emulator>\<key>__<id>.json` | a build or emulator token and who holds it |
 | `holds\<agent>.json` | an agent other than Claude held after a fast failure; delete the file to give it work again at once |
 | `run\repo-<key>.lock` | the repository a worker is in |
 | `runs.jsonl` | one row per pass: run, pass, repository, ticket, status before and after, exit code, seconds, outcome |
@@ -400,8 +485,10 @@ instance `pq<k>` (`runs-pq<k>.jsonl`), so they show up in the repository's monit
 `-Ev <name>` and `-Json`. The events a loop writes: `run.start`, `run.end`, `rank.result`, `pass.launch`, `pass.end`,
 `pass.limit`, `wait.enter`, `wait.exit`, `run.stop`, `owner.action`, `ticket.dropped`, `ticket.dropLifted`,
 `ticket.blocked`, `ticket.unblocked`, `xrepo.resolve`, `xrepo.cycle`, `agent.fallback`, `agent.hold`, `agent.unproven`,
-`agent.resume`, `dispatch.skip`, `repo.discovered`, `repo.notready`, `repo.ready`, `repo.enabled`. No line carries prompt
-text, environment values or keys.
+`agent.resume`, `dispatch.skip`, `repo.discovered`, `repo.notready`, `repo.ready`, `repo.enabled`, `repo.occupied`,
+`repo.free`, `resource.acquire`, `resource.release`, `resource.wait`, `poll.change`, `poll.summary`, `ticket.thrash`,
+`intake.robotDraft`, `inbox.add`, `run.pause`, `run.resume`, `pass.halt`, `pass.kill`. No line carries prompt text,
+environment values or keys.
 
 ## When it does not do what you expect
 
@@ -419,6 +506,10 @@ text, environment values or keys.
 | `TicketQueueMissing` from `pq tickets` | there is no ticket queue file at the path the message prints; restore it, or point the profile's `paths.releaseQueue` at the right file |
 | a worker window was closed by force | its state files stay; the next start reclaims files whose process is gone. If only the worker process ended and its runner ran on, the repository stays `occupied` until that pass ends |
 | `skip <key> - stopped` | that repository's own queue stop file exists (its `rs`, or a release freeze) - see Stopping |
+| `repository <key> is occupied` | a session of yours wrote a transcript there within `occupiedMinutes`, or holds a live lease: the robot waits and looks again after half a minute; a session that ended is seen as gone after the window |
+| `waits for the build resource` | `resources.build` tokens are all held (or `emulator`); the ticket is skipped for a minute. `Verify: device` tickets are never taken - the worker says so once |
+| `pq stop` says `no worker is running` | exit 3, nothing is written; a worker window may have been closed by force, see its state files in `run\` |
+| `paused - pq resume continues` | `PAUSE` is in the portfolio root: `pq resume` |
 
 ## A first test in throwaway repositories
 
@@ -446,8 +537,9 @@ move is excluded for the rest of that run and the log says so.
 
 ## Not in this version
 
-A machine-wide usage-limit hold for Claude, a console with stop levels, metrics and analysis, and day 0 written into a
-repository that joins are not part of `pq`. It is a loop, a rank, a few agents and a log.
+Day 0 written into a repository that joins, the finding lifecycle events and the `from-telemetry` tickets, a daily digest,
+the live monitor page and a polite interrupt for `halt` are not part of `pq`. The code and build locks of a manual session
+are not read for occupancy (its transcript and lease are). It is a loop, a rank, a few agents, a console and a log.
 
 ## Checking the tool itself
 

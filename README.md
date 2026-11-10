@@ -81,6 +81,7 @@ compliance gate read instead of guessing.
 | [`spec-quiz`](skills/spec-quiz/SKILL.md) (`/sq`) | the exit from `BlockQuestions` in any project: finds the waiting tickets from the ledgers (an id is unique only inside one project), asks the owner only the real decisions as multiple choice, writes the answers into each ticket and restores it one level |
 | [`spec-next`](skills/spec-next/SKILL.md) (`/sn`) | the head of the project's queue without naming it: the harness picks the first eligible ticket and claims its lease in one call, then `spec-all` takes it |
 | [`spec-all`](skills/spec-all/SKILL.md) (`/sa`) | one ticket from its current status to the audit in any project: lease, drift, the stage the status names (spec-to-audit), release - one ticket, then stop |
+| [`portfolio-queue`](skills/portfolio-queue/SKILL.md) | the robots over all projects (`pq`): which command answers what they are doing, why one is idle, how to stop, pause and steer them, and what they did this week; it never starts a worker on its own |
 | [`agent-cost`](skills/agent-cost/SKILL.md) | measuring what a session actually costs, with the five corrections without which every token figure is inflated roughly threefold - and the subagent model tier, the largest single lever that measurement reaches |
 | [`caveman`](skills/caveman/SKILL.md) | terse mode - prose compressed, every exact string and every gate reason left intact; plus the commit and review shapes |
 

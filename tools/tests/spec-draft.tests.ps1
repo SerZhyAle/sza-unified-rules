@@ -1,4 +1,4 @@
-#requires -Version 7.0
+﻿#requires -Version 7.0
 <#
 .SYNOPSIS
     Cases for tools/harness/portfolio/spec-draft.ps1 - the capture-and-report half of the spec-draft skill.
@@ -73,7 +73,7 @@ function Invoke-Script([string] $Script, [string[]] $Arguments, [string] $WorkDi
     $lines = @($out.Result -split '\r?\n' | Where-Object { $_.Trim() })
     return [pscustomobject]@{ code = $proc.ExitCode; stdout = $out.Result; stderr = $err.Result; output = $out.Result + $err.Result; last = $(if ($lines.Count) { $lines[-1] } else { '' }) }
 }
-function Invoke-Draft([string[]] $Arguments, [string] $WorkDir = $scratch) { Invoke-Script $draftScript $Arguments $WorkDir }
+function Invoke-Draft([string[]] $Arguments, [string] $WorkDir = $scratch, [hashtable] $Env = @{}) { Invoke-Script $draftScript $Arguments $WorkDir $Env }
 function Invoke-PqCli([string[]] $Arguments) { Invoke-Script $pqScript $Arguments }
 
 function New-Repo([string] $Name) {
@@ -336,6 +336,109 @@ exit 0
         # Any other slug ending in a separator is still refused: only the dialog's own pre-fill is read as "name it".
         $r = Invoke-Draft @('-Project', $plain, '-Slug', 'foo-', '-TextFile', $ru, '-WhatIf')
         Assert-That ($r.code -eq 2) "foo-: exit $($r.code): $($r.output)"
+    }
+
+    Run-Case '12 queue check times out: pq=unknown, pin refused, position 0/0, operator advised' {
+        $slowPq = Join-Path $scratch 'slow-pq.ps1'
+        $escapedRealPq = $pqScript.Replace("'", "''")
+        $stub = @"
+if (`$args.Count -gt 0 -and `$args[0] -eq 'dry-run') {
+    Start-Sleep -Seconds 5
+    exit 0
+}
+& (Get-Process -Id `$PID).Path -NoProfile -File '$escapedRealPq' @args
+exit `$LASTEXITCODE
+"@
+        [IO.File]::WriteAllText($slowPq, $stub)
+        $f = Write-Text 'owner15.txt' 'Queue check stalls.'
+        $r = Invoke-Draft @('-Project', 'repo-a', '-Slug', 'hotfix-check-stalls', '-TextFile', $f, '-QueueTimeoutSeconds', '1') $scratch @{ SZA_PQ_SCRIPT = $slowPq }
+        Assert-That ($r.code -eq 0) "exit $($r.code): $($r.output)"
+        Assert-That ($r.last -match 'pq=unknown position=0/0') "result line did not report pq=unknown position=0/0: $($r.last)"
+        Assert-That ($r.stdout -match 'pq: queue check timed out') "timeout note missing: $($r.stdout)"
+        Assert-That ($r.stdout -match 'pin refused') "pin was not refused: $($r.stdout)"
+        Assert-That ($r.stdout -notmatch 'pq: pinned') "ticket was pinned despite timeout: $($r.stdout)"
+        Assert-That ($r.stdout -match 'pq dry-run or pq pin manually') "manual guidance missing: $($r.stdout)"
+    }
+
+    Run-Case '13 dry-run failure: pq=unknown, pin refused, position 0/0, operator advised' {
+        $failPq = Join-Path $scratch 'fail-pq.ps1'
+        $escapedRealPq = $pqScript.Replace("'", "''")
+        $stub = @"
+if (`$args.Count -gt 0 -and `$args[0] -eq 'dry-run') {
+    [Console]::Error.WriteLine("pq: state lock broken")
+    exit 2
+}
+& (Get-Process -Id `$PID).Path -NoProfile -File '$escapedRealPq' @args
+exit `$LASTEXITCODE
+"@
+        [IO.File]::WriteAllText($failPq, $stub)
+        $f = Write-Text 'owner16.txt' 'Dry run fails.'
+        $r = Invoke-Draft @('-Project', 'repo-a', '-Slug', 'bugfix-dryrun-fail', '-TextFile', $f, '-Pin') $scratch @{ SZA_PQ_SCRIPT = $failPq }
+        Assert-That ($r.code -eq 0) "exit $($r.code): $($r.output)"
+        Assert-That ($r.last -match 'pq=unknown position=0/0') "result line did not report pq=unknown position=0/0: $($r.last)"
+        Assert-That ($r.stdout -match 'pq: dry-run failed') "failure note missing: $($r.stdout)"
+        Assert-That ($r.stdout -match 'pin refused') "pin was not refused: $($r.stdout)"
+        Assert-That ($r.stdout -notmatch 'pq: pinned') "ticket was pinned despite failure: $($r.stdout)"
+        Assert-That ($r.stdout -match 'pq dry-run or pq pin manually') "manual guidance missing: $($r.stdout)"
+    }
+
+    Run-Case '14 concurrent captures finish within deadline without hung processes' {
+        $cRepo1 = New-Repo 'repo-conc-1'
+        $reg1 = Invoke-PqCli @('register', '-Path', $cRepo1, '-Key', 'repo-conc-1', '-Enable', '-PermissionMode', 'bypassPermissions')
+        Assert-That ($reg1.code -eq 0) "register repo-conc-1: $($reg1.output)"
+
+        $cRepo2 = New-Repo 'repo-conc-2'
+        $reg2 = Invoke-PqCli @('register', '-Path', $cRepo2, '-Key', 'repo-conc-2', '-Enable', '-PermissionMode', 'bypassPermissions')
+        Assert-That ($reg2.code -eq 0) "register repo-conc-2: $($reg2.output)"
+
+        $cRepo3 = New-Repo 'repo-conc-3'
+        $reg3 = Invoke-PqCli @('register', '-Path', $cRepo3, '-Key', 'repo-conc-3', '-Enable', '-PermissionMode', 'bypassPermissions')
+        Assert-That ($reg3.code -eq 0) "register repo-conc-3: $($reg3.output)"
+
+        $f1 = Write-Text 'owner17_1.txt' 'Concurrent ticket 1'
+        $f2 = Write-Text 'owner17_2.txt' 'Concurrent ticket 2'
+        $f3 = Write-Text 'owner17_3.txt' 'Concurrent ticket 3'
+        $tasks = @(
+            @{ repo = 'repo-conc-1'; slug = 'conc-one'; file = $f1 },
+            @{ repo = 'repo-conc-2'; slug = 'conc-two'; file = $f2 },
+            @{ repo = 'repo-conc-3'; slug = 'conc-three'; file = $f3 }
+        )
+        $procs = @()
+        $sw = [Diagnostics.Stopwatch]::StartNew()
+        foreach ($t in $tasks) {
+            $psi = [Diagnostics.ProcessStartInfo]::new($pwshExe)
+            $psi.ArgumentList.Add('-NoProfile')
+            $psi.ArgumentList.Add('-File')
+            $psi.ArgumentList.Add($draftScript)
+            $psi.ArgumentList.Add('-Project')
+            $psi.ArgumentList.Add($t.repo)
+            $psi.ArgumentList.Add('-Slug')
+            $psi.ArgumentList.Add($t.slug)
+            $psi.ArgumentList.Add('-TextFile')
+            $psi.ArgumentList.Add($t.file)
+            $psi.ArgumentList.Add('-QueueTimeoutSeconds')
+            $psi.ArgumentList.Add('10')
+            $psi.UseShellExecute = $false
+            $psi.RedirectStandardOutput = $true
+            $psi.RedirectStandardError = $true
+            $psi.WorkingDirectory = $scratch
+            $psi.Environment['SZA_PORTFOLIO_ROOT'] = $portfolioRoot
+            $psi.Environment['USERPROFILE'] = $scratch
+            $p = [Diagnostics.Process]::Start($psi)
+            $outTask = $p.StandardOutput.ReadToEndAsync()
+            $errTask = $p.StandardError.ReadToEndAsync()
+            $procs += @{ proc = $p; out = $outTask; err = $errTask; slug = $t.slug }
+        }
+        foreach ($item in $procs) {
+            $exited = $item.proc.WaitForExit(30000)
+            Assert-That $exited "capture process for $($item.slug) timed out after 30s"
+            $code = $item.proc.ExitCode
+            $stdout = $item.out.Result
+            Assert-That ($code -eq 0) "capture for $($item.slug) failed with exit ${code}: $stdout"
+            Assert-That ($stdout -match 'drafted repo-conc-\d:S\d{4}') "no drafted result line for $($item.slug): $stdout"
+        }
+        $sw.Stop()
+        Assert-That ($sw.ElapsedMilliseconds -lt 30000) "concurrent captures took longer than 30s ($($sw.ElapsedMilliseconds)ms)"
     }
 }
 finally {

@@ -39,10 +39,38 @@
                                                    record gets the shipped one; with -Release clear a provider's
                                                    limit hold, so it is tried again at once
     pq doctor [-All]                                check the enabled repositories (all with -All); writes nothing
-    pq start [-Drain] [-MaxTickets <n>]             run one worker; wait when empty, or exit with -Drain
-    pq stop [-Kill]                                 stop after current passes; -Kill kills each worker's own pass tree
-    pq status [-Json]                              workers, today's pass outcomes, next ticket and STOP
+    pq start [-Drain] [-MaxTickets <n>] [-Until <time>]
+                                                   run one worker; wait when empty, or exit with -Drain; -Until
+                                                   ends the run at a clock time (HH:mm, today or tomorrow, or a
+                                                   full date and time): no new pass after it, a waiting worker ends
+                                                   at once
+    pq stop [-Level drain|pass|halt|kill] [-Kill] [-Worker <n>] [-Repo <key>] [-Agent <name>] [-Ticket <key:id>]
+                                                   stop; the level is pass by default (the passes in flight end, then
+                                                   the worker stops), drain lets a pass-in-flight ticket go on while it
+                                                   moves, halt and kill end the pass at once (every agent record says
+                                                   halt none, so halt is a kill that is recorded as a halt); -Kill is
+                                                   -Level kill. Without a target every worker stops; with one, only that
+                                                   worker, repository (it also stays on hold), agent or ticket. Exit 0
+                                                   when the request was recorded, 2 when nothing matched the target,
+                                                   3 when no worker is running (no file is written)
+    pq pause                                        no worker launches a new pass; passes in flight are not touched
+    pq resume                                       undo pause
+    pq status [-Json]                              workers, today's pass outcomes, next ticket, STOP and pause
+    pq tail [<repo:id>] [-Worker <n>] [-Last <n>]   follow what the agent of a running pass is doing, read from the
+                                                   transcript it writes (Claude passes; another agent writes none
+                                                   until the pass ends); Ctrl+C leaves, it ends by itself with the pass
     pq log [-Last <n>] [-Repo <key>] [-Ev <name>] [-Json]  recent events across all writers (default 40)
+    pq report [-Days <n>] [-Json]                   the last n days (7): passes, outcomes, splits by agent, model,
+                                                   complexity and repository (only where n is at least 5), waiting,
+                                                   occupancy, resources, stops, robot-filed tickets, limits, log health
+                                                   and the open findings
+    pq problems [-Days <n>] [-Json]                 the open findings only, severity first, with their evidence
+    pq trace <repo:id> [-Json]                      one ticket's events in time order
+    pq export [-What runs|events] [-Format jsonl|csv] [-Days <n>]
+                                                   the run rows (default) or the events of the window, to stdout
+    pq compare [-By canon|plugin|registryHash|profileHash|agent|model|complexity|repo] [-Days <n>] [-Json]
+                                                   the run rows of the window split by one field, with n, ok share and a
+                                                   verdict between the last two values (better, worse, no evidence)
 
     start uses registry pollSeconds (60 by default); -PollSeconds overrides it. Each repository needs an
     explicit permissionMode, in its own record or inherited from the registry, before unattended work starts.
@@ -75,6 +103,15 @@ param(
     [string]$Rank,
     [string[]]$Order,
     [string]$Release,
+    [ValidateSet('', 'drain', 'pass', 'halt', 'kill')][string]$Level = '',
+    [ValidateRange(0, [int]::MaxValue)][int]$Worker = 0,
+    [string]$Agent,
+    [string]$Ticket,
+    [string]$Until,
+    [ValidateRange(1, 3650)][int]$Days = 0,
+    [string]$By,
+    [ValidateSet('', 'jsonl', 'csv')][string]$Format = '',
+    [ValidateSet('', 'runs', 'events')][string]$What = '',
     [switch]$Help
 )
 
@@ -93,6 +130,12 @@ $lib = Join-Path $PSScriptRoot 'lib'
 . (Join-Path $lib 'discovery.ps1')
 . (Join-Path $lib 'loop.ps1')
 . (Join-Path $lib 'agents.ps1')
+. (Join-Path $lib 'stop.ps1')
+. (Join-Path $lib 'occupancy.ps1')
+. (Join-Path $lib 'resources.ps1')
+. (Join-Path $lib 'waiting.ps1')
+. (Join-Path $lib 'console.ps1')
+. (Join-Path $lib 'analysis.ps1')
 
 function Write-PqError([string]$Name, [string]$Message) {
     [Console]::Error.WriteLine("pq: $Name - $Message")
@@ -505,36 +548,170 @@ function Invoke-PqStart {
         PollSeconds = $PollSeconds
     }
     if ($RunnerScript) { $a.RunnerScript = $RunnerScript }
+    if ($Until) {
+        $at = ConvertTo-PqUntil $Until
+        if ($null -eq $at) { Write-PqError 'ArgumentInvalid' "-Until '$Until' is not a time (HH:mm, or a date and time)"; return 2 }
+        $a.Until = $at
+    }
     return (Start-PqLoop @a)
 }
 
+# An end time for `pq start -Until`: HH:mm is the next such time (today, or tomorrow when it has passed), anything else is
+# read as a date and time. $null when it reads as neither.
+function ConvertTo-PqUntil([string]$Text) {
+    $t = $Text.Trim()
+    if ($t -match '^\d{1,2}:\d{2}$') {
+        $span = [timespan]::Zero
+        if (-not [timespan]::TryParse($t, [ref]$span) -or $span.TotalHours -ge 24) { return $null }
+        $at = [datetime]::Today.Add($span)
+        if ($at -le [DateTime]::Now) { $at = $at.AddDays(1) }
+        return $at
+    }
+    $parsed = [datetime]::MinValue
+    if ([datetime]::TryParse($t, [ref]$parsed)) { return $parsed }
+    return $null
+}
+
+# TASK-FLOW rule 47. The stop is a file in the portfolio root: STOP for everything, STOP-worker__<n>, STOP-repo__<key>,
+# STOP-agent__<name> or STOP-ticket__<key>__<id> for one target; the workers read them. The kill is the dispatcher's own:
+# every live worker kills the process tree of the pass it started (Invoke-PqPassChild), then releases that pass's lease.
+# The runner's own -Stop -Kill is never called from here: it terminates every headless agent process on the machine,
+# whichever repository or instance started it, so it would also kill the local runners' children and every other
+# portfolio pass.
 function Invoke-PqStop {
+    if ($Level -and $Kill -and $Level -cne 'kill') { Write-PqError 'ArgumentConflict' "-Kill is -Level kill, not -Level $Level"; return 2 }
+    $level = if ($Level) { $Level } elseif ($Kill) { 'kill' } else { 'pass' }
+    $targets = @(@(if ($Worker -gt 0) { 'worker' }) + @(if ($Repo) { 'repo' }) + @(if ($Agent) { 'agent' }) + @(if ($Ticket) { 'ticket' }))
+    if ($targets.Count -gt 1) { Write-PqError 'ArgumentConflict' 'stop takes one target: -Worker, -Repo, -Agent or -Ticket'; return 2 }
+    $kind = if ($targets.Count -eq 1) { $targets[0] } else { 'all' }
+
+    $registry = Read-PqRegistryIfAny
+    $keys = if ($null -ne $registry) { @(Get-PqKnownKeys $registry) } else { @() }
+    $target = $null
+    $label = 'every worker'
+    $workers = @(Get-PqWorkerFiles)
+    switch ($kind) {
+        'worker' {
+            if (-not ($workers | Where-Object { $_.slot -eq $Worker })) { Write-PqError 'NoSuchTarget' "no running worker has slot $Worker"; return 2 }
+            $target = [string]$Worker; $label = "worker $Worker"
+        }
+        'repo' {
+            if ($keys -cnotcontains $Repo) { Write-PqError 'UnknownRepoKey' "no repository '$Repo' in the registry"; return 2 }
+            $target = $Repo; $label = "repository $Repo"
+        }
+        'agent' {
+            $names = if ($null -ne $registry) { @(@($registry.agents) | ForEach-Object { [string]$_.name }) } else { @() }
+            if ($names -cnotcontains $Agent) { Write-PqError 'UnknownAgent' "no agent '$Agent' in the registry"; return 2 }
+            $target = $Agent; $label = "agent $Agent"
+        }
+        'ticket' {
+            $parts = $Ticket -split ':', 2
+            if ($parts.Count -ne 2 -or -not $parts[1]) { Write-PqError 'ArgumentInvalid' "-Ticket '$Ticket' is not <repo>:<id>"; return 2 }
+            if ($keys -cnotcontains $parts[0]) { Write-PqError 'UnknownRepoKey' "no repository '$($parts[0])' in the registry"; return 2 }
+            $target = "$($parts[0])__$($parts[1])"; $label = "ticket $Ticket"
+        }
+    }
+    # No run at all: nothing to stop, and no file is written (a file left behind would only be cleared by the next start).
+    # A repository stop still sets the registry's hold, which is what a repository stop leaves behind.
+    if ($workers.Count -eq 0) {
+        if ($kind -ceq 'repo') {
+            $h = Set-PqRepoHold -Key $Repo -Hold $true -Log
+            Write-PqOwnerAction 'stop'
+            "no worker is running; repository $Repo is on hold$(if ($h.ok -and -not $h.changed) { ' already' })"
+        }
+        else { 'no worker is running - nothing to stop' }
+        return 3
+    }
+
     $root = Initialize-PqRoot
-    $stopFile = Join-Path $root 'STOP'
-    $level = if ($Kill) { 'kill' } else { 'pass' }
+    $file = if ($kind -ceq 'all') { Join-Path $root 'STOP' } else { Get-PqPath -Kind stopTarget -StopKind $kind -Target $target }
     $stopObj = [ordered]@{
         level = $level
         by = 'cli'
         at = [DateTimeOffset]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
         reason = 'owner'
     }
-    # The kill is the dispatcher's own: every live worker reads STOP on its pass tick and kills the process tree of the
-    # pass it started (Invoke-PqPassChild), then releases that pass's lease. The runner's own -Stop -Kill is never
-    # called from here: it terminates every headless agent process on the machine, whichever repository or instance
-    # started it, so it would also kill the local runners' children and every other portfolio pass.
-    $inFlight = @(Invoke-PqStateLock {
-        $runDir = Join-Path $root 'run'
-        if ([IO.Directory]::Exists($runDir)) {
-            foreach ($wf in [IO.Directory]::GetFiles($runDir, 'worker-*.json')) {
-                $worker = Read-PqState $wf
-                if ((Get-PqValue $worker 'repository') -and (Test-PqStateOwner $worker)) { "$($worker.repository):$($worker.ticket)" }
-            }
-        }
-        [IO.File]::WriteAllText($stopFile, (($stopObj | ConvertTo-Json)), [Text.Encoding]::UTF8)
-    })
+    $stopped = [Collections.Generic.List[string]]::new()
+    Invoke-PqStateLock {
+        [IO.File]::WriteAllText($file, (($stopObj | ConvertTo-Json)), [Text.Encoding]::UTF8)
+    }
+    foreach ($w in $workers) {
+        if (-not $w.key) { continue }
+        $hit = switch ($kind) { 'all' { $true } 'worker' { $w.slot -eq $Worker } 'repo' { $w.repository -ceq $Repo } 'agent' { $w.agent -ceq $Agent } 'ticket' { $w.key -ceq $Ticket } }
+        if ($hit) { $stopped.Add($w.key) }
+    }
     Write-PqOwnerAction 'stop'
-    "stop requested ($level)"
-    foreach ($p in $inFlight) { if ($Kill) { "  killing the pass on $p" } else { "  finishing the pass on $p" } }
+    "stop requested ($level) for $label"
+    foreach ($p in $stopped) {
+        switch ($level) {
+            'kill' { "  killing the pass on $p" }
+            'halt' { "  halting the pass on $p (no polite interrupt exists for the agent, so it is ended at once)" }
+            'drain' { "  the pass on $p ends, and its ticket goes on while it moves" }
+            default { "  finishing the pass on $p" }
+        }
+    }
+    return 0
+}
+
+function Invoke-PqPause {
+    $new = Set-PqPause
+    Write-PqOwnerAction 'pause'
+    if ($new) { 'paused - no worker launches a new pass; passes in flight finish (pq resume to continue)' } else { 'already paused' }
+    if (@(Get-PqWorkerFiles).Count -eq 0) { '  (no worker is running; the pause waits in the portfolio root until one starts)' }
+    return 0
+}
+
+function Invoke-PqResume {
+    if (Clear-PqPause) { Write-PqOwnerAction 'resume'; 'resumed' } else { 'was not paused' }
+    return 0
+}
+
+# Follows what the agent of a running pass is doing: the records the Claude Code session of the pass appends to its transcript.
+function Invoke-PqTail {
+    $read = Get-PqRegistryOrFail
+    if ($null -eq $read) { return 2 }
+    $workers = @(Get-PqWorkerFiles)
+    $w = Get-PqLiveTarget -Workers $workers -Target $Target -Slot $Worker
+    if ($null -eq $w) {
+        if ($Target -or $Worker -gt 0) { 'no running pass matches that target' } else { 'no pass is running' }
+        return 3
+    }
+    $repoRec = @($read.registry.repos | Where-Object { [string]$_.key -ceq $w.repository }) | Select-Object -First 1
+    if ($null -eq $repoRec) { Write-PqError 'UnknownRepoKey' "no repository '$($w.repository)' in the registry"; return 2 }
+    if ($w.agent -and $w.agent -cne 'claude') {
+        "$($w.key) runs on agent $($w.agent), which writes no transcript while it works; its output is written to the repository's runs folder when the pass ends"
+        return 0
+    }
+    "following $($w.key) (worker $($w.slot)) - Ctrl+C leaves, the pass is not touched"
+    $tx = $null
+    for ($i = 0; $i -lt 30; $i++) {
+        $tx = Get-PqLiveTranscript -Repo $repoRec -TicketId $w.ticket
+        if ($tx.ok) { break }
+        Start-Sleep -Seconds 1
+    }
+    if (-not $tx.ok) { "cannot follow yet: $($tx.why)"; return 3 }
+    $n = if ($Last -gt 0) { $Last } else { 10 }
+    # The first screen: the last n records worth showing, read from the tail of the file.
+    $len = [IO.FileInfo]::new($tx.path).Length
+    $start = [Math]::Max(0, $len - 131072)
+    $first = Read-PqTail -Path $tx.path -Offset $start
+    $shown = [Collections.Generic.List[string]]::new()
+    $lines = @($first.lines)
+    if ($start -gt 0 -and $lines.Count -gt 0) { $lines = $lines[1..($lines.Count - 1)] }
+    foreach ($l in $lines) { foreach ($d in @(Format-PqTranscriptRecord $l)) { $shown.Add($d) } }
+    $from = [Math]::Max(0, $shown.Count - $n)
+    for ($i = $from; $i -lt $shown.Count; $i++) { $shown[$i] }
+    $offset = $first.offset
+    $carry = $first.carry
+    while ($true) {
+        Start-Sleep -Seconds 1
+        $r = Read-PqTail -Path $tx.path -Offset $offset -Carry $carry
+        $offset = $r.offset
+        $carry = $r.carry
+        foreach ($l in @($r.lines)) { foreach ($d in @(Format-PqTranscriptRecord $l)) { $d } }
+        $still = Get-PqLiveTarget -Workers @(Get-PqWorkerFiles) -Target $w.key
+        if ($null -eq $still) { 'the pass has ended'; break }
+    }
     return 0
 }
 
@@ -602,9 +779,14 @@ function Invoke-PqStatus {
         catch { }
     }
 
+    $targetStops = @(Get-PqStopFiles | Where-Object { $_.kind -cne 'all' })
+    $paused = Test-PqPaused
+
     if ($Json) {
         $res = [ordered]@{
             stop = if ($stopPresent) { @{ present = $true; level = $stopLevel } } else { @{ present = $false } }
+            targetStops = @($targetStops | ForEach-Object { [ordered]@{ kind = $_.kind; target = $_.target; level = $_.level } })
+            paused = $paused
             workers = $workers
             passesToday = $passesToday
             next = $nextCandidate
@@ -614,6 +796,8 @@ function Invoke-PqStatus {
     }
 
     "STOP: $(if ($stopPresent) { "present (level=$stopLevel)" } else { 'none' })"
+    foreach ($ts in $targetStops) { "STOP of $($ts.kind) $($ts.target): level=$($ts.level)" }
+    if ($paused) { 'Paused: yes (pq resume continues)' }
     if ($workers.Count -eq 0) {
         "Workers: none active"
     }
@@ -676,16 +860,114 @@ function Invoke-PqLog {
     return 0
 }
 
+# ---- analysis (S0016 R44-R48, METRICS.md): read-only views over runs.jsonl and the event files ----
+
+function Format-PqShare($Stats) {
+    if ($Stats.Contains('note')) { return "n=$($Stats.n) - $($Stats.note)" }
+    return ('n={0} moved {1}% ok {2}% minutes p50 {3} p90 {4}' -f $Stats.n, $Stats.movedShare, $Stats.okShare, $Stats.minutesP50, $Stats.minutesP90)
+}
+
+function Format-PqFinding($F) {
+    $ev = if (@($F.evidence).Count -gt 0) { '  evidence: ' + (@($F.evidence) -join ' ') } else { '' }
+    return ('{0} [{1}] -> {2}: {3} (value {4}, threshold {5}){6}' -f $F.fid, $F.severity, $F.target, $F.text, $F.value, $F.threshold, $ev)
+}
+
+function Invoke-PqReport {
+    $d = if ($Days -gt 0) { $Days } else { 7 }
+    $r = Get-PqReport -Root (Get-PqRoot) -Days $d
+    if ($Json) { ConvertTo-Json -InputObject $r -Depth 12; return 0 }
+    "pq report - last $($r.window.days) day(s), since $($r.window.since)"
+    $h = $r.headline
+    if ($h.n -eq 0) { 'no passes in the window' }
+    else { "passes $($h.n)  moved $($h.moved) ($($h.movedShare)%)  ok $($h.ok) ($($h.okShare)%)  wall $($h.hours) h  minutes p50 $($h.minutesP50) p90 $($h.minutesP90)" }
+    if ($r.outcomes.Count -gt 0) { 'outcomes: ' + (@($r.outcomes.Keys | ForEach-Object { "$_ $($r.outcomes[$_])" }) -join ', ') }
+    foreach ($field in @('agent', 'model', 'complexity', 'repo')) {
+        $split = $r["by_$field"]
+        if ($split.Count -eq 0) { continue }
+        "by ${field}:"
+        foreach ($k in $split.Keys) { "  {0,-18} {1}" -f $k, (Format-PqShare $split[$k]) }
+    }
+    $w = $r.waiting
+    "waiting: $($w.waits) wait(s), $($w.pollChanges) change(s) seen, polls $($w.polls) (reranks $($w.reranks), skipped unchanged $($w.skippedUnchanged))"
+    if ($r.occupied.Count -gt 0) { 'occupied by the owner: ' + (@($r.occupied.Keys | ForEach-Object { "$_ x$($r.occupied[$_])" }) -join ', ') }
+    "resources: acquired $($r.resources.acquired), waited $($r.resources.waited), device-level tickets skipped $($r.resources.deviceSkipped)"
+    if ($r.stops.Count -gt 0) { 'stops: ' + (@($r.stops.Keys | ForEach-Object { "$_ x$($r.stops[$_])" }) -join ', ') }
+    "robot-filed tickets: $($r.intake.robotFiled) (capped $($r.intake.capped))"
+    "limits: pass limits $($r.limits.passLimits), holds $($r.limits.holds), resumes $($r.limits.resumes), fallbacks $($r.limits.fallbacks)"
+    "log: $($r.telemetry.events) events, $($r.telemetry.logErrors) log.error, $($r.telemetry.seqGaps) seq gap(s), $($r.telemetry.unparsable) unparsable"
+    if (@($r.findings).Count -eq 0) { 'findings: none' }
+    else { 'findings:'; foreach ($f in $r.findings) { '  ' + (Format-PqFinding $f) } }
+    return 0
+}
+
+function Invoke-PqProblems {
+    $d = if ($Days -gt 0) { $Days } else { 7 }
+    $w = Get-PqWindow $d
+    $root = Get-PqRoot
+    $runs = @(Read-PqRuns -Root $root -Since $w.since)
+    $ev = Read-PqWindowEvents -Root $root -Since $w.since
+    $f = @(Get-PqFindings -Runs $runs -Events @($ev.events) -Gaps $ev.gaps -Bad $ev.bad)
+    if ($Json) { ConvertTo-Json -InputObject $f -Depth 8; return 0 }
+    if ($f.Count -eq 0) { "no open findings in the last $d day(s) ($($runs.Count) passes, $(@($ev.events).Count) events)"; return 0 }
+    foreach ($x in $f) { Format-PqFinding $x }
+    return 0
+}
+
+function Invoke-PqTrace {
+    $t = ConvertTo-PqQueueTarget $Target
+    if ($null -eq $t -or -not $t.id) { Write-PqError 'ArgumentMissing' 'trace needs <repo:id>'; return 2 }
+    $events = @(Get-PqTrace -Root (Get-PqRoot) -Repo $t.repo -Id $t.id)
+    if ($Json) { ConvertTo-Json -InputObject $events -Depth 12; return 0 }
+    if ($events.Count -eq 0) { "no events for $($t.repo):$($t.id)"; return 0 }
+    $lastPass = $null
+    foreach ($e in $events) {
+        if ($e.pass -and $e.pass -cne $lastPass) { "-- pass $($e.pass)$(if ($e.agent) { " ($($e.agent))" })"; $lastPass = $e.pass }
+        $dStr = if ($null -ne $e.d) { ConvertTo-Json -InputObject $e.d -Compress } else { '{}' }
+        '{0}  {1,-18} {2}' -f $e.ts, $e.ev, $dStr
+    }
+    return 0
+}
+
+function Invoke-PqExport {
+    $d = if ($Days -gt 0) { $Days } else { 7 }
+    $what = if ($What) { $What } else { 'runs' }
+    $w = Get-PqWindow $d
+    $root = Get-PqRoot
+    if ($what -ceq 'events') {
+        if ($Format -ceq 'csv') { Write-PqError 'ArgumentConflict' 'events are exported as jsonl only'; return 2 }
+        foreach ($e in @((Read-PqWindowEvents -Root $root -Since $w.since).events)) { ConvertTo-Json -InputObject $e -Depth 12 -Compress }
+        return 0
+    }
+    $runs = @(Read-PqRuns -Root $root -Since $w.since)
+    if ($Format -ceq 'csv') { ConvertTo-PqRunCsv $runs }
+    else { foreach ($r in $runs) { ConvertTo-Json -InputObject $r -Depth 6 -Compress } }
+    return 0
+}
+
+function Invoke-PqCompare {
+    $d = if ($Days -gt 0) { $Days } else { 30 }
+    $by = if ($By) { $By } else { 'canon' }
+    if ($by -cnotin @('canon', 'plugin', 'registryHash', 'profileHash', 'agent', 'model', 'complexity', 'repo')) { Write-PqError 'ArgumentInvalid' "-By '$by' is not a run-row field to split on"; return 2 }
+    $w = Get-PqWindow $d
+    $runs = @(Read-PqRuns -Root (Get-PqRoot) -Since $w.since)
+    $c = Compare-PqRuns -Runs $runs -By $by
+    if ($Json) { ConvertTo-Json -InputObject $c -Depth 8; return 0 }
+    "pq compare - $($runs.Count) passes in the last $d day(s), split by $by"
+    foreach ($g in $c.groups) { '  {0,-24} n={1}  ok {2}%  moved {3}%  minutes p50 {4}' -f $g.value, $g.n, $g.okShare, $g.movedShare, $g.minutesP50 }
+    if ($null -ne $c.from) { "verdict $($c.from) -> $($c.to): $($c.verdict)" } else { "verdict: $($c.verdict) (fewer than two values)" }
+    return 0
+}
+
 # ---- router ----
 
 # Every verb of the INDEX code map; $null marks a verb whose handler a later phase adds.
 $verbs = [ordered]@{
     start = { Invoke-PqStart }; stop = { Invoke-PqStop }; status = { Invoke-PqStatus }; log = { Invoke-PqLog }
-    watch = $null; tail = $null; page = $null; pause = $null; resume = $null
+    watch = $null; tail = { Invoke-PqTail }; page = $null; pause = { Invoke-PqPause }; resume = { Invoke-PqResume }
     hold = { Invoke-PqQueueWriter 'hold' }; release = { Invoke-PqQueueWriter 'release' }; pin = { Invoke-PqQueueWriter 'pin' }
     rank = { Invoke-PqRank }; arrange = { Invoke-PqArrange }; agents = { Invoke-PqAgents }
     queue = { Invoke-PqQueue }; sync = { Invoke-PqSync }; tickets = { Invoke-PqTickets }; register = { Invoke-PqRegister }; list = { Invoke-PqList }; 'dry-run' = { Invoke-PqDryRun }
-    report = $null; trace = $null; problems = $null; export = $null; compare = $null; analyze = $null; improve = $null
+    report = { Invoke-PqReport }; trace = { Invoke-PqTrace }; problems = { Invoke-PqProblems }; export = { Invoke-PqExport }; compare = { Invoke-PqCompare }; analyze = $null; improve = $null
     doctor = { Invoke-PqDoctor }
 }
 

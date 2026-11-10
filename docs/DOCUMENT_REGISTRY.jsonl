@@ -44,6 +44,7 @@
 {"path": "rules/WINDOWS_PACKAGING.md", "topic": "Windows Packaging - the delivery-shape decision guide", "area": "rules", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "skills/adopt-canon/SKILL.md", "topic": "---", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "skills/agent-cost/SKILL.md", "topic": "---", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "skills/portfolio-queue/SKILL.md", "topic": "---", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "skills/caveman/SKILL.md", "topic": "---", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "skills/contract-sync/SKILL.md", "topic": "---", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "skills/feature-to-site/SKILL.md", "topic": "---", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
