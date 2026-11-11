@@ -139,6 +139,11 @@ Public Class InboxSnapshot
         Return New List(Of InboxTicket)()
     End Function
 
+    ' Every project's tickets of one kind together - the "Answer questions (N)" count.
+    Public Function Total(kind As String) As Integer
+        Return _lists.Where(Function(kv) kv.Key.EndsWith("|" & kind, StringComparison.Ordinal)).Sum(Function(kv) kv.Value.Count)
+    End Function
+
     Private Sub Add(kind As String, t As InboxTicket)
         Dim key = $"{t.Repo}|{kind}"
         Dim list As List(Of InboxTicket) = Nothing

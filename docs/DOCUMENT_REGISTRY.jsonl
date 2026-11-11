@@ -73,6 +73,7 @@
 {"path": "skills/sq/SKILL.md", "topic": "---", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "skills/store-publish/SKILL.md", "topic": "---", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "skills/store-publish/references/msix-store.md", "topic": "MSIX and the Microsoft Store - the full payload", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "skills/store-publish/references/store-machine-channel.md", "topic": "Microsoft Store machine channel", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "skills/store-publish/references/winget.md", "topic": "winget - the full payload", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "skills/task-flow-init/SKILL.md", "topic": "---", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "templates/README.md", "topic": "templates", "area": "templates", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
@@ -80,5 +81,7 @@
 {"path": "tools/harness/all_features/README.md", "topic": "ALL_FEATURES inventory - schema notes", "area": "tools", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "tools/harness/document_registry/README.md", "topic": "Document registry - how a page gets announced", "area": "tools", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "tools/harness/portfolio/README.md", "topic": "pq - the portfolio queue, operator's guide", "area": "tools", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "tools/harness/portfolio/docs/INBOX-PACKET.md", "topic": "INBOX-PACKET - the phone-ticket transport packet (S0045)", "area": "tools", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "tools/harness/scaffold/templates/ticket-template.md", "topic": "{{ID}}_{{SLUG}}", "area": "tools", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "tools/harness/spec_catalog/SCHEMA.md", "topic": "Spec Catalog - Journal Schema", "area": "tools", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "tools/tests/data/inbox-ticket-vector/ticket-vector-s0045-a/text.md", "topic": "Phone ticket (voice note entry)", "area": "tools", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}

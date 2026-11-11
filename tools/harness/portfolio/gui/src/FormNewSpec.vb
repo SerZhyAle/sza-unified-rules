@@ -18,9 +18,16 @@ Public Class FormNewSpec
     Private btnDraft As Button
     Private btnCancel As Button
     Private lblStatus As Label
+    Private lstAttachments As ListBox
+    Private btnAddFile As Button
+    Private btnPasteImage As Button
+    Private btnRemoveAttachment As Button
 
     Private _defaultProjectKey As String = ""
     Private _pinTickedByType As Boolean = False
+    Private _capturing As Boolean = False
+    ' Pasted images live here until the dialog closes; spec-draft copies them into the ticket before it returns.
+    Private ReadOnly _pasteDir As String = Path.Combine(Path.GetTempPath(), $"pq_attach_{Guid.NewGuid():N}")
 
     ' What spec-draft printed, for the main window's console.
     Public Property ResultText As String = ""
@@ -34,8 +41,8 @@ Public Class FormNewSpec
         Me.Text = "New Specification (/spec-draft) - Capture Task or Problem"
         Me.AutoScaleDimensions = New SizeF(7.0F, 15.0F)
         Me.AutoScaleMode = AutoScaleMode.Font
-        Me.ClientSize = New Size(780, 620)
-        Me.MinimumSize = New Size(700, 540)
+        Me.ClientSize = New Size(780, 720)
+        Me.MinimumSize = New Size(700, 640)
         Me.StartPosition = FormStartPosition.CenterParent
         Me.Font = New Font("Segoe UI", 9.0F)
         Me.SuspendLayout()
@@ -261,8 +268,71 @@ Public Class FormNewSpec
         }
         pnlContent.Controls.Add(txtDescription)
 
+        ' --- Attachments: files and pasted screenshots, copied into the ticket folder by spec-draft ---
+        Dim pnlAttach As New Panel With {
+            .Name = "pnlAttach",
+            .Dock = DockStyle.Bottom,
+            .Height = 120,
+            .Padding = New Padding(20, 8, 20, 0)
+        }
+        Dim lblAttach As New Label With {
+            .Name = "lblAttach",
+            .Text = "&Attachments (screenshots, logs):",
+            .Dock = DockStyle.Top,
+            .Height = 22,
+            .Font = New Font("Segoe UI", 9.0F, FontStyle.Bold)
+        }
+        Dim pnlAttachButtons As New FlowLayoutPanel With {
+            .Name = "pnlAttachButtons",
+            .Dock = DockStyle.Right,
+            .Width = 150,
+            .FlowDirection = FlowDirection.TopDown,
+            .WrapContents = False,
+            .Padding = New Padding(8, 0, 0, 0)
+        }
+        btnAddFile = New Button With {
+            .Name = "btnAddFile",
+            .Text = "Add &File..",
+            .Size = New Size(136, 28),
+            .Margin = New Padding(0, 0, 0, 4),
+            .AccessibleName = "Add File Button",
+            .AccessibleRole = AccessibleRole.PushButton
+        }
+        AddHandler btnAddFile.Click, AddressOf BtnAddFile_Click
+        btnPasteImage = New Button With {
+            .Name = "btnPasteImage",
+            .Text = "Paste &Image",
+            .Size = New Size(136, 28),
+            .Margin = New Padding(0, 0, 0, 4),
+            .AccessibleName = "Paste Image Button",
+            .AccessibleRole = AccessibleRole.PushButton
+        }
+        AddHandler btnPasteImage.Click, AddressOf BtnPasteImage_Click
+        btnRemoveAttachment = New Button With {
+            .Name = "btnRemoveAttachment",
+            .Text = "&Remove",
+            .Size = New Size(136, 28),
+            .Margin = New Padding(0),
+            .AccessibleName = "Remove Attachment Button",
+            .AccessibleRole = AccessibleRole.PushButton
+        }
+        AddHandler btnRemoveAttachment.Click, AddressOf BtnRemoveAttachment_Click
+        pnlAttachButtons.Controls.AddRange({btnAddFile, btnPasteImage, btnRemoveAttachment})
+        lstAttachments = New ListBox With {
+            .Name = "lstAttachments",
+            .Dock = DockStyle.Fill,
+            .SelectionMode = SelectionMode.MultiExtended,
+            .HorizontalScrollbar = True,
+            .IntegralHeight = False,
+            .AccessibleName = "Attachments List"
+        }
+        pnlAttach.Controls.Add(lstAttachments)
+        pnlAttach.Controls.Add(pnlAttachButtons)
+        pnlAttach.Controls.Add(lblAttach)
+
         ' Container assembly in correct docking z-order
         Me.Controls.Add(pnlContent)
+        Me.Controls.Add(pnlAttach)
         Me.Controls.Add(tblTop)
         Me.Controls.Add(pnlBottom)
         pnlContent.BringToFront()
@@ -280,8 +350,9 @@ Public Class FormNewSpec
         txtSlug.TabIndex = 5
         chkPin.TabIndex = 6
         txtDescription.TabIndex = 7
-        btnDraft.TabIndex = 8
-        btnCancel.TabIndex = 9
+        pnlAttach.TabIndex = 8
+        btnDraft.TabIndex = 9
+        btnCancel.TabIndex = 10
 
         Me.ResumeLayout(False)
         Me.PerformLayout()
@@ -372,7 +443,18 @@ Public Class FormNewSpec
         btnCancel.Enabled = False
         SetStatus("Generating ticket specification via spec-draft.ps1...", isError:=False)
 
-        Dim res = Await PqCli.DraftSpecAsync(projKey, slug, desc, compToken, pin)
+        Dim attachments As New List(Of String)
+        For Each item In lstAttachments.Items
+            attachments.Add(item.ToString())
+        Next
+
+        _capturing = True
+        Dim res As CliResult = Nothing
+        Try
+            res = Await PqCli.DraftSpecAsync(projKey, slug, desc, compToken, pin, attachments)
+        Finally
+            _capturing = False
+        End Try
         If res.Success Then
             ResultText = res.Output.Trim()
             Me.DialogResult = DialogResult.OK
@@ -381,6 +463,97 @@ Public Class FormNewSpec
             btnDraft.Enabled = True
             btnCancel.Enabled = True
         End If
+    End Sub
+
+    Private Sub BtnAddFile_Click(sender As Object, e As EventArgs)
+        Using dlg As New OpenFileDialog With {
+            .Title = "Attach files to the specification",
+            .Multiselect = True,
+            .CheckFileExists = True
+        }
+            If dlg.ShowDialog(Me) <> DialogResult.OK Then Return
+            For Each f In dlg.FileNames
+                AddAttachment(f)
+            Next
+        End Using
+    End Sub
+
+    ' The clipboard holds either a picture (a screenshot) or files copied in Explorer; both become attachments.
+    Private Sub BtnPasteImage_Click(sender As Object, e As EventArgs)
+        Try
+            If Clipboard.ContainsImage() Then
+                Using img = Clipboard.GetImage()
+                    If img Is Nothing Then
+                        SetStatus("The clipboard image could not be read. Copy the screenshot again.", isError:=True)
+                        Return
+                    End If
+                    Directory.CreateDirectory(_pasteDir)
+                    Dim baseName = $"screenshot-{Date.Now:yyyyMMdd-HHmmss}"
+                    Dim target = Path.Combine(_pasteDir, baseName & ".png")
+                    Dim n = 2
+                    While File.Exists(target)
+                        target = Path.Combine(_pasteDir, $"{baseName}-{n}.png")
+                        n += 1
+                    End While
+                    img.Save(target, Imaging.ImageFormat.Png)
+                    AddAttachment(target)
+                End Using
+            ElseIf Clipboard.ContainsFileDropList() Then
+                For Each f In Clipboard.GetFileDropList()
+                    If f IsNot Nothing Then AddAttachment(f)
+                Next
+            Else
+                SetStatus("The clipboard has no image or file. Take a screenshot (Win+Shift+S) and press Paste Image again.", isError:=True)
+            End If
+        Catch ex As Exception
+            SetStatus($"The clipboard could not be read: {ex.Message}", isError:=True)
+        End Try
+    End Sub
+
+    Private Sub BtnRemoveAttachment_Click(sender As Object, e As EventArgs)
+        Dim selected As New List(Of Object)
+        For Each item In lstAttachments.SelectedItems
+            selected.Add(item)
+        Next
+        For Each item In selected
+            lstAttachments.Items.Remove(item)
+        Next
+    End Sub
+
+    Private Sub AddAttachment(filePath As String)
+        If filePath.Contains(";"c) Then
+            SetStatus($"A file name with ';' cannot be attached: {Path.GetFileName(filePath)}. Rename it and add it again.", isError:=True)
+            Return
+        End If
+        If Not File.Exists(filePath) Then
+            SetStatus($"Only files can be attached: {filePath}", isError:=True)
+            Return
+        End If
+        For Each item In lstAttachments.Items
+            If String.Equals(item.ToString(), filePath, StringComparison.OrdinalIgnoreCase) Then Return
+        Next
+        lstAttachments.Items.Add(filePath)
+    End Sub
+
+    ' The pasted images must outlive the capture that copies them, so the window stays open while it runs.
+    Protected Overrides Sub OnFormClosing(e As FormClosingEventArgs)
+        If _capturing Then
+            e.Cancel = True
+            SetStatus("The specification is being created. Wait for it to finish.", isError:=False)
+        End If
+        MyBase.OnFormClosing(e)
+    End Sub
+
+    ' Completion and cancellation both close the dialog; the pasted images go with it.
+    Protected Overrides Sub OnFormClosed(e As FormClosedEventArgs)
+        MyBase.OnFormClosed(e)
+        Try
+            If Directory.Exists(_pasteDir) Then Directory.Delete(_pasteDir, recursive:=True)
+        Catch ex As IOException
+            Diagnostics.Debug.WriteLine($"FormNewSpec: could not remove {_pasteDir}: {ex.Message}")
+        Catch ex As UnauthorizedAccessException
+            Diagnostics.Debug.WriteLine($"FormNewSpec: could not remove {_pasteDir}: {ex.Message}")
+        End Try
     End Sub
 
     Private Sub SetStatus(msg As String, isError As Boolean)

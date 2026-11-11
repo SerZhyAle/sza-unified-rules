@@ -252,7 +252,7 @@ pwsh -NoProfile -File tools/harness/portfolio/build-deliver.ps1 -Project oneclic
   packet's `result.json` as `builds` (additive): `delivered` with the version, `refused`/`not-built` with the
   reason, `deferred` to the next drain.
 
-**Publishing to the Microsoft Store is different, and stays one-way.** A packet phrased "опубликуй ... in MS
+**Publishing to the Microsoft Store is different, and stays one-way.** A packet phrased "опубликуй .. in MS
 Store" is recognized at ingest (`publishIntent: "ms-store"|"github"|"winget"` in `result.json`, a note in the
 drafted ticket) - the agent then works it with the `store-publish` skill.
 `stage-store-publish.ps1 -Project <key> [-Ticket <id> -SetStatus]` stages everything an agent can do: the
@@ -277,6 +277,12 @@ registered are reported as they are; the script undoes none of them.
 A project with no task flow (no `.sza-profile.json`) is captured into too, as a plain `PLAN/<id>_<slug>.md` numbered
 the way that project already numbers its tickets; no profile, ledger or queue row is written, and the report says
 `pq=no-task-flow`, because `pq` cannot work a ticket that has no ledger.
+
+Screenshots and logs go with the ticket: `-Attach "<path;path>"`, or the **Attachments** list of the New Spec dialog,
+where **Add File..** picks files and **Paste Image** takes a screenshot (or files copied in Explorer) from the
+clipboard. Each file is copied byte for byte into `<ticket>/attachments/` beside the spec and linked in section 0 after
+your words; nothing already there is overwritten. A pasted screenshot is a temporary file the dialog deletes when it
+closes, after the capture has copied it.
 
 ## One-time setup, per repository
 
@@ -371,7 +377,8 @@ empty: wait, see Waiting
   together with `-Repo`. `-MaxTickets` with it must be 0 or 1. `pq start -Repo <key>` is a normal worker that ranks only
   that project - its ticket order, stops, waiting, `-Drain`, `-MaxTickets` and `-Until` as usual, every hold kept. Neither
   mode changes the project order or reorders the queue file; each runs the per-turn queue sync and file-to-ledger
-  registration for its own project only and no discovery; `run.start` carries `target` (`ticket:<key>:<id>`, `repo:<key>`) and
+  registration for its own project only and no discovery; every `run.start` carries `agents`, the provider order in force when the
+  worker started (a later order change writes no new snapshot), and the named start's `run.start` carries `target` (`ticket:<key>:<id>`, `repo:<key>`) and
   `rank.result` carries `named` and `heldBypassed` for the named start.
 - A pass child does not inherit the starting agent's session variables, so `pq` may be started from an agent's shell as well
   as from a shortcut.
@@ -540,7 +547,7 @@ nothing to follow for a Codex or Gemini pass.
 | Command | Shows |
 | --- | --- |
 | `pq inbox [-Json]` | what waits for the owner across all projects: one line per kind (count, oldest age, the command that clears it), then the tickets with id, age and note; `BlockByOtherTask` as chain roots |
-| `pq report [-Days n]` | the last n days (7): passes, moved and ok shares, outcomes, ending statuses overall and by agent, entries and exits for owner-waiting statuses, the splits by agent, model, complexity and repository (only where n is at least 5), waiting, occupancy, resources, stops, robot-filed tickets, limits, log health and the open findings; `-Json` for the object |
+| `pq report [-Days n]` | the last n days (7): passes, moved and ok shares, outcomes, ending statuses overall and by agent, entries and exits for owner-waiting statuses, the passes each registered repository's own R0 made outside pq (its `runs-mono.jsonl`, in the same window, counted apart from the pq figures, with any journal that could not be read named), the splits by agent, model, complexity and repository (only where n is at least 5), waiting, occupancy, resources, stops, robot-filed tickets, limits, log health and the open findings; `-Json` for the object |
 | `pq problems [-Days n]` | the open findings only, severity first, each with the events behind it: `PQ-RACE01` (a lost claim), `PQ-SAFE01` (a tripwire), `PQ-SAFE02` (the robot-filed cap), `PQ-LIMIT01` (a limit with no reset time), `PQ-THRASH01`, `PQ-RES03` (a token waited on for 30 minutes), `PQ-STALL01`, `PQ-XREPO01` (a blocker cycle), `PQ-DATA01` (a log gap or error), `PQ-COST02` (`light` that needed three passes), `PQ-ADOPT01` (a repository far below the median) |
 | `pq trace <key:id>` | every event of one ticket in time order, grouped by pass |
 | `pq export [-What runs|events] [-Format jsonl|csv] [-Days n]` | the run rows (default) or the events, to stdout |

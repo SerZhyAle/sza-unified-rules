@@ -26,6 +26,11 @@ does not apply here; this is where fixes land. It applies everywhere else.
   `smoke-portfolio-runner.ps1` 120-300 s, `batch-runner.tests.ps1` 163 s. What stays is the fast list and a direct call of
   the function or script that was changed. A release-tier suite runs only when the owner asks for it by name. When a change
   is not covered by a fast check, say so in the report instead of running a slow one.
+- **The deploy names all four fast checks** (from 2026-11-11): after `check-rules.ps1`, which blocks, it runs
+  `check-contracts.ps1`, `check-documents.py` and `assert-portable.ps1` and prints each exit code, or `unavailable` with the
+  reason when one cannot run. Those three are advisory and never change the exit code, so a red one is named at every deploy
+  instead of being called "not mine" for weeks. [tools/tests/deploy-fast-gates.tests.ps1](tools/tests/deploy-fast-gates.tests.ps1)
+  covers it with stubs.
 - **The shared contracts catalog is at `P:\Contracts`** - the one place in this repo's prose that gives the
   path, besides [rules/CONTRACTS.md](rules/CONTRACTS.md) and the `contract-sync` skill, which teach the rule
   itself, and the three scripts that need a default to fall back on when `SZA_CONTRACTS_ROOT` is unset.

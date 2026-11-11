@@ -5,11 +5,18 @@
 #
 #   Get-PqWindow -Days <n>              @{ since; until; days } - the last n local days (n >= 1), ending now.
 #   Read-PqRuns -Root -Since            the run rows (runs.jsonl) finished at or after Since, as objects.
+#   Read-PqStandaloneRuns -Sources -Since
+#                                       @{ rows; read; unreadable } - each registered repository's own R0 journal
+#                                       (runs-mono.jsonl, TASK-FLOW rule 33) in the window, every row tagged repo and
+#                                       outside = $true; Sources is @(@{ repo; path; why }), a why marking a source
+#                                       that could not be resolved. An absent file is skipped, an
+#                                       unparsable line dropped, an unreadable file listed in unreadable (S0037).
 #   Read-PqWindowEvents -Root -Since    @{ events; bad; unsupported; gaps } merged over the UTC days the window touches, the
 #                                       events from Since on.
 #   Get-PqPercentile -Values -P         the p-th percentile (nearest rank) of numbers, or $null.
 #   Get-PqRunStats -Runs                n, moved, ok, minutes p50 and p90 for a group of run rows.
-#   Get-PqReport -Root -Days            the report object: headline, outcome mix, splits by agent / model / complexity /
+#   Get-PqReport -Root -Days [-Standalone <Sources>]
+#                                       the report object: headline, outcome mix, ending statuses, the outsidePq block, splits by agent / model / complexity /
 #                                       repository (a split prints only where n >= minSample, METRICS.md), waiting, occupancy,
 #                                       resources, stops, intake, telemetry health, findings.
 #   Get-PqFindings -Runs -Events -Gaps -Bad
@@ -33,7 +40,33 @@ function Get-PqWindow([int]$Days = 7) {
 
 function Read-PqRuns {
     param([Parameter(Mandatory)][string]$Root, [datetime]$Since = [datetime]::MinValue)
-    $path = Join-Path $Root 'runs.jsonl'
+    return @(Read-PqRunFile -Path (Join-Path $Root 'runs.jsonl') -Since $Since)
+}
+
+function Read-PqStandaloneRuns {
+    param($Sources, [datetime]$Since = [datetime]::MinValue)
+    $result = [ordered]@{ rows = [Collections.Generic.List[object]]::new(); read = [Collections.Generic.List[string]]::new(); unreadable = [Collections.Generic.List[object]]::new() }
+    foreach ($src in @($Sources)) {
+        $key = [string](Get-PqValue $src 'repo' '')
+        $why = [string](Get-PqValue $src 'why' '')
+        $path = [string](Get-PqValue $src 'path' '')
+        if ($why) { $result.unreadable.Add([ordered]@{ repo = $key; why = $why }); continue }
+        if (-not $path -or -not [IO.File]::Exists($path)) { continue }
+        try { $rows = @(Read-PqRunFile -Path $path -Since $Since) }
+        catch { $result.unreadable.Add([ordered]@{ repo = $key; why = $_.Exception.Message }); continue }
+        $result.read.Add($key)
+        foreach ($row in $rows) {
+            if ($row -isnot [Management.Automation.PSCustomObject]) { continue }
+            $row | Add-Member -NotePropertyName repo -NotePropertyValue $key -Force
+            $row | Add-Member -NotePropertyName outside -NotePropertyValue $true -Force
+            $result.rows.Add($row)
+        }
+    }
+    return $result
+}
+
+function Read-PqRunFile {
+    param([Parameter(Mandatory)][string]$Path, [datetime]$Since = [datetime]::MinValue)
     $rows = [Collections.Generic.List[object]]::new()
     if (-not [IO.File]::Exists($path)) { return @() }
     $stream = [IO.File]::Open($path, 'Open', 'Read', 'ReadWrite')
@@ -229,9 +262,10 @@ function Get-PqFindings {
 }
 
 function Get-PqReport {
-    param([Parameter(Mandatory)][string]$Root, [int]$Days = 7)
+    param([Parameter(Mandatory)][string]$Root, [int]$Days = 7, $Standalone = @())
     $w = Get-PqWindow $Days
     $runs = @(Read-PqRuns -Root $Root -Since $w.since)
+    $mono = Read-PqStandaloneRuns -Sources $Standalone -Since $w.since
     $ev = Read-PqWindowEvents -Root $Root -Since $w.since
     $events = @($ev.events)
     $count = { param($name) @($events | Where-Object { $_.ev -ceq $name }).Count }
@@ -244,6 +278,15 @@ function Get-PqReport {
     foreach ($g in @($runs | Group-Object { [string](Get-PqValue $_ 'outcome' 'unknown') } | Sort-Object Count -Descending)) { $outcomes[$g.Name] = $g.Count }
     $report.outcomes = $outcomes
     $report.statuses = Get-PqStatusFigures $runs
+    # S0037: a repository's own R0 runs, outside pq - kept apart so the pq figures above stay pq's alone.
+    $monoRows = @($mono.rows)
+    $monoGroups = Group-PqRunsBy $monoRows 'repo'
+    $monoByRepo = [ordered]@{}
+    foreach ($k in @($monoGroups.Keys)) { $monoByRepo[$k] = Get-PqRunStats @($monoGroups[$k]) }
+    $report.outsidePq = [ordered]@{
+        source = 'runs-mono.jsonl'; headline = Get-PqRunStats $monoRows; byRepo = $monoByRepo
+        statuses = Get-PqStatusFigures $monoRows; read = @($mono.read); unreadable = @($mono.unreadable)
+    }
     foreach ($field in @('agent', 'model', 'complexity', 'repo')) {
         $split = [ordered]@{}
         foreach ($k in @((Group-PqRunsBy $runs $field).Keys)) {

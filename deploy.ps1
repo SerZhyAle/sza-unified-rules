@@ -9,6 +9,10 @@ broken rules edit past tools/check-rules.ps1, which is the one thing CLAUDE.md r
 anything under rules/ is committed. -Yes skips the confirmation prompt, never the gate
 (INVARIANTS 9).
 
+Right after it, the other three fast gates run and every one of the four is named with its exit code
+(check-rules, check-contracts, check-documents, assert-portable); a gate that cannot run is named
+'unavailable' with the reason. Those three are advisory - they never block and never change the exit code.
+
 The version pair is raised here, not by hand. A commit carrying anything consumers run is shipped by
 the plugin version and nothing else, so tools/bump-canon-version.ps1 writes CANON_VERSION and
 .claude-plugin/plugin.json before staging. The rule used to live in prose in three canon documents and
@@ -93,17 +97,65 @@ $gateCode = $LASTEXITCODE
 if ($gateCode -eq 2) { Fail "the gate could not verify the canon (exit 2) - fix that before deploying" 2 }
 if ($gateCode -ne 0) { Fail "the gate found violations (exit $gateCode) - nothing was staged" 1 }
 
-# The contracts catalog lives outside git and outside this repo, so its state cannot block a canon
-# deploy - a machine without P:\Contracts would never be able to ship a rule fix. It is still worth
-# saying out loud when the catalog the rules point at is broken.
-$ctrGate = Join-Path $root 'tools\check-contracts.ps1'
-$ctrRoot = if ($env:SZA_CONTRACTS_ROOT) { $env:SZA_CONTRACTS_ROOT } else { 'P:\Contracts' }
-if ((Test-Path -LiteralPath $ctrGate) -and (Test-Path -LiteralPath $ctrRoot)) {
-    Write-Host 'deploy: checking the contracts catalog (advisory)' -ForegroundColor Cyan
-    & pwsh -NoProfile -File $ctrGate -CatalogRoot $ctrRoot | Select-Object -Last 3
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host 'deploy: the contracts catalog has errors - not a blocker here, but fix it' -ForegroundColor Yellow
+# The four fast gates (CLAUDE.md "Working here") are named at every deploy, so a red one cannot sit for
+# weeks as somebody else's problem (2026-10-28 .. 11-10: assert-portable and check-documents were red and
+# called "not mine" in 17 reports). The canon gate above already blocked on anything but 0; the other three
+# are advisory - the contracts catalog lives outside git and outside this repo, so a machine without
+# P:\Contracts must still be able to ship a rule fix - and a gate that cannot run is reported as
+# 'unavailable', never silently skipped. Nothing here changes the exit code.
+function Invoke-FastGateReport {
+    param(
+        [Parameter(Mandatory)][string]$Root,
+        [Parameter(Mandatory)][int]$CanonCode,
+        [Parameter(Mandatory)][string]$ContractsRoot,
+        [string]$Pwsh = 'pwsh',
+        [string[]]$PythonCandidates = @('py', 'python')
+    )
+    $python = $PythonCandidates | Where-Object { Get-Command $_ -ErrorAction SilentlyContinue } | Select-Object -First 1
+    $gates = @(
+        @{ Name = 'check-contracts'; Script = 'tools\check-contracts.ps1'; Tool = $Pwsh; Args = @('-NoProfile', '-File', '{script}', '-CatalogRoot', $ContractsRoot); Needs = $ContractsRoot; NeedsText = "contracts catalog $ContractsRoot is not there" }
+        @{ Name = 'check-documents'; Script = 'tools\docs\check-documents.py'; Tool = $python; Args = @('{script}'); ToolText = "none of $($PythonCandidates -join ', ') is on PATH" }
+        @{ Name = 'assert-portable'; Script = 'tools\harness\assert-portable.ps1'; Tool = $Pwsh; Args = @('-NoProfile', '-File', '{script}') }
+    )
+    $report = @([pscustomobject]@{ name = 'check-rules'; code = $CanonCode; state = if ($CanonCode -eq 0) { 'ok' } else { 'red' }; why = '' })
+    foreach ($gate in $gates) {
+        $script = Join-Path $Root $gate.Script
+        $why = ''
+        if (-not (Test-Path -LiteralPath $script)) { $why = "$($gate.Script) is missing" }
+        elseif (-not $gate.Tool) { $why = $gate['ToolText'] }
+        elseif (-not (Get-Command $gate.Tool -ErrorAction SilentlyContinue)) { $why = "'$($gate.Tool)' is not on PATH" }
+        elseif ($gate['Needs'] -and -not (Test-Path -LiteralPath $gate['Needs'])) { $why = $gate['NeedsText'] }
+        if ($why) {
+            $report += [pscustomobject]@{ name = $gate.Name; code = $null; state = 'unavailable'; why = $why }
+            continue
+        }
+        $argList = @($gate.Args | ForEach-Object { $_ -replace '\{script\}', $script })
+        try {
+            $out = @(& $gate.Tool @argList 2>&1)
+            $code = $LASTEXITCODE
+        }
+        catch {
+            $report += [pscustomobject]@{ name = $gate.Name; code = $null; state = 'unavailable'; why = $_.Exception.Message }
+            continue
+        }
+        $tail = if ($code -ne 0) { (@($out | ForEach-Object { "$_" } | Where-Object { $_.Trim() } | Select-Object -Last 3) -join "`n") } else { '' }
+        $report += [pscustomobject]@{ name = $gate.Name; code = $code; state = if ($code -eq 0) { 'ok' } else { 'red' }; why = $tail }
     }
+    foreach ($item in $report) {
+        $shown = if ($null -eq $item.code) { 'unavailable' } else { "exit $($item.code)" }
+        $color = if ($item.state -eq 'ok') { 'Green' } else { 'Yellow' }
+        Write-Host "deploy:   $($item.name.PadRight(16)) $shown$(if ($item.state -eq 'unavailable') { " - $($item.why)" })" -ForegroundColor $color
+        if ($item.state -eq 'red' -and $item.why) { ($item.why -split "`n") | ForEach-Object { Write-Host "deploy:     $_" } }
+    }
+    return $report
+}
+
+$ctrRoot = if ($env:SZA_CONTRACTS_ROOT) { $env:SZA_CONTRACTS_ROOT } else { 'P:\Contracts' }
+Write-Host 'deploy: fast gates (the canon gate blocked above; the rest are advisory)' -ForegroundColor Cyan
+$fastGates = @(Invoke-FastGateReport -Root $root -CanonCode $gateCode -ContractsRoot $ctrRoot)
+$notGreen = @($fastGates | Where-Object { $_.state -ne 'ok' })
+if ($notGreen.Count -gt 0) {
+    Write-Host "deploy: $($notGreen.Count) of $($fastGates.Count) fast gates are red or unavailable ($(($notGreen | ForEach-Object { $_.name }) -join ', ')) - not a blocker here, but fix them" -ForegroundColor Yellow
 }
 
 # --- 2. Look at what would go in, without touching the index yet. ---------------------------------

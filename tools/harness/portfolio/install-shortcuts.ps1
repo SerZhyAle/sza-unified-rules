@@ -33,11 +33,13 @@
       PQ Report           pq report                 the last seven days in numbers, with the open findings
       PQ Doctor           pq doctor                 check the enabled repositories and the queue file
       PQ Repos            pq list                   the registered repositories
-      PQ Guide            README.md of this folder  the operator's instruction
+      PQ Answer questions claude "/sza:sq --all"    an interactive Claude session in the canon checkout that answers
+                                                    the waiting questions of every project in one sitting (S0026)
+      PQ Guide           README.md of this folder  the operator's instruction
 
     The set goes into the Desktop and into the root of the canon working tree (the root copies are ignored by git:
     deploy.ps1 stages everything else). A shortcut is replaced only when the file already there is one of ours (its
-    target runs pq.ps1, or it is the guide). Any other file with the same name is reported and left alone. A refresh
+    target runs pq.ps1 or the portfolio quiz, or it is the guide). Any other file with the same name is reported and left alone. A refresh
     also drops our own shortcut of the former name `PQ Queue` and our `PQ Tickets` shortcuts of repositories that are
     no longer registered or enabled. -Remove takes off the same set under the same test. Nothing is written outside the two
     folders.
@@ -140,6 +142,7 @@ $set.Add(@{ Name = 'PQ Resume'; Pq = 'resume'; Text = 'Portfolio queue: undo PQ 
 $set.Add(@{ Name = 'PQ Report'; Pq = 'report'; Text = 'Portfolio queue: the last seven days in numbers, with the open findings' })
 $set.Add(@{ Name = 'PQ Doctor'; Pq = 'doctor'; Text = 'Portfolio queue: check the enabled repositories and the queue file' })
 $set.Add(@{ Name = 'PQ Repos'; Pq = 'list'; Text = 'Portfolio queue: the registered repositories' })
+$set.Add(@{ Name = 'PQ Answer questions'; Quiz = $true; Text = 'Portfolio queue: answer the waiting questions of every project in one sitting - claude /sza:sq --all in the canon checkout' })
 $set.Add(@{ Name = 'PQ Guide'; Guide = $true; Text = 'Portfolio queue: the operator''s instruction' })
 
 try { $shell = New-Object -ComObject WScript.Shell }
@@ -148,12 +151,13 @@ catch {
     exit 2
 }
 
-# A shortcut already on disk is ours when it runs this pq.ps1 or opens the guide.
+# A shortcut already on disk is ours when it runs this pq.ps1, the portfolio quiz, or opens the guide.
+$quizCommand = "claude '/sza:sq --all'"
 function Test-Ours([string]$LnkPath) {
     $l = $shell.CreateShortcut($LnkPath)
     $arg = [string]$l.Arguments
     $tgt = [string]$l.TargetPath
-    return ($arg -match '(?i)portfolio[\\/]pq\.ps1') -or ($tgt -ieq $guide)
+    return ($arg -match '(?i)portfolio[\\/]pq\.ps1') -or $arg.Contains($quizCommand) -or ($tgt -ieq $guide)
 }
 
 foreach ($folder in $folders) {
@@ -179,15 +183,17 @@ foreach ($folder in $folders) {
         }
 
         $isGuide = $s.ContainsKey('Guide') -and $s.Guide
+        $isQuiz = $s.ContainsKey('Quiz') -and $s.Quiz
         $target = if ($isGuide) { $guide } else { $pwshExe }
         $arguments = if ($isGuide) { '' }
+                     elseif ($isQuiz) { "-NoExit -Command `"$quizCommand`"" }   # the profile loads, so claude is found as in the owner's terminal (PQShell's Session cell does the same)
                      elseif ($s.Name -eq 'PQ Start') { "-NoExit -NoProfile -Command `"for (;;) { & '$pq' start; if (`$LASTEXITCODE -ne 0) { break } }`"" }
                      else { "-NoExit -NoProfile -File `"$pq`" $($s.Pq)" }
         $icon = if ($isGuide) { '' } else { "$pwshExe,0" }
         $dir = if ($isGuide) { $PSScriptRoot } else { $workDir }
 
         if ($DryRun) {
-            "would $(if ($exists) { 'update' } else { 'create' }) $($s.Name).lnk ($($folder.Label)) -> $(if ($isGuide) { $guide } else { 'pq.ps1 ' + $s.Pq })"
+            "would $(if ($exists) { 'update' } else { 'create' }) $($s.Name).lnk ($($folder.Label)) -> $(if ($isGuide) { $guide } elseif ($isQuiz) { $quizCommand } else { 'pq.ps1 ' + $s.Pq })"
             if ($exists) { $counts.updated++ } else { $counts.created++ }
             continue
         }

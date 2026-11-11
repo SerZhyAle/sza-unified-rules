@@ -390,7 +390,10 @@ any project and carries the mechanics; the procedure below is its authority.
    researched recommendation **listed first** and marked recommended. For a `- **DO:** <action>` item,
    show the exact action line to the owner and take the result (completed with the observed output/value,
    or an alternative/skip decision) as the owner input (S0042). Most-blocking first, in rounds where
-   the runtime caps a round, never more than unblocking needs. The questions that arrive here are the
+   the runtime caps a round, never more than unblocking needs. A ticket with several questions may first be
+   shown as one table - question, recommended answer, consequence - with one owner choice over it: accept all,
+   pick the exceptions, or one by one (S0026). Accepting the table is the owner's answer to every row, given
+   by the owner's click; nothing is accepted without it. The questions that arrive here are the
    owner-owned ones only: since S0039 an unattended pass takes a researched, ticket-reversible
    recommendation itself and records it under `### Assumed (unattended, <date>)`, so a reversible default
    no longer reaches this sitting as a question. What does arrive is still answered by the owner - in the

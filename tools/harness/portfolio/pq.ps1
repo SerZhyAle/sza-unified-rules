@@ -1061,7 +1061,16 @@ function Format-PqFinding($F) {
 
 function Invoke-PqReport {
     $d = if ($Days -gt 0) { $Days } else { 7 }
-    $r = Get-PqReport -Root (Get-PqRoot) -Days $d
+    # S0037: each registered repository's own R0 journal (runs-mono.jsonl), reported apart as outside pq.
+    $sources = [Collections.Generic.List[object]]::new()
+    $reg = Read-PqRegistryIfAny
+    if ($null -ne $reg) {
+        foreach ($repo in @($reg.repos)) {
+            try { $sources.Add(@{ repo = [string]$repo.key; path = (Join-Path (Get-PqRepoPaths -RepoPath ([string]$repo.path)).RunsDir 'runs-mono.jsonl') }) }
+            catch { $sources.Add(@{ repo = [string]$repo.key; why = $_.Exception.Message }) }
+        }
+    }
+    $r = Get-PqReport -Root (Get-PqRoot) -Days $d -Standalone @($sources)
     if ($Json) { ConvertTo-Json -InputObject $r -Depth 12; return 0 }
     "pq report - last $($r.window.days) day(s), since $($r.window.since)"
     $h = $r.headline
@@ -1079,6 +1088,13 @@ function Invoke-PqReport {
     foreach ($status in $r.statuses.gates.Keys) {
         $counts = $r.statuses.gates[$status]
         "  ${status}: $($counts.entered) / $($counts.left)"
+    }
+    $o = $r.outsidePq
+    if ($o.headline.n -gt 0 -or @($o.unreadable).Count -gt 0) {
+        "outside pq ($($o.source)): passes $($o.headline.n)  moved $($o.headline.moved)  ok $($o.headline.ok)"
+        foreach ($k in $o.byRepo.Keys) { "  {0,-18} {1}" -f $k, (Format-PqShare $o.byRepo[$k]) }
+        if ($o.statuses.ended.Count -gt 0) { '  ended in: ' + (@($o.statuses.ended.Keys | ForEach-Object { "$_ $($o.statuses.ended[$_])" }) -join ', ') }
+        foreach ($u in @($o.unreadable)) { "  unreadable $($u.repo): $($u.why)" }
     }
     foreach ($field in @('agent', 'model', 'complexity', 'repo')) {
         $split = $r["by_$field"]

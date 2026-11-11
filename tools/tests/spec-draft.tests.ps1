@@ -17,11 +17,15 @@
       6. With no -Project the project is found from the current folder.
       7. A project's own scripts/utils/capture-draft.ps1 is used instead of the canon's.
       8. Every refusal (bad slug, a slug that ends in a separator, no text, empty text, unknown project, a profile
-         with no ledger, -Attach without a script that takes it) exits 2 and creates nothing; -WhatIf creates
-         nothing.
+         with no ledger, a missing, folder or repeated -Attach path) exits 2 and creates nothing; -WhatIf
+         creates nothing.
       9. A project with no task flow at all gets a plain ticket file in its own numbering (SP-0014 after SP-0013 and
          a DONE/ folder), nothing else is written, and the report says pq=no-task-flow; an empty folder starts at
          S0001; a bare complexity level, a closed dedup hit and -WhatIf behave.
+     11. -Attach in every capture path - the canon's, a project script without -Attach, a plain capture: each file is
+         copied byte for byte beside the spec and linked in section 0 after the untouched request text; a file
+         already in the attachments folder is not overwritten; -WhatIf copies nothing; a project script that drops
+         the request text leaves the links unwritten and exits 1 naming the ticket.
 
     -Only <regex> runs the cases whose name matches it (cases 2-4 build on case 1, so use it for 8 and 9 only).
 #>
@@ -220,10 +224,12 @@ exit 0
 '@
         [IO.File]::WriteAllText((Join-Path $utils 'capture-draft.ps1'), $stub)
         $f = Write-Text 'owner9.txt' 'Handled by the project script.'
+        $png = Write-Text 'x.png' 'png'
+        # A relative path is handed over resolved: the project script runs in the project folder.
         $r = Invoke-Draft @('-Project', $repoOwn, '-Slug', 'bugfix-own-path', '-TextFile', $f, '-Attach', 'x.png')
         Assert-That ($r.code -eq 0) "exit $($r.code): $($r.output)"
         $called = [IO.File]::ReadAllText((Join-Path $utils 'stub-called.txt'))
-        Assert-That ($called -ceq 'bugfix-own-path|90|x.png|Handled by the project script.') "stub saw: $called"
+        Assert-That ($called -ceq "bugfix-own-path|90|$png|Handled by the project script.") "stub saw: $called"
         Assert-That ($r.last -match '^drafted repo-own:S0001 ') "result: $($r.last)"
     }
 
@@ -241,7 +247,9 @@ exit 0
             @{ n = 'empty text'; a = @('-Project', $repoFree, '-Slug', 'ok-slug', '-TextFile', $empty); m = 'text is empty' },
             @{ n = 'unknown project'; a = @('-Project', 'no-such-key', '-Slug', 'ok-slug', '-TextFile', $good); m = 'registered: repo-a' },
             @{ n = 'a profile with no ledger'; a = @('-Project', $half, '-Slug', 'ok-slug', '-TextFile', $good); m = 'task-flow-init' },
-            @{ n = 'attach without a script that takes it'; a = @('-Project', $repoFree, '-Slug', 'ok-slug', '-TextFile', $good, '-Attach', 'a.png'); m = 'attachments' }
+            @{ n = 'a missing attachment'; a = @('-Project', $repoFree, '-Slug', 'ok-slug', '-TextFile', $good, '-Attach', 'no-such.png'); m = 'does not exist' },
+            @{ n = 'a folder as attachment'; a = @('-Project', $repoFree, '-Slug', 'ok-slug', '-TextFile', $good, '-Attach', $scratch); m = 'is a folder' },
+            @{ n = 'an attachment given twice'; a = @('-Project', $repoFree, '-Slug', 'ok-slug', '-TextFile', $good, '-Attach', "$good;$good"); m = 'given twice' }
         )
         foreach ($c in $cases) {
             $r = Invoke-Draft $c.a
@@ -439,6 +447,61 @@ exit `$LASTEXITCODE
         }
         $sw.Stop()
         Assert-That ($sw.ElapsedMilliseconds -lt 30000) "concurrent captures took longer than 30s ($($sw.ElapsedMilliseconds)ms)"
+    }
+
+    Run-Case '11 -Attach copies byte for byte and links in section 0 in every capture path' {
+        $shot = Join-Path $scratch 'shot [1].png'
+        [IO.File]::WriteAllBytes($shot, [byte[]](0..255))
+        $log = Write-Text 'phone.log' "E/crash`r`n"
+        $f = Write-Text 'owner12.txt' $tricky
+        $check = {
+            param([string] $Repo, [string] $SpecRel)
+            $specPath = Join-Path $Repo $SpecRel
+            $spec = [IO.File]::ReadAllText($specPath)
+            $at = $spec.IndexOf($tricky, [StringComparison]::Ordinal)
+            Assert-That ($at -ge 0) "$SpecRel lost the owner text"
+            Assert-That ($spec.IndexOf('**Attachments:**', [StringComparison]::Ordinal) -gt $at) "$SpecRel has no attachment block after the request"
+            $dir = Join-Path (Join-Path (Split-Path -Parent $specPath) ([IO.Path]::GetFileNameWithoutExtension($specPath))) 'attachments'
+            Assert-That ((Get-FileHashOf (Join-Path $dir '01__shot [1].png')) -eq (Get-FileHashOf $shot)) "$SpecRel png differs"
+            Assert-That ((Get-FileHashOf (Join-Path $dir '01__phone.log')) -eq (Get-FileHashOf $log)) "$SpecRel log differs"
+            Assert-That ($spec.Contains('/attachments/01__shot%20%5B1%5D.png)')) "$SpecRel png link is not escaped"
+        }
+
+        $repoAtt = New-Repo 'repo-att'
+        $files = @(Get-ChildItem -LiteralPath $repoAtt -Recurse -Force).Count
+        $r = Invoke-Draft @('-Project', $repoAtt, '-Slug', 'with-files', '-TextFile', $f, '-Attach', "$shot;$log", '-WhatIf')
+        Assert-That ($r.code -eq 0 -and @(Get-ChildItem -LiteralPath $repoAtt -Recurse -Force).Count -eq $files) "-WhatIf wrote something: $($r.output)"
+        # A folder left by an earlier ticket of the same name: its file keeps its bytes, the copy takes the next number.
+        $stale = Join-Path $repoAtt 'PLAN\S0001_with-files\attachments'
+        New-Item -ItemType Directory -Path $stale -Force | Out-Null
+        [IO.File]::WriteAllText((Join-Path $stale '01__phone.log'), 'older')
+        $r = Invoke-Draft @('-Project', $repoAtt, '-Slug', 'with-files', '-TextFile', $f, '-Attach', "$shot;$log")
+        Assert-That ($r.code -eq 0 -and $r.last -match '^drafted repo-att:S0001 ') "canon capture: $($r.output)"
+        Assert-That ([IO.File]::ReadAllText((Join-Path $stale '01__phone.log')) -ceq 'older') 'an existing attachment was overwritten'
+        Assert-That ((Get-FileHashOf (Join-Path $stale '02__phone.log')) -eq (Get-FileHashOf $log)) 'the colliding copy is missing'
+        Assert-That ([IO.File]::ReadAllText((Join-Path $repoAtt 'PLAN\S0001_with-files.md')).Contains('/attachments/02__phone.log)')) 'the link does not name the renumbered copy'
+
+        $repoBare = New-Repo 'repo-bare'
+        $utils = Join-Path $repoBare 'scripts\utils'
+        New-Item -ItemType Directory -Path $utils -Force | Out-Null
+        $stub = @"
+param([string]`$Slug, [string]`$TextFile, [int]`$Priority = -1, [string]`$Complexity = '', [string]`$DedupQuery = '', [switch]`$AllowClosedDuplicate)
+`$text = if (`$Slug -like '*drop*') { 'rewritten' } else { [IO.File]::ReadAllText(`$TextFile) }
+[IO.File]::WriteAllText("PLAN/S0001_`$Slug.md", "# S0001``n``n## 0. Request``n``n`$text``n``n## 1. Problem``n")
+Write-Host "S0001 `$Slug - Draft."
+exit 0
+"@
+        [IO.File]::WriteAllText((Join-Path $utils 'capture-draft.ps1'), $stub)
+        $r = Invoke-Draft @('-Project', $repoBare, '-Slug', 'bare-own', '-TextFile', $f, '-Attach', "$shot;$log")
+        Assert-That ($r.code -eq 0) "own script without -Attach: $($r.output)"
+        & $check $repoBare 'PLAN\S0001_bare-own.md'
+        $r = Invoke-Draft @('-Project', $repoBare, '-Slug', 'drop-text', '-TextFile', $f, '-Attach', $log)
+        Assert-That ($r.code -eq 1 -and $r.output -match 'S0001' -and $r.output -match 'not linked') "lost text: exit $($r.code): $($r.output)"
+
+        $plainAtt = Join-Path $scratch 'plain-att'; New-Item -ItemType Directory -Path $plainAtt | Out-Null
+        $r = Invoke-Draft @('-Project', $plainAtt, '-Slug', 'plain-files', '-TextFile', $f, '-Attach', "$shot;$log")
+        Assert-That ($r.code -eq 0) "plain capture: $($r.output)"
+        & $check $plainAtt 'PLAN\S0001_plain-files.md'
     }
 }
 finally {

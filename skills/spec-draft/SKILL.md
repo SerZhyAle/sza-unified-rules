@@ -73,9 +73,11 @@ pwsh -NoProfile -File "<root>/tools/harness/portfolio/spec-draft.ps1" -Project <
 
 Leave `-Project` out to use the current folder's project. Add `-WhatIf` first when you want only the dedup report.
 A `hotfix-` slug is pinned first without a flag (`-NoPin` leaves it at the end of its package, only when the owner says
-so); add `-Pin` for any other ticket the owner asked to go first in the portfolio queue. `-Attach "<path;path>"` is
-accepted only by a project whose own capture script takes attachments; it is refused otherwise, before anything is
-created.
+so); add `-Pin` for any other ticket the owner asked to go first in the portfolio queue. `-Attach "<path;path>"` works in
+every project: each file (a screenshot, a phone log, a build log) is copied byte for byte into
+`<ticket>/attachments/` beside the spec and linked in section 0 right after the owner's words, which stay untouched;
+a file already there is never overwritten. A missing, unreadable, folder or repeated path is refused before anything
+is created.
 
 The script uses the project's own `scripts/utils/capture-draft.ps1` when it has one (FastMediaSorter_mob_v2 does:
 its templates, tier and attachments), else the canon's, which needs `PLAN/TICKET_TEMPLATE.md`.
@@ -83,8 +85,8 @@ its templates, tier and attachments), else the canon's, which needs `PLAN/TICKET
 **A project with no `.sza-profile.json` is not refused.** It gets a *plain capture*: one file,
 `PLAN/<id>_<slug>.md`, numbered the way the project already numbers its tickets (`SP-0255` after `SP-0254`, `S0001`
 when nothing is numbered yet), from the project's own `PLAN/TICKET_TEMPLATE.md` or the canon's. No profile, ledger or
-queue row is written, so `pq` cannot work it - the result line says `pq=no-task-flow` and `priority=-`. `-Attach` is
-refused there; `-DedupQuery` searches the ticket files' names and first lines.
+queue row is written, so `pq` cannot work it - the result line says `pq=no-task-flow` and `priority=-`. `-Attach` works
+there too; `-DedupQuery` searches the ticket files' names and first lines.
 
 | Exit | Meaning | What to do |
 | --- | --- | --- |
@@ -128,6 +130,6 @@ only when the ticket records an actual question that needs the owner's answer.
 | Gate | Refuses |
 | --- | --- |
 | Step 1 | an ambiguous project; an empty description |
-| Step 3 | an invalid slug (a bare `hotfix-` included), a missing or empty text file, an unknown project, a profile with no ledger, `-Attach` without a script that takes it |
+| Step 3 | an invalid slug (a bare `hotfix-` included), a missing or empty text file, an unknown project, a profile with no ledger, a missing, unreadable, folder or repeated `-Attach` path |
 | Step 3 | a dedup hit on a closed ticket without `-AllowClosedDuplicate` |
 | Step 3 | `-Pin` for a project `pq` will not dispatch |

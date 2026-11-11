@@ -72,8 +72,11 @@
     Capture anyway after a closed hit - the defect really did come back.
 
 .PARAMETER Attach
-    Semicolon-separated files to attach. Only a project whose own capture script takes -Attach accepts them;
-    the canon's does not, and the call stops before creating anything.
+    Semicolon-separated files to attach, in every project. Each is copied byte for byte into
+    <ticket>/attachments/ beside the spec and linked in section 0 right after the request text; an existing file
+    is never overwritten. A missing, unreadable, folder or repeated path stops the call before anything is
+    created. A project's own capture script that takes -Attach gets the files itself; one that does not gets them
+    linked after its capture. A copy or link failure after the ticket exists exits 1 naming the ticket.
 
 .PARAMETER Pin
     Pin the new ticket to the top of PORTFOLIO_QUEUE.md after capture. Implied by a hotfix- slug.
@@ -414,17 +417,16 @@ $specTemplate = [string](Get-Prop $grammar 'specFileTemplate' $script:PqRepoDefa
 $own = Join-Path $root (Join-Path 'scripts' (Join-Path 'utils' 'capture-draft.ps1'))
 $ownScript = Test-Path -LiteralPath $own -PathType Leaf
 $captureScript = if ($ownScript) { $own } else { Join-Path $harness 'spec_catalog/capture-draft.ps1' }
-if ($Attach) {
-    $canAttach = (Get-Command -Name $captureScript -CommandType ExternalScript).Parameters.ContainsKey('Attach')
-    if (-not $canAttach) { Stop-Draft 2 'this project has no capture script that takes attachments; put the content in the text, or attach the file by hand after capture' }
-}
+# A capture script without -Attach still gets the files: they are linked after its capture, below.
+$attachAfter = $attachmentPaths.Count -gt 0 -and -not (Get-Command -Name $captureScript -CommandType ExternalScript).Parameters.ContainsKey('Attach')
 if ($Priority -lt 0) { $Priority = if ($Slug -like 'hotfix-*') { 95 } elseif ($Slug -like 'bugfix-*') { 90 } else { 50 } }
 
 $capture = @('-NoProfile', '-File', $captureScript, '-Slug', $Slug, '-TextFile', $textFull, '-Priority', "$Priority")
 if ($Complexity) { $capture += @('-Complexity', $Complexity) }
 if ($DedupQuery) { $capture += @('-DedupQuery', $DedupQuery) }
 if ($AllowClosedDuplicate) { $capture += '-AllowClosedDuplicate' }
-if ($Attach) { $capture += @('-Attach', $Attach) }
+# Resolved paths: the child runs in the project folder, where a relative path would point somewhere else.
+if ($attachmentPaths.Count -and -not $attachAfter) { $capture += @('-Attach', ($attachmentPaths -join ';')) }
 if ($WhatIfPreference) { $capture += '-WhatIf' }
 
 $env:SZA_PROJECT_ROOT = $root
@@ -450,6 +452,10 @@ for ($i = $lines.Count - 1; $i -ge 0; $i--) {
 if (-not $id) { Stop-Draft 1 "the capture exited 0 but printed no ticket id matching $idPattern" }
 $fileRel = $specTemplate -f $id, $Slug
 $fileShown = if (Test-Path -LiteralPath (Join-Path $root $fileRel) -PathType Leaf) { $fileRel } else { '?' }
+if ($attachAfter) {
+    try { Add-DraftAttachmentLinks -Paths $attachmentPaths -SpecPath (Join-Path $root $fileRel) -RequestText ([IO.File]::ReadAllText($textFull, [Text.Encoding]::UTF8)) }
+    catch { Stop-Draft 1 "ticket ${id} ($fileRel) was captured but its attachments were not linked: $($_.Exception.Message); copy the files into $([IO.Path]::GetFileNameWithoutExtension($fileRel))/attachments/ beside the spec and link them in section 0 by hand" }
+}
 
 # Project-owned capture tools may not use the shared catalog writer. Reconcile their result too.
 if ($rec) {

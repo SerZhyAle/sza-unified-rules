@@ -16,6 +16,7 @@ Partial Class MainForm
     Friend btnResume As Button
     Friend btnReport As Button
     Friend btnProblems As Button
+    Friend btnAnswer As Button
     Friend btnNewSpec As Button
     Friend btnDoctor As Button
     Friend btnGuide As Button
@@ -92,6 +93,7 @@ Partial Class MainForm
         Me.btnResume = New Button()
         Me.btnReport = New Button()
         Me.btnProblems = New Button()
+        Me.btnAnswer = New Button()
         Me.btnNewSpec = New Button()
         Me.btnDoctor = New Button()
         Me.btnGuide = New Button()
@@ -236,6 +238,14 @@ Partial Class MainForm
         Me.btnProblems.AccessibleRole = AccessibleRole.PushButton
         Me.tipMain.SetToolTip(Me.btnProblems, "The open findings of the last seven days, severity first, with their evidence, in the console ('pq problems')")
 
+        Me.btnAnswer.Name = "btnAnswer"
+        Me.btnAnswer.Text = "❓ Answer questions"
+        Me.btnAnswer.AutoSize = True
+        Me.btnAnswer.MinimumSize = New Size(140, 36)
+        Me.btnAnswer.AccessibleName = "Answer questions"
+        Me.btnAnswer.AccessibleRole = AccessibleRole.PushButton
+        Me.tipMain.SetToolTip(Me.btnAnswer, "Opens a terminal in the canon checkout running claude ""/sza:sq --all"" - one sitting over the waiting questions of every project")
+
         ' Parameterized command with ellipsis per BUTTONS
         Me.btnNewSpec.Name = "btnNewSpec"
         Me.btnNewSpec.Text = "📝 &New Spec..."
@@ -275,7 +285,7 @@ Partial Class MainForm
         Me.btnProviders.AccessibleRole = AccessibleRole.PushButton
         Me.tipMain.SetToolTip(Me.btnProviders, "Chooses which model providers (OpenAI, Anthropic, Gemini, z.ai) spend tokens and in what order ('pq agents')")
 
-        Me.pnlTopActions.Controls.AddRange({Me.btnStartLoop, Me.btnStartOne, Me.btnStartDrain, Me.btnStop, Me.btnKill, Me.btnPause, Me.btnResume, Me.btnReport, Me.btnProblems, Me.btnNewSpec, Me.btnDoctor, Me.btnGuide, Me.btnRegister, Me.btnProviders})
+        Me.pnlTopActions.Controls.AddRange({Me.btnStartLoop, Me.btnStartOne, Me.btnStartDrain, Me.btnStop, Me.btnKill, Me.btnPause, Me.btnResume, Me.btnReport, Me.btnProblems, Me.btnAnswer, Me.btnNewSpec, Me.btnDoctor, Me.btnGuide, Me.btnRegister, Me.btnProviders})
 
         ' --- pnlBanner ---
         Me.pnlBanner.Name = "pnlBanner"
@@ -610,6 +620,7 @@ Partial Class MainForm
         Me.btnResume.TabIndex = 4
         Me.btnReport.TabIndex = 4
         Me.btnProblems.TabIndex = 4
+        Me.btnAnswer.TabIndex = 4
         Me.btnNewSpec.TabIndex = 5
         Me.btnDoctor.TabIndex = 6
         Me.btnGuide.TabIndex = 7

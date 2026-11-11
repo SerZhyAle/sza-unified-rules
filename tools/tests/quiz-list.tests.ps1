@@ -18,6 +18,8 @@
       5. It writes nothing: every ledger hashes the same after all the runs.
       6. -Status <name[,name]> lists other statuses (default BlockQuestions unchanged): the prefix becomes the
          ticket's status, the result line names the statuses, an empty -Status exits 2.
+      7. -All lists projects in registry rank order, then priority, whatever folder it runs from (S0026); -Json
+         carries the rank position.
 #>
 [CmdletBinding()]
 param([switch] $KeepScratch)
@@ -82,6 +84,7 @@ $calls = [ordered]@{
     idBare  = @{ a = @('-Id', '21', '-Project', 'beta');   w = $alpha }
     idAbsent = @{ a = @('-Id', 'S0077');                   w = $alpha }
     all     = @{ a = @('-All');                            w = $delta }
+    allGamma = @{ a = @('-All');                           w = $gamma }
     json    = @{ a = @('-All', '-Json');                   w = $delta }
     empty   = @{ a = @('-Json');                           w = $delta }
     unknown = @{ a = @('-Project', 'nope');                w = $alpha }
@@ -167,6 +170,15 @@ try {
         Assert-That ($r0.code -eq 0 -and $r0.last -eq 'quiz-list: 0 in BlockByOtherTask across 0 project(s)') "empty: $($r0.code) $($r0.last)"
         $rb = Invoke-Quiz 'statusB'
         Assert-That ($rb.code -eq 2) "empty -Status exit $($rb.code)"
+    }
+    Run-Case '7 -All in registry rank order' {
+        foreach ($name in @('all', 'allGamma')) {
+            $r = Invoke-Quiz $name
+            $order = @($r.lines | Where-Object { $_ -like 'BQ *' } | ForEach-Object { ($_ -split '\s+')[1] }) -join ','
+            Assert-That ($order -eq 'alpha:S0031,alpha:S0030,beta:S0021,gamma:S0021') "${name}: $order"
+        }
+        $ranks = @(ConvertFrom-Json -InputObject (Invoke-Quiz 'json').text | ForEach-Object { $_ } | ForEach-Object { $_.rank }) -join ','
+        Assert-That ($ranks -eq '0,0,1,2') "json rank: $ranks"
     }
     Run-Case '5 writes nothing' {
         $after = @($alpha, $beta, $gamma, $delta) | ForEach-Object { (Get-FileHash -LiteralPath (Join-Path $_ 'PLAN\spec-catalog.jsonl')).Hash }

@@ -66,6 +66,13 @@ Public Class PqCli
         End Set
     End Property
 
+    ' The canon checkout pq.ps1 belongs to: tools/harness/portfolio is three levels below its root.
+    Public Shared ReadOnly Property CanonRoot As String
+        Get
+            Return Path.GetFullPath(Path.Combine(PortfolioDir, "..", "..", ".."))
+        End Get
+    End Property
+
     Public Shared ReadOnly Property PortfolioDir As String
         Get
             Dim dir = Path.GetDirectoryName(PqScriptPath)
@@ -204,7 +211,7 @@ Public Class PqCli
         Return RunScriptSilentAsync(PqScriptPath, arguments)
     End Function
 
-    Public Shared Async Function DraftSpecAsync(projectKey As String, slug As String, textContent As String, complexity As String, pin As Boolean) As Task(Of CliResult)
+    Public Shared Async Function DraftSpecAsync(projectKey As String, slug As String, textContent As String, complexity As String, pin As Boolean, Optional attachments As IEnumerable(Of String) = Nothing) As Task(Of CliResult)
         ' The owner's words go through a file: spec-draft keeps them byte for byte, so no BOM is added.
         Dim tempFile = Path.Combine(Path.GetTempPath(), $"pq_spec_{Guid.NewGuid():N}.txt")
         File.WriteAllText(tempFile, textContent, New UTF8Encoding(False))
@@ -219,6 +226,14 @@ Public Class PqCli
             args.Add("-Pin")
         ElseIf slug.StartsWith("hotfix-", StringComparison.Ordinal) Then
             args.Add("-NoPin")
+        End If
+        ' spec-draft copies each file into the ticket folder before it returns, so a temporary file may go after.
+        If attachments IsNot Nothing Then
+            Dim joined = String.Join(";", attachments)
+            If joined.Length > 0 Then
+                args.Add("-Attach")
+                args.Add(joined)
+            End If
         End If
 
         Try
@@ -257,14 +272,16 @@ Public Class PqCli
     ' own CLAUDE.md, commands and hooks there, and no editor window opens. The user's PowerShell profile loads (no
     ' -NoProfile), so claude is found the way a terminal the owner opens finds it; when it is not, the window stays
     ' open (-NoExit) with the error on screen.
-    Public Shared Function OpenClaudeSession(path As String) As String
+    ' A prompt given (the portfolio quiz: "/sza:sq --all") starts the session on that command.
+    Public Shared Function OpenClaudeSession(path As String, Optional prompt As String = Nothing) As String
         If Not Directory.Exists(path) Then Return $"not found: {path}"
         Dim psi As New ProcessStartInfo With {
             .FileName = PwshExePath,
             .WorkingDirectory = path,
             .UseShellExecute = False
         }
-        For Each a In {"-NoExit", "-Command", "claude"}
+        Dim command = If(String.IsNullOrEmpty(prompt), "claude", $"claude '{prompt.Replace("'", "''")}'")
+        For Each a In {"-NoExit", "-Command", command}
             psi.ArgumentList.Add(a)
         Next
         Try

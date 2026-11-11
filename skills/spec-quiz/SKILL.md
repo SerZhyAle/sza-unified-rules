@@ -21,10 +21,13 @@ the tickets, naming the right project, and the mechanics of asking, writing back
 /spec-quiz fms-web:S0021      one ticket of a registered project, from any folder
 /spec-quiz S0023, 24, 25      one sitting over several tickets (a bare number is the id's trailing digits)
 /spec-quiz fms-web            every waiting ticket of that project
-/spec-quiz --all              every waiting ticket of every registered project
+/spec-quiz --all              every waiting ticket of every registered project, held or not, in registry rank order - one sitting
 /spec-quiz S0021 --dry        the questions that would be asked; nothing asked, nothing written, nothing moved
 /spec-quiz S0021 --assumed    the sitting plus the ticket's `### Assumed (unattended, <date>)` entries, listed for review and overrule
 ```
+
+`--all` is the portfolio sitting, started from any folder - the `PQ Answer questions` shortcut and the PQShell button
+`Answer questions (N)` open a terminal in the canon checkout running `claude "/sza:sq --all"`.
 
 A project that ships its own `.claude/commands/spec-quiz.md` (FastMediaSorter_mob_v2) has its own implementation of
 the same procedure, with its own tool paths; in that project follow that file for the paths and this skill for the
@@ -61,20 +64,28 @@ pwsh -NoProfile -File "<root>/tools/harness/portfolio/quiz-list.ps1" [-Id <id>] 
 
 Each waiting ticket prints as `BQ <key>:<id> p<priority> <updated> <name>`, its spec file and the ledger's reason
 note; the last line is the count (or, with `-Id`, `here=<key>:<id>=<status>` and `blockquestions=<list>`). `-Json`
-gives the same records with the full note.
+gives the same records with the full note. `-All` lists the projects in registry rank order (the dispatcher's order,
+the panel's #), then priority; every other scope puts the current folder's project first.
 
 | Outcome | Do |
 | --- | --- |
 | the tickets asked for are waiting | go to Step 2 |
 | `-Id` and `here=` is `BlockQuestions` | quiz that one; name the other projects' tickets with the same id once, as different tickets, and leave them |
 | `-Id` and `here=` is any other status or `absent`, and `blockquestions=` lists others | do not guess. Say in one line that the id here is `<status>` and not waiting, list the waiting ones with their names, and ask which, with `AskUserQuestion` (`multiSelect` - a sitting over several is allowed) |
-| nothing here, but other projects have waiting tickets | `-All`, report the count per project, ask which project to start with |
+| nothing here, but other projects have waiting tickets | `-All`, report the count per project, and sit over them as `--all` does - no "which project" question |
 | nothing waiting anywhere | say so, with the status the asked-for id actually has |
 | a ticket in another status | Quiz mode step 1 decides: `BlockNeedUserTest` needs a run (Sweep mode), `BlockExternal` needs the outside party, `BlockByOtherTask` clears on its blocker. Report it and mutate nothing |
 
-More than five waiting tickets and no id given: take the first five in the list's order (the current project first,
-then priority), say how many remain, and let the next sitting take them. Tickets that name each other as
-prerequisites in their notes (`S0024` after `S0023`) go in that order, and a question two of them share is asked once.
+There is no ticket cap: the sitting takes every listed ticket in the list's order, and an owner who stops early
+leaves the rest waiting, untouched (Quiz mode step 7). Tickets that name each other as prerequisites in their notes
+(`S0024` after `S0023`) go in that order.
+
+**A decision shared by several tickets is asked once.** Before the first round, compare the decision points of all
+tickets in scope; where two or more tickets - in one project or in several - need the same decision (the same
+subject, the same options, as cyrflip's GitHub topics in S0024 and S0058), ask it once, name every ticket it
+settles in the question (`cyrflip:S0024, cyrflip:S0058`), and write the one answer into each of them before any of
+them moves. Decisions that only look alike - different subjects, different option sets, or recommendations that
+point different ways - are asked separately; never merge them silently.
 
 ## Step 2 - Work inside the ticket's project
 
@@ -105,12 +116,22 @@ Follow Quiz mode steps 2-8. The parts a project-independent skill must pin down:
   research item the assumption settled, and where a pass already built on the assumption - the ticket at
   `Implemented` or beyond - the rework is captured with the project's capture tool and reported as `parked: <id>`.
   Unoverruled entries stay as they are. Without the flag the assumptions are not raised.
+- **One screen per ticket first.** With the research done, print the ticket's remaining questions as one table -
+  `<key>:<id>`, then a row per question: the question, the recommended answer, its one-line consequence - and ask
+  one `AskUserQuestion` about the whole table: `Принять все рекомендации (Рекомендуется)` / `Выбрать исключения` /
+  `По одному`. *Accept all* writes every recommendation as the owner's answer - the click is the owner's choice,
+  recorded in the decisions block as `accepted with the table`. *Pick the exceptions* asks one `multiSelect` question
+  listing the rows; the rows picked are asked one by one below, every other row takes its recommendation. *One by
+  one* asks every row below. A ticket with a single question skips the screen and asks it directly; a `DO:` action
+  is never part of the table - it always gets its own question. Skipping the screen question skips the ticket: its
+  answers stay unfilled.
 - **Ask with `AskUserQuestion`, in Russian** (chat language). A `header` of at most 12 characters, a specific
   question ending in `?`, 2-4 options, the researched recommendation **first** with `(Рекомендуется)` appended, and
   one line of consequence in each option's description. For a pre-implementation `- **DO:** <action>` line (device,
   desk, or outside console account action that precedes implementation, S0042), show the `DO:` line to the owner and
   take the result (done + observed value/output, or fallback/skip) as the owner input. At most four questions per call, the most blocking first.
-  With several tickets in one round, start each question with `<key>:<id>`. `multiSelect` only when the choices
+  In a sitting over several tickets or projects (`--all` always), start every question and every table with
+  `<key>:<id>` - every ticket it settles, for a shared decision. `multiSelect` only when the choices
   combine. A name, a number or an address that only the owner can supply: offer the researched candidates as options -
   the built-in *Other* takes the owner's own text. A recommendation is never applied in the owner's place.
 - **After each round**, check the chosen options against the owner's standing rules (the project's `CLAUDE.md`

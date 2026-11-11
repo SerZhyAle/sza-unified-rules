@@ -13,7 +13,8 @@
       (none)         the project holding the current folder
       -Project k     a registered key, or a folder
       -All           every project in the portfolio registry (repos.json), held or not: a held project still has
-                     questions the owner may answer
+                     questions the owner may answer. Listed in registry rank order (rank, then array order - the
+                     dispatcher's Get-PqRepoOrder), then priority; the current folder's project is not put first
       -Id X          one ticket: its state in the project of the current folder (or -Project), and every OTHER
                      registered project whose ticket with that id is in a listed status. A bare number matches the
                      trailing digits of an id (21 -> S0021, SP-0021).
@@ -78,9 +79,14 @@ function Test-IdMatch([string] $RowId, [string] $Wanted) {
 
 # ---- the registry (it may be missing: the current project is still answerable) ----
 $repos = @()
+$rankOf = @{}   # registry key -> position in Get-PqRepoOrder (rank, then array order)
 try {
     $read = Read-PqRegistry
-    if ($read.ok) { $repos = @($read.registry.repos) }
+    if ($read.ok) {
+        $repos = @($read.registry.repos)
+        $pos = 0
+        foreach ($o in @(Get-PqRepoOrder $read.registry)) { $rankOf[[string]$o.key] = $pos; $pos++ }
+    }
 }
 catch { $repos = @() }
 $keys = if ($repos.Count) { (@($repos | ForEach-Object { [string]$_.key }) -join ', ') } else { 'none registered' }
@@ -141,14 +147,18 @@ foreach ($s in $scope) {
         if ($statusList -notcontains $row.Status) { continue }
         if ($Id -and -not (Test-IdMatch $row.Id $Id)) { continue }
         $found.Add([pscustomobject][ordered]@{
-            repo = $s.key; id = $row.Id; status = $row.Status; priority = $row.Priority; updated = $row.Updated
+            repo = $s.key; rank = $(if ($rankOf.ContainsKey($s.key)) { $rankOf[$s.key] } else { $rankOf.Count }); id = $row.Id; status = $row.Status; priority = $row.Priority; updated = $row.Updated
             name = $row.Name; file = (Join-Path $row.Root $row.File); note = $row.Note; here = [bool]$isHere
         })
         $null = $projectsWith.Add($s.key)
     }
 }
 
-$sorted = @($found | Sort-Object -Property @{ Expression = { -not $_.here } }, @{ Expression = 'priority'; Descending = $true }, 'repo', 'id')
+# -All is one portfolio sitting: projects in registry rank (an unregistered current project last), then priority.
+# Every other scope keeps the current project first.
+$sortKeys = if ($All -and -not $Id) { @('rank', 'repo', @{ Expression = 'priority'; Descending = $true }, 'id') }
+else { @(@{ Expression = { -not $_.here } }, @{ Expression = 'priority'; Descending = $true }, 'repo', 'id') }
+$sorted = @($found | Sort-Object -Property $sortKeys)
 
 if ($Json) {
     if ($sorted.Count -eq 0) { Write-Output '[]' } else { ConvertTo-Json -InputObject $sorted -Depth 4 -AsArray }

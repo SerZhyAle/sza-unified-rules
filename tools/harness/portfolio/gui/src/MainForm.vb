@@ -181,6 +181,7 @@ Partial Class MainForm
                                           LogConsole("The open findings of the last seven days ('pq problems')..")
                                           Await RunOwnerVerbAsync(btnProblems, "problems")
                                       End Sub
+        AddHandler btnAnswer.Click, AddressOf BtnAnswer_Click
         AddHandler btnNewSpec.Click, Sub() ShowNewSpec(SelectedRepoKey())
         AddHandler btnDoctor.Click, AddressOf BtnDoctor_Click
         AddHandler btnGuide.Click, AddressOf BtnGuide_Click
@@ -339,6 +340,9 @@ Partial Class MainForm
             ' 1b. Who spends tokens now: the provider order, with a provider marked while its usage limit is spent
             Dim providerLine = PortfolioState.GetProviderLine()
             Me.Text = If(providerLine = "", _baseTitle, $"{_baseTitle}  |  Providers: {providerLine}")
+
+            ' 1c. The questions of every project, from the last inbox reading ("?" until it is read)
+            btnAnswer.Text = If(_inbox IsNot Nothing AndAlso _inbox.Ok, $"❓ Answer questions ({_inbox.Total("questions")})", "❓ Answer questions (?)")
 
             ' 2. Queue top
             If Not queue.Present Then
@@ -606,6 +610,18 @@ Partial Class MainForm
     Private Async Sub BtnStop_Click(sender As Object, e As EventArgs)
         LogConsole("Requesting a graceful stop: workers finish their current pass, then exit..")
         Await RunOwnerVerbAsync(btnStop, "stop")
+    End Sub
+
+    ' One sitting over the questions of every project (S0026): an interactive session in the canon checkout, where
+    ' the quiz finds every registered project's waiting tickets. It only opens a terminal - no ticket is touched here.
+    Private Sub BtnAnswer_Click(sender As Object, e As EventArgs)
+        Dim root = PqCli.CanonRoot
+        LogConsole($"Opening the portfolio quiz: a terminal running claude ""/sza:sq --all"" in {root}")
+        Dim err = PqCli.OpenClaudeSession(root, "/sza:sq --all")
+        If err IsNot Nothing Then
+            LogConsole($"Cannot open the portfolio quiz in {root}: {err}")
+            MessageBox.Show(Me, $"Cannot open the portfolio quiz in {root}:{Environment.NewLine}{err}", "Answer questions", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+        End If
     End Sub
 
     Private Async Sub BtnKill_Click(sender As Object, e As EventArgs)

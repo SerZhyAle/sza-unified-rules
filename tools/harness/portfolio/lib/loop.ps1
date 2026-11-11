@@ -708,6 +708,8 @@ function Start-PqLoop {
         slots = [int]$Registry.maxWorkers
         drain = [bool]$Drain
         repos = $enabledRepos.Count
+        # S0037: the provider order in force at start (EVENTS.md `agents`); a later order change writes no new snapshot.
+        agents = @(@($Registry.agentOrder) | ForEach-Object { [string]$_ })
         pid = $PID
     }
     if ($null -ne $named) { $startD.target = "ticket:$($named.repo):$($named.id)" }
