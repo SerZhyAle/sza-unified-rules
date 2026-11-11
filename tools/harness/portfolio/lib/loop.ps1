@@ -1063,7 +1063,7 @@ function Start-PqLoop {
                     exitCode = $childRes.code
                     minutes = [Math]::Round($elapsedSec / 60, 2)
                     seconds = $elapsedSec
-                    finishedAt = (Get-Date).ToString('s')
+                    finishedAt = [DateTimeOffset]::Now.ToString("yyyy-MM-dd'T'HH:mm:sszzz")
                     canon = $canonVersion
                     plugin = $pluginVersion
                     registryHash = $current.hash
@@ -1087,7 +1087,7 @@ function Start-PqLoop {
 
                 # Rule 47: halt and kill clean up and never decide a status. The lease the pass held is released (done in
                 # Invoke-PqPassChild), the resources above, and the ledger is checked, so a half-written row shows at once
-                # instead of at the next ticket; the owner is told in the inbox.
+                # instead of at the next ticket; pass.halt / pass.kill and a console line tell you.
                 if ($childRes.killed) {
                     $validate = $null
                     try {
@@ -1101,7 +1101,6 @@ function Start-PqLoop {
                     else {
                         $null = Write-PqEvent -Log $log -Ev 'pass.kill' -Run $runId -Repo $repoKey -Id $ticketId -Pass $passId -Worker $slot -Agent $agentName -D ([ordered]@{ level = 'kill'; validate = $validate })
                     }
-                    $null = Write-PqEvent -Log $log -Ev 'inbox.add' -Run $runId -Repo $repoKey -Id $ticketId -Worker $slot -D ([ordered]@{ kind = 'haltedPass'; why = (ConvertTo-PqCut "pass $passId ended by the owner's $(if ($childRes.halted) { 'halt' } else { 'kill' }); ledger validate: $validate" 80) })
                     Write-Host "pass $passNum ended by the owner's $(if ($childRes.halted) { 'halt' } else { 'kill' }); lease and resources released, ledger validate: $validate"
                 }
 
@@ -1124,7 +1123,6 @@ function Start-PqLoop {
                             $null = Write-PqEvent -Log $log -Ev 'dispatch.skip' -Run $runId -Repo $repoKey -Id $nid -Worker $slot -D ([ordered]@{ why = 'intakeCap' })
                         }
                     }
-                    $null = Write-PqEvent -Log $log -Ev 'inbox.add' -Run $runId -Repo $repoKey -Id $newIds[0] -Worker $slot -D ([ordered]@{ kind = 'robotDrafts'; why = (ConvertTo-PqCut "$($newIds.Count) ticket(s) filed by pass $passId on ${ticketId}: $($newIds -join ', ')" 80) })
                     Write-Host "pass $passNum filed $($newIds.Count) new ticket(s) in ${repoKey}: $($newIds -join ', ') (robot-filed this run: $($robotDrafts[$repoKey].Count) of $draftCap)"
                     if ($beyond -gt 0) { Write-Host "the cap of $draftCap robot-filed tickets in $repoKey is reached - the $beyond beyond it stay with the owner" }
                 }

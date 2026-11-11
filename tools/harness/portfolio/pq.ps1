@@ -55,7 +55,12 @@
                                                    3 when no worker is running (no file is written)
     pq pause                                        no worker launches a new pass; passes in flight are not touched
     pq resume                                       undo pause
-    pq status [-Json]                              workers, today's pass outcomes, next ticket, STOP and pause
+    pq status [-Json] [-Next]                      workers, today's (the local day) pass outcomes, STOP and pause;
+                                                   the rank runs only with -Next, which also prints the next ticket;
+                                                   the last line is what waits for the owner -> pq inbox
+    pq inbox [-Json]                               what waits for the owner across all projects, read-only: one line
+                                                   per kind (count, oldest age, the command that clears it), then the
+                                                   tickets with id, age and note; BlockByOtherTask as chain roots
     pq tail [<repo:id>] [-Worker <n>] [-Last <n>]   follow what the agent of a running pass is doing, read from the
                                                    transcript it writes (Claude passes; another agent writes none
                                                    until the pass ends); Ctrl+C leaves, it ends by itself with the pass
@@ -112,6 +117,7 @@ param(
     [string]$By,
     [ValidateSet('', 'jsonl', 'csv')][string]$Format = '',
     [ValidateSet('', 'runs', 'events')][string]$What = '',
+    [switch]$Next,
     [switch]$Help
 )
 
@@ -127,6 +133,7 @@ $lib = Join-Path $PSScriptRoot 'lib'
 . (Join-Path $lib 'rank.ps1')
 . (Join-Path $lib 'ledger-watch.ps1')
 . (Join-Path $lib 'xrepo.ps1')
+. (Join-Path $lib 'inbox.ps1')
 . (Join-Path $lib 'discovery.ps1')
 . (Join-Path $lib 'loop.ps1')
 . (Join-Path $lib 'agents.ps1')
@@ -761,9 +768,10 @@ function Invoke-PqStatus {
         if ($passesToday.Contains($oc)) { $passesToday[$oc]++ } else { $passesToday[$oc] = 1 }
     }
 
+    # The rank is the expensive part (it walks every ledger and spec), so it runs only with -Next (S0025).
     $nextCandidate = $null
     $reg = Read-PqRegistryIfAny
-    if ($null -ne $reg) {
+    if ($Next -and $null -ne $reg) {
         try {
             $harness = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
             $rank = Get-PqNextRank -Registry $reg -HarnessRoot $harness -Slots 1 -StopAfter 1
@@ -779,6 +787,12 @@ function Invoke-PqStatus {
         catch { }
     }
 
+    # What waits for the owner, across every registered ledger (S0025): the counts pq inbox reports in full.
+    $waiting = [ordered]@{ questions = 0; tests = 0; outside = 0; chain = 0; unbuilt = 0 }
+    if ($null -ne $reg) {
+        try { $waiting = Get-PqInboxCounts -Rows (Get-PqInboxRows $reg).rows } catch { }
+    }
+
     $targetStops = @(Get-PqStopFiles | Where-Object { $_.kind -cne 'all' })
     $paused = Test-PqPaused
 
@@ -790,6 +804,8 @@ function Invoke-PqStatus {
             workers = $workers
             passesToday = $passesToday
             next = $nextCandidate
+            nextRanked = [bool]$Next
+            waiting = $waiting
         }
         ConvertTo-Json -InputObject $res -Depth 16
         return 0
@@ -815,12 +831,60 @@ function Invoke-PqStatus {
         $parts = foreach ($k in $passesToday.Keys) { "$k`: $($passesToday[$k])" }
         "Passes today: $($parts -join ', ')"
     }
-    if ($null -ne $nextCandidate) {
-        "Next: $($nextCandidate.repo):$($nextCandidate.id) ($($nextCandidate.status)) $($nextCandidate.title)"
+    if ($Next) {
+        if ($null -ne $nextCandidate) {
+            "Next: $($nextCandidate.repo):$($nextCandidate.id) ($($nextCandidate.status)) $($nextCandidate.title)"
+        }
+        else {
+            "Next: none"
+        }
     }
     else {
-        "Next: none"
+        "Next: (not ranked - pq status -Next runs the rank)"
     }
+    "waiting for you: questions $($waiting.questions), tests $($waiting.tests), outside $($waiting.outside), chain $($waiting.chain), unbuilt $($waiting.unbuilt) -> pq inbox"
+    return 0
+}
+
+# S0025: the owner's inbox, read-only over every registered ledger (the quiz-list reader, lib/inbox.ps1).
+function Invoke-PqInbox {
+    $read = Get-PqRegistryOrFail
+    if ($null -eq $read) { return 2 }
+    $registry = $read.registry
+    # The rows held under a hold heading of PORTFOLIO_QUEUE.md, so a chain root can print as held.
+    $held = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    try {
+        $qp = Get-PqQueuePath $registry
+        if ([IO.File]::Exists($qp)) {
+            $q = Read-PqQueueFile -Path $qp -KnownRepos (Get-PqKnownKeys $registry)
+            foreach ($h in @($q.held)) { if ($h.id) { $null = $held.Add("$($h.repo):$($h.id)") } }
+        }
+    }
+    catch { }
+    $inbox = Get-PqInbox -Registry $registry -Held $held
+    if ($Json) {
+        ConvertTo-Json -InputObject $inbox -Depth 12
+        return 0
+    }
+    foreach ($label in $inbox.kinds.Keys) {
+        $k = $inbox.kinds[$label]
+        '{0,-8} {1,4}  oldest {2,-6}  clear: {3}' -f $label, $k['count'], $k.oldestAge, $k.clear
+        if ($label -ceq 'chain') {
+            foreach ($r in @($k.roots)) {
+                $parts = @()
+                if ($r.held) { $parts += 'held' }
+                if ($r.note) { $parts += (ConvertTo-PqCut $r.note 40) }
+                if ($parts.Count -eq 0) { $parts += $(if ($r.status) { $r.status } else { $r.state }) }
+                '  {0} ({1}) frees {2}' -f $r.pair, ($parts -join ', '), $r.freesCount
+            }
+        }
+        foreach ($t in @($k.tickets)) {
+            $note = if ($t.note) { '  ' + (ConvertTo-PqCut $t.note 100) } else { '' }
+            '  {0}:{1}  p{2}  age {3}{4}' -f $t.repo, $t.id, $t.priority, $t.age, $note
+        }
+    }
+    foreach ($s in @($inbox.skipped)) { [Console]::Error.WriteLine("pq inbox: skipped $s") }
+    "pq inbox: {0} waiting across {1} project(s)" -f $inbox.total, $inbox.projects
     return 0
 }
 
@@ -829,10 +893,28 @@ function Read-PqCliEvents([switch]$Today) {
     $logDir = Join-Path $root 'log'
     $events = [Collections.Generic.List[object]]::new()
     if ([IO.Directory]::Exists($logDir)) {
-        $pattern = if ($Today) { 'events-' + [DateTimeOffset]::UtcNow.ToString('yyyy-MM-dd') + '.*.jsonl' } else { 'events-*.jsonl' }
-        $files = [IO.Directory]::GetFiles($logDir, $pattern)
-        foreach ($f in $files) {
-            foreach ($e in (Read-PqDay -Path $f).events) { $events.Add($e) }
+        if ($Today) {
+            # "Today" is the local day (S0025); the files stay named by their UTC date (rule 54), and a local day can
+            # span two of them, so the neighbouring dates are read too and the events are kept by their own ts.
+            $now = [DateTimeOffset]::Now
+            $localToday = $now.LocalDateTime.Date
+            $dates = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+            foreach ($d in -1, 0, 1) { $null = $dates.Add($now.AddDays($d).UtcDateTime.ToString('yyyy-MM-dd')) }
+            foreach ($date in $dates) {
+                foreach ($f in [IO.Directory]::GetFiles($logDir, 'events-' + $date + '.*.jsonl')) {
+                    foreach ($e in (Read-PqDay -Path $f).events) {
+                        $ts = [DateTimeOffset]::MinValue
+                        if ([DateTimeOffset]::TryParse([string]$e.ts, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref]$ts) -and $ts.LocalDateTime.Date -eq $localToday) {
+                            $events.Add($e)
+                        }
+                    }
+                }
+            }
+        }
+        else {
+            foreach ($f in [IO.Directory]::GetFiles($logDir, 'events-*.jsonl')) {
+                foreach ($e in (Read-PqDay -Path $f).events) { $events.Add($e) }
+            }
         }
     }
     # Files are grouped by writer. Last N means chronological order across every writer.
@@ -962,7 +1044,7 @@ function Invoke-PqCompare {
 
 # Every verb of the INDEX code map; $null marks a verb whose handler a later phase adds.
 $verbs = [ordered]@{
-    start = { Invoke-PqStart }; stop = { Invoke-PqStop }; status = { Invoke-PqStatus }; log = { Invoke-PqLog }
+    start = { Invoke-PqStart }; stop = { Invoke-PqStop }; status = { Invoke-PqStatus }; inbox = { Invoke-PqInbox }; log = { Invoke-PqLog }
     watch = $null; tail = { Invoke-PqTail }; page = $null; pause = { Invoke-PqPause }; resume = { Invoke-PqResume }
     hold = { Invoke-PqQueueWriter 'hold' }; release = { Invoke-PqQueueWriter 'release' }; pin = { Invoke-PqQueueWriter 'pin' }
     rank = { Invoke-PqRank }; arrange = { Invoke-PqArrange }; agents = { Invoke-PqAgents }

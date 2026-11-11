@@ -15,19 +15,22 @@
       -All           every project in the portfolio registry (repos.json), held or not: a held project still has
                      questions the owner may answer
       -Id X          one ticket: its state in the project of the current folder (or -Project), and every OTHER
-                     registered project whose ticket with that id is in BlockQuestions. A bare number matches the
+                     registered project whose ticket with that id is in a listed status. A bare number matches the
                      trailing digits of an id (21 -> S0021, SP-0021).
+      -Status <name[,name]>
+                     the ledger statuses to list (default BlockQuestions), comma-separated; any status name works
 
     Reads the ledger journals directly and the registry; writes nothing, locks nothing, launches nothing.
 
-    Text output, one block per ticket:
+    Text output, one block per ticket (the prefix is BQ for BlockQuestions, else the ticket's status):
         BQ  <key>:<id>  p<priority>  <updated>  <name>
             file: <spec path, absolute>
             note: <the ledger's statusNote, one line>
     then the result line:
-        quiz-list: <n> in BlockQuestions across <m> project(s)
+        quiz-list: <n> in <statuses> across <m> project(s)
     With -Id the result line is instead:
         quiz-list: id <X> here=<key>:<id>=<status|absent> blockquestions=<key:id,..|none>
+        (waiting=... instead of blockquestions= when -Status lists more than BlockQuestions)
     -Json prints the same records as one JSON array (full notes) and no result line.
 
     Exit codes: 0 listed (an empty list is still 0 - a report, not a gate); 2 bad invocation, an unknown project, or
@@ -38,6 +41,7 @@ param(
     [string] $Project = '',
     [switch] $All,
     [string] $Id = '',
+    [string[]] $Status = @('BlockQuestions'),
     [switch] $Json,
     [switch] $Help
 )
@@ -50,50 +54,18 @@ if ($Help) {
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-. (Join-Path $PSScriptRoot 'lib/registry.ps1')
-. (Join-Path $PSScriptRoot 'lib/ledger-watch.ps1')
+# The ledger reader is shared with pq inbox (lib/inbox.ps1), which also loads registry.ps1 and ledger-watch.ps1.
+. (Join-Path $PSScriptRoot 'lib/inbox.ps1')
 
 function Stop-Quiz([int] $Code, [string] $Message) {
     [Console]::Error.WriteLine("quiz-list: $Message")
     exit $Code
 }
 
-# Null-safe property read: ledger rows leave most keys out, and StrictMode throws on a missing one.
-function Get-Prop($Object, [string] $Name, $Default = $null) {
-    if ($null -eq $Object) { return $Default }
-    $p = $Object.PSObject.Properties[$Name]
-    if ($null -eq $p -or $null -eq $p.Value) { return $Default }
-    return $p.Value
-}
-
-# Every row of one project's ledger, as it stands. A line that is not a JSON object is skipped, never thrown: a
-# half-written last line must not hide the rest.
-function Read-QuizRows([string] $RepoPath) {
-    $paths = Get-PqRepoPaths -RepoPath $RepoPath
-    if (-not [IO.File]::Exists($paths.Ledger)) { return @() }
-    $fs = [IO.FileStream]::new($paths.Ledger, [IO.FileMode]::Open, [IO.FileAccess]::Read, ([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
-    try { $text = [IO.StreamReader]::new($fs, [Text.UTF8Encoding]::new($false)).ReadToEnd() } finally { $fs.Dispose() }
-    $rows = [Collections.Generic.List[object]]::new()
-    foreach ($raw in $text.TrimStart([char]0xFEFF).Split("`n")) {
-        $line = $raw.Trim()
-        if ($line.Length -eq 0) { continue }
-        try { $row = ConvertFrom-Json -InputObject $line -DateKind String -NoEnumerate } catch { continue }
-        if ($row -isnot [Management.Automation.PSCustomObject]) { continue }
-        if ($row.PSObject.Properties['id'] -isnot [Management.Automation.PSPropertyInfo]) { continue }
-        $note = [regex]::Replace([string](Get-Prop $row 'statusNote' ''), '\s*[\r\n]+\s*', ' ')
-        $rows.Add([pscustomobject]@{
-            Root     = $paths.Root
-            Id       = [string](Get-Prop $row 'id' '')
-            Name     = [string](Get-Prop $row 'name' '')
-            Status   = [string](Get-Prop $row 'status' '')
-            Priority = [int](Get-Prop $row 'priority' 0)
-            Updated  = [string](Get-Prop $row 'updated' '')
-            File     = [string](Get-Prop $row 'file' '')
-            Note     = $note
-        })
-    }
-    return $rows.ToArray()
-}
+# The statuses to list, parsed from -Status <name[,name]>; the default is BlockQuestions alone.
+$statusList = @($Status -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+if ($statusList.Count -eq 0) { Stop-Quiz 2 "-Status '$Status' names no status" }
+$defaultOnly = ($statusList.Count -eq 1 -and $statusList[0] -ceq 'BlockQuestions')
 
 function Test-IdMatch([string] $RowId, [string] $Wanted) {
     if ($RowId -ieq $Wanted) { return $true }
@@ -159,14 +131,14 @@ $hereTicket = $null
 $projectsWith = [Collections.Generic.HashSet[string]]::new()
 foreach ($s in $scope) {
     if (-not (Test-Path -LiteralPath $s.root -PathType Container)) { continue }
-    try { $rows = Read-QuizRows $s.root } catch { [Console]::Error.WriteLine("quiz-list: $($s.key) skipped - $($_.Exception.Message)"); continue }
+    try { $rows = Read-PqLedgerRows $s.root } catch { [Console]::Error.WriteLine("quiz-list: $($s.key) skipped - $($_.Exception.Message)"); continue }
     $isHere = $hereRoot -and ((ConvertTo-PqPathKey $s.root) -ceq (ConvertTo-PqPathKey $hereRoot))
     if ($Id -and $isHere) {
         $mine = @($rows | Where-Object { Test-IdMatch $_.Id $Id }) | Select-Object -First 1
         if ($mine) { $hereState = $mine.Status; $hereTicket = $mine }
     }
     foreach ($row in $rows) {
-        if ($row.Status -cne 'BlockQuestions') { continue }
+        if ($statusList -notcontains $row.Status) { continue }
         if ($Id -and -not (Test-IdMatch $row.Id $Id)) { continue }
         $found.Add([pscustomobject][ordered]@{
             repo = $s.key; id = $row.Id; status = $row.Status; priority = $row.Priority; updated = $row.Updated
@@ -184,16 +156,18 @@ if ($Json) {
 }
 
 foreach ($t in $sorted) {
-    Write-Host ("BQ  {0}:{1}  p{2}  {3}  {4}" -f $t.repo, $t.id, $t.priority, $t.updated, $t.name)
+    $prefix = if ($defaultOnly) { 'BQ' } else { $t.status }
+    Write-Host ("{0}  {1}:{2}  p{3}  {4}  {5}" -f $prefix, $t.repo, $t.id, $t.priority, $t.updated, $t.name)
     Write-Host ("    file: {0}" -f $t.file)
     if ($t.note) { Write-Host ("    note: {0}" -f $t.note) }
 }
 if ($Id) {
     $hereText = if ($hereKey) { '{0}:{1}={2}' -f $hereKey, $(if ($hereTicket) { $hereTicket.Id } else { $Id }), $hereState } else { 'no-current-project' }
-    $bq = if ($sorted.Count) { (@($sorted | ForEach-Object { '{0}:{1}' -f $_.repo, $_.id }) -join ',') } else { 'none' }
-    Write-Host ("quiz-list: id {0} here={1} blockquestions={2}" -f $Id, $hereText, $bq)
+    $waiting = if ($sorted.Count) { (@($sorted | ForEach-Object { '{0}:{1}' -f $_.repo, $_.id }) -join ',') } else { 'none' }
+    $waitingLabel = if ($defaultOnly) { 'blockquestions' } else { 'waiting' }
+    Write-Host ("quiz-list: id {0} here={1} {2}={3}" -f $Id, $hereText, $waitingLabel, $waiting)
 }
 else {
-    Write-Host ("quiz-list: {0} in BlockQuestions across {1} project(s)" -f $sorted.Count, $projectsWith.Count)
+    Write-Host ("quiz-list: {0} in {1} across {2} project(s)" -f $sorted.Count, ($statusList -join ','), $projectsWith.Count)
 }
 exit 0

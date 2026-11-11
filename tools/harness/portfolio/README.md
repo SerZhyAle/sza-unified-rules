@@ -140,7 +140,7 @@ of ours is left alone.
 | PQ Start | `pq start` | run one worker; it waits when nothing is ranked |
 | PQ Start 1 ticket | `pq start -MaxTickets 1` | do exactly one pass and stop - the attended first run |
 | PQ Start Drain | `pq start -Drain` | work until nothing is ranked, then end |
-| PQ Status | `pq status` | see workers, today's passes, the next ticket, whether `STOP` is set |
+| PQ Status | `pq status` | see workers, today's (local-day) passes, what waits for you, whether `STOP` is set; `pq status -Next` also runs the rank and prints the next ticket |
 | PQ Log | `pq log -Last 60` | read the last 60 events across all writers |
 | PQ Stop | `pq stop` | let every worker finish the pass it is on, then end |
 | PQ Stop Kill | `pq stop -Kill` | end now: runner children are terminated and the ticket in flight is abandoned |
@@ -188,6 +188,14 @@ tickets of the current project, of a named one (`<key>:<id>`) or of all (`--all`
 the records do not settle, writes the answers into each ticket and restores it one level - after which `pq` offers it
 again, unless its project is on hold. `quiz-list.ps1 -Id S0021` is the lookup for an id that exists in several
 projects: it prints the id's status in the current project and every project where it waits. The script reads only.
+
+`pq inbox` is the one read-only list over all projects of everything that waits for you alone: one line per kind -
+questions (`BlockQuestions`), tests (`BlockNeedUserTest`), outside (`BlockExternal`), chain (`BlockByOtherTask`),
+unbuilt (`Implemented`) - with the count, the oldest age and the command that clears the kind, then the tickets with
+id, age and note. A chain ticket prints as its chain root (`fms-web:S0021 (held, owner decision) frees 8`), walking
+the `Blocker:` tokens with the same release test the picker uses; `-Json` gives the same records to the GUI.
+`quiz-list.ps1 -Status <name[,name]>` lists any other statuses through the same reader (default `BlockQuestions`).
+`pq status` ends with the same five counts and points at `pq inbox`.
 
 ## Putting a task into a project's queue
 
@@ -259,7 +267,7 @@ empty: wait, see Waiting
   default) lets the project at the top take every worker it may have first.
 - **Robot-filed tickets.** A ticket that is new in a repository after a pass is one the pass filed. The first
   `robotDraftCap` of them (20, per repository per run) are worked like any other; each one beyond is kept out of the rank,
-  and `inbox.add` and a console line tell you (`pq report` counts them, and `PQ-SAFE02` appears in `pq problems`).
+  and a console line tells you (`pq report` counts them, and `PQ-SAFE02` appears in `pq problems`).
 
 - For Claude the model is not chosen by `pq`. The runner reads the ticket's `**Complexity:** <light|medium|hard> - <why>`
   line at every launch: `light` is haiku, `medium` sonnet, `hard` opus. A spec without the line keeps the runner's earlier
@@ -426,7 +434,7 @@ is running at all (nothing is written). `drain` continues a ticket only for a st
 Each worker kills the process tree of its own pass and nothing else - a local runner's agent and a session of yours in any
 repository are never touched. A halted or killed pass is journalled as `halted` or `killed`, the lease the pass made is
 released so the ticket is offered again at once, the build and emulator tokens it held are released, the repository's ledger
-is validated (`validate` in `pass.halt` / `pass.kill`) and `inbox.add` records it; its status stays where the agent left
+is validated (`validate` in `pass.halt` / `pass.kill`); its status stays where the agent left
 it, and a stop never decides a status. Ctrl+C in a worker window ends that worker and its pass tree at once and releases
 the lease the same way; the interrupted pass writes no `runs.jsonl` row (its `pass.launch` has no `pass.end`). Starting a
 worker with a `STOP` present clears it and says so; if workers from the previous stop are still draining, the start exits 3
@@ -445,6 +453,7 @@ nothing to follow for a Codex or Gemini pass.
 
 | Command | Shows |
 | --- | --- |
+| `pq inbox [-Json]` | what waits for the owner across all projects: one line per kind (count, oldest age, the command that clears it), then the tickets with id, age and note; `BlockByOtherTask` as chain roots |
 | `pq report [-Days n]` | the last n days (7): passes, moved and ok shares, outcomes, the splits by agent, model, complexity and repository (only where n is at least 5), waiting, occupancy, resources, stops, robot-filed tickets, limits, log health and the open findings; `-Json` for the object |
 | `pq problems [-Days n]` | the open findings only, severity first, each with the events behind it: `PQ-RACE01` (a lost claim), `PQ-SAFE01` (a tripwire), `PQ-SAFE02` (the robot-filed cap), `PQ-LIMIT01` (a limit with no reset time), `PQ-THRASH01`, `PQ-RES03` (a token waited on for 30 minutes), `PQ-STALL01`, `PQ-XREPO01` (a blocker cycle), `PQ-DATA01` (a log gap or error), `PQ-COST02` (`light` that needed three passes), `PQ-ADOPT01` (a repository far below the median) |
 | `pq trace <key:id>` | every event of one ticket in time order, grouped by pass |
@@ -487,7 +496,7 @@ instance `pq<k>` (`runs-pq<k>.jsonl`), so they show up in the repository's monit
 `ticket.blocked`, `ticket.unblocked`, `xrepo.resolve`, `xrepo.cycle`, `agent.fallback`, `agent.hold`, `agent.unproven`,
 `agent.resume`, `dispatch.skip`, `repo.discovered`, `repo.notready`, `repo.ready`, `repo.enabled`, `repo.occupied`,
 `repo.free`, `resource.acquire`, `resource.release`, `resource.wait`, `poll.change`, `poll.summary`, `ticket.thrash`,
-`intake.robotDraft`, `inbox.add`, `run.pause`, `run.resume`, `pass.halt`, `pass.kill`. No line carries prompt text,
+`intake.robotDraft`, `run.pause`, `run.resume`, `pass.halt`, `pass.kill`. No line carries prompt text,
 environment values or keys.
 
 ## When it does not do what you expect

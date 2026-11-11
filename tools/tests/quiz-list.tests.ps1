@@ -16,6 +16,8 @@
       4. Refusals exit 2 (unknown project, no project at or above the folder without -All); a missing registry still
          answers for the current project.
       5. It writes nothing: every ledger hashes the same after all the runs.
+      6. -Status <name[,name]> lists other statuses (default BlockQuestions unchanged): the prefix becomes the
+         ticket's status, the result line names the statuses, an empty -Status exits 2.
 #>
 [CmdletBinding()]
 param([switch] $KeepScratch)
@@ -85,6 +87,10 @@ $calls = [ordered]@{
     unknown = @{ a = @('-Project', 'nope');                w = $alpha }
     nowhere = @{ a = @();                                  w = $scratch }
     alone   = @{ a = @();                                  w = $alpha; root = $emptyRoot }
+    status2 = @{ a = @('-All', '-Status', 'BlockQuestions,BlockNeedUserTest'); w = $delta }
+    status1 = @{ a = @('-All', '-Status', 'BlockNeedUserTest');             w = $delta }
+    status0 = @{ a = @('-All', '-Status', 'BlockByOtherTask');               w = $delta }
+    statusB = @{ a = @('-All', '-Status', ' , ');                            w = $delta }
 }
 $results = @{}
 $calls.GetEnumerator() | ForEach-Object -ThrottleLimit 10 -Parallel {
@@ -146,6 +152,21 @@ try {
         Assert-That ($nowhere.code -eq 2) "no project exit $($nowhere.code)"
         $alone = Invoke-Quiz 'alone'
         Assert-That ($alone.code -eq 0 -and $alone.last -eq 'quiz-list: 2 in BlockQuestions across 1 project(s)') "no registry: $($alone.code) $($alone.last)"
+    }
+    Run-Case '6 -Status lists other statuses' {
+        $r = Invoke-Quiz 'status2'
+        Assert-That ($r.code -eq 0) "exit $($r.code): $($r.text)"
+        $heads = @($r.lines | Where-Object { $_ -match '^(BlockQuestions|BlockNeedUserTest)  ' })
+        Assert-That ($heads.Count -eq 5) "expected 5 ticket lines, got $($heads.Count): $($r.text)"
+        Assert-That (@($r.lines | Where-Object { $_ -like 'BlockNeedUserTest  alpha:S0032  p90*' }).Count -eq 1) 'the BlockNeedUserTest ticket carries its status as prefix'
+        Assert-That ($r.last -eq 'quiz-list: 5 in BlockQuestions,BlockNeedUserTest across 3 project(s)') "result line: $($r.last)"
+        $r1 = Invoke-Quiz 'status1'
+        Assert-That ($r1.last -eq 'quiz-list: 1 in BlockNeedUserTest across 1 project(s)') "one status: $($r1.last)"
+        Assert-That (@($r1.lines | Where-Object { $_ -like 'BQ *' }).Count -eq 0) 'no BQ prefix for a non-default status'
+        $r0 = Invoke-Quiz 'status0'
+        Assert-That ($r0.code -eq 0 -and $r0.last -eq 'quiz-list: 0 in BlockByOtherTask across 0 project(s)') "empty: $($r0.code) $($r0.last)"
+        $rb = Invoke-Quiz 'statusB'
+        Assert-That ($rb.code -eq 2) "empty -Status exit $($rb.code)"
     }
     Run-Case '5 writes nothing' {
         $after = @($alpha, $beta, $gamma, $delta) | ForEach-Object { (Get-FileHash -LiteralPath (Join-Path $_ 'PLAN\spec-catalog.jsonl')).Hash }
