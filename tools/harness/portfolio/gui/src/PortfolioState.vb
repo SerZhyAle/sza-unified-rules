@@ -26,11 +26,7 @@ Public Class RepoInfo
     ' Of those, the ticket rows the runner would take (PortfolioState.IsRunnable); 0 for a repository it does not
     ' work (disabled or held).
     Public Property RunnableRows As Integer = 0
-    ' Ticket rows in a Block* status (BlockQuestions, BlockNeedUserTest, BlockByOtherTask, BlockExternal), active or held:
-    ' open, and waiting on someone or something before the runner can move them. The idle-held rows below are counted
-    ' here as well: the pickers pass them over just the same.
-    Public Property BlockedRows As Integer = 0
-    ' Runnable-status rows the pickers pass over for their idle series (PortfolioState.GetIdleHeldIds), part of BlockedRows.
+    ' Runnable-status rows the pickers pass over for their idle series (PortfolioState.GetIdleHeldIds).
     Public Property IdleRows As Integer = 0
     Public Property IdleIds As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
 
@@ -113,6 +109,115 @@ Public Class CandidateInfo
     End Property
 End Class
 
+Public Class InboxTicket
+    Public Property Repo As String = ""
+    Public Property Id As String = ""
+    Public Property Age As String = ""
+    Public Property Note As String = ""
+    ' A chain member: the "key:id" of the root it waits on, which may be in another project; "" otherwise.
+    Public Property WaitsOn As String = ""
+End Class
+
+' What waits for the owner, per project and kind, from 'pq inbox -Json' (lib/inbox.ps1 Get-PqInbox).
+Public Class InboxSnapshot
+    ' The inbox kinds as pq names them, in the order of the panel's columns.
+    Public Shared ReadOnly Kinds As String() = {"questions", "tests", "outside", "chain", "unbuilt"}
+
+    Public Property Ok As Boolean
+    Public Property ErrorText As String = ""
+    Public Property ReadAt As DateTime = DateTime.Now
+    ' Projects whose folder or ledger pq could not read: key -> reason. Their counts are unknown, not zero.
+    Public Property Skipped As New Dictionary(Of String, String)(StringComparer.Ordinal)
+    ' kind -> the command that clears it, as pq prints it.
+    Public Property Clear As New Dictionary(Of String, String)(StringComparer.Ordinal)
+    ' "key|kind" -> the tickets of that project in that kind.
+    Private ReadOnly _lists As New Dictionary(Of String, List(Of InboxTicket))(StringComparer.Ordinal)
+
+    Public Function Tickets(repoKey As String, kind As String) As List(Of InboxTicket)
+        Dim list As List(Of InboxTicket) = Nothing
+        If _lists.TryGetValue($"{repoKey}|{kind}", list) Then Return list
+        Return New List(Of InboxTicket)()
+    End Function
+
+    Private Sub Add(kind As String, t As InboxTicket)
+        Dim key = $"{t.Repo}|{kind}"
+        Dim list As List(Of InboxTicket) = Nothing
+        If Not _lists.TryGetValue(key, list) Then
+            list = New List(Of InboxTicket)()
+            _lists(key) = list
+        End If
+        list.Add(t)
+    End Sub
+
+    Public Shared Function Failed(message As String) As InboxSnapshot
+        Return New InboxSnapshot With {.Ok = False, .ErrorText = message}
+    End Function
+
+    ' A chain ticket is listed under its own project: a root's 'frees' names every member, and each member counts
+    ' where it lives, while the root only says what it waits on. The loose chain tickets (no foreign root) come
+    ' from 'tickets' like any other kind.
+    Public Shared Function Parse(json As String) As InboxSnapshot
+        Dim snap As New InboxSnapshot With {.Ok = True}
+        Using doc = JsonDocument.Parse(json)
+            Dim root = doc.RootElement
+            Dim skipped As JsonElement
+            If root.TryGetProperty("skipped", skipped) AndAlso skipped.ValueKind = JsonValueKind.Array Then
+                For Each s In skipped.EnumerateArray()
+                    Dim entry = If(s.ValueKind = JsonValueKind.String, s.GetString(), "")
+                    Dim cut = entry.IndexOf(" - ", StringComparison.Ordinal)
+                    If cut > 0 Then snap.Skipped(entry.Substring(0, cut)) = entry.Substring(cut + 3)
+                Next
+            End If
+
+            Dim kindsEl As JsonElement
+            If Not root.TryGetProperty("kinds", kindsEl) OrElse kindsEl.ValueKind <> JsonValueKind.Object Then
+                Return Failed("pq inbox -Json gave no 'kinds'")
+            End If
+            For Each kind In Kinds
+                Dim k As JsonElement
+                If Not kindsEl.TryGetProperty(kind, k) OrElse k.ValueKind <> JsonValueKind.Object Then Continue For
+                snap.Clear(kind) = Text(k, "clear")
+                Dim tickets As JsonElement
+                If k.TryGetProperty("tickets", tickets) AndAlso tickets.ValueKind = JsonValueKind.Array Then
+                    For Each t In tickets.EnumerateArray()
+                        snap.Add(kind, New InboxTicket With {.Repo = Text(t, "repo"), .Id = Text(t, "id"), .Age = Text(t, "age"), .Note = Text(t, "note")})
+                    Next
+                End If
+                Dim roots As JsonElement
+                If k.TryGetProperty("roots", roots) AndAlso roots.ValueKind = JsonValueKind.Array Then
+                    For Each r In roots.EnumerateArray()
+                        Dim pair = Text(r, "pair")
+                        Dim why = Text(r, "note")
+                        If why = "" Then why = If(Text(r, "status") <> "", Text(r, "status"), Text(r, "state"))
+                        Dim heldEl As JsonElement
+                        Dim held = r.TryGetProperty("held", heldEl) AndAlso heldEl.ValueKind = JsonValueKind.True
+                        If held Then why = "held, " & why
+                        Dim frees As JsonElement
+                        If Not r.TryGetProperty("frees", frees) OrElse frees.ValueKind <> JsonValueKind.Array Then Continue For
+                        For Each m In frees.EnumerateArray()
+                            Dim member = If(m.ValueKind = JsonValueKind.String, m.GetString(), "")
+                            Dim colon = member.IndexOf(":"c)
+                            If colon <= 0 Then Continue For
+                            snap.Add(kind, New InboxTicket With {.Repo = member.Substring(0, colon), .Id = member.Substring(colon + 1), .WaitsOn = pair, .Note = why})
+                        Next
+                    Next
+                End If
+            Next
+        End Using
+        Return snap
+    End Function
+
+    Private Shared Function Text(e As JsonElement, name As String) As String
+        Dim v As JsonElement
+        If e.ValueKind <> JsonValueKind.Object OrElse Not e.TryGetProperty(name, v) Then Return ""
+        Select Case v.ValueKind
+            Case JsonValueKind.String : Return v.GetString()
+            Case JsonValueKind.Null, JsonValueKind.Undefined : Return ""
+            Case Else : Return v.GetRawText()
+        End Select
+    End Function
+End Class
+
 ' Read-only views of the portfolio root. Every read shares the file for writing and deletion: the runner appends to
 ' runs.jsonl and replaces worker-*.json and PORTFOLIO_QUEUE.md by rename, and a reader that locks them out would
 ' make the runner's own write fail.
@@ -192,6 +297,60 @@ Public Class PortfolioState
         Next
 
         Return Path.Combine(repoPath, "PLAN\RELEASE_QUEUE.md")
+    End Function
+
+    ' The spec file of one ticket, from the project's own ledger and its archive (.sza-profile.json paths.journal and
+    ' paths.journalArchive, the defaults as in tools/harness/_profile.ps1): the last row whose id is exactly this id.
+    ' A closed ticket's file may have moved to paths.specArchiveDir while its row still names the old place, so the
+    ' same file name is looked for there too. "" when no row names it or the file is gone from both places - the
+    ' caller must never open a near match instead.
+    Public Shared Function FindTicketSpecFile(repo As RepoInfo, id As String) As String
+        If repo Is Nothing OrElse String.IsNullOrWhiteSpace(repo.Path) OrElse String.IsNullOrWhiteSpace(id) Then Return ""
+        Dim ledgers As New List(Of String) From {"PLAN/spec-catalog.jsonl", "PLAN/spec-catalog-archive.jsonl"}
+        Dim specArchive = "PLAN/archive"
+        Try
+            Using doc = ReadJson(Path.Combine(repo.Path, ".sza-profile.json"))
+                Dim paths As JsonElement
+                If doc IsNot Nothing AndAlso doc.RootElement.ValueKind = JsonValueKind.Object AndAlso doc.RootElement.TryGetProperty("paths", paths) Then
+                    Dim journal = Str(paths, "journal")
+                    Dim archive = Str(paths, "journalArchive")
+                    Dim archiveDir = Str(paths, "specArchiveDir")
+                    If journal <> "" Then ledgers(0) = journal
+                    If archive <> "" Then ledgers(1) = archive
+                    If archiveDir <> "" Then specArchive = archiveDir
+                End If
+            End Using
+        Catch
+        End Try
+
+        For Each ledger In ledgers
+            Dim ledgerPath = If(Path.IsPathFullyQualified(ledger), ledger, Path.Combine(repo.Path, ledger))
+            If Not File.Exists(ledgerPath) Then Continue For
+            Dim found = ""
+            Try
+                For Each raw In ReadAllTextShared(ledgerPath).Split({vbCrLf, vbLf}, StringSplitOptions.RemoveEmptyEntries)
+                    Dim line = raw.Trim()
+                    If line.Length = 0 OrElse Not line.Contains(id, StringComparison.Ordinal) Then Continue For
+                    Try
+                        Using row = JsonDocument.Parse(line)
+                            If row.RootElement.ValueKind = JsonValueKind.Object AndAlso Str(row.RootElement, "id") = id Then
+                                found = Str(row.RootElement, "file")
+                            End If
+                        End Using
+                    Catch
+                    End Try
+                Next
+            Catch
+                Continue For
+            End Try
+            If found <> "" Then
+                Dim full = If(Path.IsPathFullyQualified(found), found, Path.GetFullPath(Path.Combine(repo.Path, found)))
+                If File.Exists(full) Then Return full
+                Dim moved = Path.GetFullPath(Path.Combine(repo.Path, specArchive, Path.GetFileName(full)))
+                If File.Exists(moved) Then Return moved
+            End If
+        Next
+        Return ""
     End Function
 
     ' ---- shared readers ----
@@ -530,7 +689,6 @@ Public Class PortfolioState
         Dim heldKeys As New HashSet(Of String)(queue.Held.Where(Function(r) r.Id Is Nothing).Select(Function(r) r.Repo), StringComparer.Ordinal)
         Dim counts = queue.Rows.Concat(queue.Held.Where(Function(r) r.Id IsNot Nothing)).GroupBy(Function(r) r.Repo).ToDictionary(Function(g) g.Key, Function(g) g.Count(), StringComparer.Ordinal)
         Dim heldTickets As New HashSet(Of String)(queue.Held.Where(Function(r) r.Id IsNot Nothing).Select(Function(r) r.Target), StringComparer.Ordinal)
-        Dim blocked = queue.Rows.Concat(queue.Held).Where(Function(r) r.Id IsNot Nothing AndAlso r.Status IsNot Nothing AndAlso r.Status.StartsWith("Block", StringComparison.Ordinal)).GroupBy(Function(r) r.Repo).ToDictionary(Function(g) g.Key, Function(g) g.Count(), StringComparer.Ordinal)
         Dim runnable = queue.Rows.Where(Function(r) IsRunnable(r) AndAlso Not heldTickets.Contains(r.Target)).ToLookup(Function(r) r.Repo, StringComparer.Ordinal)
 
         Try
@@ -560,13 +718,11 @@ Public Class PortfolioState
                     r.QueueHold = heldKeys.Contains(r.Key)
                     Dim n As Integer
                     If counts.TryGetValue(r.Key, n) Then r.QueuedRows = n
-                    If blocked.TryGetValue(r.Key, n) Then r.BlockedRows = n
                     If r.Enabled AndAlso Not r.IsHeld Then
                         r.IdleIds = GetIdleHeldIds(r.Path)
                         For Each row In runnable(r.Key)
                             If r.IdleIds.Contains(row.Id) Then r.IdleRows += 1 Else r.RunnableRows += 1
                         Next
-                        r.BlockedRows += r.IdleRows
                     End If
                     list.Add(r)
                 Next

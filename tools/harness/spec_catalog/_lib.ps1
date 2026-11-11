@@ -1264,6 +1264,22 @@ function Assert-ClosingGates {
         if ($NewStatus -eq 'BlockNeedUserTest') {
             Invoke-SpecCheckers -Id $Id -NewStatus $NewStatus -Checkers @('check-probe-present.ps1')
         }
+        # S0039 - one exception to the re-affirmation split: check-block-note's subject on a
+        # BlockQuestions entry is the INCOMING note (the question the quiz will ask), not what
+        # the ticket achieved, and rewriting the note of a standing BlockQuestions ticket - the
+        # quiz's own "narrow the note" move - writes a new one. A re-affirmation that omits
+        # -StatusNote preserves the standing note and stays housekeeping, and a standing row
+        # without the Q: token is grandfathered by the same rule that grandfathered the rows
+        # at rollout: the gate judges notes being written, never the one on the record.
+        if ($NewStatus -eq 'BlockQuestions' -and $NoteSupplied) {
+            $reaffirmArgs = @{}
+            $reaffirmArgs['check-block-note.ps1'] = @{
+                NewStatus    = $NewStatus
+                StatusNote   = $StatusNote
+                NoteSupplied = $NoteSupplied
+            }
+            Invoke-SpecCheckers -Id $Id -NewStatus $NewStatus -Checkers @('check-block-note.ps1') -CheckerArgs $reaffirmArgs
+        }
         return
     }
 

@@ -11,9 +11,28 @@ Partial Class MainForm
     Private _consoleExpandedHeight As Integer = 140
     Private _consoleCollapsed As Boolean = False
     Private _baseTitle As String = ""
+    ' The registry as the last refresh read it: a double-click resolves a row's project key against it.
+    Private _repos As New List(Of RepoInfo)()
 
     ' The console keeps the tail of the session; a panel left open for days must not grow without bound.
     Private Const ConsoleMaxChars As Integer = 200000
+
+    ' What waits for the owner, one column per inbox kind (pq inbox): the grid column, its header, the kind, and what
+    ' the kind means to the owner.
+    Private Shared ReadOnly InboxColumns As (Column As String, Header As String, Kind As String, Meaning As String)() = {
+        ("colAsk", "Ask", "questions", "waiting for your answers (BlockQuestions)"),
+        ("colTest", "Test", "tests", "waiting for your manual test (BlockNeedUserTest)"),
+        ("colOutside", "Outside", "outside", "waiting for someone outside the project (BlockExternal)"),
+        ("colChain", "Chain", "chain", "waiting for another ticket, here or in another project (BlockByOtherTask)"),
+        ("colUnbuilt", "Unbuilt", "unbuilt", "built, waiting for the audit to Verified (Implemented)")
+    }
+
+    ' The inbox takes seconds to read (every ledger, the chain walk): it is read on load, by Refresh and every
+    ' 15th tick (60 s), never twice at once, and the grid shows the last reading in between.
+    Private _inbox As InboxSnapshot = Nothing
+    Private _isInboxBusy As Boolean = False
+    Private _ticks As Integer = 0
+    Private Const InboxEveryTicks As Integer = 15
 
     Public Sub New()
         InitializeComponent()
@@ -74,6 +93,7 @@ Partial Class MainForm
 
         WireEvents()
         RefreshAll()
+        RefreshInboxAsync()
 
         tmrRefresh.Interval = 4000
         tmrRefresh.Enabled = chkAutoRefresh.Checked
@@ -85,11 +105,14 @@ Partial Class MainForm
         AddTextColumn(dgvRepos, "colKey", "Project", 115)
         AddTextColumn(dgvRepos, "colStatus", "Status", 80)
         AddTextColumn(dgvRepos, "colQueued", "Queued", 55)
-        AddTextColumn(dgvRepos, "colBlocked", "Blocked", 55)
+        For Each c In InboxColumns
+            AddTextColumn(dgvRepos, c.Column, c.Header, 50)
+        Next
         AddTextColumn(dgvRepos, "colPerm", "Permission", 115)
         AddButtonColumn(dgvRepos, "colNewSpec", "Spec", "+ Spec...", 65)
         AddButtonColumn(dgvRepos, "colQueue", "Tickets", "Open Queue", 85)
         AddButtonColumn(dgvRepos, "colFolder", "Folder", "Open VSCode", 95)
+        AddButtonColumn(dgvRepos, "colSession", "Session", "Claude", 70)
         AddButtonColumn(dgvRepos, "colStartRepo", "Worker", "Start here", 80)
 
         dgvWorkers.Columns.Clear()
@@ -111,6 +134,13 @@ Partial Class MainForm
         AddTextColumn(dgvPasses, "colModel", "Model", 60)
         AddTextColumn(dgvPasses, "colDur", "Sec", 50)
         AddTextColumn(dgvPasses, "colExit", "Exit", 40)
+
+        dgvQueue.Columns.Clear()
+        AddTextColumn(dgvQueue, "colQPackage", "Pkg", 45)
+        AddTextColumn(dgvQueue, "colQRepo", "Project", 115)
+        AddTextColumn(dgvQueue, "colQTicket", "Ticket", 80)
+        AddTextColumn(dgvQueue, "colQStatus", "Status", 130)
+        AddTextColumn(dgvQueue, "colQHeld", "Held", 50)
     End Sub
 
     Private Shared Sub AddTextColumn(grid As DataGridView, name As String, header As String, width As Integer)
@@ -135,6 +165,22 @@ Partial Class MainForm
         AddHandler btnStartDrain.Click, Sub() Launch("Launching 'pq start -Drain' in a new terminal..", "start", "-Drain")
         AddHandler btnStop.Click, AddressOf BtnStop_Click
         AddHandler btnKill.Click, AddressOf BtnKill_Click
+        AddHandler btnPause.Click, Async Sub()
+                                       LogConsole("Pausing: no worker launches a new pass, passes in flight finish ('pq pause')..")
+                                       Await RunOwnerVerbAsync(btnPause, "pause")
+                                   End Sub
+        AddHandler btnResume.Click, Async Sub()
+                                        LogConsole("Resuming ('pq resume')..")
+                                        Await RunOwnerVerbAsync(btnResume, "resume")
+                                    End Sub
+        AddHandler btnReport.Click, Async Sub()
+                                        LogConsole("The last day in numbers ('pq report -Days 1')..")
+                                        Await RunOwnerVerbAsync(btnReport, "report", "-Days", "1")
+                                    End Sub
+        AddHandler btnProblems.Click, Async Sub()
+                                          LogConsole("The open findings of the last seven days ('pq problems')..")
+                                          Await RunOwnerVerbAsync(btnProblems, "problems")
+                                      End Sub
         AddHandler btnNewSpec.Click, Sub() ShowNewSpec(SelectedRepoKey())
         AddHandler btnDoctor.Click, AddressOf BtnDoctor_Click
         AddHandler btnGuide.Click, AddressOf BtnGuide_Click
@@ -154,8 +200,9 @@ Partial Class MainForm
 
         AddHandler dgvRepos.CellClick, AddressOf DgvRepos_CellClick
         AddHandler dgvRepos.SelectionChanged, AddressOf DgvRepos_SelectionChanged
-        AddHandler dgvWorkers.CellDoubleClick, Sub(s, e) SteerFromRow(dgvWorkers, e.RowIndex, "colWorkerRepo", "colWorkerTicket")
-        AddHandler dgvPasses.CellDoubleClick, Sub(s, e) SteerFromRow(dgvPasses, e.RowIndex, "colPassRepo", "colPassTicket")
+        AddHandler dgvWorkers.CellDoubleClick, Sub(s, e) SteerAndOpenFromRow(dgvWorkers, e.RowIndex, "colWorkerRepo", "colWorkerTicket")
+        AddHandler dgvPasses.CellDoubleClick, Sub(s, e) SteerAndOpenFromRow(dgvPasses, e.RowIndex, "colPassRepo", "colPassTicket")
+        AddHandler dgvQueue.CellDoubleClick, Sub(s, e) SteerAndOpenFromRow(dgvQueue, e.RowIndex, "colQRepo", "colQTicket")
 
         AddHandler splBottom.SplitterMoved, AddressOf SplBottom_SplitterMoved
         AddHandler splBottom.DoubleClick, AddressOf BtnToggleConsole_Click
@@ -165,9 +212,16 @@ Partial Class MainForm
         AddHandler btnCopyConsole.Click, AddressOf BtnCopyConsole_Click
         ' The file changes only when pq syncs it (each pass end, every steering verb); the button syncs first, so a
         ' ticket written or moved in a repository since then shows up now.
-        AddHandler btnRefreshNow.Click, Async Sub() Await RunLoggedAsync(btnRefreshNow, "sync")
+        AddHandler btnRefreshNow.Click, Async Sub()
+                                            Await RunLoggedAsync(btnRefreshNow, "sync")
+                                            RefreshInboxAsync()
+                                        End Sub
         AddHandler chkAutoRefresh.CheckedChanged, Sub() tmrRefresh.Enabled = chkAutoRefresh.Checked
-        AddHandler tmrRefresh.Tick, Sub() RefreshAll()
+        AddHandler tmrRefresh.Tick, Sub()
+                                        RefreshAll()
+                                        _ticks += 1
+                                        If _ticks Mod InboxEveryTicks = 0 Then RefreshInboxAsync()
+                                    End Sub
 
         AddHandler ThemeService.ThemeChanged, AddressOf OnThemeChanged
     End Sub
@@ -264,6 +318,7 @@ Partial Class MainForm
             Dim liveCount = workers.Where(Function(w) w.Alive).Count()
             Dim queue = PortfolioState.ReadQueue()
             Dim repos = PortfolioState.GetRepos(queue)
+            _repos = repos
             Dim p = ThemeService.Palette
 
             ' 1. Banner
@@ -322,6 +377,19 @@ Partial Class MainForm
             Next
             RestoreScroll(dgvPasses, passesScroll)
 
+            ' 4b. The queue file's ticket rows, in the order the runner reads them, then the held ones
+            Dim queueScroll = FirstVisibleRow(dgvQueue)
+            dgvQueue.Rows.Clear()
+            For Each q In queue.Rows.Select(Function(r) (Row:=r, Held:=False)).Concat(queue.Held.Select(Function(r) (Row:=r, Held:=True)))
+                Dim pkg = If(q.Row.Package = PortfolioState.Unscheduled, "--", If(q.Row.Package < 0, "", CStr(q.Row.Package)))
+                Dim idx = dgvQueue.Rows.Add(pkg, q.Row.Repo, If(q.Row.Id, ""), q.Row.Status, If(q.Held, "held", ""))
+                If q.Row.Id Is Nothing Then
+                    dgvQueue.Rows(idx).Cells("colQTicket").ToolTipText = "a project row: every ticket of the project, in its own order - no single spec to open"
+                End If
+                If q.Held Then dgvQueue.Rows(idx).DefaultCellStyle.ForeColor = p.TextMuted
+            Next
+            RestoreScroll(dgvQueue, queueScroll)
+
             ' 5. Repositories
             Dim selKey = SelectedRepoKey()
             Dim reposScroll = FirstVisibleRow(dgvRepos)
@@ -329,17 +397,21 @@ Partial Class MainForm
             Dim selIdx = -1
             For Each r In repos
                 Dim statusText = If(r.IsHeld, If(r.RegistryHold, "Held (reg)", "Held"), If(r.Enabled, "Enabled", "Disabled"))
-                Dim idx = dgvRepos.Rows.Add(dgvRepos.Rows.Count + 1, r.Key, statusText, If(r.RunnableRows > 0, CStr(r.RunnableRows), ""),
-                    If(r.BlockedRows > 0, CStr(r.BlockedRows), ""), r.PermissionMode)
+                Dim idx = dgvRepos.Rows.Add()
                 Dim row = dgvRepos.Rows(idx)
+                row.Cells("colOrder").Value = idx + 1
+                row.Cells("colKey").Value = r.Key
+                row.Cells("colStatus").Value = statusText
+                row.Cells("colQueued").Value = If(r.RunnableRows > 0, CStr(r.RunnableRows), "")
+                row.Cells("colPerm").Value = r.PermissionMode
                 row.Tag = r
                 row.Cells("colKey").ToolTipText = r.Path
-                row.Cells("colQueued").ToolTipText = $"{r.RunnableRows} the runner would take, of {r.QueuedRows} rows in the queue file (blocked, idle-held, held and unknown rows are not taken)"
-                row.Cells("colBlocked").ToolTipText = "open tickets in a Block status - waiting for an answer, a test, another ticket or something outside" &
-                    If(r.IdleRows > 0, $"; {r.IdleRows} of them idle-held: the last runs of each ended without moving its status, so the runner passes it over until a run of it moves the status (naming the ticket runs it anyway)", "")
-                If r.BlockedRows > 0 Then row.Cells("colBlocked").Style.ForeColor = p.StatusWarning
+                row.Cells("colQueued").ToolTipText = $"{r.RunnableRows} the runner would take, of {r.QueuedRows} rows in the queue file (blocked, idle-held, held and unknown rows are not taken)" &
+                    If(r.IdleRows > 0, $"; {r.IdleRows} idle-held: the last runs of each ended without moving its status, so the runner passes it over until a run of it moves the status (naming the ticket runs it anyway)", "")
+                FillInboxCells(row, r.Key, p)
                 row.Cells("colOrder").ToolTipText = $"rank {r.Rank}"
                 row.Cells("colStartRepo").ToolTipText = $"Starts a worker that takes tickets of '{r.Key}' only, in their order ('pq start -Repo {r.Key}'). Holds, STOP and the other safeguards apply as for any start."
+                row.Cells("colSession").ToolTipText = $"Opens a terminal in {r.Path} running claude - an interactive session with the project's own commands and hooks, no VS Code window"
 
                 Dim statusCell = row.Cells("colStatus")
                 If r.IsHeld Then
@@ -368,6 +440,91 @@ Partial Class MainForm
         Finally
             _isRefreshing = False
         End Try
+    End Sub
+
+    ' The five counts of one project; '?' wherever the inbox could not say: not read yet, the read failed, or pq
+    ' skipped the project. A zero stays empty, as in the Queued column.
+    Private Sub FillInboxCells(row As DataGridViewRow, repoKey As String, p As ThemePalette)
+        Dim reason As String = Nothing
+        If _inbox Is Nothing Then
+            reason = "not read yet - the inbox ('pq inbox') is read a few seconds after the panel opens"
+        ElseIf Not _inbox.Ok Then
+            reason = $"the inbox could not be read: {_inbox.ErrorText}"
+        ElseIf _inbox.Skipped.ContainsKey(repoKey) Then
+            reason = $"pq inbox skipped this project: {_inbox.Skipped(repoKey)}"
+        End If
+        For Each c In InboxColumns
+            Dim cell = row.Cells(c.Column)
+            If reason IsNot Nothing Then
+                cell.Value = "?"
+                cell.ToolTipText = reason
+                cell.Style.ForeColor = p.TextMuted
+                Continue For
+            End If
+            Dim n = _inbox.Tickets(repoKey, c.Kind).Count
+            cell.Value = If(n > 0, CStr(n), "")
+            cell.ToolTipText = $"{n} {c.Meaning}; read {_inbox.ReadAt:HH:mm:ss}" & If(n > 0, " - click to list them in the console", "")
+            If n > 0 Then cell.Style.ForeColor = p.StatusWarning
+        Next
+    End Sub
+
+    Private Async Sub RefreshInboxAsync()
+        If _isInboxBusy Then Return
+        _isInboxBusy = True
+        Try
+            Dim res = Await PqCli.RunSilentAsync("inbox", "-Json")
+            If IsDisposed Then Return
+            Dim snap As InboxSnapshot
+            If res.Success Then
+                Try
+                    snap = InboxSnapshot.Parse(res.Output)
+                Catch ex As JsonException
+                    snap = InboxSnapshot.Failed($"pq inbox -Json gave unreadable JSON ({ex.Message})")
+                End Try
+            Else
+                snap = InboxSnapshot.Failed($"pq inbox -Json failed (exit {res.ExitCode}): {LastLines(res.Message, 2)}")
+            End If
+            ' A failure is logged once when it starts, not every minute it lasts.
+            If Not snap.Ok AndAlso (_inbox Is Nothing OrElse _inbox.Ok) Then LogConsole(snap.ErrorText)
+            If snap.Ok AndAlso snap.Skipped.Count > 0 AndAlso (_inbox Is Nothing OrElse Not _inbox.Ok OrElse _inbox.Skipped.Count <> snap.Skipped.Count) Then
+                LogConsole("pq inbox skipped: " & String.Join("; ", snap.Skipped.Select(Function(kv) $"{kv.Key} - {kv.Value}")))
+            End If
+            _inbox = snap
+        Finally
+            _isInboxBusy = False
+        End Try
+        If Not IsDisposed Then RefreshAll()
+    End Sub
+
+    ' A click on a count: the tickets behind it, with the command that clears the kind.
+    Private Sub ListInbox(r As RepoInfo, column As String)
+        Dim c = InboxColumns.First(Function(x) x.Column = column)
+        If _inbox Is Nothing OrElse Not _inbox.Ok Then
+            LogConsole($"{c.Header} of '{r.Key}': {If(_inbox Is Nothing, "the inbox has not been read yet", _inbox.ErrorText)}")
+            Return
+        End If
+        If _inbox.Skipped.ContainsKey(r.Key) Then
+            LogConsole($"{c.Header} of '{r.Key}': unknown - pq inbox skipped this project: {_inbox.Skipped(r.Key)}")
+            Return
+        End If
+        Dim list = _inbox.Tickets(r.Key, c.Kind)
+        If list.Count = 0 Then
+            LogConsole($"{c.Header} of '{r.Key}': nothing {c.Meaning}.")
+            Return
+        End If
+        Dim clearCmd As String = Nothing
+        _inbox.Clear.TryGetValue(c.Kind, clearCmd)
+        Dim sb As New StringBuilder()
+        sb.Append($"{c.Header} of '{r.Key}': {list.Count} {c.Meaning}")
+        If Not String.IsNullOrEmpty(clearCmd) Then sb.Append($" - clear: {clearCmd}")
+        For Each t In list
+            sb.AppendLine()
+            sb.Append($"  {t.Repo}:{t.Id}")
+            If t.WaitsOn <> "" Then sb.Append($"  waits on {t.WaitsOn}")
+            If t.Age <> "" Then sb.Append($"  age {t.Age}")
+            If t.Note <> "" Then sb.Append("  " & If(t.Note.Length > 100, t.Note.Substring(0, 100) & "..", t.Note))
+        Next
+        LogConsole(sb.ToString())
     End Sub
 
     Private Shared Function FirstVisibleRow(grid As DataGridView) As Integer
@@ -425,9 +582,30 @@ Partial Class MainForm
         End Try
     End Function
 
+    ' The owner's controls run outside _isCliBusy: a dry-run or a status takes minutes, and Stop must not wait for it.
+    ' Only the clicked button is held, so one control cannot be fired twice while its own command runs.
+    Private Async Function RunOwnerVerbAsync(button As Button, ParamArray arguments As String()) As Task
+        button.Enabled = False
+        Try
+            Dim res = Await PqCli.RunSilentAsync(arguments)
+            If IsDisposed Then Return
+            Dim verb = String.Join(" ", arguments)
+            If res.Success Then
+                LogConsole(If(res.Output.Trim() = "", $"pq {verb}: done", res.Output))
+            Else
+                LogConsole($"pq {verb} failed (exit {res.ExitCode}): {res.Message}")
+            End If
+        Finally
+            If Not IsDisposed Then
+                button.Enabled = True
+                RefreshAll()
+            End If
+        End Try
+    End Function
+
     Private Async Sub BtnStop_Click(sender As Object, e As EventArgs)
         LogConsole("Requesting a graceful stop: workers finish their current pass, then exit..")
-        Await RunLoggedAsync(btnStop, "stop")
+        Await RunOwnerVerbAsync(btnStop, "stop")
     End Sub
 
     Private Async Sub BtnKill_Click(sender As Object, e As EventArgs)
@@ -436,7 +614,7 @@ Partial Class MainForm
             "Confirm Force Kill", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2)
         If confirm <> DialogResult.Yes Then Return
         LogConsole("Terminating runner children ('pq stop -Kill')..")
-        Await RunLoggedAsync(btnKill, "stop", "-Kill")
+        Await RunOwnerVerbAsync(btnKill, "stop", "-Kill")
     End Sub
 
     Private Sub ShowNewSpec(projectKey As String)
@@ -647,6 +825,35 @@ Partial Class MainForm
         txtSteer.Text = If(String.IsNullOrWhiteSpace(ticket), repo, $"{repo}:{ticket}")
     End Sub
 
+    ' A double-click on a worker, a pass or a queue row: the steer box is filled as before, and the ticket's spec opens.
+    Private Sub SteerAndOpenFromRow(grid As DataGridView, rowIndex As Integer, repoColumn As String, ticketColumn As String)
+        If rowIndex < 0 Then Return
+        SteerFromRow(grid, rowIndex, repoColumn, ticketColumn)
+        OpenTicketSpec(grid.Rows(rowIndex).Cells(repoColumn).Value?.ToString(), grid.Rows(rowIndex).Cells(ticketColumn).Value?.ToString())
+    End Sub
+
+    ' Opens the spec the project's ledger names for exactly this id; a row without a ticket, or an id no ledger row
+    ' names, opens nothing and says so.
+    Private Sub OpenTicketSpec(repoKey As String, id As String)
+        If String.IsNullOrWhiteSpace(repoKey) OrElse String.IsNullOrWhiteSpace(id) Then
+            LogConsole("This row names no ticket - nothing to open.")
+            Return
+        End If
+        Dim repo = _repos.FirstOrDefault(Function(r) r.Key.Equals(repoKey, StringComparison.Ordinal))
+        If repo Is Nothing Then
+            LogConsole($"'{repoKey}' is not a registered project - cannot find the spec of {repoKey}:{id}.")
+            Return
+        End If
+        Dim spec = PortfolioState.FindTicketSpecFile(repo, id)
+        If spec = "" Then
+            LogConsole($"No spec file for {repoKey}:{id}: no row of its ledger names an existing file for this id.")
+            Return
+        End If
+        LogConsole($"Opening the spec of {repoKey}:{id}: {spec}")
+        Dim err = PqCli.OpenFileWithDefaultApp(spec)
+        If err IsNot Nothing Then LogConsole($"Cannot open {spec}: {err}")
+    End Sub
+
     Private Sub DgvRepos_CellClick(sender As Object, e As DataGridViewCellEventArgs)
         If e.RowIndex < 0 OrElse e.ColumnIndex < 0 Then Return
         Dim r = TryCast(dgvRepos.Rows(e.RowIndex).Tag, RepoInfo)
@@ -654,6 +861,8 @@ Partial Class MainForm
 
         Dim column = dgvRepos.Columns(e.ColumnIndex).Name
         Select Case column
+            Case "colAsk", "colTest", "colOutside", "colChain", "colUnbuilt"
+                ListInbox(r, column)
             Case "colNewSpec"
                 ShowNewSpec(r.Key)
             Case "colQueue"
@@ -670,6 +879,13 @@ Partial Class MainForm
                 LogConsole($"Opening folder in VS Code: {r.Path}")
                 Dim err = PqCli.OpenVsCode(r.Path)
                 If err IsNot Nothing Then LogConsole($"Cannot open VS Code for {r.Path}: {err}")
+            Case "colSession"
+                LogConsole($"Opening a Claude session in '{r.Key}': a terminal running claude in {r.Path}")
+                Dim err = PqCli.OpenClaudeSession(r.Path)
+                If err IsNot Nothing Then
+                    LogConsole($"Cannot open a Claude session for {r.Path}: {err}")
+                    MessageBox.Show(Me, $"Cannot open a Claude session in '{r.Key}':{Environment.NewLine}{err}", "Claude session", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                End If
             Case "colStartRepo"
                 ' A worker for one project runs for as long as the project has tickets: a visible terminal like Start,
                 ' where pq's own refusal (unknown or held project, STOP, no agent) stays on screen.

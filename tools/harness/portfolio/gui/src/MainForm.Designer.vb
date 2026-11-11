@@ -12,6 +12,10 @@ Partial Class MainForm
     Friend btnStartDrain As Button
     Friend btnStop As Button
     Friend btnKill As Button
+    Friend btnPause As Button
+    Friend btnResume As Button
+    Friend btnReport As Button
+    Friend btnProblems As Button
     Friend btnNewSpec As Button
     Friend btnDoctor As Button
     Friend btnGuide As Button
@@ -38,6 +42,10 @@ Partial Class MainForm
     Friend btnHold As Button
     Friend btnRelease As Button
     Friend dgvRepos As DataGridView
+    Friend tabLeft As TabControl
+    Friend tabProjects As TabPage
+    Friend tabQueue As TabPage
+    Friend dgvQueue As DataGridView
 
     Friend splitRightMonitor As SplitContainer
     Friend pnlWorkersHeader As Panel
@@ -80,6 +88,10 @@ Partial Class MainForm
         Me.btnStartDrain = New Button()
         Me.btnStop = New Button()
         Me.btnKill = New Button()
+        Me.btnPause = New Button()
+        Me.btnResume = New Button()
+        Me.btnReport = New Button()
+        Me.btnProblems = New Button()
         Me.btnNewSpec = New Button()
         Me.btnDoctor = New Button()
         Me.btnGuide = New Button()
@@ -106,6 +118,10 @@ Partial Class MainForm
         Me.btnHold = New Button()
         Me.btnRelease = New Button()
         Me.dgvRepos = New DataGridView()
+        Me.tabLeft = New TabControl()
+        Me.tabProjects = New TabPage()
+        Me.tabQueue = New TabPage()
+        Me.dgvQueue = New DataGridView()
 
         Me.splitRightMonitor = New SplitContainer()
         Me.pnlWorkersHeader = New Panel()
@@ -138,6 +154,7 @@ Partial Class MainForm
         Me.splitRightMonitor.SuspendLayout()
 
         CType(Me.dgvRepos, System.ComponentModel.ISupportInitialize).BeginInit()
+        CType(Me.dgvQueue, System.ComponentModel.ISupportInitialize).BeginInit()
         CType(Me.dgvWorkers, System.ComponentModel.ISupportInitialize).BeginInit()
         CType(Me.dgvPasses, System.ComponentModel.ISupportInitialize).BeginInit()
         Me.SuspendLayout()
@@ -190,6 +207,35 @@ Partial Class MainForm
         Me.btnKill.AccessibleRole = AccessibleRole.PushButton
         Me.tipMain.SetToolTip(Me.btnKill, "Emergency stop: forcefully terminates worker process trees mid-pass ('pq stop -Kill')")
 
+        ' Owner controls and read-only views: each runs at once, also while another command is running
+        Me.btnPause.Name = "btnPause"
+        Me.btnPause.Text = "⏸ Pause"
+        Me.btnPause.Size = New Size(85, 36)
+        Me.btnPause.AccessibleName = "Pause Workers"
+        Me.btnPause.AccessibleRole = AccessibleRole.PushButton
+        Me.tipMain.SetToolTip(Me.btnPause, "No worker launches a new pass; passes in flight finish ('pq pause')")
+
+        Me.btnResume.Name = "btnResume"
+        Me.btnResume.Text = "⏯ Resume"
+        Me.btnResume.Size = New Size(95, 36)
+        Me.btnResume.AccessibleName = "Resume Workers"
+        Me.btnResume.AccessibleRole = AccessibleRole.PushButton
+        Me.tipMain.SetToolTip(Me.btnResume, "Workers launch new passes again ('pq resume')")
+
+        Me.btnReport.Name = "btnReport"
+        Me.btnReport.Text = "📊 Report"
+        Me.btnReport.Size = New Size(90, 36)
+        Me.btnReport.AccessibleName = "Report of the last day"
+        Me.btnReport.AccessibleRole = AccessibleRole.PushButton
+        Me.tipMain.SetToolTip(Me.btnReport, "The last day in numbers - passes, outcomes, waiting, stops, findings - in the console ('pq report -Days 1')")
+
+        Me.btnProblems.Name = "btnProblems"
+        Me.btnProblems.Text = "⚠ Problems"
+        Me.btnProblems.Size = New Size(100, 36)
+        Me.btnProblems.AccessibleName = "Open findings"
+        Me.btnProblems.AccessibleRole = AccessibleRole.PushButton
+        Me.tipMain.SetToolTip(Me.btnProblems, "The open findings of the last seven days, severity first, with their evidence, in the console ('pq problems')")
+
         ' Parameterized command with ellipsis per BUTTONS
         Me.btnNewSpec.Name = "btnNewSpec"
         Me.btnNewSpec.Text = "📝 &New Spec..."
@@ -229,7 +275,7 @@ Partial Class MainForm
         Me.btnProviders.AccessibleRole = AccessibleRole.PushButton
         Me.tipMain.SetToolTip(Me.btnProviders, "Chooses which model providers (OpenAI, Anthropic, Gemini, z.ai) spend tokens and in what order ('pq agents')")
 
-        Me.pnlTopActions.Controls.AddRange({Me.btnStartLoop, Me.btnStartOne, Me.btnStartDrain, Me.btnStop, Me.btnKill, Me.btnNewSpec, Me.btnDoctor, Me.btnGuide, Me.btnRegister, Me.btnProviders})
+        Me.pnlTopActions.Controls.AddRange({Me.btnStartLoop, Me.btnStartOne, Me.btnStartDrain, Me.btnStop, Me.btnKill, Me.btnPause, Me.btnResume, Me.btnReport, Me.btnProblems, Me.btnNewSpec, Me.btnDoctor, Me.btnGuide, Me.btnRegister, Me.btnProviders})
 
         ' --- pnlBanner ---
         Me.pnlBanner.Name = "pnlBanner"
@@ -383,7 +429,30 @@ Partial Class MainForm
         Me.dgvRepos.SelectionMode = DataGridViewSelectionMode.FullRowSelect
         Me.dgvRepos.RowHeadersVisible = False
 
-        Me.splitMain.Panel1.Controls.Add(Me.dgvRepos)
+        ' The queue file's ticket rows, one tab beside the projects: a double-click opens the ticket's spec
+        Me.dgvQueue.Name = "dgvQueue"
+        Me.dgvQueue.Dock = DockStyle.Fill
+        Me.dgvQueue.AllowUserToAddRows = False
+        Me.dgvQueue.AllowUserToDeleteRows = False
+        Me.dgvQueue.ReadOnly = True
+        Me.dgvQueue.SelectionMode = DataGridViewSelectionMode.FullRowSelect
+        Me.dgvQueue.RowHeadersVisible = False
+
+        Me.tabProjects.Name = "tabProjects"
+        Me.tabProjects.Text = "Projects"
+        Me.tabProjects.Controls.Add(Me.dgvRepos)
+
+        Me.tabQueue.Name = "tabQueue"
+        Me.tabQueue.Text = "Queue"
+        Me.tabQueue.ToolTipText = "PORTFOLIO_QUEUE.md as the runner reads it, held rows last; double-click a ticket row to open its spec"
+        Me.tabQueue.Controls.Add(Me.dgvQueue)
+
+        Me.tabLeft.Name = "tabLeft"
+        Me.tabLeft.Dock = DockStyle.Fill
+        Me.tabLeft.ShowToolTips = True
+        Me.tabLeft.TabPages.AddRange({Me.tabProjects, Me.tabQueue})
+
+        Me.splitMain.Panel1.Controls.Add(Me.tabLeft)
         Me.splitMain.Panel1.Controls.Add(Me.pnlSteer)
         Me.splitMain.Panel1.Controls.Add(Me.pnlLeftHeader)
 
@@ -536,6 +605,11 @@ Partial Class MainForm
         Me.btnStartDrain.TabIndex = 2
         Me.btnStop.TabIndex = 3
         Me.btnKill.TabIndex = 4
+        ' Same index as Force Kill: ties go in the order the bar holds them, so they follow it.
+        Me.btnPause.TabIndex = 4
+        Me.btnResume.TabIndex = 4
+        Me.btnReport.TabIndex = 4
+        Me.btnProblems.TabIndex = 4
         Me.btnNewSpec.TabIndex = 5
         Me.btnDoctor.TabIndex = 6
         Me.btnGuide.TabIndex = 7
@@ -552,7 +626,9 @@ Partial Class MainForm
         Me.btnRelease.TabIndex = 17
         Me.btnUp.TabIndex = 18
         Me.btnDown.TabIndex = 19
-        Me.dgvRepos.TabIndex = 20
+        Me.tabLeft.TabIndex = 20
+        Me.dgvRepos.TabIndex = 0
+        Me.dgvQueue.TabIndex = 0
         Me.dgvWorkers.TabIndex = 21
         Me.dgvPasses.TabIndex = 22
         Me.btnToggleConsole.TabIndex = 23
@@ -573,6 +649,7 @@ Partial Class MainForm
         Me.splitRightMonitor.ResumeLayout(False)
 
         CType(Me.dgvRepos, System.ComponentModel.ISupportInitialize).EndInit()
+        CType(Me.dgvQueue, System.ComponentModel.ISupportInitialize).EndInit()
         CType(Me.dgvWorkers, System.ComponentModel.ISupportInitialize).EndInit()
         CType(Me.dgvPasses, System.ComponentModel.ISupportInitialize).EndInit()
         Me.ResumeLayout(False)

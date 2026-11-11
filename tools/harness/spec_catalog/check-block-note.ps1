@@ -51,10 +51,22 @@ param(
 #     blocker" is decided by _blocker-links.ps1, the same code preview.ps1's auto-skip uses:
 #     a second implementation would let this gate refuse what the picker accepts, or worse
 #     accept what the picker later skips - which is the exact failure this ticket exists to end.
+#   - S0039: a BlockQuestions note is the question itself. The study behind that ticket measured
+#     99 of 461 unattended passes ending in BlockQuestions and found 6 of the 11 tickets waiting
+#     at the time were not questions at all - owner actions, a tool defect, a deferred idea -
+#     and the quiz that drains this status asks exactly what the note asks. So a transition into
+#     BlockQuestions is refused unless the note carries a literal `Q:` token whose text ends in
+#     `?`, and the refusal names where a non-question impediment belongs instead: an action only
+#     the owner can perform goes to BlockNeedUserTest (the list Sweep mode drains), a tool defect
+#     becomes a Draft ticket against that tool, a deferred idea its own Draft. Rows already
+#     standing in BlockQuestions without the token are untouched: the gate judges the note being
+#     written, never the one on the record.
 #
 # Exit codes: 0 = a reason was supplied (and, for BlockByOtherTask, a directional blocker
-#                 resolves), or the status is not a Block* one.
-#             1 = no reason, or no directional blocker - the transition must not proceed.
+#                 resolves; for BlockQuestions, the note carries the Q: question), or the status
+#                 is not a Block* one.
+#             1 = no reason, a BlockQuestions note without the Q: token, or no directional
+#                 blocker - the transition must not proceed.
 #             2 = bad invocation (malformed id, or an id no record carries), or the spec file
 #                 needed to resolve the blocker cannot be read. Kept distinct from 1 because
 #                 "could not look" and "found nothing" call for opposite reactions: exit 1
@@ -94,6 +106,11 @@ if (-not $NoteSupplied -or [string]::IsNullOrWhiteSpace($note)) {
     if ($NewStatus -eq 'BlockNeedUserTest') {
         Write-Output "For BlockNeedUserTest the reason is what the human must observe on the device."
     }
+    elseif ($NewStatus -eq 'BlockQuestions') {
+        Write-Output "For BlockQuestions the reason is the question itself: a literal 'Q:' token whose"
+        Write-Output "text ends in '?', because the quiz that drains this status asks exactly what the"
+        Write-Output "note asks (S0039)."
+    }
     else {
         Write-Output "Describe the blocker and what would clear it - not merely that one exists."
     }
@@ -102,6 +119,36 @@ if (-not $NoteSupplied -or [string]::IsNullOrWhiteSpace($note)) {
     Write-Output 'is skipped by the picker as `blocker-unresolvable`, which means "fix the spec", not'
     Write-Output '"wait". Measured 2026-09-05, S1126 sat unselectable that way for two weeks and the'
     Write-Output "diagnosis reached nobody, because it is printed where only the picker looks."
+    exit 1
+}
+
+if ($NewStatus -eq 'BlockQuestions' -and $note -notmatch '(?i)(?<![a-z])Q:\s*[^?]*\?') {
+    Write-Output ""
+    Write-Output ("{0} -> BlockQuestions is not a question." -f $Id)
+    Write-Output ""
+    Write-Output "BlockQuestions is the quiz queue: its note must carry the question itself as a"
+    Write-Output "literal 'Q:' token whose text ends in '?', because the quiz that drains this status"
+    Write-Output "asks exactly what the note asks (S0039). This note states an impediment that is not"
+    Write-Output "a question:"
+    Write-Output ""
+    Write-Output ("  {0}" -f $note)
+    Write-Output ""
+    Write-Output "Where an impediment of that kind belongs instead:"
+    Write-Output ""
+    Write-Output "  - an action only the owner can perform -> BlockNeedUserTest, the list Sweep mode drains"
+    Write-Output "  - a defect in a tool or a script       -> a Draft ticket against that tool"
+    Write-Output "                                           (a canon tool gets its draft in the canon)"
+    Write-Output "  - an idea deferred, not decided        -> its own Draft, parked"
+    Write-Output ""
+    Write-Output "Re-run with the question, or park the ticket where the impediment is actually drained:"
+    Write-Output ""
+    Write-Output ("  update.ps1 -Id {0} -Status BlockQuestions -StatusNote 'Q: <the question this ticket waits on>?'" -f $Id)
+    Write-Output ""
+    Write-Output "A question the pass could answer itself with a researched, reversible recommendation"
+    Write-Output "was not for the owner at all: take the recommendation and record it under"
+    Write-Output "'### Assumed (unattended, <date>)' in the ticket, with the alternative and 'owner may"
+    Write-Output "overrule' (S0039). Questions stay for one-way and outward steps, contract changes,"
+    Write-Output "scope, money, and facts only the owner knows."
     exit 1
 }
 

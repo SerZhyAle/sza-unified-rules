@@ -238,6 +238,33 @@ try {
         Assert-Tool $p 'spec_catalog/validate.ps1' | Out-Null
     }
 
+    Test-Case 'rule 7: a BlockQuestions entry is a question - the note must carry a Q: token ending in ?' {
+        # S0039 (TASK-FLOW 0.18): the quiz drains this status by asking what the note asks, so a
+        # note that is not a question is refused with the redirect to where the impediment
+        # belongs. Rows already standing in BlockQuestions without the token are untouched.
+        $p = New-Project 'a-qnote' @('q')
+        $noNote = Invoke-Tool $p 'spec_catalog/update.ps1' @('-Id', 'S0001', '-Status', 'BlockQuestions')
+        Assert-That ($noNote.code -ne 0) 'update accepted a BlockQuestions entry with no note'
+        $notQuestion = Invoke-Tool $p 'spec_catalog/update.ps1' @('-Id', 'S0001', '-Status', 'BlockQuestions', '-StatusNote', 'waiting for the owner answer on scope')
+        Assert-That ($notQuestion.code -eq 1) "a non-question BlockQuestions note exited $($notQuestion.code), not 1: $($notQuestion.output)"
+        Assert-That ($notQuestion.output -match 'is not a question') 'the refusal did not say the status is not a question'
+        Assert-That ($notQuestion.output -match 'BlockNeedUserTest') 'the refusal did not name where an owner action belongs'
+        Assert-That ((Get-Row $p 'S0001').status -eq 'Draft') 'a refused transition moved the ticket'
+        $allowed = Invoke-Tool $p 'spec_catalog/update.ps1' @('-Id', 'S0001', '-Status', 'BlockQuestions', '-StatusNote', 'Q: which owner decision does this ticket wait on?')
+        Assert-That ($allowed.code -eq 0) "a Q: note was refused: $($allowed.output)"
+        Assert-That ((Get-Row $p 'S0001').status -eq 'BlockQuestions') 'the accepted entry did not park the ticket'
+        # A re-affirmation that rewrites the note is judged like an entry; omitting -StatusNote preserves it.
+        $rewrite = Invoke-Tool $p 'spec_catalog/update.ps1' @('-Id', 'S0001', '-Status', 'BlockQuestions', '-StatusNote', 'parked for housekeeping')
+        Assert-That ($rewrite.code -eq 1) "a note rewrite without the Q: token exited $($rewrite.code), not 1: $($rewrite.output)"
+        $narrow = Invoke-Tool $p 'spec_catalog/update.ps1' @('-Id', 'S0001', '-Status', 'BlockQuestions', '-StatusNote', 'Q: which package number hosts the first compile?')
+        Assert-That ($narrow.code -eq 0) "a narrowed Q: note was refused: $($narrow.output)"
+        $preserve = Invoke-Tool $p 'spec_catalog/update.ps1' @('-Id', 'S0001', '-Status', 'BlockQuestions')
+        Assert-That ($preserve.code -eq 0) "a re-affirmation without -StatusNote was refused: $($preserve.output)"
+        # The requirement is BlockQuestions-only: the other Block* notes keep their own rules.
+        Move-Ticket $p 'S0002' 'BlockExternal' 'waiting for the vendor release'
+        Assert-That ((Get-Row $p 'S0002').status -eq 'BlockExternal') 'a BlockExternal entry without a Q: token was refused'
+    }
+
     Test-Case 'rule 6: Archived is reachable from every status and revivable' {
         $p = New-Project 'a-archived' @('draft', 'approved', 'tactical', 'progress', 'implemented', 'partial', 'broken', 'bq', 'bx', 'verified')
         $walk = [ordered]@{
@@ -245,7 +272,7 @@ try {
             S0006 = @('Partial'); S0007 = @('Broken')
         }
         foreach ($id in $walk.Keys) { Move-Ticket $p $id $walk[$id][0] }
-        Move-Ticket $p 'S0008' 'BlockQuestions' 'waiting for the owner'
+        Move-Ticket $p 'S0008' 'BlockQuestions' 'Q: which owner decision is this waiting for?'
         Move-Ticket $p 'S0009' 'BlockExternal' 'waiting for a vendor'
         $spec = Join-Path $p (Get-Row $p 'S0010').file
         Add-Content $spec "`n## Last Audit`n`nChecked by hand for the fixture: the result covers the task.`n"

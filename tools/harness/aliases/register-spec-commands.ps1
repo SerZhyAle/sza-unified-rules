@@ -75,7 +75,7 @@ function Get-CommandsDir([string] $ProjectPath) {
 
 # name, the skill it forwards to, the menu description, the argument hint.
 $table = @(
-    @{ Name = 'spec-quiz';  Skill = 'sza:spec-quiz';  Hint = '[<id> | <key>:<id> | <key> | --all] [--dry]'
+    @{ Name = 'spec-quiz';  Skill = 'sza:spec-quiz';  Hint = '[<id> | <key>:<id> | <key> | --all] [--dry] [--assumed]'
        Description = 'Clear the tickets that wait for the owner''s answers (BlockQuestions): research, ask as multiple choice, write the answers into the spec, restore the status. Plugin skill. Short form: /sq' }
     @{ Name = 'sq';         Skill = 'sza:spec-quiz';  Hint = 'same arguments as /spec-quiz'
        Description = 'Alias -> /spec-quiz' }

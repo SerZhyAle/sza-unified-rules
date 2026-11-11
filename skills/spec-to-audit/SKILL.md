@@ -82,7 +82,11 @@ is the contract the audit later checks the build against.
   stop, not a judgement call.
 - Every user-facing placement, visibility, or fallback decision is resolved. Surface UI ambiguity before
   implementing; never guess. (But do not ask what the architecture already answers - research it and
-  recommend.)
+  recommend.) In an **unattended pass** the researched recommendation is taken, not asked: a choice that is
+  reversible inside the ticket is recorded under `### Assumed (unattended, <date>)` with the alternative it
+  was weighed against and "owner may overrule", and the pass goes on. What stays an owner decision even
+  unattended: one-way and outward steps (publish, release, store submit), contract changes, scope, money,
+  and facts only the owner knows.
 - The ticket has one authoritative record with an id and a first-line **Status:**, mutated only through its
   tool where one exists - a catalog CLI, a journal - never hand-edited.
 - The ticket's `**Complexity:**` line exists and was **rewritten at this spec pass**, confirmation included:
@@ -146,8 +150,14 @@ the plan and rewritten its `**Complexity:**` line where the plan disagrees (see
 1. Re-read the step; verify its declared dependency step is done.
 2. Confirm every symbol the step references **actually exists at the stated path**. If not, abort - never
    invent a path.
-3. Ambiguity check: any `<TODO>`, `<choose..>` or `???` is a hard stop. Set `BlockQuestions` with the open
-   question as its reason note. Do not guess - the answer arrives through Quiz mode, not from you.
+3. Ambiguity check: any `<TODO>`, `<choose..>` or `???` is a hard stop. In an attended pass set
+   `BlockQuestions` with the open question as its reason note - do not guess; the answer arrives through
+   Quiz mode, not from you. In an **unattended pass** a decision with a researched, ticket-reversible
+   recommendation is taken and recorded under `### Assumed (unattended, <date>)` (with the alternative and
+   "owner may overrule") instead of blocking. `BlockQuestions` stays for one-way and outward steps,
+   contract changes, scope, money, and facts only the owner knows - and its reason note is then the
+   question itself, a literal `Q: ...?` token that the block-note gate refuses a note without. A slow run
+   is never asked about: it is recorded as a release item (Stage 4), not a question.
 4. Pre-edit guards: read-only zones; back up an oversized file into `temp/<ticket>/`; refuse an edit projected
    past the file-size ceiling; paired-file guard.
 5. Flip the step in-progress.
@@ -203,7 +213,9 @@ with no recorded time - unless the owner names that run, or this is the release 
 a fast filter of the touched area, static inspection and a direct call of what changed. Each rung skipped for
 this reason goes into the audit as a `RELEASE` item naming the command the release will run, and the report
 says "not built, not tested until the release". A project whose build or test command has no fast form gets
-that fact written into its rules file, not a slow run.
+that fact written into its rules file, not a slow run. The owner is never asked which slow run to name -
+the reference study measured seven repos asking that question back and getting the same answer every time
+(S0039): an unattended pass records the skipped rung as a `RELEASE` item and moves on.
 
 **Three traps:**
 
@@ -326,7 +338,13 @@ any project and carries the mechanics; the procedure below is its authority.
    `BlockByOtherTask` clears on its blocker's status - unless the owner picks a fallback that removes the
    dependency, which is a question like any other. Report the rest and mutate nothing.
 2. **Extract the decision points**: the questions in the block's reason note, plus every open research
-   item and unfilled owner input that note points at.
+   item and unfilled owner input that note points at. On request (`--assumed`) the sitting also lists the
+   ticket's `### Assumed (unattended, <date>)` entries - each with what was taken, the alternative it was
+   weighed against and the date - so the owner can review and overrule them in the same sitting. An
+   overrule is an answer of step 5's kind: the entry is marked `overruled <date>` with the owner's answer,
+   the owner's value is written into the owner input or research item the assumption settled, and where a
+   pass already built on the assumption the rework is captured as a fresh `Draft` and reported as parked.
+   Unoverruled entries stay as they are.
 3. **Research each one before asking.** Whatever the architecture, the code, a contract or a decision
    already recorded settles is **not asked**: fill it in and list it in the report as *resolved without
    asking*, with what settled it ([AI_USAGE.md](../../rules/AI_USAGE.md) §1). Only a genuine owner call -
@@ -335,12 +353,14 @@ any project and carries the mechanics; the procedure below is its authority.
    ask -> write the fills and go to step 6.
 4. **Ask multiple choice.** Each question specific, 2-4 options, each with its one-line consequence, the
    researched recommendation **listed first** and marked recommended. Most-blocking first, in rounds where
-   the runtime caps a round, never more than unblocking needs. **The recommendation does not replace the
-   question**: in the reference sitting the owner chose something other than the default in 3 of 15
-   answers - an agent that applied its own recommendation would have been wrong on one decision in five.
-   **After each round, re-apply the owner's own standing rules to the chosen option.** Where one of them
-   contradicts the choice, show the collision once, with both outcomes, and let the owner pick - the menu
-   was at fault, not the answer.
+   the runtime caps a round, never more than unblocking needs. The questions that arrive here are the
+   owner-owned ones only: since S0039 an unattended pass takes a researched, ticket-reversible
+   recommendation itself and records it under `### Assumed (unattended, <date>)`, so a reversible default
+   no longer reaches this sitting as a question. What does arrive is still answered by the owner - in the
+   reference sitting the owner chose something other than the default in 3 of 15 answers - and the
+   recommendation never replaces a question that earned its place here. **After each round, re-apply the
+   owner's own standing rules to the chosen option.** Where one of them contradicts the choice, show the
+   collision once, with both outcomes, and let the owner pick - the menu was at fault, not the answer.
 5. **Write back before any status move.** Each answer goes into the ticket's own record - the input
    filled, the research item resolved - plus a dated decisions block: question, chosen answer, one-line
    reason. The order is the point: an interrupted sitting then leaves answered tickets still blocked,
@@ -355,7 +375,8 @@ any project and carries the mechanics; the procedure below is its authority.
    the ticket stays in `BlockQuestions` with its reason note narrowed to what is still open. The answers
    that did arrive are still written back.
 8. **Report per ticket**: start -> end status; asked (question -> answer); resolved without asking
-   (decision -> value -> what settled it); outstanding.
+   (decision -> value -> what settled it); assumed listed and any overrule (entry -> the owner's answer);
+   outstanding.
 
 **Several tickets in one sitting are allowed - with one write-back and one status move per ticket.** What
 the block defers is the owner's attention, and that is paid per sitting, not per ticket: the reference
@@ -384,6 +405,7 @@ An unattended pass runs without human interaction in a headless queue session.
 - **The ticket and tool are named up front**: the ticket is `<spec path>` in `<repo root>`; change its status only with `<update.ps1 path> -Id <id> -Status <s>`, never by editing the `**Status:**` line.
 - **Strict repo boundary**: never read or change a ticket of another repository.
 - **Foreground execution only**: this is a headless pass: start no background agent or command, wait for each in the foreground, and set the status before your last message. In headless mode the end of the turn is the end of the pass; orphaned background work fails.
+- **Assume the reversible, ask the rest**: a choice that is reversible inside the ticket and has a researched recommendation is taken, not asked - record it under `### Assumed (unattended, <date>)` with the alternative and "owner may overrule", and the pass goes on (S0039). `BlockQuestions` is for one-way and outward steps (publish, release, store submit), contract changes, scope, money, and facts only the owner knows, and its note is then the question itself: a literal `Q: ...?` token that the block-note gate refuses a note without. A non-question impediment parks elsewhere - an action only the owner can perform goes to `BlockNeedUserTest`, a tool defect becomes a Draft ticket against that tool, a deferred idea its own Draft. A slow run is never asked about: it is recorded as a release item.
 - **Autonomous stopping**: take this one ticket as far as it goes and do not start another. When it cannot move, set the matching `Block*` status with a `statusNote` naming what is missing.
 - **Claim**: a lease on the ticket whose reason is `run-spec-queue` followed by an instance name is the claim the runner made for you: it is yours.
 - **Context handoff for in-progress work**: when a pass leaves a multi-step ticket `In Progress` with work done and must stop before completion (or upon approaching turn or context limits), it writes `<tempDir>/<id>/context-handoff.json` (specifying `id`, `tokens`, `boundary`) before ending. The runner checks this marker and relaunches up to `handoffCap` with a fresh context instead of recording an idle or no-progress drop.

@@ -65,7 +65,7 @@ try {
 `$ErrorActionPreference = 'Stop'
 `$root = `$PSScriptRoot
 `$env:SZA_PROJECT_ROOT = `$root
-& pwsh -NoProfile -File '$updatePath' -Id 'S0001' -Status 'BlockQuestions' -StatusNote 'waiting for answers'
+& pwsh -NoProfile -File '$updatePath' -Id 'S0001' -Status 'BlockQuestions' -StatusNote 'Q: which answers does this ticket wait for?'
 Start-Sleep -Seconds 60
 exit 0
 "@

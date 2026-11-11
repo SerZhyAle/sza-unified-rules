@@ -96,3 +96,29 @@ function Get-PqXrepoBlock {
     }
     return $null
 }
+
+# Read-only preview of the dispatcher's blocker check. Re-rank with each blocked ticket excluded so the next
+# eligible ticket can occupy its place, including tickets that appear only in the multi-slot plan.
+function Get-PqXrepoFilteredRank {
+    param([Parameter(Mandatory)]$Registry, [Parameter(Mandatory)][scriptblock]$Ranker)
+    $blocked = [ordered]@{}
+    while ($true) {
+        $rank = & $Ranker ([string[]]@($blocked.Keys))
+        $added = $false
+        foreach ($candidate in @($rank.candidates) + @($rank.plan)) {
+            $key = "$($candidate.repo):$($candidate.id)"
+            if ($blocked.Contains($key)) { continue }
+            $reason = Get-PqXrepoBlock -Registry $Registry -RepoKey ([string]$candidate.repo) -TicketId ([string]$candidate.id)
+            if ($null -ne $reason) { $blocked[$key] = $reason; $added = $true }
+        }
+        if (-not $added) { break }
+    }
+    $rank.excluded.xrepo = $blocked.Count
+    $extra = @($blocked.Keys | ForEach-Object {
+        $key = $_
+        $repo, $id = $key -split ':', 2
+        [ordered]@{ repo = $repo; why = "xrepo $id - $($blocked[$key].why)" }
+    })
+    $rank.skipped = @($rank.skipped) + $extra
+    return $rank
+}

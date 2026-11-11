@@ -23,6 +23,7 @@ the tickets, naming the right project, and the mechanics of asking, writing back
 /spec-quiz fms-web            every waiting ticket of that project
 /spec-quiz --all              every waiting ticket of every registered project
 /spec-quiz S0021 --dry        the questions that would be asked; nothing asked, nothing written, nothing moved
+/spec-quiz S0021 --assumed    the sitting plus the ticket's `### Assumed (unattended, <date>)` entries, listed for review and overrule
 ```
 
 A project that ships its own `.claude/commands/spec-quiz.md` (FastMediaSorter_mob_v2) has its own implementation of
@@ -99,6 +100,13 @@ Follow Quiz mode steps 2-8. The parts a project-independent skill must pin down:
 - **Research first.** The decision points are the reason note, every open research item and every unfilled owner
   input the note points at. What the ticket's own spec, the code, a contract in the catalog or a recorded decision
   settles is **not asked**: fill it in and list it as *resolved without asking*, with what settled it.
+- **`--assumed` lists the unattended assumptions.** With the flag, each ticket in scope has its
+  `### Assumed (unattended, <date>)` blocks read out of the spec file and printed: date, decision, what was taken,
+  the alternative (Quiz mode step 2). The owner may overrule any entry in the sitting: the entry is marked
+  `overruled <date>: <the owner's answer in quotes>` in place, the owner's value is written into the owner input or
+  research item the assumption settled, and where a pass already built on the assumption - the ticket at
+  `Implemented` or beyond - the rework is captured with the project's capture tool and reported as `parked: <id>`.
+  Unoverruled entries stay as they are. Without the flag the assumptions are not raised.
 - **Ask with `AskUserQuestion`, in Russian** (chat language). A `header` of at most 12 characters, a specific
   question ending in `?`, 2-4 options, the researched recommendation **first** with `(Рекомендуется)` appended, and
   one line of consequence in each option's description. At most four questions per call, the most blocking first.
@@ -137,6 +145,7 @@ Follow Quiz mode steps 2-8. The parts a project-independent skill must pin down:
   Было: BlockQuestions   Стало: <status>
   Спросил (<N>): <header> -> <ответ>
   Решил без вопроса (<M>): <решение> -> <значение> (<что решило>)
+  Допущения (<K>): <решение> -> <принято | отменено владельцем> (<дата>)   [только с --assumed]
   Осталось: <ничего | что именно и почему блок остался>
 ```
 
@@ -146,7 +155,8 @@ that lifting a hold is the owner's call.
 
 ## What this skill never does
 
-- Answer for the owner, or accept a default silently; invent an answer to a skipped question.
+- Answer for the owner, or invent an answer to a skipped question. An unattended pass records its reversible
+  recommendations under `### Assumed` (S0039); this skill lists them on request and changes one only on the owner's word.
 - Move a ticket that is not in `BlockQuestions`, or move one more than a single level.
 - Write code, run a build or a test, commit, push, start `pq`, lift a hold, or register a project.
 - Edit `spec-catalog.jsonl`, the queue files, or another project's files outside the tickets it was asked about.

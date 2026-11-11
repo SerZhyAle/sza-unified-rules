@@ -2,8 +2,8 @@
 #
 # Dot-source this file; it defines functions only, sets no preference and prints nothing.
 #
-#   Get-PqNextRank              ranks repositories and tickets across the portfolio, returning the same rank
-#                               result as pq dry-run.
+#   Get-PqNextRank              ranks repositories and tickets across the portfolio; -CheckXrepo applies the
+#                               dispatcher's cross-repository blocker check to a read-only preview.
 #   Get-PqStoppedRepos          keys of enabled repositories whose shared queue stop file exists (rule 26).
 #   Get-PqOccupiedRepos         checks run\repo-*.lock; returns keys of non-concurrent repositories held by live PIDs.
 #   Get-PqWorkerSlot            reserves the first available worker slot k in 1..maxWorkers.
@@ -33,7 +33,8 @@ function Get-PqNextRank {
         # and a repository-only restriction 'key' (every hold kept); see Get-PqRank.
         [string]$NamedTicket = '',
         [string]$OnlyRepo = '',
-        [switch]$FirstHead
+        [switch]$FirstHead,
+        [switch]$CheckXrepo
     )
     if (-not $HarnessRoot) { $HarnessRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..')) }
     if (@($Occupied).Count -eq 0) {
@@ -78,6 +79,14 @@ function Get-PqNextRank {
     if ($NamedTicket) { $rankArgs.NamedTicket = $NamedTicket }
     if ($OnlyRepo) { $rankArgs.OnlyRepo = $OnlyRepo }
     if ($FirstHead) { $rankArgs.FirstHead = $true }
+    if ($CheckXrepo) {
+        $ranker = {
+            param($blockedIds)
+            $rankArgs.Exclude = [string[]]@($Exclude + $blockedIds)
+            Get-PqRank @rankArgs
+        }
+        return (Get-PqXrepoFilteredRank -Registry $Registry -Ranker $ranker)
+    }
     return (Get-PqRank @rankArgs)
 }
 

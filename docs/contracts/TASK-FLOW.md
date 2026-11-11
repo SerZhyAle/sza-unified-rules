@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Contract | `TASK-FLOW` |
-| Version | 0.17, draft |
+| Version | 0.18, draft |
 | Home | the shared contracts catalog, domain `task-flow/` (the path is in [CLAUDE.md](../../CLAUDE.md)) |
 | Role | **shared implementation, partial**: `tools/harness/` supplies the ticket tools, repository runner and day-0 scaffold; `tools/harness/portfolio/` supplies the S0015 dispatcher, registry, queue, rank and event log. Remaining portfolio features belong to S0016. The owner is `shared`, so this repository edits the contract only through the canon session |
 
@@ -75,3 +75,9 @@
 - S0035 (0.17): provider limit holds carry parsed reset times and do not persist detector matched text (rule 48,
   EVENTS 3.4/3.6); dispatcher waits for primary provider reset when <= 15 min for `In Progress` tickets
   (`dispatch.skip` reason `limitResetNear`, rules 42 and 48).
+- S0039 (0.18): a `BlockQuestions` note is the question itself - `check-block-note.ps1` refuses a transition into
+  `BlockQuestions` whose `statusNote` carries no literal `Q: ...?` token (rule 7), naming where a non-question
+  impediment belongs instead. Rolled out contract-first: catalog rule, `reference/day0-rehearsal.ps1`, the vectors
+  and the repository tests moved in the same pass; rows standing in `BlockQuestions` without the token are
+  unaffected. The canon's unattended-answer policy moved with it: a researched, ticket-reversible recommendation is
+  taken and recorded under `### Assumed (unattended, <date>)` (skills `spec-to-audit`, `spec-quiz --assumed`).

@@ -26,6 +26,9 @@
       11. V7: stop -Kill kills the pass tree and leaves a headless agent of another repository alive.
       12. Rule 26: a repository whose shared queue stop file exists is skipped as stopped, and the file stays.
       13. Rule 46: a runner that lost the claim before launch (exit 3) is recorded claim-lost, not child-failed.
+      14. S0027: pq start -Ticket runs exactly its named ticket (through a queue hold line, exit 0 after one pass,
+          exit 3 with a reason for an absent, registry-held, occupied or leased target, arguments refused with
+          exit 2 before a slot), and pq start -Repo ranks only that project and keeps every hold.
 #>
 [CmdletBinding()]
 param(
@@ -157,7 +160,7 @@ try {
         $res = Invoke-SmokePq @('start', '-Drain', '-RunnerScript', (Join-Path $scratch 'must-not-launch.ps1'))
         Assert-That ($res.code -eq 2 -and $res.stderr -match 'PermissionModeMissing') "missing permission was not refused: $($res.output)"
         Assert-That (-not (Test-Path (Join-Path $portfolioRoot 'runs.jsonl'))) 'an unconfigured pass was recorded'
-        Assert-That (@(Get-ChildItem (Join-Path $portfolioRoot 'run') -File).Count -eq 0) 'failed start leaked its slot or repo lock'
+        Assert-That (@(Get-ChildItem (Join-Path $portfolioRoot 'run') -File -ErrorAction SilentlyContinue).Count -eq 0) 'failed start leaked its slot or repo lock'
     }
     $registryFile = Join-Path $portfolioRoot 'repos.json'
     $registry = Get-Content -Raw $registryFile | ConvertFrom-Json
@@ -263,7 +266,10 @@ exit 0
 
     # ---------------------------------------------------------------- Phase 05 Proof
     Run-SmokeCase 'Phase 05: pq status reports workers, passes today, and next candidate' {
-        $st = Invoke-SmokePq @('status')
+        # Since S0025 the plain status stays fast and does not rank; -Next pays for the rank.
+        $fast = Invoke-SmokePq @('status')
+        Assert-That ($fast.stdout -match 'Next: \(not ranked') "plain status should stay fast (S0025): $($fast.stdout)"
+        $st = Invoke-SmokePq @('status', '-Next')
         Assert-That ($st.code -eq 0) "status exited $($st.code): $($st.output)"
         Assert-That ($st.stdout -match 'STOP: none') "status missing STOP: none in $($st.stdout)"
         Assert-That ($st.stdout -match 'Passes today: ok: 2') "status missing Passes today in $($st.stdout)"
@@ -298,21 +304,23 @@ exit 0
         Assert-That ($parsed.Count -le 5 -and $parsed.Count -ge 1) "json log unexpected count: $($parsed.Count)"
     }
 
-    Run-SmokeCase 'Phase 05: pq stop writes STOP, and pq start clears it' {
+    Run-SmokeCase 'Phase 05: pq stop with no worker exits 3 and writes nothing; a leftover STOP is cleared by the next start' {
+        # With no live worker there is nothing to stop, and no STOP file is written (a file left behind would only be
+        # cleared by the next start); the stop of a live run is covered by the V6/V7 cases below.
         $stopRes = Invoke-SmokePq @('stop')
-        Assert-That ($stopRes.code -eq 0) "stop exited $($stopRes.code): $($stopRes.output)"
-        Assert-That ($stopRes.stdout -match 'stop requested \(pass\)') "unexpected stop output: $($stopRes.stdout)"
+        Assert-That ($stopRes.code -eq 3 -and $stopRes.stdout -match 'no worker is running') "stop with no worker: exit $($stopRes.code) $($stopRes.output)"
 
         $stopFile = Join-Path $portfolioRoot 'STOP'
-        Assert-That ([IO.File]::Exists($stopFile)) "STOP file was not created"
+        Assert-That (-not [IO.File]::Exists($stopFile)) 'stop with no worker wrote a STOP file'
 
+        # A STOP left behind by a dead dispatcher is reported by status and cleared by the next start
+        [IO.File]::WriteAllText($stopFile, (@{ level = 'pass'; by = 'cli'; at = '2026-11-11T00:00:00.000Z'; reason = 'owner' } | ConvertTo-Json -Compress), [Text.Encoding]::UTF8)
         $st = Invoke-SmokePq @('status')
         Assert-That ($st.stdout -match 'STOP: present \(level=pass\)') "status did not report STOP present: $($st.stdout)"
 
-        # Start with STOP present clears it and announces so
         $startClear = Invoke-SmokePq @('start', '-Drain', '-RunnerScript', $fakeRunner)
-        Assert-That ($startClear.stdout -match 'cleared STOP file') "start did not announce clearing STOP file: $($startClear.stdout)"
-        Assert-That (-not [IO.File]::Exists($stopFile)) "STOP file was not cleared"
+        Assert-That ($startClear.stdout -match 'cleared STOP file') "start did not announce clearing STOP file: $($startClear.output)"
+        Assert-That (-not [IO.File]::Exists($stopFile)) 'STOP file was not cleared'
     }
 
     # ---------------------------------------------------------------- V3 & V4: Lock and Slot checks
@@ -480,6 +488,127 @@ $child.WaitForExit()
         finally { Remove-Item -LiteralPath $repoStop -Force -ErrorAction SilentlyContinue }
     }
 
+    # ---------------------------------------------------------------- S0027: named and project-only starts through the loop
+    # Two fresh drafts: repo-b ranks first (rank 1, priority 95), so a pool start would take repo-b's; a named
+    # start and a -Repo start must run exactly their target instead. The earlier cases left STOP in the root,
+    # and a start with no live worker clears it - removed here so every case below starts from the same state.
+    Remove-Item -LiteralPath (Join-Path $portfolioRoot 'STOP') -Force -ErrorAction SilentlyContinue
+    Push-Location $repoBDir
+    try { $null = & pwsh -NoProfile -File (Join-Path $harness 'spec_catalog\capture-draft.ps1') -Slug 'task-four' -Text 'Ticket 4 in repo-b' -Priority 95 } finally { Pop-Location }
+    Push-Location $repoADir
+    try { $null = & pwsh -NoProfile -File (Join-Path $harness 'spec_catalog\capture-draft.ps1') -Slug 'task-five' -Text 'Ticket 5 in repo-a' -Priority 85 } finally { Pop-Location }
+
+    function Get-SmokeRepoStatus([string]$RepoDir, [string]$Id) {
+        return (@(Get-Content (Join-Path $RepoDir 'PLAN\spec-catalog.jsonl') | ForEach-Object { ConvertFrom-Json $_ } | Where-Object { $_.id -ceq $Id })[0]).status
+    }
+    function Get-SmokeLastEvent([string]$Ev) {
+        $parsed = @(@(Get-Content (Join-Path $portfolioRoot 'log/events-*.w1.jsonl') -ErrorAction SilentlyContinue) | ForEach-Object { ConvertFrom-Json $_ } | Where-Object { $_.ev -ceq $Ev })
+        return $parsed[$parsed.Count - 1]
+    }
+
+    Run-SmokeCase 'S0027: bad -Ticket/-Repo arguments are refused before a worker slot is taken and record nothing' {
+        $beforeRows = @(Get-Content (Join-Path $portfolioRoot 'runs.jsonl')).Count
+        $cases = @(
+            @{ args = @('start', '-Ticket', 'nope:S0001'); why = 'UnknownRepoKey' }
+            @{ args = @('start', '-Ticket', 'repo-a'); why = 'ArgumentInvalid' }
+            @{ args = @('start', '-Ticket', 'repo-a:S0002', '-Repo', 'repo-a'); why = 'ArgumentConflict' }
+            @{ args = @('start', '-Ticket', 'repo-a:S0002', '-MaxTickets', '2'); why = 'ArgumentInvalid' }
+        )
+        foreach ($c in $cases) {
+            $r = Invoke-SmokePq $c.args
+            Assert-That ($r.code -eq 2 -and $r.stderr -match $c.why) "$($c.args -join ' '): exit $($r.code), expected 2 with $($c.why): $($r.output)"
+        }
+        Assert-That (@(Get-Content (Join-Path $portfolioRoot 'runs.jsonl')).Count -eq $beforeRows) 'a refused start recorded a pass'
+        Assert-That (@(Get-ChildItem (Join-Path $portfolioRoot 'run') -Filter 'worker-*.json' -ErrorAction SilentlyContinue).Count -eq 0) 'a refused start leaked a worker slot'
+    }
+
+    Run-SmokeCase 'S0027: pq start -Ticket runs exactly its ticket through the queue hold line, exits 0, and leaves the ranking and every other ticket alone' {
+        "# 1`nrepo-b`nrepo-a`n`nhold`n`nrepo-a`n" | Set-Content (Join-Path $portfolioRoot 'PORTFOLIO_QUEUE.md')
+        $beforeRows = @(Get-Content (Join-Path $portfolioRoot 'runs.jsonl')).Count
+        $res = Invoke-SmokePq @('start', '-Ticket', 'repo-a:S0002', '-RunnerScript', $fakeRunner)
+        Assert-That ($res.code -eq 0) "named start exited $($res.code): $($res.output)"
+        $rows = @(Get-Content (Join-Path $portfolioRoot 'runs.jsonl'))
+        Assert-That ($rows.Count -eq $beforeRows + 1) "expected exactly one new pass, got $($rows.Count - $beforeRows)"
+        $row = $rows[-1] | ConvertFrom-Json
+        Assert-That ($row.repo -ceq 'repo-a' -and $row.id -ceq 'S0002' -and $row.outcome -ceq 'ok') "wrong pass row: $($rows[-1])"
+        Assert-That ((Get-SmokeRepoStatus $repoBDir 'S0002') -ceq 'Draft') 'the higher-ranked repo-b draft was worked by a named start of repo-a'
+        $queueText = Get-Content -Raw (Join-Path $portfolioRoot 'PORTFOLIO_QUEUE.md')
+        Assert-That ($queueText -match '(?m)^hold\s*$' -and $queueText -match '(?m)^repo-a\s*$') 'the hold line did not survive the named start'
+        $start = Get-SmokeLastEvent 'run.start'
+        Assert-That ($start.d.target -ceq 'ticket:repo-a:S0002') "run.start.target is '$($start.d.target)'"
+        $rank = Get-SmokeLastEvent 'rank.result'
+        Assert-That ($rank.d.named -ceq 'repo-a:S0002' -and $rank.d.heldBypassed -eq $true) "rank.result: named='$($rank.d.named)' heldBypassed='$($rank.d.heldBypassed)'"
+    }
+
+    Run-SmokeCase 'S0027: pq start -Repo keeps every hold - under the queue hold line it refuses with exit 3 and runs nothing' {
+        $beforeRows = @(Get-Content (Join-Path $portfolioRoot 'runs.jsonl')).Count
+        $res = Invoke-SmokePq @('start', '-Repo', 'repo-a', '-Drain', '-RunnerScript', $fakeRunner)
+        Assert-That ($res.code -eq 3) "-Repo under a hold line exited $($res.code): $($res.output)"
+        Assert-That ($res.stdout -match 'nothing to do') "no 'nothing to do' line: $($res.output)"
+        Assert-That (@(Get-Content (Join-Path $portfolioRoot 'runs.jsonl')).Count -eq $beforeRows) 'a held -Repo start recorded a pass'
+    }
+
+    Run-SmokeCase 'S0027: pq start -Repo ranks only that project - repo-a''s own head runs although repo-b ranks first, and run.start names repo:repo-a' {
+        "# 1`nrepo-b`nrepo-a`n" | Set-Content (Join-Path $portfolioRoot 'PORTFOLIO_QUEUE.md')
+        $beforeRows = @(Get-Content (Join-Path $portfolioRoot 'runs.jsonl')).Count
+        $res = Invoke-SmokePq @('start', '-Repo', 'repo-a', '-Drain', '-RunnerScript', $fakeRunner)
+        Assert-That ($res.code -eq 0) "-Repo start exited $($res.code): $($res.output)"
+        $rows = @(Get-Content (Join-Path $portfolioRoot 'runs.jsonl'))
+        Assert-That ($rows.Count -eq $beforeRows + 1) "expected exactly one new pass, got $($rows.Count - $beforeRows)"
+        $row = $rows[-1] | ConvertFrom-Json
+        Assert-That ($row.repo -ceq 'repo-a' -and $row.id -ceq 'S0003') "the -Repo worker took $($row.repo):$($row.id), not repo-a's own head"
+        Assert-That ((Get-SmokeRepoStatus $repoBDir 'S0002') -ceq 'Draft') 'the -Repo worker reached into repo-b'
+        $start = Get-SmokeLastEvent 'run.start'
+        Assert-That ($start.d.target -ceq 'repo:repo-a') "run.start.target is '$($start.d.target)'"
+        $rank = Get-SmokeLastEvent 'rank.result'
+        Assert-That ($null -eq $rank.d.PSObject.Properties['named']) 'a -Repo rank must not carry the named key'
+    }
+
+    Run-SmokeCase 'S0027: a named start whose pass does not move the ticket still exits 0 (the child ran), once' {
+        $beforeRows = @(Get-Content (Join-Path $portfolioRoot 'runs.jsonl')).Count
+        $res = Invoke-SmokePq @('start', '-Ticket', 'repo-b:S0002', '-RunnerScript', $script:idleRunner)
+        Assert-That ($res.code -eq 0) "named no-progress start exited $($res.code): $($res.output)"
+        $rows = @(Get-Content (Join-Path $portfolioRoot 'runs.jsonl'))
+        Assert-That ($rows.Count -eq $beforeRows + 1) "expected exactly one new pass, got $($rows.Count - $beforeRows)"
+        $row = $rows[-1] | ConvertFrom-Json
+        Assert-That ($row.repo -ceq 'repo-b' -and $row.id -ceq 'S0002' -and $row.outcome -ceq 'no-progress' -and $row.moved -eq $false) "wrong pass row: $($rows[-1])"
+        Assert-That ((Get-SmokeRepoStatus $repoBDir 'S0002') -ceq 'Draft') 'the idle runner moved the ticket'
+    }
+
+    Run-SmokeCase 'S0027: a named start that cannot run exits 3 with its reason, runs nothing and keeps no slot' {
+        $beforeRows = @(Get-Content (Join-Path $portfolioRoot 'runs.jsonl')).Count
+        # A ticket the project does not offer (absent).
+        $absent = Invoke-SmokePq @('start', '-Ticket', 'repo-a:S9999', '-RunnerScript', $fakeRunner)
+        Assert-That ($absent.code -eq 3 -and $absent.stdout -match 'pq: ticket repo-a:S9999 not run - ') "absent ticket: exit $($absent.code): $($absent.output)"
+        # The registry hold flag is not bypassed: only queue-file hold lines are.
+        $registry = Get-Content -Raw $registryFile | ConvertFrom-Json
+        $registry.repos | Where-Object { $_.key -ceq 'repo-b' } | ForEach-Object { $_ | Add-Member -NotePropertyName hold -NotePropertyValue $true -Force }
+        $registry | ConvertTo-Json -Depth 32 | Set-Content $registryFile
+        $held = Invoke-SmokePq @('start', '-Ticket', 'repo-b:S0002', '-RunnerScript', $fakeRunner)
+        Assert-That ($held.code -eq 3 -and $held.stdout -match 'not run - the project is on hold in the registry') "registry hold: exit $($held.code): $($held.output)"
+        $registry.repos | Where-Object { $_.key -ceq 'repo-b' } | ForEach-Object { $_.hold = $false }
+        $registry | ConvertTo-Json -Depth 32 | Set-Content $registryFile
+        # A live repository lock keeps the named start out too.
+        $lockB = Join-Path $portfolioRoot 'run/repo-repo-b.lock'
+        @{ pid = $PID; since = [DateTimeOffset]::UtcNow.ToString('o') } | ConvertTo-Json -Compress | Set-Content $lockB
+        $occupied = Invoke-SmokePq @('start', '-Ticket', 'repo-b:S0002', '-RunnerScript', $fakeRunner)
+        Assert-That ($occupied.code -eq 3 -and $occupied.stdout -match 'not run - the project is occupied') "occupied: exit $($occupied.code): $($occupied.output)"
+        Remove-Item -LiteralPath $lockB -Force
+        # A live foreign lease on the ticket.
+        $leaseDir = Join-Path $repoBDir 'temp/SPEC-TICKET.LEASES'
+        New-Item -ItemType Directory -Path $leaseDir -Force | Out-Null
+        $leaseFile = Join-Path $leaseDir 'S0002.json'
+        $now = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+        [ordered]@{ schema = 1; id = 'S0002'; sessionId = [guid]::NewGuid().ToString(); host = $env:COMPUTERNAME; pid = $PID; reason = 'run-spec-queue pqsmoke'
+            claimedAt = $now; lastSeenAt = $now; transcriptPath = $null } | ConvertTo-Json -Compress | Set-Content $leaseFile
+        $leased = Invoke-SmokePq @('start', '-Ticket', 'repo-b:S0002', '-RunnerScript', $fakeRunner)
+        Assert-That ($leased.code -eq 3 -and $leased.stdout -match 'not run - the ticket holds a live lease') "leased: exit $($leased.code): $($leased.output)"
+        Remove-Item -LiteralPath $leaseFile -Force
+        Assert-That (@(Get-Content (Join-Path $portfolioRoot 'runs.jsonl')).Count -eq $beforeRows) 'a refused named start recorded a pass'
+        Assert-That (@(Get-ChildItem (Join-Path $portfolioRoot 'run') -Filter 'worker-*.json' -ErrorAction SilentlyContinue).Count -eq 0) 'a refused named start leaked its worker slot'
+        Assert-That ((Get-SmokeRepoStatus $repoBDir 'S0002') -ceq 'Draft') 'a refused named start moved the ticket'
+    }
+
     # Exercise the shared mechanisms directly without starting an agent or modifying real repositories.
     . (Join-Path $harness 'portfolio/lib/registry.ps1')
     . (Join-Path $harness 'portfolio/lib/ledger-watch.ps1')
@@ -605,8 +734,17 @@ elseif ($value) { Unlock-PqRepo $value }
             if ($null -eq $paths) { $paths = [pscustomobject]@{}; $prof | Add-Member -NotePropertyName paths -NotePropertyValue $paths }
             $paths | Add-Member -NotePropertyName releaseQueue -NotePropertyValue 'PLAN/OTHER_QUEUE.md' -Force
             [IO.File]::WriteAllText($profileFile, ($prof | ConvertTo-Json -Depth 20))
+            $otherQueue = Join-Path $repoBDir 'PLAN/OTHER_QUEUE.md'
+            [IO.File]::WriteAllText($otherQueue, "# 1
+repo-b
+", [Text.Encoding]::UTF8)
+            $named = Invoke-SmokePq @('tickets', 'repo-b', '-NoOpen')
+            Assert-That ($named.code -eq 0 -and $named.stdout.Trim() -ceq [IO.Path]::GetFullPath($otherQueue)) "profile queue file not followed: $($named.output)"
+            # A profile-named queue file that does not exist falls back to the ledger (TASK-FLOW rule 4), not to the
+            # harness's candidate names.
+            Remove-Item -LiteralPath $otherQueue -Force
             $missing = Invoke-SmokePq @('tickets', 'repo-b', '-NoOpen')
-            Assert-That ($missing.code -eq 2 -and $missing.stderr -match 'TicketQueueMissing' -and $missing.stderr -match 'OTHER_QUEUE\.md') "profile path was ignored: $($missing.output)"
+            Assert-That ($missing.code -eq 0 -and $missing.stdout.Trim() -ceq [IO.Path]::GetFullPath((Join-Path $repoBDir 'PLAN/spec-catalog.jsonl'))) "missing profile queue did not fall back to the ledger: $($missing.output)"
         }
         finally { [IO.File]::WriteAllText($profileFile, $original) }
     }
@@ -631,10 +769,10 @@ elseif ($value) { Unlock-PqRepo $value }
 
         $out = & pwsh -NoProfile -File $installer -Desktop $desk -RootDir $root | Out-String
         Assert-That ($LASTEXITCODE -eq 0) "installer exited $LASTEXITCODE"
-        Assert-That ($out -match '(?m)^install-shortcuts: 13 created, 0 updated, 0 unchanged, 0 removed, 1 foreign in .*desktop') "unexpected desktop summary: $out"
-        Assert-That ($out -match '(?m)^install-shortcuts: 14 created, 0 updated, 0 unchanged, 2 removed, 0 foreign in .*rootdir') "unexpected root summary: $out"
-        Assert-That (@(Get-ChildItem -LiteralPath $desk -Filter '*.lnk').Count -eq 14) 'desktop: expected 13 PQ shortcuts plus the foreign one'
-        Assert-That (@(Get-ChildItem -LiteralPath $root -Filter '*.lnk').Count -eq 14) 'root: expected 14 PQ shortcuts and neither stale one'
+        Assert-That ($out -match '(?m)^install-shortcuts: 16 created, 0 updated, 0 unchanged, 0 removed, 1 foreign in .*desktop') "unexpected desktop summary: $out"
+        Assert-That ($out -match '(?m)^install-shortcuts: 17 created, 0 updated, 0 unchanged, 2 removed, 0 foreign in .*rootdir') "unexpected root summary: $out"
+        Assert-That (@(Get-ChildItem -LiteralPath $desk -Filter '*.lnk').Count -eq 17) 'desktop: expected 16 PQ shortcuts plus the foreign one'
+        Assert-That (@(Get-ChildItem -LiteralPath $root -Filter '*.lnk').Count -eq 17) 'root: expected 17 PQ shortcuts and neither stale one'
         Assert-That (-not (Test-Path -LiteralPath (Join-Path $root 'PQ Queue.lnk')) -and -not (Test-Path -LiteralPath (Join-Path $root 'PQ Tickets gone.lnk'))) 'a stale shortcut of ours survived the refresh'
         $one = $shell.CreateShortcut((Join-Path $desk 'PQ Start 1 ticket.lnk'))
         Assert-That ($one.Arguments -match '-NoExit' -and $one.Arguments -match 'portfolio\\pq\.ps1" start -MaxTickets 1$') "bad arguments: $($one.Arguments)"
@@ -652,13 +790,13 @@ elseif ($value) { Unlock-PqRepo $value }
         Assert-That ($shell.CreateShortcut($foreignPath).TargetPath -imatch 'notepad\.exe$') 'the foreign shortcut was overwritten'
 
         $again = & pwsh -NoProfile -File $installer -Desktop $desk -RootDir $root | Out-String
-        Assert-That ($again -match '0 created, 0 updated, 13 unchanged, 0 removed, 1 foreign' -and $again -match '0 created, 0 updated, 14 unchanged, 0 removed, 0 foreign') "second run was not a no-op: $again"
+        Assert-That ($again -match '0 created, 0 updated, 16 unchanged, 0 removed, 1 foreign' -and $again -match '0 created, 0 updated, 17 unchanged, 0 removed, 0 foreign') "second run was not a no-op: $again"
 
         $only = & pwsh -NoProfile -File $installer -Where Root -RootDir $root -DryRun | Out-String
-        Assert-That ($only -notmatch 'desktop' -and $only -match '14 unchanged|would update') "-Where Root touched the desktop: $only"
+        Assert-That ($only -notmatch 'desktop' -and $only -match '17 unchanged|would update') "-Where Root touched the desktop: $only"
 
         $gone = & pwsh -NoProfile -File $installer -Desktop $desk -RootDir $root -Remove | Out-String
-        Assert-That ($gone -match '13 removed, 1 foreign' -and $gone -match '14 removed, 0 foreign') "unexpected remove summary: $gone"
+        Assert-That ($gone -match '16 removed, 1 foreign' -and $gone -match '17 removed, 0 foreign') "unexpected remove summary: $gone"
         Assert-That (@(Get-ChildItem -LiteralPath $desk -Filter '*.lnk').Count -eq 1 -and (Test-Path -LiteralPath $foreignPath)) 'remove touched more than the PQ set'
         Assert-That (@(Get-ChildItem -LiteralPath $root -Filter '*.lnk').Count -eq 0) 'remove left shortcuts in the root'
     }

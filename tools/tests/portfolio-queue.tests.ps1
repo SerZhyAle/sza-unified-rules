@@ -1779,14 +1779,17 @@ Start-Sleep -Seconds 120
         Assert-That ($p.code -eq 0 -and $p.stdout.Trim() -ceq $q) "queue -NoOpen printed '$($p.stdout.Trim())', expected '$q'"
     }
 
-    Test-Case 'pq: an unknown verb exits 2 and lists the verbs, and a verb of a later phase (watch, report) exits 2 with "not available in this build"' {
+    Test-Case 'pq: an unknown verb exits 2 and lists the verbs, and a verb not in this build (watch, page, analyze, improve) exits 2 with "not available in this build"' {
         $r = Invoke-Pq @('bogus')
         Assert-That ($r.code -eq 2 -and $r.stderr -match "unknown verb 'bogus'" -and $r.stderr -match 'dry-run' -and $r.stderr -match 'doctor') "bogus: exit $($r.code) $($r.output)"
-        foreach ($v in 'watch', 'report') {
+        foreach ($v in 'watch', 'page', 'analyze', 'improve') {
             $x = Invoke-Pq @($v)
             Assert-That ($x.code -eq 2 -and $x.stderr -match "verb '$v' is not available in this build") "${v}: exit $($x.code) $($x.output)"
         }
         Assert-That (-not (Test-Path -LiteralPath $env:SZA_PORTFOLIO_ROOT)) 'a refused verb created the portfolio root'
+        # The analysis verbs were built on 2026-11-10 (S0016 PHASE_08 piece); on an empty root they exit 0.
+        $ok = Invoke-Pq @('report')
+        Assert-That ($ok.code -eq 0) "report is available since 2026-11-10: exit $($ok.code) $($ok.output)"
     }
 
     Test-Case 'pq: pin of a key the registry does not know exits 2 with UnknownRepoKey and writes nothing' {
@@ -1907,7 +1910,12 @@ Start-Sleep -Seconds 120
         $ry = New-FixtureRepo -Name 'ry' -Slugs @('one') -Priorities @(90) -Parent $parent
         $null = Write-Registry (New-RegistryDoc @(@{ key = 'big'; path = $big; enabled = $true; concurrent = $true; maxWorkers = 3 }, @{ key = 'rx'; path = $rx; enabled = $true }, @{ key = 'ry'; path = $ry; enabled = $true }))
         Write-Text (Join-Path $env:SZA_PORTFOLIO_ROOT 'PORTFOLIO_QUEUE.md') (Join-Lines @('1', 'big', 'rx', 'ry'))
-        $r = Invoke-Pq @('dry-run', '-Slots', '5')
+        # Since 2026-11-11 the default dry-run ranks one head per repository (FirstHead, as the loop does per
+        # turn); -All prints the full slot plan under the fill in force.
+        $heads = Invoke-Pq @('dry-run', '-Slots', '5')
+        $headSlots = @($heads.stdout -split '\r?\n' | Where-Object { $_ -match '^slot ' })
+        Assert-That (($headSlots -join '|') -ceq 'slot 1: big:S0001|slot 2: rx:S0001|slot 3: ry:S0001') "default (heads only): $($headSlots -join '|')"
+        $r = Invoke-Pq @('dry-run', '-Slots', '5', '-All')
         Assert-That ($r.code -eq 0) "dry-run exited $($r.code): $($r.output)"
         $slots = @($r.stdout -split '\r?\n' | Where-Object { $_ -match '^slot ' })
         Assert-That (($slots -join '|') -ceq 'slot 1: big:S0001|slot 2: big:S0002|slot 3: big:S0003|slot 4: rx:S0001|slot 5: ry:S0001') "slots: $($slots -join '|')"

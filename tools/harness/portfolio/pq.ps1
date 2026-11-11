@@ -458,7 +458,7 @@ function Invoke-PqDryRun {
         return 0
     }
     $harness = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-    $rank = Get-PqNextRank -Registry $registry -HarnessRoot $harness -Slots $n -FirstHead:(-not $All)
+    $rank = Get-PqNextRank -Registry $registry -HarnessRoot $harness -Slots $n -FirstHead:(-not $All) -CheckXrepo
     if ($Json) {
         ConvertTo-Json -InputObject ([ordered]@{ candidates = $rank.candidates; plan = $rank.plan; skipped = $rank.skipped; excluded = $rank.excluded
                 autoSkipReasons = $rank.autoSkipReasons; fill = $rank.fill; heads = $rank.heads; ms = $rank.ms; queueRows = $rank.queueRows; queueBad = $rank.queueBad }) -Depth 16
@@ -564,6 +564,18 @@ function Invoke-PqStart {
     # S0027: -Ticket <key>:<id> and -Repo <key> are checked before a worker slot is taken; a bad one launches nothing.
     $target = Test-PqStartTarget -Registry $read.registry -Ticket $Ticket -Repo $Repo -MaxTickets $MaxTickets
     if (-not $target.ok) { Write-PqError $target.name $target.message; return 2 }
+    # Unattended work needs an explicit permissionMode, in the repository's own record or inherited from the registry,
+    # before anything starts (the loop re-checks at every launch); refuse here, before a worker slot is taken.
+    $regPerm = [string](Get-PqValue $read.registry 'permissionMode')
+    $scope = if ($Repo) { @($read.registry.repos | Where-Object { [string]$_.key -ceq $Repo }) }
+             elseif ($Ticket) { @($read.registry.repos | Where-Object { [string]$_.key -ceq (($Ticket -split ':', 2)[0]) }) }
+             else { @($read.registry.repos | Where-Object { $_.enabled -eq $true }) }
+    foreach ($r in @($scope)) {
+        if (-not (Get-PqValue $r 'permissionMode') -and -not $regPerm) {
+            Write-PqError 'PermissionModeMissing' "set permissionMode for $($r.key), or at the registry top level, before starting unattended work"
+            return 2
+        }
+    }
     $a = @{
         Registry = $read.registry
         Drain = $Drain
@@ -802,7 +814,7 @@ function Invoke-PqStatus {
     if ($Next -and $null -ne $reg) {
         try {
             $harness = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-            $rank = Get-PqNextRank -Registry $reg -HarnessRoot $harness -Slots 1 -StopAfter 1
+            $rank = Get-PqNextRank -Registry $reg -HarnessRoot $harness -Slots 1 -StopAfter 1 -CheckXrepo
             if (@($rank.candidates).Count -gt 0) {
                 $nextCandidate = [ordered]@{
                     repo = [string]$rank.candidates[0].repo

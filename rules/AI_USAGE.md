@@ -26,6 +26,15 @@ shares. Reconciled against the portfolio; per-project records in `contrib/`.
 - **Don't ask what the architecture already answers.** If a convention, flavor hierarchy, or contract
   decides the question, research it and recommend - don't kick it back to the owner. Reserve questions
   for genuine forks the owner must own (scope, product intent, UI ambiguity).
+- **An unattended pass assumes the reversible recommended answer.** In a headless pass a choice that is
+  reversible inside the ticket and has a researched recommendation is not asked: it is taken and recorded
+  under `### Assumed (unattended, <date>)` with the alternative it was weighed against and "owner may
+  overrule", and the pass goes on (S0039; measured there: 21% of unattended passes ended in
+  `BlockQuestions`, and in 38 quiz sittings the owner took the robot's first option in 89% of the
+  answers). `BlockQuestions` stays for one-way and outward steps (publish, release, store submit),
+  contract changes, scope, money, and facts only the owner knows - and its note is then the question
+  itself, a literal `Q: ...?` token that the block-note gate refuses a note without. A slow run is never
+  asked about either: it is a release item, not a question.
 - **Never ask the owner about bookkeeping** - a ticket's status, a carrier token, archival, a queue
   position. Decide, report it in one line, and show that the work is scheduled (package number, row
   position). Questions are for decisions that change code or product behaviour.
@@ -45,7 +54,8 @@ shares. Reconciled against the portfolio; per-project records in `contrib/`.
   the owner; everything else is labelled a hypothesis. An inference the owner denies is retracted with "do
   not re-derive this".
 - **Surface UI placement/visibility/fallback ambiguity before implementing** - don't guess a
-  user-facing decision.
+  user-facing decision; research it, and unattended take the researched reversible one under
+  `### Assumed (unattended, <date>)` rather than ask.
 - **Push back once, then obey.** If the owner's call looks wrong, argue the case once with evidence;
   if they hold, execute their decision cleanly.
 

@@ -204,7 +204,7 @@ exit `$LASTEXITCODE
 
 function Set-AllParked([string]$Project) {
     foreach ($r in (Get-Ledger $Project)) {
-        $u = Invoke-Tool $Project 'spec_catalog/update.ps1' @('-Id', $r.id, '-Status', 'BlockQuestions', '-StatusNote', 'parked for the fixture')
+        $u = Invoke-Tool $Project 'spec_catalog/update.ps1' @('-Id', $r.id, '-Status', 'BlockQuestions', '-StatusNote', 'Q: which owner decision parks this fixture ticket?')
         Assert-That ($u.code -eq 0) "could not park $($r.id): $($u.output)"
     }
 }

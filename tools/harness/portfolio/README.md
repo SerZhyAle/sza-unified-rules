@@ -165,9 +165,14 @@ runs every change through `pq.ps1`, so it never writes a file of its own.
 
 | Part | Does |
 | --- | --- |
-| Start / Stop / Force Kill | `pq start` in a terminal of its own, `pq stop`, `pq stop -Kill` |
-| the project list | in project order; **▲ / ▼** move the selected project (`pq rank -Order ..`), **Arrange** runs `pq arrange` |
-| Ticket / Project box | `pq pin`, `pq hold`, `pq release` on what it holds; a click on a project or a double-click on a worker or a pass fills it |
+| Start / Stop / Force Kill | `pq start` in a terminal of its own, `pq stop`, `pq stop -Kill`; Stop and Force Kill run at once, also while another command of the panel is still running, and Force Kill always asks first |
+| Pause / Resume / Report / Problems | `pq pause`, `pq resume`, `pq report -Days 1`, `pq problems`, the output in the console; they run at once as Stop does |
+| the project list (**Projects** tab) | in project order; **▲ / ▼** move the selected project (`pq rank -Order ..`), **Arrange** runs `pq arrange` |
+| Ask / Test / Outside / Chain / Unbuilt | per project, what waits for you, from `pq inbox -Json` (read on start, by Refresh and every minute): your answers (`BlockQuestions`), your manual test (`BlockNeedUserTest`), someone outside (`BlockExternal`), another ticket (`BlockByOtherTask`, counted in the project the waiting ticket belongs to, whatever project its blocker is in), the audit (`Implemented`); a click lists the tickets in the console with what clears them; `?` means the count is unknown and the tooltip says why |
+| Session | a terminal in the project folder running `claude` - an interactive session with the project's own commands and hooks, no VS Code window |
+| **Queue** tab | the ticket rows of `PORTFOLIO_QUEUE.md` in the order the runner reads them, held rows last |
+| Ticket / Project box | `pq pin`, `pq hold`, `pq release` on what it holds; a click on a project or a double-click on a worker, a pass or a Queue row fills it |
+| double-click on a worker, a pass or a Queue row | also opens that ticket's spec, the file its project's ledger names for exactly that id; a row without a ticket opens nothing |
 | Queue top | the first scheduled row of an enabled project nothing holds - the file's own answer; **Dry-Run** prints pq's exact plan |
 | New Spec, Register, Doctor | `spec-draft.ps1`, `pq register`, `pq doctor -All` |
 | Providers | which model providers spend tokens and in what order (`pq agents`, see Model providers below); the window title shows the order, with a provider marked while its usage limit is spent |

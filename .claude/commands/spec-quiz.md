@@ -1,6 +1,6 @@
 ---
 description: "Clear the tickets that wait for the owner's answers (BlockQuestions): research, ask as multiple choice, write the answers into the spec, restore the status. Plugin skill. Short form: /sq"
-argument-hint: "[<id> | <key>:<id> | <key> | --all] [--dry]"
+argument-hint: "[<id> | <key>:<id> | <key> | --all] [--dry] [--assumed]"
 disable-model-invocation: true
 metadata:
   forwards_to: sza:spec-quiz

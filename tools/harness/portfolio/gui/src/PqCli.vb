@@ -253,6 +253,28 @@ Public Class PqCli
         End Try
     End Function
 
+    ' An interactive Claude Code session in the project folder, in a terminal of its own: claude finds the project's
+    ' own CLAUDE.md, commands and hooks there, and no editor window opens. The user's PowerShell profile loads (no
+    ' -NoProfile), so claude is found the way a terminal the owner opens finds it; when it is not, the window stays
+    ' open (-NoExit) with the error on screen.
+    Public Shared Function OpenClaudeSession(path As String) As String
+        If Not Directory.Exists(path) Then Return $"not found: {path}"
+        Dim psi As New ProcessStartInfo With {
+            .FileName = PwshExePath,
+            .WorkingDirectory = path,
+            .UseShellExecute = False
+        }
+        For Each a In {"-NoExit", "-Command", "claude"}
+            psi.ArgumentList.Add(a)
+        Next
+        Try
+            Process.Start(psi)?.Dispose()
+            Return Nothing
+        Catch ex As Exception
+            Return $"cannot start {PwshExePath}: {ex.Message}"
+        End Try
+    End Function
+
     Public Shared Function ResolveVsCodeExe() As String
         Dim env = Environment.GetEnvironmentVariable("SZA_VSCODE_EXE")
         If Not String.IsNullOrWhiteSpace(env) AndAlso File.Exists(env) Then Return Path.GetFullPath(env)
