@@ -157,6 +157,15 @@ command on the path.
 Several workers are several `PQ Start` windows (up to `maxWorkers` in the registry). Each takes the first free slot; a
 repository is worked by one worker at a time unless its registration says `concurrent`.
 
+**A worker restarts itself when its own code changes.** `pq start` with no `-Ticket` and no `-MaxTickets` runs the worker in
+a child process of the window it was launched from. When `pq.ps1` or `lib/*.ps1` is written during a run (a robot pass on a
+pq ticket does exactly that) and the files still parse, the child ends after the pass it is on with `run.codeChanged` and
+**exit 75**, and the window starts a new child with the new code (`pq code changed - the worker starts again..`). It does
+that on 75 and on no other code, so `pq stop`, a reached ceiling and an error end the window instead of undoing the stop. It
+holds for every way of launching - `PQ Start`, the panel's Start and Start on this project, a terminal - and needs no panel
+rebuild. A run with a ceiling (`-MaxTickets`, `-Ticket`) is not supervised and never ends for a code change; it keeps the
+code it loaded. A worker started before this arrived still ends on a code change with exit 0, and stays ended.
+
 ## PQ Control Panel
 
 `gui/` holds PQ Control Panel (`PQShell.exe`, .NET 8 WinForms), one window over the same commands. It reads the

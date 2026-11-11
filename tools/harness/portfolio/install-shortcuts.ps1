@@ -21,7 +21,8 @@
     The rest:
 
       PQ Dry-run          pq dry-run                the order the loop would take; launches nothing
-      PQ Start            pq start                  one worker; waits a minute when nothing is ranked
+      PQ Start            pq start                  one worker; waits a minute when nothing is ranked; pq itself starts it
+                                                    again when its own code changed (exit 75 of the child), and only then
       PQ Start 1 ticket   pq start -MaxTickets 1    one pass, then the window stays open (the attended first run)
       PQ Start Drain      pq start -Drain           work until nothing is ranked, then end
       PQ Status           pq status                 workers, today's passes, the next ticket, STOP
@@ -187,7 +188,6 @@ foreach ($folder in $folders) {
         $target = if ($isGuide) { $guide } else { $pwshExe }
         $arguments = if ($isGuide) { '' }
                      elseif ($isQuiz) { "-NoExit -Command `"$quizCommand`"" }   # the profile loads, so claude is found as in the owner's terminal (PQShell's Session cell does the same)
-                     elseif ($s.Name -eq 'PQ Start') { "-NoExit -NoProfile -Command `"for (;;) { & '$pq' start; if (`$LASTEXITCODE -ne 0) { break } }`"" }
                      else { "-NoExit -NoProfile -File `"$pq`" $($s.Pq)" }
         $icon = if ($isGuide) { '' } else { "$pwshExe,0" }
         $dir = if ($isGuide) { $PSScriptRoot } else { $workDir }

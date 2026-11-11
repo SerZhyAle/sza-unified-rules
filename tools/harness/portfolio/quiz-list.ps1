@@ -161,7 +161,7 @@ else { @(@{ Expression = { -not $_.here } }, @{ Expression = 'priority'; Descend
 $sorted = @($found | Sort-Object -Property $sortKeys)
 
 if ($Json) {
-    if ($sorted.Count -eq 0) { Write-Output '[]' } else { ConvertTo-Json -InputObject $sorted -Depth 4 -AsArray }
+    if ($sorted.Count -eq 0) { Write-Output '[]' } else { ConvertTo-Json -InputObject $sorted -Depth 4 }
     exit 0
 }
 

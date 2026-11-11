@@ -115,7 +115,43 @@ try {
     if (-not $res.ended -or $res.streak -ne 3) { throw "Expected streak=3 and ended=true" }
     Write-Host " PASS" -ForegroundColor Green
 
-    Write-Host "`nAll 6 worker health test cases PASSED cleanly." -ForegroundColor Green
+    # Case 7: the supervisor starts the child again on the restart code and on no other (an owner stop ends a worker with 0,
+    # and a supervisor that looped on 0 would undo the stop), passes the arguments through, and marks the child
+    Write-Host "Case 7: supervisor restarts on the restart code only, keeps stop and errors..." -NoNewline
+    $code = Get-PqRestartExitCode
+    if ($code -le 0) { throw "Expected a non-zero restart exit code, got $code" }
+    $stub = Join-Path $scratch 'stub-pq.ps1'
+    $stubState = Join-Path $scratch 'stub-state.txt'
+    $stubArgs = Join-Path $scratch 'stub-args.txt'
+    [IO.File]::WriteAllText($stub, @'
+param([string]$Verb, [Parameter(ValueFromRemainingArguments)]$Rest)
+$dir = Split-Path $PSCommandPath -Parent
+$state = Join-Path $dir 'stub-state.txt'
+$n = if (Test-Path $state) { [int](Get-Content $state) } else { 0 }
+$n++
+Set-Content $state $n
+Add-Content (Join-Path $dir 'stub-args.txt') "$Verb|$($Rest -join ' ')|$env:SZA_PQ_SUPERVISED"
+$until = [int]$env:STUB_RESTARTS
+if ($n -le $until) { exit 75 }
+exit ([int]$env:STUB_FINAL)
+'@)
+    $env:STUB_RESTARTS = '2'; $env:STUB_FINAL = '3'
+    $rc = Invoke-PqSupervised -Script $stub -Verb 'start' -Arguments @('-Repo', 'fms-a') -ThrottleSeconds 0 6>$null
+    if ($rc -ne 3) { throw "Expected the final child code 3, got '$rc'" }
+    if ([int](Get-Content $stubState) -ne 3) { throw "Expected 3 launches (2 restarts, then the final code), got $(Get-Content $stubState)" }
+    $lines = @(Get-Content $stubArgs)
+    if ($lines.Count -ne 3 -or @($lines | Where-Object { $_ -ne 'start|-Repo fms-a|1' }).Count -gt 0) { throw "Arguments or the supervised mark were not passed through: $($lines -join ' / ')" }
+    # A stop (child exit 0) is not a restart: one launch, code 0
+    Remove-Item $stubState, $stubArgs -Force
+    $env:STUB_RESTARTS = '0'; $env:STUB_FINAL = '0'
+    $rc = Invoke-PqSupervised -Script $stub -Verb 'start' -ThrottleSeconds 0 6>$null
+    if ($rc -ne 0 -or [int](Get-Content $stubState) -ne 1) { throw "A child that ended with 0 must end the supervisor at once; code '$rc', launches $(Get-Content $stubState)" }
+    Remove-Item Env:\STUB_RESTARTS, Env:\STUB_FINAL -ErrorAction SilentlyContinue
+    $loopText = [IO.File]::ReadAllText((Join-Path $lib 'loop.ps1'))
+    if ($loopText -notmatch '\$null -eq \$named -and \$MaxTickets -le 0') { throw "loop.ps1: a run with a ceiling must not end for a code change" }
+    Write-Host " PASS" -ForegroundColor Green
+
+    Write-Host "`nAll 7 worker health test cases PASSED cleanly." -ForegroundColor Green
     exit 0
 }
 finally {

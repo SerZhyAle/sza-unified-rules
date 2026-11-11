@@ -612,6 +612,19 @@ function Invoke-PqStart {
             return 2
         }
     }
+    # An open-ended worker runs under a supervisor that starts it again when pq's own code changed (exit 75); a run with a
+    # ceiling (-Ticket, -MaxTickets) never ends for that reason. The child of the supervisor is marked and runs the loop.
+    if (-not $Ticket -and $MaxTickets -le 0 -and $env:SZA_PQ_SUPERVISED -cne '1') {
+        $childArgs = [Collections.Generic.List[string]]::new()
+        foreach ($k in $script:PqBound) {
+            if ($k -ceq 'Verb') { continue }
+            $v = Get-Variable -Name $k -ValueOnly
+            if ($v -is [switch]) { if ($v.IsPresent) { $childArgs.Add("-$k") } }
+            elseif ($v -is [array]) { $childArgs.Add("-$k"); foreach ($x in $v) { $childArgs.Add([string]$x) } }
+            else { $childArgs.Add("-$k"); $childArgs.Add([string]$v) }
+        }
+        return (Invoke-PqSupervised -Script (Join-Path $PSScriptRoot 'pq.ps1') -Verb $Verb -Arguments @($childArgs))
+    }
     $a = @{
         Registry = $read.registry
         Drain = $Drain

@@ -142,7 +142,11 @@ try {
     Run-Case '3 all and json' {
         $r = Invoke-Quiz 'all'
         Assert-That ($r.last -eq 'quiz-list: 4 in BlockQuestions across 3 project(s)') "all: $($r.last)"
-        $parsed = ConvertFrom-Json -InputObject (Invoke-Quiz 'json').text
+        $jsonText = (Invoke-Quiz 'json').text
+        Assert-That ($jsonText -match '^\s*\[\s*\{') "json is one flat array of records, not an array in an array: $($jsonText.Substring(0, [Math]::Min(20, $jsonText.Length)))"
+        $flat = ConvertFrom-Json -InputObject $jsonText -NoEnumerate
+        Assert-That ($flat.Count -eq 4 -and $flat[0].id -eq 'S0031') "json top level holds $($flat.Count) element(s), first id '$($flat[0].id)'"
+        $parsed = ConvertFrom-Json -InputObject $jsonText
         Assert-That (@($parsed).Count -eq 4) "json count $(@($parsed).Count)"
         Assert-That ((@($parsed | Where-Object { $_.id -eq 'S0031' })[0].note) -eq 'Решение владельца: имя и remote') 'json note'
         $none = Invoke-Quiz 'empty'

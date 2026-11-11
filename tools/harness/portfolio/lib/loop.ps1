@@ -636,6 +636,44 @@ function ConvertTo-PqPassEndOutcome([string]$Outcome) {
     }
 }
 
+# The exit code of a worker that ends because its own code changed (run.codeChanged). It is not 0 on purpose: the supervisor
+# below starts the worker again on this code alone, so an owner stop, a reached ceiling or an error (all other codes) ends
+# the window instead of starting the worker again. EX_TEMPFAIL of sysexits.h.
+function Get-PqRestartExitCode { return 75 }
+
+# An open-ended worker (`pq start` with no -Ticket and no -MaxTickets) runs in a child process of the one the owner launched,
+# and the child is started again while it ends with the restart code, so it picks up its own new code. The restart lives in
+# pq itself on purpose: it holds whatever launched the worker - a shortcut, the panel (an old build included), a terminal.
+# Any other exit code of the child is this process's own, so a stop stays a stop. Emits only that code.
+# -ThrottleSeconds: the wait before starting again after a child that ran less than 20 s, so a code that never settles
+# cannot spin.
+function Invoke-PqSupervised {
+    param(
+        [Parameter(Mandatory)][string]$Script,
+        [Parameter(Mandatory)][string]$Verb,
+        [string[]]$Arguments = @(),
+        [string]$Pwsh = '',
+        [int]$ThrottleSeconds = 10
+    )
+    if (-not $Pwsh) { $Pwsh = (Get-Process -Id $PID).Path }
+    while ($true) {
+        $psi = [Diagnostics.ProcessStartInfo]::new($Pwsh)
+        foreach ($a in (@('-NoProfile', '-File', $Script, $Verb) + @($Arguments))) { $psi.ArgumentList.Add($a) }
+        $psi.UseShellExecute = $false
+        $psi.Environment['SZA_PQ_SUPERVISED'] = '1'
+        $sw = [Diagnostics.Stopwatch]::StartNew()
+        $child = [Diagnostics.Process]::Start($psi)
+        # Ctrl+C reaches the child too; stay until it has finished its own cleanup before this window gets its prompt back.
+        try { $child.WaitForExit() }
+        finally { if (-not $child.HasExited) { $null = $child.WaitForExit(60000) } }
+        $code = $child.ExitCode
+        $child.Dispose()
+        if ($code -ne (Get-PqRestartExitCode)) { return $code }
+        Write-Host 'pq code changed - the worker starts again with the new code'
+        if ($ThrottleSeconds -gt 0 -and $sw.Elapsed.TotalSeconds -lt 20) { Start-Sleep -Seconds $ThrottleSeconds }
+    }
+}
+
 function Get-PqCodeMaxWriteTime {
     $portfolioDir = Split-Path $PSScriptRoot -Parent
     $pqFile = Join-Path $portfolioDir 'pq.ps1'
@@ -762,8 +800,10 @@ function Start-PqLoop {
 
     try {
         while ($true) {
-            # Check for changed queue code between passes
-            $newestCodeTime = Get-PqCodeMaxWriteTime
+            # Check for changed queue code between passes. Only an open-ended worker ends for a restart: a run with a ceiling
+            # (-MaxTickets, and -Ticket which sets it to 1) is one the owner wants to stop by itself, and a restarting
+            # terminal would run it again past the ceiling; it keeps the code it loaded.
+            $newestCodeTime = if ($null -eq $named -and $MaxTickets -le 0) { Get-PqCodeMaxWriteTime } else { $codeStartTime }
             if ($newestCodeTime -gt $codeStartTime) {
                 $parseErrors = [Collections.Generic.List[string]]::new()
                 $portfolioDir = Split-Path $PSScriptRoot -Parent
@@ -784,8 +824,8 @@ function Start-PqLoop {
                         newestWriteTime = $newestCodeTime.ToString('o')
                         action = 'restart'
                     })
-                    Write-Host "pq code changed and parsed cleanly - ending run for automatic restart"
-                    $exitCode = 0
+                    Write-Host "pq code changed and parsed cleanly - ending run for automatic restart (exit $(Get-PqRestartExitCode))"
+                    $exitCode = Get-PqRestartExitCode
                     break
                 } else {
                     Write-Host "pq code changed but has $($parseErrors.Count) parse error(s) - continuing on loaded code:" -ForegroundColor Yellow
