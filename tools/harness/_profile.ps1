@@ -57,6 +57,22 @@ $Script:SzaProfileDefaults = [ordered]@{
         releaseQueue     = 'PLAN/RELEASE_QUEUE.md'
         releaseReady     = 'PLAN/RELEASE_READY.md'
         releaseQueueDone = 'PLAN/RELEASE_QUEUE_DONE.md'
+        # The fallback names of a repository's own ticket queue, tried in order by Get-PqTicketQueuePath
+        # (portfolio/lib/queue-file.ps1) when neither the registry record nor the repository's
+        # .sza-profile.json names one. Declared here rather than in that function's body because a path
+        # literal belongs in this file alone; a project replaces the whole list (arrays replace) when its
+        # repositories keep queues under other names, and an empty list means "no fallback names".
+        queueCandidates  = @(
+            'PLAN/RELEASE_QUEUE.md',
+            'PLAN/release-queue.md',
+            'DEV/plan/RELEASE_QUEUE.md',
+            'docs/specifications/RELEASE_QUEUE.md',
+            'PLAN/INDEX.md',
+            'PLAN/spec-catalog.jsonl',
+            'PLAN/README.md',
+            'tasks/README.md',
+            'tasks/INDEX.md'
+        )
         tempDir          = 'temp'
         locksDir         = 'temp'
         leasesDir        = 'temp/SPEC-TICKET.LEASES'

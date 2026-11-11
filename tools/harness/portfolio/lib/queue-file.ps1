@@ -37,8 +37,9 @@
 #       (written|exists); hash }.
 #
 #   Get-PqTicketQueuePath -Repo <registry record>
-#       a repository's own ticket queue file: its profile's paths.releaseQueue, PLAN/RELEASE_QUEUE.md by default; a
-#       repository with a profile and no file there is read from its ledger (paths.journal).
+#       a repository's own ticket queue file: its registry record's releaseQueue, else its profile's
+#       paths.releaseQueue or its ledger (paths.journal) when it has a profile, else the harness default's
+#       paths.queueCandidates in order, else the harness default's paths.releaseQueue.
 #   Register-PqTicketFiles -Repo <registry record> [-HarnessRoot] [-List]
 #       file -> ledger (rule 65): every '<id>_<slug>.md' of the specs directory with no row is inserted through the
 #       repository's insert.ps1. @{ repo; id; file; status; ok; err } per file tried; -List only names them (ok
@@ -461,8 +462,8 @@ function Initialize-PqQueueFile {
 
 # ---- the repositories' own ticket queues, and the sync from them ----
 
-# The shipped default of paths.releaseQueue, read from the harness profile in an isolated module (that script caches one
-# project root, so it is never dot-sourced here) and kept for the life of the process.
+# The shipped defaults of paths.releaseQueue and paths.queueCandidates, read from the harness profile in an isolated
+# module (that script caches one project root, so it is never dot-sourced here) and kept for the life of the process.
 function Get-PqProfileDefaults {
     if ($null -eq $script:PqProfileDefaults) {
         $script:PqProfileDefaults = New-Module -ArgumentList (Join-Path $PSScriptRoot '..\..\_profile.ps1') -ReturnResult -ScriptBlock {
@@ -475,6 +476,8 @@ function Get-PqProfileDefaults {
 }
 
 function Get-PqDefaultReleaseQueue { return [string](Get-PqProfileDefaults).paths['releaseQueue'] }
+
+function Get-PqDefaultQueueCandidates { return @((Get-PqProfileDefaults).paths['queueCandidates']) }
 
 # A repository's .sza-profile.json, parsed, or $null when it has none or it cannot be read.
 function Read-PqRepoProfile([string]$RepoPath) {
@@ -516,17 +519,9 @@ function Get-PqTicketQueuePath($Repo) {
         $journal = Get-PqRepoProfilePath -RepoPath $repoPath -Key 'journal'
         if ([IO.File]::Exists($journal)) { return $journal }
     }
-    $candidates = @(
-        'PLAN/RELEASE_QUEUE.md',
-        'PLAN/release-queue.md',
-        'DEV/plan/RELEASE_QUEUE.md',
-        'docs/specifications/RELEASE_QUEUE.md',
-        'PLAN/INDEX.md',
-        'PLAN/spec-catalog.jsonl',
-        'PLAN/README.md',
-        'tasks/README.md',
-        'tasks/INDEX.md'
-    )
+    # The fallback names are the harness default's paths.queueCandidates, not literals here: a shipped script
+    # names no product path (assert-portable), and a project replaces the list in its own defaults.
+    $candidates = Get-PqDefaultQueueCandidates
     foreach ($cand in $candidates) {
         $full = Join-Path $repoPath $cand
         if ([IO.File]::Exists($full)) { return [IO.Path]::GetFullPath($full) }
