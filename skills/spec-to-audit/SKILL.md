@@ -217,6 +217,16 @@ that fact written into its rules file, not a slow run. The owner is never asked 
 the reference study measured seven repos asking that question back and getting the same answer every time
 (S0039): an unattended pass records the skipped rung as a `RELEASE` item and moves on.
 
+**One exception (S0040, owner decision 2026-11-11): the declared compile check in an unattended pass.** A
+pass that edited compiled source runs the repository's declared compile-only command once, in the
+foreground, before it sets `Implemented` or `BlockNeedUserTest`. The command is
+`commands.compileCheck` in this repo's `.sza-profile.json`; absent or empty is a declared absence - the
+note says "no compile command", never an invented run. A failure is fixed inside the pass or written
+into the ticket, and this exception authorizes no other run above 5 s: no full build, no suite, no
+second attempt. What does not change: the compile check proves compilation, not behaviour - a pass
+whose compile passed and nothing else writes `compiled, not tested` into its note and still owes the
+release rungs it skipped.
+
 **Three traps:**
 
 1. **Red-flag words.** "Should", "probably", "seems", "looks fixed", "I think it passes" each mean the proving
@@ -248,6 +258,12 @@ Two rules give "Verified" its meaning, and both are **refusals**, not advice:
   user-visible behaviour already works end to end**. Created classes, wired contracts and a passing compile
   are milestones, not deliverables. Never invite a human to test while the advertised action still logs,
   shows a placeholder, or no-ops.
+- **The unattended compile gate (S0040)**: in an unattended pass that edited compiled source,
+  `BlockNeedUserTest` is entered only after the repository's declared compile check passed - or after the
+  repo declares none (`commands.compileCheck` absent or empty) and the note says so. An `Implemented`
+  note distinguishes compilation from an absent command: "compiled, not tested" or "no compile
+  command". A failed check is fixed in the pass or recorded in the ticket, never silenced or retried
+  at another rung.
 
 Also mandatory here: the **probe-invariant sweep**. If the verdict moves the ticket out of the
 needs-manual-test status, grep-and-delete every ticket-id probe line - idempotently, including on the cancel
@@ -405,6 +421,11 @@ An unattended pass runs without human interaction in a headless queue session.
 - **The ticket and tool are named up front**: the ticket is `<spec path>` in `<repo root>`; change its status only with `<update.ps1 path> -Id <id> -Status <s>`, never by editing the `**Status:**` line.
 - **Strict repo boundary**: never read or change a ticket of another repository.
 - **Foreground execution only**: this is a headless pass: start no background agent or command, wait for each in the foreground, and set the status before your last message. In headless mode the end of the turn is the end of the pass; orphaned background work fails.
+- **Compile gate (S0040)**: if this pass edited compiled source, run the repository's declared
+  compile-only command - `commands.compileCheck` in this repo's `.sza-profile.json` - once, in the
+  foreground, before setting `Implemented` or `BlockNeedUserTest`. An empty or absent key means the
+  repo declares none: write "no compile command" in the note and do not invent a run. Fix a compile
+  failure inside the pass or write it into the ticket; no other run above 5 s is authorized.
 - **Assume the reversible, ask the rest**: a choice that is reversible inside the ticket and has a researched recommendation is taken, not asked - record it under `### Assumed (unattended, <date>)` with the alternative and "owner may overrule", and the pass goes on (S0039). `BlockQuestions` is for one-way and outward steps (publish, release, store submit), contract changes, scope, money, and facts only the owner knows, and its note is then the question itself: a literal `Q: ...?` token that the block-note gate refuses a note without. A non-question impediment parks elsewhere - an action only the owner can perform goes to `BlockNeedUserTest`, a tool defect becomes a Draft ticket against that tool, a deferred idea its own Draft. A slow run is never asked about: it is recorded as a release item.
 - **Autonomous stopping**: take this one ticket as far as it goes and do not start another. When it cannot move, set the matching `Block*` status with a `statusNote` naming what is missing.
 - **Claim**: a lease on the ticket whose reason is `run-spec-queue` followed by an instance name is the claim the runner made for you: it is yours.

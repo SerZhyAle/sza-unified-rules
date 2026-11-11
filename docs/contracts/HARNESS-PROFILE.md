@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Contract | `HARNESS-PROFILE` |
-| Version | 0.14, draft; source reader verified at 0.13; rules 8-10 not implemented |
+| Version | 0.15, draft; source reader verified at 0.13; rules 8-10 not implemented |
 | Home | the shared contracts catalog, domain `rule-adoption/` (the path is in [CLAUDE.md](../../CLAUDE.md)) |
 | Role | **consumer**, and the schema's owner. Each repository running the harness writes its own profile |
 
@@ -30,3 +30,9 @@
   dispatcher does not claim to implement them (`TASK-FLOW` rule 42). A change to `_profile.ps1` regenerates
   the reader vectors (`tools/tests/export-contract-vectors.ps1`), because the file is fingerprinted in their
   manifest.
+- `commands.compileCheck` is optional and empty by default (rule 11, the 2026-11-11 amendment): the
+  repository's declared compile-only command, run once by an unattended pass that edited compiled source
+  before it sets `Implemented` or `BlockNeedUserTest` (`Testing & QA` section 2, its one exception).
+  Absent or empty means none is declared - the pass writes that into its note instead of running or
+  inventing a command. It merges by key beside `commands.statusCommands` and `commands.aliases`, and the
+  generated reader vectors cover both the declared and the absent case.

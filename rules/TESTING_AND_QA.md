@@ -107,6 +107,19 @@ builds were re-run after every small edit while the owner waited.
   the touched area that are fast on their own, expose them as a fast filter rather than calling the whole
   suite; a slow test is moved to the release tier, never deleted to meet the line.
 
+**One exception, for unattended passes only (owner decision, 2026-11-11).** A headless queue pass that
+edited compiled source runs the repository's **declared compile-only command once**, in the foreground,
+before it sets `Implemented` or `BlockNeedUserTest`. The command is declared in the repository's profile
+(`commands.compileCheck`, `HARNESS-PROFILE` rule 11) and the owner order names it per repository; an
+empty or absent key is a declared absence - the pass says so in its note instead of running or inventing
+a command. A failure is fixed inside the pass, or written into the ticket and left as a release item;
+and nothing else is permitted: no second run, no full build, no test suite - this exception adds one
+rung, it does not reopen the ladder. Attended sessions and owner-driven runs stay on the 5 s line
+unchanged. The reason is the line's own scope: the 5 s ceiling protects the owner's waiting time, and
+nobody waits on a robot - measured across the portfolio's unattended passes, 45 of 89 closing passes
+with source edits handed over code nobody had compiled, and the owner's own build was the first thing
+that caught the missing import and the undefined key.
+
 ## 3. Test tiers
 
 - **Unit** - fast, logic in isolation; the default for domain/use-case code.

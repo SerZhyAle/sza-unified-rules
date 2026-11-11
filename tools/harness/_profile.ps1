@@ -192,7 +192,7 @@ $Script:SzaProfileDefaults = [ordered]@{
         # What a queue child is told when the project names nothing, or names a command it does not
         # have (Resolve-SzaPromptTemplate). The plugin's lifecycle skill runs in every repository that
         # has the sza plugin; until 2026-10-28 this was '/spec-all {Id}', a command only FMS_A has.
-        promptTemplate   = '/sza:spec-to-audit {Id} - the ticket is {specPath} in {repoRoot}; change its status only with {updatePath} -Id {Id} -Status <s>, never by editing the Status line; never read or change a ticket of another repository. This is a headless pass: start no background agent or command, wait for each in the foreground, and set the status before your last message. A choice that is reversible inside the ticket and has a researched recommendation is taken, not asked: record it under ### Assumed (unattended, <date>) with the alternative and "owner may overrule", and go on. BlockQuestions is only for one-way or outward steps, contract changes, scope, money, or facts only the owner knows, and its note is the question itself (a literal Q: ...? token - the block-note gate refuses a note without it). A slow run is never asked about - record it as a release item.'
+        promptTemplate   = '/sza:spec-to-audit {Id} - the ticket is {specPath} in {repoRoot}; change its status only with {updatePath} -Id {Id} -Status <s>, never by editing the Status line; never read or change a ticket of another repository. This is a headless pass: start no background agent or command, wait for each in the foreground, and set the status before your last message. A choice that is reversible inside the ticket and has a researched recommendation is taken, not asked: record it under ### Assumed (unattended, <date>) with the alternative and "owner may overrule", and go on. BlockQuestions is only for one-way or outward steps, contract changes, scope, money, or facts only the owner knows, and its note is the question itself (a literal Q: ...? token - the block-note gate refuses a note without it). A slow run is never asked about - record it as a release item. Compile gate: if you edited compiled source, run the repository''s declared compile-only command once before setting Implemented or BlockNeedUserTest - commands.compileCheck in this repo''s .sza-profile.json names it; fix a failure inside the pass or write it into the ticket before the status, and run nothing else above 5 s. An empty or absent command means the repo declares none: take that as the absence and write it into the note - an Implemented note says "compiled, not tested" or "no compile command"; BlockNeedUserTest requires the declared check passed or the repo declaring none.'
         decisionStatuses = @('Draft', 'Approved', 'Tactical', 'In Progress', 'Partial', 'Broken', 'BlockQuestions')
         cheapStatuses    = @('Implemented', 'BlockNeedUserTest')
         cheapTierMax     = 3
@@ -253,6 +253,12 @@ $Script:SzaProfileDefaults = [ordered]@{
             'Implemented'      = @('/spec-test-device {Id}', '/spec-check {Id}')
         }
         aliases = @()
+        # S0040: the compile-only command an unattended pass runs ONCE before it sets Implemented or
+        # BlockNeedUserTest after editing compiled source (HARNESS-PROFILE rule 11, amendment
+        # 2026-11-11). Empty means "this repository declares no compile-only command" - exactly what
+        # a profile that omits the key reads as - and the pass says so in its note instead of running
+        # or inventing one. Declared by each repository; it authorizes no other run above 5 s.
+        compileCheck    = ''
     }
     inventory   = [ordered]@{
         dimensionName        = 'dimensions'
