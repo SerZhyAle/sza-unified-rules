@@ -140,6 +140,7 @@ $ErrorActionPreference = 'Stop'
 $lib = Join-Path $PSScriptRoot 'lib'
 . (Join-Path $lib 'paths.ps1')
 . (Join-Path $lib 'events.ps1')
+. (Join-Path $lib 'delivery.ps1')
 . (Join-Path $lib 'registry.ps1')
 . (Join-Path $lib 'queue-file.ps1')
 . (Join-Path $lib 'picker.ps1')
@@ -147,6 +148,8 @@ $lib = Join-Path $PSScriptRoot 'lib'
 . (Join-Path $lib 'ledger-watch.ps1')
 . (Join-Path $lib 'xrepo.ps1')
 . (Join-Path $lib 'inbox.ps1')
+. (Join-Path $lib 'inbox-spool.ps1')
+. (Join-Path $lib 'inbox-drain.ps1')
 . (Join-Path $lib 'discovery.ps1')
 . (Join-Path $lib 'loop.ps1')
 . (Join-Path $lib 'agents.ps1')
@@ -524,6 +527,39 @@ function Test-PqDoctorRepo($Repo, $Out) {
         & $add 'FAIL' 'ledger' "validate.ps1 exit $($v.code)$(if ($last.Count) { ': ' + $last[0].Trim() })"
     }
     else { & $add 'PASS' 'ledger' 'validate.ps1 exit 0' }
+    # S0041: which workable tickets declare no level the runner recognises - the population that
+    # launches the default model (sonnet) until a pass writes their `**Complexity:**` line. Workable =
+    # open and not blocked: a Verified, Archived or Block* status never reaches a routing decision, and
+    # a ticket whose line the reader accepts is already routed by it. Read-only - the snapshot reads the
+    # ledger, the archive and each spec header, and writes nothing. A ledger that does not read whole is
+    # skipped here: validate.ps1 above already failed it, and two reports of one defect is how a check
+    # gets ignored. The capture default is a recognised level (rule 51), so it is counted beside the
+    # list, never folded into it.
+    try {
+        $snap = Get-PqLedgerSnapshot -RepoPath $p
+        if ($snap.complete) {
+            $workable = 0
+            $capture = 0
+            $missing = [Collections.Generic.List[string]]::new()
+            foreach ($id in @($snap.tickets.Keys)) {
+                $st = [string]$snap.tickets[$id].status
+                if (@('Verified', 'Archived') -contains $st -or $st.StartsWith('Block')) { continue }
+                $workable++
+                $li = Get-PqTicketLevelInfo -RepoPath $p -TicketId ([string]$id)
+                if ($li.captureDefault) { $capture++; continue }
+                if ($li.level) { continue }
+                $missing.Add(('{0} ({1})' -f $id, $li.why))
+            }
+            $capPart = ''
+            if ($capture -gt 0) { $capPart = "; $capture at the capture default" }
+            if ($missing.Count -gt 0) {
+                $shown = @($missing | Sort-Object) -join ', '
+                & $add 'WARN' 'complexity' "no recognised level: $shown$capPart - $($missing.Count) of $workable workable"
+            }
+            else { & $add 'PASS' 'complexity' "$workable workable, all declared$capPart" }
+        }
+    }
+    catch { & $add 'WARN' 'complexity' "ledger unreadable - $($_.Exception.Message)" }
     if ([IO.File]::Exists((Join-Path $p 'r0.ps1'))) { & $add 'PASS' 'launcher' 'r0.ps1' }
     else { & $add 'WARN' 'launcher' 'no r0.ps1 (the uniform launcher names arrive in S0015 Phase 03)' }
 }
@@ -833,6 +869,16 @@ function Invoke-PqStatus {
         try { $waiting = Get-PqInboxCounts -Rows (Get-PqInboxRows $reg).rows } catch { }
     }
 
+    # The phone inbox spool (S0046): packets sitting in new/ or processing/ - printed only when the inbox root
+    # exists, so a machine without the Drive channel sees no line at all.
+    $spool = $null
+    try { $spool = Get-InboxSpoolAge -Root (Resolve-InboxSpoolRoot '') } catch { }
+    # S0047: the drain's half - tickets a packet filed that no drain has decided yet (run or recorded not-run).
+    $drain = $null
+    try { $drain = Get-InboxDrainSummary -Root (Resolve-InboxSpoolRoot '') } catch { }
+    # S0048: the newest build.delivered per project (project, version, age), read-only over the event log.
+    $lastBuilds = @()
+    try { $lastBuilds = @(Get-PqLastDeliveries) } catch { }
     $targetStops = @(Get-PqStopFiles | Where-Object { $_.kind -cne 'all' })
     $paused = Test-PqPaused
 
@@ -846,6 +892,9 @@ function Invoke-PqStatus {
             next = $nextCandidate
             nextRanked = [bool]$Next
             waiting = $waiting
+            inboxSpool = $(if ($null -ne $spool) { $spool } else { @{ present = $false; waiting = 0; processing = 0; stale = 0 } })
+            inboxDrain = $(if ($null -ne $drain) { $drain } else { @{ present = $false; new = 0; filedWaiting = 0; oldestAge = 'none' } })
+            lastBuilds = @($lastBuilds)
         }
         ConvertTo-Json -InputObject $res -Depth 16
         return 0
@@ -883,7 +932,22 @@ function Invoke-PqStatus {
     else {
         "Next: (not ranked - pq status -Next runs the rank)"
     }
-    "waiting for you: questions $($waiting.questions), tests $($waiting.tests), outside $($waiting.outside), chain $($waiting.chain), unbuilt $($waiting.unbuilt) -> pq inbox"
+    if ($spool -and $spool.present -and (($spool.waiting + $spool.processing) -gt 0)) {
+        $spoolNote = ''
+        if ($spool.stale -gt 0) { $spoolNote = " - $($spool.stale) past the $($script:InboxSpoolAgeThresholdSeconds / 60)m mark, is the watcher running?"; }
+        "phone inbox: $($spool.waiting + $spool.processing) unprocessed packet(s) (new $($spool.waiting), processing $($spool.processing), oldest $($spool.oldestAge) in $($spool.oldestStage)/)$spoolNote"
+    }
+    foreach ($b in @($lastBuilds)) {
+        $age = ''
+        $ts = [DateTimeOffset]::MinValue
+        if ([DateTimeOffset]::TryParse([string]$b.at, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::AssumeUniversal, [ref]$ts)) {
+            $minutes = [int][Math]::Floor(([DateTimeOffset]::UtcNow - $ts).TotalMinutes)
+            $age = if ($minutes -lt 60) { "$minutes min ago" } elseif ($minutes -lt 1440) { "$([int][Math]::Floor($minutes / 60)) h ago" } else { "$([int][Math]::Floor($minutes / 1440)) d ago" }
+        }
+        "delivered: $($b.project) $($b.version)$(if ($age) { " ($age)" }) -> $(Get-PqDeliveryRoot)"
+    }
+    $inboxFragment = if ($drain -and $drain.present) { "; inbox: $($drain.new) new, $($drain.filedWaiting) filed waiting, oldest $($drain.oldestAge)" } else { '' }
+    "waiting for you: questions $($waiting.questions), tests $($waiting.tests), outside $($waiting.outside), chain $($waiting.chain), unbuilt $($waiting.unbuilt)$inboxFragment -> pq inbox"
     return 0
 }
 
@@ -1042,9 +1106,37 @@ function Invoke-PqProblems {
     $runs = @(Read-PqRuns -Root $root -Since $w.since)
     $ev = Read-PqWindowEvents -Root $root -Since $w.since
     $f = @(Get-PqFindings -Runs $runs -Events @($ev.events) -Gaps $ev.gaps -Bad $ev.bad)
-    if ($Json) { ConvertTo-Json -InputObject $f -Depth 8; return 0 }
-    if ($f.Count -eq 0) { "no open findings in the last $d day(s) ($($runs.Count) passes, $(@($ev.events).Count) events)"; return 0 }
+    # The phone inbox spool (S0046): an unprocessed packet past the threshold is a finding the engine cannot see
+    # (the spool is not the ledger), printed the way S0025 surfaced the waiting statuses - only when the inbox
+    # root exists, so a machine without the Drive channel reports nothing.
+    $spoolLines = @()
+    $spool = $null
+    try { $spool = Get-InboxSpoolAge -Root (Resolve-InboxSpoolRoot '') } catch { }
+    if ($spool -and $spool.present -and $spool.stale -gt 0) {
+        $spoolLines = @("phone inbox: $($spool.waiting + $spool.processing) packet(s) unprocessed past the $($script:InboxSpoolAgeThresholdSeconds / 60)m mark (oldest $($spool.oldestPacketId) $($spool.oldestAge) in $($spool.oldestStage)/) - run install-inbox-watcher.ps1 or start watch-inbox.ps1 by hand")
+    }
+    if ($spool -and $spool.present) {
+        try {
+            $registryRead = Read-PqRegistry -Path (Get-PqPath -Kind registry)
+            if ($registryRead.ok) {
+                $knownKeys = @($registryRead.registry.repos | ForEach-Object { [string]$_.key })
+                foreach ($packet in @(Get-InboxDonePackets -Root (Resolve-InboxSpoolRoot ''))) {
+                    $unknown = @($packet.named | Where-Object { $knownKeys -notcontains $_ })
+                    if ($unknown.Count -gt 0) {
+                        $spoolLines += "phone inbox: packet $($packet.packetId) named unknown project(s) $($unknown -join ', '); filed $($packet.tickets -join ', ') for triage"
+                    }
+                }
+            }
+        }
+        catch { $spoolLines += "phone inbox: could not inspect filed packets for unknown projects: $($_.Exception.Message)" }
+    }
+    if ($Json) {
+        foreach ($l in $spoolLines) { [Console]::Error.WriteLine($l) }
+        ConvertTo-Json -InputObject $f -Depth 8; return 0
+    }
+    if ($f.Count -eq 0) { foreach ($l in $spoolLines) { $l }; if ($spoolLines.Count -eq 0) { "no open findings in the last $d day(s) ($($runs.Count) passes, $(@($ev.events).Count) events)" }; return 0 }
     foreach ($x in $f) { Format-PqFinding $x }
+    foreach ($l in $spoolLines) { $l }
     return 0
 }
 

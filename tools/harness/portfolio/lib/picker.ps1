@@ -45,7 +45,7 @@ function Remove-PqAgentSessionEnv {
 
 # Runs `pwsh -NoProfile -File <Script> @Arguments` for one repository. Returns @{ code; stdout; stderr; timedOut; ms }.
 function Invoke-PqRepoChild {
-    param([string]$RepoPath, [string]$Script, [string[]]$Arguments, [int]$TimeoutSeconds = 300)
+    param([string]$RepoPath, [string]$Script, [string[]]$Arguments, [int]$TimeoutSeconds = 300, [hashtable]$ExtraEnv = $null)
     $pwsh = (Get-Command pwsh -CommandType Application | Select-Object -First 1).Source
     $psi = [Diagnostics.ProcessStartInfo]::new($pwsh)
     foreach ($a in (@('-NoProfile', '-File', $Script) + @($Arguments))) { $psi.ArgumentList.Add([string]$a) }
@@ -56,6 +56,9 @@ function Invoke-PqRepoChild {
     $psi.Environment['SZA_PROJECT_ROOT'] = $RepoPath
     [void]$psi.Environment.Remove('SZA_PROFILE_PATH')
     Remove-PqAgentSessionEnv $psi.Environment
+    if ($null -ne $ExtraEnv) {
+        foreach ($k in $ExtraEnv.Keys) { $psi.Environment[[string]$k] = [string]$ExtraEnv[$k] }
+    }
     $sw = [Diagnostics.Stopwatch]::StartNew()
     $proc = [Diagnostics.Process]::Start($psi)
     $out = $proc.StandardOutput.ReadToEndAsync()
@@ -96,7 +99,7 @@ function Invoke-PqPicker {
     $arguments = @('-NoDrift', '-Format', 'json')
     $ids = @(@($Exclude) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
     if ($ids.Count -gt 0) { $arguments += @('-Exclude', ($ids -join ',')) }
-    try { $r = Invoke-PqRepoChild -RepoPath $RepoPath -Script $ScriptPath -Arguments $arguments -TimeoutSeconds $TimeoutSeconds }
+    try { $r = Invoke-PqRepoChild -RepoPath $RepoPath -Script $ScriptPath -Arguments $arguments -TimeoutSeconds $TimeoutSeconds -ExtraEnv @{ SZA_PQ_PICKER = '1' } }
     catch { return @{ ok = $false; payload = $null; code = $null; error = 'PickerFailed'; message = $_.Exception.Message; ms = 0 } }
     if ($r.timedOut) { return @{ ok = $false; payload = $null; code = $null; error = 'PickerTimeout'; message = "the picker outlived $TimeoutSeconds s and was killed"; ms = $r.ms } }
     $stderr = [string]$r.stderr

@@ -126,6 +126,13 @@ tag and nothing outside `release-verdicts/` changed since). Rules:
 
 Check every channel credential that has a fixed lifetime against its recorded rotation date (Phase 8).
 
+For a Microsoft Store product, before the tag run the shared read-only preflight when its machine channel is
+configured. Read the Store ID from the product's identity file and pass the product name and candidate MSIX
+version to [Store-Preflight.ps1](../../tools/Store-Preflight.ps1); the invocation and exit codes are in the
+[store machine channel reference](../store-publish/references/store-machine-channel.md). Exit 1 stops the Store
+preflight on a state or data problem; exit 2 means the Store step is manual and the release can continue.
+The submission-channel contract proposal remains pending and unverified.
+
 Handle environment blockers the gate itself trips on (a running tray app can lock the output exe and kill the
 build) - and restore what you stopped.
 
@@ -261,8 +268,13 @@ Release's asset URL and SHA256:
    from them, then submit and **rewrite the PR body**. The manifest carrying the asset hash is the one
    generated file that may be committed after the tag: one scripted commit right after the publish, verified
    against the published `.sha256`.
-3. **Microsoft Store** - build the MSIX unsigned with the real Partner Center identity, upload, refresh the
-   listing.
+3. **Microsoft Store** - build the MSIX unsigned with the real Partner Center identity, then follow the
+   manual Partner Center upload and listing flow by default. Committing a submission is the owner's act.
+   After the tag, a Store channel failure is reported and never fails the release or stops other channels.
+   Record the per-run channel evidence in the repo's release state: Store ID, package version, the
+   submission id the Store returned, the polled status values with their times, and which listing path was
+   used - never a Seller ID, Tenant ID, Client ID or any secret (the machine channel page in the
+   `store-publish` skill holds the format).
 4. **Any extra channel**: VS Code Marketplace (own semver clock, only if the subtree changed), Chrome/Edge
    (independent reviews), Play tracks, sideload, VR.
 5. **Site publish**, if the repo serves one - see [feature-to-site](../feature-to-site/SKILL.md).

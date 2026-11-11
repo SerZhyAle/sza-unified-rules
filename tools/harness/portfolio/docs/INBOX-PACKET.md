@@ -167,7 +167,11 @@ The marking is owner choice 5(a): a move, not a message.
 - A processed packet moves to `done\<packetId>\` with the payload preserved and a `result.json`
   beside the manifest:
   `{ "packetId", "tickets": ["<key>:<id>", ...], "verdict", "at" }` - the ticket ids the ingest
-  created.
+  created. After the inbox drain decides execution, it adds `execution` and `executions`: per-ticket
+  outcomes and reasons; after it builds (S0048), the per-ticket `builds` rows. The ingest also marks what
+  the owner's own words asked for, additively: `publishIntent` ("ms-store"|"github"|"winget", absent when
+  the text names no channel) and `buildIntent` (true when the text asks for a build). The original fields
+  and packet payload remain intact.
 - A refused packet moves to `failed\<packetId>\` with `reason.json`: `{ "error", "detail }` -
   the `error` is a reason name of section 4.
 - The phone reads `done/` on its next Drive sync and shows `processed: <key>:<id>`; deletion after

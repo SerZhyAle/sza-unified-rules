@@ -75,8 +75,11 @@ A page without these is invisible to crawlers even when live:
 - `<title>` - value + brand, under ~60 chars
 - `<meta name="description">` - one-sentence functional summary, ~150 chars
 - `<link rel="canonical">` - the absolute public URL (prevents duplicate-content splitting)
-- Open Graph + Twitter card - `og:title/description/image/url`, `twitter:card=summary_large_image`,
-  with a real preview image (>=1200x630)
+- Open Graph + Twitter card - `og:title/description/image/url`, `og:locale` in the portfolio's canonical
+  13-language `ll_CC` map ([LOCALIZATION.md](LOCALIZATION.md) §3: `en_US`, `ru_RU`, `uk_UA`, `ar_AR`,
+  `bn_BD`, `de_DE`, `es_MX`, `fr_FR`, `hi_IN`, `id_ID`, `pt_BR`, `ur_PK`, `zh_CN`, with `pt_PT` where the
+  text is European Portuguese as in `epub2html`), `twitter:card=summary_large_image`, with a real preview
+  image (>=1200x630)
 - One `<h1>` stating the job the product does; `<h2>`s for each feature area
 - `JSON-LD` structured data - on the landing a `SoftwareApplication` (name, operating system, category,
   `offers` price 0); a rating or review **only** from real, visible user ratings, never invented - a free

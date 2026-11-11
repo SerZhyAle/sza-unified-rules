@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [Parameter(Mandatory)][string] $Id,
     [Parameter(Mandatory)][string] $NewStatus,
@@ -122,27 +122,29 @@ if (-not $NoteSupplied -or [string]::IsNullOrWhiteSpace($note)) {
     exit 1
 }
 
-if ($NewStatus -eq 'BlockQuestions' -and $note -notmatch '(?i)(?<![a-z])Q:\s*[^?]*\?') {
+if ($NewStatus -eq 'BlockQuestions' -and $note -notmatch '(?i)(?<![a-z])(?:Q:\s*[^?]*\?|DO:\s*\S)') {
     Write-Output ""
-    Write-Output ("{0} -> BlockQuestions is not a question." -f $Id)
+    Write-Output ("{0} -> BlockQuestions is not a question or pre-implementation DO: action." -f $Id)
     Write-Output ""
-    Write-Output "BlockQuestions is the quiz queue: its note must carry the question itself as a"
-    Write-Output "literal 'Q:' token whose text ends in '?', because the quiz that drains this status"
-    Write-Output "asks exactly what the note asks (S0039). This note states an impediment that is not"
-    Write-Output "a question:"
+    Write-Output "BlockQuestions is the quiz queue: its note must carry either the question itself as a"
+    Write-Output "literal 'Q:' token whose text ends in '?' (S0039) or a pre-implementation owner action"
+    Write-Output "as a literal 'DO:' token (S0042), because the quiz that drains this status presents"
+    Write-Output "exactly what the note records. This note states an impediment that is not a question:"
     Write-Output ""
     Write-Output ("  {0}" -f $note)
     Write-Output ""
     Write-Output "Where an impediment of that kind belongs instead:"
     Write-Output ""
-    Write-Output "  - an action only the owner can perform -> BlockNeedUserTest, the list Sweep mode drains"
+    Write-Output "  - a pre-implementation owner action    -> BlockQuestions with 'DO: <action>' (and - **DO:** in 3.3)"
+    Write-Output "  - post-implementation device test      -> BlockNeedUserTest, the list Sweep mode drains"
     Write-Output "  - a defect in a tool or a script       -> a Draft ticket against that tool"
     Write-Output "                                           (a canon tool gets its draft in the canon)"
     Write-Output "  - an idea deferred, not decided        -> its own Draft, parked"
     Write-Output ""
-    Write-Output "Re-run with the question, or park the ticket where the impediment is actually drained:"
+    Write-Output "Re-run with the question or DO: action, or park the ticket where the impediment is drained:"
     Write-Output ""
     Write-Output ("  update.ps1 -Id {0} -Status BlockQuestions -StatusNote 'Q: <the question this ticket waits on>?'" -f $Id)
+    Write-Output ("  update.ps1 -Id {0} -Status BlockQuestions -StatusNote 'DO: <pre-implementation owner action>'" -f $Id)
     Write-Output ""
     Write-Output "A question the pass could answer itself with a researched, reversible recommendation"
     Write-Output "was not for the owner at all: take the recommendation and record it under"
@@ -155,7 +157,7 @@ if ($NewStatus -eq 'BlockQuestions' -and $note -notmatch '(?i)(?<![a-z])Q:\s*[^?
 if ($NewStatus -ne 'BlockByOtherTask') { exit 0 }
 
 # BlockByOtherTask additionally needs the blocker to be machine-readable, from the note or
-# from the spec file - the same two channels preview.ps1 resolves.
+# from the spec file - the same channels preview.ps1 and the portfolio dispatcher resolve.
 $specText = ''
 try {
     $specPath = Resolve-SpecPath -PathRef ([string]$record.file)
@@ -173,16 +175,18 @@ try {
 
 . (Join-Path $PSScriptRoot '_blocker-links.ps1')
 $blockers = @(Get-BlockerLinks -SpecText $specText -StatusNote $note -SelfId $Id)
+$qualified = @(Get-QualifiedBlockerLinks -SpecText $specText -StatusNote $note)
 
-if ($blockers.Count -eq 0) {
+if ($blockers.Count -eq 0 -and $qualified.Count -eq 0) {
     Write-Output ""
     Write-Output ("{0} -> BlockByOtherTask records no blocker in a directional channel." -f $Id)
     Write-Output ""
     Write-Output "The note is present, but nothing in it or in the spec says WHICH ticket blocks this"
-    Write-Output "one in a form the tooling can read. Two channels are accepted:"
+    Write-Output "one in a form the tooling can read. Three channels are accepted:"
     Write-Output ""
-    Write-Output ("  1. a literal token, in the note or in section 10:   Blocker: Sxxxx")
-    Write-Output ("  2. a line in the spec file:                          **Depends on:** Sxxxx")
+    Write-Output ("  1. a local token, in the note or in section 10:      Blocker: Sxxxx")
+    Write-Output ("  2. a cross-repo token, in the note or in section 10: Blocker: <repoKey>:<id>")
+    Write-Output ("  3. a line in the spec file:                          **Depends on:** Sxxxx")
     Write-Output ""
     Write-Output "Naming the ticket in section 10 prose is not enough. That section records consumers,"
     Write-Output "successors and neighbours beside blockers, and of its lines that mention blocking most"

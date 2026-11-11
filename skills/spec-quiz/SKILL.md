@@ -97,9 +97,7 @@ are in the project's own records and code.
 
 Follow Quiz mode steps 2-8. The parts a project-independent skill must pin down:
 
-- **Research first.** The decision points are the reason note, every open research item and every unfilled owner
-  input the note points at. What the ticket's own spec, the code, a contract in the catalog or a recorded decision
-  settles is **not asked**: fill it in and list it as *resolved without asking*, with what settled it.
+- **Research first.** The decision points are the reason note (`Q: ..?` questions and `DO: <action>` pre-implementation owner actions), every open research item and every unfilled owner input (including `- **DO:** <action>` lines under `### 3.3 Owner inputs (Approval gate)`) the note points at. What the ticket's own spec, the code, a contract in the catalog or a recorded decision settles is **not asked**: fill it in and list it as *resolved without asking*, with what settled it.
 - **`--assumed` lists the unattended assumptions.** With the flag, each ticket in scope has its
   `### Assumed (unattended, <date>)` blocks read out of the spec file and printed: date, decision, what was taken,
   the alternative (Quiz mode step 2). The owner may overrule any entry in the sitting: the entry is marked
@@ -109,7 +107,9 @@ Follow Quiz mode steps 2-8. The parts a project-independent skill must pin down:
   Unoverruled entries stay as they are. Without the flag the assumptions are not raised.
 - **Ask with `AskUserQuestion`, in Russian** (chat language). A `header` of at most 12 characters, a specific
   question ending in `?`, 2-4 options, the researched recommendation **first** with `(Рекомендуется)` appended, and
-  one line of consequence in each option's description. At most four questions per call, the most blocking first.
+  one line of consequence in each option's description. For a pre-implementation `- **DO:** <action>` line (device,
+  desk, or outside console account action that precedes implementation, S0042), show the `DO:` line to the owner and
+  take the result (done + observed value/output, or fallback/skip) as the owner input. At most four questions per call, the most blocking first.
   With several tickets in one round, start each question with `<key>:<id>`. `multiSelect` only when the choices
   combine. A name, a number or an address that only the owner can supply: offer the researched candidates as options -
   the built-in *Other* takes the owner's own text. A recommendation is never applied in the owner's place.

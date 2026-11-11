@@ -32,9 +32,13 @@ shares. Reconciled against the portfolio; per-project records in `contrib/`.
   overrule", and the pass goes on (S0039; measured there: 21% of unattended passes ended in
   `BlockQuestions`, and in 38 quiz sittings the owner took the robot's first option in 89% of the
   answers). `BlockQuestions` stays for one-way and outward steps (publish, release, store submit),
-  contract changes, scope, money, and facts only the owner knows - and its note is then the question
-  itself, a literal `Q: ...?` token that the block-note gate refuses a note without. A slow run is never
-  asked about either: it is a release item, not a question.
+  contract changes, scope, money, facts only the owner knows (whose note carries a literal `Q: ..?`
+  token), and pre-implementation owner actions on a device, at the desk, or in an outside console account
+  (paired with `- **DO:** <action>` in `### 3.3 Owner inputs (Approval gate)` and a literal `DO: <action>`
+  token in `statusNote`, which `/sq` shows to the owner and records the result of; S0042). Work needed in
+  another registered portfolio repository is filed there with `spec-draft.ps1 -Project <key>`, linked as
+  `Blocker: <key>:<id>`, and waited on in `BlockByOtherTask` (`BlockExternal` is only for parties outside
+  the portfolio). A slow run is never asked about either: it is a release item, not a question.
 - **Never ask the owner about bookkeeping** - a ticket's status, a carrier token, archival, a queue
   position. Decide, report it in one line, and show that the work is scheduled (package number, row
   position). Questions are for decisions that change code or product behaviour.

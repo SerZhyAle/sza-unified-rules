@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Contract | `HARNESS-PROFILE` |
-| Version | 0.15, draft; source reader verified at 0.13; rules 8-10 not implemented |
+| Version | 0.16, draft; source reader verified at 0.13; rules 8-10 not implemented |
 | Home | the shared contracts catalog, domain `rule-adoption/` (the path is in [CLAUDE.md](../../CLAUDE.md)) |
 | Role | **consumer**, and the schema's owner. Each repository running the harness writes its own profile |
 
@@ -36,3 +36,13 @@
   Absent or empty means none is declared - the pass writes that into its note instead of running or
   inventing a command. It merges by key beside `commands.statusCommands` and `commands.aliases`, and the
   generated reader vectors cover both the declared and the absent case.
+- `runner.effortByModel` is optional (rule 12, the 2026-11-11 amendment, S0041): a map from a model alias
+  to the reasoning effort a queue child launches with - shipped default haiku `xhigh`, sonnet `xhigh`,
+  opus `medium` (the owner's 2026-09-30 child decision). It resolves instance first, then shared, then
+  the shipped default, and applies only where the pass's agent record names no `effort`; a model the map
+  does not name launches with no effort. This amendment also changes a shipped default, the first to do
+  so: `runner.argsTemplate` now carries `--effort {effort}` after `--model {model}`, and the element is
+  dropped with its flag when no effort resolves - so every launch that resolved no effort, and every
+  non-Claude agent, still starts exactly as before (verify with the S0041 suite,
+  `tools/tests/runner-model-routing.tests.ps1`). Interactive sessions are untouched: the flag exists only
+  in the runner's argument vector. A change to `_profile.ps1` regenerates the reader vectors.

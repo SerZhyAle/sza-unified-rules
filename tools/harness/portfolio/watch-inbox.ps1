@@ -118,6 +118,11 @@ try {
     # ---- the ingest pass: claim everything claimable, decide each packet, print and log it ----
     function Invoke-WatchInboxPass {
         $decided = 0
+        if (-not $NoRecover) {
+            $recovery = Invoke-InboxRecovery -Root $root -StaleMinutes $(if ($StaleMinutes -gt 0) { $StaleMinutes } else { 45 })
+            foreach ($id in @($recovery.completed)) { Write-Host "watch-inbox: recovered decision for $id" }
+            foreach ($id in @($recovery.requeued)) { Write-Host "watch-inbox: re-queued stale claim $id" }
+        }
         while ($true) {
             $pending = @(Get-InboxNewPackets -Root $root | Where-Object { $_.manifestReady -and $_.retryReady })
             $claimed = 0
@@ -160,12 +165,12 @@ try {
 
     # ---- the resident loop: a FileSystemWatcher wakes the poll early; the 60 s timeout IS the fallback poll ----
     $fsWatcher = [IO.FileSystemWatcher]::new((Join-Path $root 'new'))
-    $fsWatcher.IncludeSubdirectories = $false
-    $fsWatcher.NotifyFilter = [IO.NotifyFilters]::DirectoryName -bor [IO.NotifyFilters]::LastWrite
+    $fsWatcher.IncludeSubdirectories = $true
+    $fsWatcher.NotifyFilter = [IO.NotifyFilters]::DirectoryName -bor [IO.NotifyFilters]::FileName -bor [IO.NotifyFilters]::LastWrite
     try {
         while ($true) {
             $null = Invoke-WatchInboxPass
-            $change = $fsWatcher.WaitForChanged([IO.WatcherChangeTypes]::Created -bor [IO.WatcherChangeTypes]::Renamed, $PollSeconds * 1000)
+            $change = $fsWatcher.WaitForChanged([IO.WatcherChangeTypes]::Created -bor [IO.WatcherChangeTypes]::Renamed -bor [IO.WatcherChangeTypes]::Changed, $PollSeconds * 1000)
             # One quiet poll: DistinctLastWriteWithinSizeSpan of Drive means a long upload is still landing; the
             # next pass sees the completed manifest and claims it. The poll, not the event, is the guarantee.
         }

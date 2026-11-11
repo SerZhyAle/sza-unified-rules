@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Contract | `TASK-FLOW` |
-| Version | 0.18, draft |
+| Version | 0.19, draft |
 | Home | the shared contracts catalog, domain `task-flow/` (the path is in [CLAUDE.md](../../CLAUDE.md)) |
 | Role | **shared implementation, partial**: `tools/harness/` supplies the ticket tools, repository runner and day-0 scaffold; `tools/harness/portfolio/` supplies the S0015 dispatcher, registry, queue, rank and event log. Remaining portfolio features belong to S0016. The owner is `shared`, so this repository edits the contract only through the canon session |
 
@@ -68,16 +68,24 @@
   (0.8, rule 44's writer table). `pq arrange` moves only row lines and only inside their own package; `--` and
   `hold` are not touched. Covered by `portfolio-queue.tests.ps1` (cases `registry: Set-PqRepoRank ..` and
   `queue-write: arrange ..`).
-- Rule 52, the qualified token `Blocker: <repoKey>:<id>`, is enforced by the dispatcher only. The local
-  picker, the closing gate and a manual session ignore it; the ledger suite case `rule 9 and 52` in
-  `tools/tests/ledger-rules.tests.ps1` is what proves the local readers ignore it and never read it as a
-  local id.
+- Rule 52 (amended in 0.19, S0042): a ticket whose only blocker is a qualified token `Blocker: <repoKey>:<id>` (or
+  `Блокер: <repoKey>:<id>`) may stand in `BlockByOtherTask`. The closing gate (`check-block-note.ps1`) accepts the
+  qualified token when entering `BlockByOtherTask`; `Get-BlockerLinks` remains local-only so a reader that does not
+  know the qualified form ignores it and never mistakes `<id>` for a local id (the ledger suite case `rule 9 and 52`);
+  the local picker (`preview.ps1`) holds a `BlockByOtherTask` ticket whose only unverified blocker is a qualified token
+  (`blocker-cross-repo`) so it is never released early by a local run; and the portfolio dispatcher (`picker.ps1`,
+  `xrepo.ps1`) resolves the qualified token from both the spec file and `statusNote` against `<repoKey>`'s ledger and
+  archive and releases the ticket by the blocker's status (`Test-BlockerReleased`).
 - S0035 (0.17): provider limit holds carry parsed reset times and do not persist detector matched text (rule 48,
   EVENTS 3.4/3.6); dispatcher waits for primary provider reset when <= 15 min for `In Progress` tickets
   (`dispatch.skip` reason `limitResetNear`, rules 42 and 48).
 - S0039 (0.18): a `BlockQuestions` note is the question itself - `check-block-note.ps1` refuses a transition into
-  `BlockQuestions` whose `statusNote` carries no literal `Q: ...?` token (rule 7), naming where a non-question
+  `BlockQuestions` whose `statusNote` carries no literal `Q: ..?` token (rule 7), naming where a non-question
   impediment belongs instead. Rolled out contract-first: catalog rule, `reference/day0-rehearsal.ps1`, the vectors
   and the repository tests moved in the same pass; rows standing in `BlockQuestions` without the token are
   unaffected. The canon's unattended-answer policy moved with it: a researched, ticket-reversible recommendation is
   taken and recorded under `### Assumed (unattended, <date>)` (skills `spec-to-audit`, `spec-quiz --assumed`).
+- S0042 (0.19): `BlockByOtherTask` accepts `Blocker: <repoKey>:<id>` (rule 52, above), and `BlockQuestions` accepts a
+  literal `DO:` token in `statusNote` (paired with a `- **DO:** <action>` bullet in `### 3.3 Owner inputs (Approval gate)`)
+  for an owner action that precedes implementation (device, desk, or an account in an outside console), while
+  `BlockNeedUserTest` (rule 8) stays strictly for post-implementation verification of completed, audited work.

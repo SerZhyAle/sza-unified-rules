@@ -39,10 +39,10 @@ Active lifecycle:
 
 Block states (any active spec may transition into one of these and back):
 
-- `BlockByOtherTask`  - depends on another spec; record the dependency in the ticket body.
-- `BlockNeedUserTest` - implementation done, awaiting hands-on verification.
-- `BlockQuestions`    - awaiting clarification from the user. Entered only with a note that carries the question itself as a literal `Q: ...?` token (the entry gate refuses a note without one, S0039). Left only through the `spec-to-audit` skill's Quiz mode: answers written into the ticket first, then a restore to the inferred pre-block status.
-- `BlockExternal`     - waiting on an external dependency (library release, hardware, third party).
+- `BlockByOtherTask`  - depends on another spec (local `**Depends on:** Sxxxx` / `Blocker: Sxxxx`, or cross-repository `Blocker: <repoKey>:<id>` in a registered sibling repository, S0042); the entry gate (`check-block-note.ps1`) requires at least one directional blocker in the spec or `statusNote`.
+- `BlockNeedUserTest` - implementation done and audited, awaiting the owner's hands-on device verification.
+- `BlockQuestions`    - awaiting an owner answer or a pre-implementation owner action (device, desk, or outside-console account step needed before code can be written, S0042). Entered only with a note that carries either the question itself as a literal `Q: ..?` token (S0039) or the pre-implementation action as a literal `DO: <action>` token paired with `- **DO:** <action>` in `### 3.3 Owner inputs (Approval gate)` (S0042). Left only through `/sq` (`spec-quiz`) or `spec-to-audit` Quiz mode: answers or action results written into the ticket first, then a restore to the inferred pre-block status.
+- `BlockExternal`     - waiting on an external party outside the portfolio (third-party vendor, upstream library maintainer, store review, hardware shipment). Work owned by another registered repository in the portfolio is filed there and waited on via `BlockByOtherTask` with `Blocker: <repoKey>:<id>`, never `BlockExternal` (S0042).
 
 Terminal:
 
@@ -98,7 +98,7 @@ All fields below are optional. Absence in any record - old or new - is valid and
 - `blocked_by` (string array) - ids of tickets this one depends on, e.g. `["S0099"]`; informational, not enforced by `validate.ps1`.
 - `closed_at` (string) - `YYYY-MM-DD` date of intentional finalization; written by `close.ps1`; absent until the ticket is closed.
 - `has_tactical` (boolean) - `true` when a `PLAN/Sxxxx_*/INDEX.md` tactical folder exists; written by `/spec-tech` during the Tactical status transition.
-- `statusNote` (string) - why the ticket is in its current status; written by `update.ps1 -StatusNote`, **required** on every `Block*` status (a parked ticket must say what it waits for) and removed again when the ticket leaves one. On `BlockQuestions` the note must carry a literal `Q:` token whose text ends in `?` - the note is the question the quiz asks - and the entry gate refuses the transition without it (S0039). Mirrored into the spec file as a `**Status note:**` header line.
+- `statusNote` (string) - why the ticket is in its current status; written by `update.ps1 -StatusNote`, **required** on every `Block*` status (a parked ticket must say what it waits for) and removed again when the ticket leaves one. On `BlockQuestions` the note must carry either a literal `Q:` token whose text ends in `?` (S0039) or a literal `DO:` token for a pre-implementation owner action (S0042), and the entry gate refuses the transition without one. On `BlockByOtherTask` the note or section 10 / `**Depends on:**` must carry a machine-readable local (`Sxxxx`) or qualified (`<repoKey>:<id>`) blocker (S2581, S0042). Mirrored into the spec file as a `**Status note:**` header line.
 
 ---
 

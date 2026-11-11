@@ -1,4 +1,4 @@
-# preview.ps1 - One-shot Stage 3 metadata extractor for a spec
+﻿# preview.ps1 - One-shot Stage 3 metadata extractor for a spec
 #
 # Replaces this bash boilerplate run on every /spec-next round:
 #   head -25 PLAN/Sxxxx_*.md
@@ -193,6 +193,7 @@ finally {
 # and two counters of one thing is the divergence `_research-items.ps1` was extracted to end (S1621).
 $dependsOn = @()
 $depIds = @(Get-BlockerLinks -SpecText $specText -StatusNote ([string]$rec.statusNote) -SelfId $Id)
+$qualifiedBlockers = @(Get-QualifiedBlockerLinks -SpecText $specText -StatusNote ([string]$rec.statusNote))
 # One catalog read for every blocker instead of one child process each. A campaign parent listing
 # 137 slices cost 70 s here per ranking (measured 2026-09-26, 0.5 s per spawn), and the queue runner
 # ranks before every ticket, so the parent at the head of the queue taxed every run.
@@ -294,13 +295,20 @@ elseif ($unverifiedBlockers.Count -gt 0) {
             }) -join ', ')
 }
 elseif ($rec.status -eq 'BlockByOtherTask') {
-    # S1073: fail-closed. Status is BlockByOtherTask but no directional blocker was parsed.
-    if ($dependsOn.Count -eq 0) {
+    # S1073 / S0042: fail-closed when no directional blocker was parsed; hold locally when
+    # the only unverified blocker is a cross-repository Blocker: <repoKey>:<id> token so a
+    # repository-local picker never releases it early, while delegating to the portfolio
+    # dispatcher when SZA_PQ_PICKER=1 (TASK-FLOW rule 52).
+    if ($dependsOn.Count -eq 0 -and $qualifiedBlockers.Count -eq 0) {
         $autoSkip = 'blocker-unresolvable'
         $autoSkipReason = 'Status is BlockByOtherTask but no blocker is recorded in a directional ' +
-        'channel: a `**Depends on:**` line, or a `Blocker: Sxxxx` token in section 10 or in the ' +
+        'channel: a `**Depends on:**` line, or a `Blocker: Sxxxx` / `Blocker: <repoKey>:<id>` token in section 10 or in the ' +
         'statusNote. Naming the ticket in section 10 prose is not enough - that section records ' +
         'neighbours and consumers too, so it cannot state which way the dependency points'
+    }
+    elseif ($qualifiedBlockers.Count -gt 0 -and $env:SZA_PQ_PICKER -cne '1') {
+        $autoSkip = 'blocker-cross-repo'
+        $autoSkipReason = 'Depends on cross-repo ' + ($qualifiedBlockers -join ', ')
     }
 }
 # NB: no 'research-heavy' auto-skip. /spec-next drives every Draft/Approved forward

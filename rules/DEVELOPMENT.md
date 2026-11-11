@@ -81,11 +81,23 @@ compile-only -> targeted tests -> minified release variant -> device) lives in
   their own research: dedup by symptom first, capture the symptom/evidence in a fresh draft ticket,
   report it, and resume the original task. Never switch the active ticket for a parked finding. Trivial
   in-scope fixes are done on the spot.
-- **A "needs device/user test" state is an explicit lifecycle status**, and a temporary debug probe may be
-  bound to it: a probe log line exists in code *iff* the ticket sits in that status - inserted at the
-  changed-flow entry before the test build, deleted the moment the ticket leaves it, and never present in a
-  permanent or shipped log (a fail-closed gate keeps ticket ids out of permanent logs). The probe cannot
-  ship, because its lifetime is the status, not the developer's memory.
+- **A "needs device/user test" state (`BlockNeedUserTest`) is an explicit post-implementation status**, and a
+  temporary debug probe may be bound to it: a probe log line exists in code *iff* the ticket sits in that
+  status - inserted at the changed-flow entry before the test build, deleted the moment the ticket leaves it,
+  and never present in a permanent or shipped log (a fail-closed gate keeps ticket ids out of permanent logs).
+  The probe cannot ship, because its lifetime is the status, not the developer's memory. An owner action on a
+  device, at the desk, or in an outside console account that must happen **before** implementation can proceed
+  is not `BlockNeedUserTest`: record `- **DO:** <action>` under `### 3.3 Owner inputs (Approval gate)` and park
+  the ticket in `BlockQuestions` with `DO: <action>` in `statusNote`, where `/sq` (`spec-quiz`) shows the `DO:`
+  line and takes the result as the owner input.
+- **Cross-repository waits inside the portfolio use `BlockByOtherTask`, never `BlockExternal`.** When a ticket
+  waits on work in another registered repository (the canon included), file the needed ticket there with
+  `spec-draft.ps1 -Project <key>`, write `Blocker: <key>:<id>` in section 10 or `statusNote`, and set
+  `BlockByOtherTask`. The local picker holds a `BlockByOtherTask` ticket whose blocker is a qualified
+  `<key>:<id>` token so it is not released prematurely, while the portfolio dispatcher resolves `<key>:<id>`
+  against the sibling ledger and releases the waiting ticket when the blocker reaches a release-ready status.
+  `BlockExternal` is reserved for parties outside the portfolio (vendors, upstream maintainers, store reviews,
+  hardware shipment).
 - **Where a machine must know direction, require a literal token - never infer it from prose.** A ticket's
   "related tickets" prose names blockers, successors, consumers and neighbours in the same breath, and it
   is equally happy to *deny* a relationship: measured on the reference corpus, **98 spec files yield a
@@ -94,7 +106,8 @@ compile-only -> targeted tests -> minified release variant -> device) lives in
   "dependency lifted". A scraper reading ids out of that prose makes a producer look blocked by its own
   consumers, and reading direction out of the surrounding words gets it backwards more often than not. So:
   an id in prose is a mention, an id in a literal token is a claim. Two tokens, one shape - one naming what
-  blocks this ticket, one naming the ticket that inherited an unanswered question.
+  blocks this ticket (`Blocker: Sxxxx` locally or `Blocker: <repoKey>:<id>` across repositories), one naming
+  the ticket that inherited an unanswered question (`Carrier: Sxxxx`).
 - **Closing a ticket requires every open question to be answered or explicitly handed to a named
   successor.** Measured 2026-08-13 on the reference corpus: **134 of 1 506 closed specs carried at least
   one still-open research item, 372 items in all - 8.9% of every closure.** A closed ticket leaves the

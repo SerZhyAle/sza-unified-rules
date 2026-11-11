@@ -31,12 +31,11 @@
 #                                         the sidecar names of the claim and the attempts record.
 #   Get-InboxNewPackets -Root             the packet folders in new/: @{ packetId; stage; path; manifestReady;
 #                                         attempts; lastError; retryReady; ageSeconds; age }, oldest first.
-#                                         A folder with no parsable manifest.json is listed but never ready (the
-#                                         phone may still be writing; S0045 writes the manifest last).
+#                                         A missing manifest waits; an invalid manifest is claimed for refusal
+#                                         after one minute, allowing an incomplete sync to finish.
 #   Read-InboxAttempts / Write-InboxAttempts -Path [-Attempts]
 #                                         the sidecar record: @{ attempts; nextRetryAtEpochMs; lastError }.
-#                                         Unreadable is $null, a failed write is swallowed: a missed retry wait
-#                                         costs a delay, never a ticket.
+#                                         Unreadable is $null; a failed write throws so a retry cannot lose its count.
 #   Claim-InboxPacket -Root -PacketId [-Attempts] -> @{ ok; path; claim; error; message }
 #                                         the atomic claim: rename new\<id> to processing\<id>, then the claim
 #                                         sidecar beside it. The rename is the claim: two claimants cannot both
@@ -154,7 +153,10 @@ function Write-InboxAttempts {
         [IO.File]::WriteAllText("$Path.tmp", $json, [Text.UTF8Encoding]::new($false))
         [IO.File]::Move("$Path.tmp", $Path, $true)
     }
-    catch { if ([IO.File]::Exists("$Path.tmp")) { try { [IO.File]::Delete("$Path.tmp") } catch { } } }
+    catch {
+        if ([IO.File]::Exists("$Path.tmp")) { try { [IO.File]::Delete("$Path.tmp") } catch { } }
+        throw
+    }
 }
 
 # How old a packet folder is: the folder's own write time (Drive sync sets it as the packet arrives).
@@ -179,7 +181,6 @@ function Get-InboxNewPackets {
     if (-not [IO.Directory]::Exists($newDir)) { return @() }
     foreach ($dir in [IO.Directory]::GetDirectories($newDir)) {
         $packetId = Split-Path -Leaf $dir
-        $read = Read-InboxPacketManifest -Path (Join-Path $dir 'manifest.json')
         $attempts = Read-InboxAttempts -Path (Get-InboxAttemptsPath -StageDir $newDir -PacketId $packetId)
         $nextRetry = $null
         if ($null -ne $attempts -and $null -ne $attempts.nextRetryAtEpochMs) { $nextRetry = [long]$attempts.nextRetryAtEpochMs }
@@ -189,7 +190,7 @@ function Get-InboxNewPackets {
             packetId      = $packetId
             stage         = 'new'
             path          = $dir
-            manifestReady = $read.ok
+            manifestReady = (Test-InboxPacketManifestReady $dir)
             attempts      = $(if ($null -ne $attempts) { [int]$attempts.attempts } else { 0 })
             lastError     = $(if ($null -ne $attempts) { [string]$attempts.lastError } else { '' })
             retryReady    = $retryReady
@@ -306,10 +307,14 @@ function Claim-InboxPacket {
     return @{ ok = $true; path = $dest; claim = $claim; error = $null; message = $null }
 }
 
-# A parsable manifest.json - Read-InboxPacketManifest never throws; ok means the folder can be claimed.
+# A parsable manifest is ready immediately; an invalid one is given a minute to finish syncing.
 function Test-InboxPacketManifestReady([string]$PacketPath) {
-    $read = Read-InboxPacketManifest -Path (Join-Path $PacketPath 'manifest.json')
-    return $read.ok
+    $path = Join-Path $PacketPath 'manifest.json'
+    if (-not [IO.File]::Exists($path)) { return $false }
+    $read = Read-InboxPacketManifest -Path $path
+    if ($read.ok) { return $true }
+    # Allow a sync in progress one polling interval before refusing a malformed commit marker.
+    return ([DateTime]::UtcNow - [IO.File]::GetLastWriteTimeUtc($path)).TotalSeconds -ge 60
 }
 
 # The startup re-scan of processing/. One action per packet folder, the order of the done criteria: a packet
@@ -328,19 +333,19 @@ function Invoke-InboxRecovery {
     if (-not [IO.Directory]::Exists($processingDir)) { return $result }
     foreach ($dir in [IO.Directory]::GetDirectories($processingDir)) {
         $packetId = Split-Path -Leaf $dir
-        if ([IO.File]::Exists((Join-Path $dir 'result.json'))) {
-            $donePath = Join-Path (Join-Path $Root 'done') $packetId
+        $finalStage = if ([IO.File]::Exists((Join-Path $dir 'result.json'))) { 'done' } elseif ([IO.File]::Exists((Join-Path $dir 'reason.json'))) { 'failed' } else { '' }
+        if ($finalStage) {
+            $donePath = Join-Path (Join-Path $Root $finalStage) $packetId
             try {
                 if ([IO.Directory]::Exists($donePath)) {
-                    try { [IO.Directory]::Delete($dir, $true) } catch { }
-                    $result.completed += "$packetId (done/ already held it; the crashed copy removed)"
+                    $result.left += "$packetId ($finalStage/ already exists; inspect both copies)"
                 }
                 else {
                     [IO.Directory]::Move($dir, $donePath)
                     $result.completed += $packetId
                 }
             }
-            catch { $result.left += "$packetId (result.json exists but the move failed: $($_.Exception.Message))" }
+            catch { $result.left += "$packetId (decision exists but the move failed: $($_.Exception.Message))" }
             continue
         }
         $claim = Read-InboxClaim -Root $Root -PacketId $packetId
@@ -359,7 +364,15 @@ function Invoke-InboxRecovery {
             if ([IO.File]::Exists($claimPath)) { try { [IO.File]::Delete($claimPath) } catch { } }
             $attemptsPath = Get-InboxAttemptsPath -StageDir $processingDir -PacketId $packetId
             if ([IO.File]::Exists($attemptsPath)) {
-                try { [IO.File]::Move($attemptsPath, (Get-InboxAttemptsPath -StageDir $newDir -PacketId $packetId), $true) } catch { }
+                try {
+                    $newAttemptsPath = Get-InboxAttemptsPath -StageDir $newDir -PacketId $packetId
+                    $oldAttempts = Read-InboxAttempts $attemptsPath
+                    $newAttempts = Read-InboxAttempts $newAttemptsPath
+                    if ($null -ne $newAttempts -and ($null -eq $oldAttempts -or [int]$newAttempts.attempts -ge [int]$oldAttempts.attempts)) {
+                        [IO.File]::Delete($attemptsPath)
+                    }
+                    else { [IO.File]::Move($attemptsPath, $newAttemptsPath, $true) }
+                } catch { }
             }
             $result.requeued += $packetId
         }
@@ -383,7 +396,13 @@ function Write-InboxSpoolJson {
         [Parameter(Mandatory)]$Document
     )
     $json = (ConvertTo-Json -InputObject $Document -Depth 12).Replace("`r`n", "`n") + "`n"
-    [IO.File]::WriteAllText($Path, $json, [Text.UTF8Encoding]::new($false))
+    $packetDir = Split-Path -Parent $Path
+    $tmp = Join-Path (Split-Path -Parent $packetDir) ((Split-Path -Leaf $packetDir) + '.' + (Split-Path -Leaf $Path) + ".$PID.tmp")
+    try {
+        [IO.File]::WriteAllText($tmp, $json, [Text.UTF8Encoding]::new($false))
+        [IO.File]::Move($tmp, $Path, $true)
+    }
+    finally { if ([IO.File]::Exists($tmp)) { [IO.File]::Delete($tmp) } }
 }
 
 # Move processing\<id> to a final stage (done/ or failed/), both sidecars removed with it (result.json/reason.json
@@ -491,14 +510,14 @@ function Requeue-InboxPacket {
         lastError          = $LastError
     }
     $claimPath = Get-InboxClaimPath -StageDir $processingDir -PacketId $PacketId
-    if ([IO.File]::Exists($claimPath)) { try { [IO.File]::Delete($claimPath) } catch { } }
     $newPath = Join-Path $newDir $PacketId
     if ([IO.Directory]::Exists($newPath)) {
         return @{ outcome = 'error'; error = 'MoveFailed'; attempts = $count; nextRetryAtEpochMs = $null }
     }
     try {
-        [IO.Directory]::Move($packetPath, $newPath)
         Write-InboxAttempts -Path (Get-InboxAttemptsPath -StageDir $newDir -PacketId $PacketId) -Attempts $record
+        [IO.Directory]::Move($packetPath, $newPath)
+        if ([IO.File]::Exists($claimPath)) { try { [IO.File]::Delete($claimPath) } catch { } }
         $staleAttempts = Get-InboxAttemptsPath -StageDir $processingDir -PacketId $PacketId
         if ([IO.File]::Exists($staleAttempts)) { try { [IO.File]::Delete($staleAttempts) } catch { } }
     }

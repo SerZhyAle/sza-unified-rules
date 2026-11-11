@@ -105,9 +105,12 @@ plainly when a lens or a site produced nothing.
 A finding lives in the product's **promotion campaign ticket** ([PROMOTION.md](../../rules/PROMOTION.md) §8) - one
 campaign per product, found and extended through the [promote](../promote/SKILL.md) skill's Step 1, never a second
 ticket beside it. The hub's ticket carries the portfolio items (the host-root `robots.txt`, the console property, a
-host with no repository). Write the findings as acceptance criteria that cite the report by path and date. An audit
-finding is never captured as a fresh Draft on the agent's own initiative
-([spec-draft](../spec-draft/SKILL.md) "What this skill never does").
+host with no repository) and **every finding shared across products** (a portfolio-wide convention, shared map, or
+policy choice that is not about one product alone): ask a shared question **once** in the hub's portfolio promotion
+ticket, and have every affected product ticket cite that hub ticket (`Blocker: <hubKey>:<id>` when blocked on the
+decision) rather than duplicating the question across N product tickets (S0042). Write the findings as acceptance
+criteria that cite the report by path and date. An audit finding is never captured as a fresh Draft on the agent's
+own initiative ([spec-draft](../spec-draft/SKILL.md) "What this skill never does").
 
 ## Prepublish
 

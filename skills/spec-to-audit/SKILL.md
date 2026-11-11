@@ -100,27 +100,38 @@ Status vocabulary, identical across the portfolio:
 removing the condition and advancing exactly one level. `BlockQuestions` is the one whose condition only
 the owner can remove; its exit is [Quiz mode](#quiz-mode---draining-the-owners-questions).
 
-**`BlockExternal` is for a party outside this repo's own sessions** - a device nobody attached, a vendor, an
-answer from another product's owner. It is never for work this repo's session is allowed to do itself. The
-canon is read-only from a project session with one exception, the repo's own `rules/contrib/<repo>.md`
+**`BlockExternal` is only for a party outside the portfolio** - a third-party vendor, an upstream library
+maintainer, a store review, hardware shipment. It is never for work this repo's session is allowed to do
+itself, never for another registered repository in the portfolio, and never for an action the owner performs.
+The canon is read-only from a project session with one exception, the repo's own `rules/contrib/<repo>.md`
 record ([adopt-canon](../adopt-canon/SKILL.md)), so a ticket that says "record it in the canon contrib record
-by a canon session" is not blocked: write the record, with the re-sync it belongs to. A canon session is
-needed only to change a rule, a skill or the contracts catalog itself - and then the block is a one-line note
-naming the exact fix, not a stop on the whole ticket.
+by a canon session" is not blocked: write the record, with the re-sync it belongs to. Where a ticket genuinely
+waits on another registered repository in the portfolio (the canon included when a rule, skill or contract
+must change first), file the needed ticket there with `spec-draft.ps1 -Project <key>`, record
+`Blocker: <key>:<id>` in section 10 or `statusNote`, and park the waiting ticket in `BlockByOtherTask`
+(TASK-FLOW rule 52, S0042). Where an owner action on a device, at the desk, or in an outside console account
+must happen **before** implementation can proceed, write `- **DO:** <action>` under
+`### 3.3 Owner inputs (Approval gate)` and park the ticket in `BlockQuestions` with `DO: <action>` in
+`statusNote`; `BlockNeedUserTest` stays exclusively for tickets whose implementation and self-audit are done
+and that await the owner's device test (TASK-FLOW rules 7-8, S0042).
 
 **Two literal tokens, because direction is not recoverable from prose.** A ticket's "related tickets"
 section names blockers, successors, consumers and neighbours in one breath and is equally happy to *deny*
 a relationship - measured on the reference corpus, **98 spec files yield a ticket id there against 15 that
 carry a real directional line**, and most of the lines containing "blocks" use it to say "does not block".
 A scraper reading ids out of that prose makes a producer look blocked by its own consumers. So the record
-carries a literal token on its own line for each direction - one naming what blocks this ticket, one
-naming the ticket that inherited an unanswered question. An id in prose is a mention; an id in the token
+carries a literal token on its own line for each direction - one naming what blocks this ticket (`Blocker: Sxxxx`
+for a local ticket, or `Blocker: <repoKey>:<id>` for a ticket in another registered repository), one
+naming the ticket that inherited an unanswered question (`Carrier: Sxxxx`). An id in prose is a mention; an id in the token
 is a claim. Canon: [DEVELOPMENT.md](../../rules/DEVELOPMENT.md) §8.
 
 Say which of the two is actually enforced, because they usually are not enforced alike: a carried-question
-token is naturally a **hard gate at closure** (the write is refused), while a blocker token is often only
-a **soft exclusion at selection** (nothing refuses the write; the ticket is skipped when work is picked
-automatically). Both are legitimate - claiming both are gated is not.
+token is naturally a **hard gate at closure** (the write is refused), while a blocker token is both an
+**entry gate on `BlockByOtherTask`** (the transition requires a local or qualified blocker token) and a
+**soft exclusion at selection** (the local picker holds local blockers and holds `BlockByOtherTask` tickets
+carrying a qualified `<repoKey>:<id>` blocker; the portfolio dispatcher resolves `<repoKey>:<id>` across
+repositories and releases the dependent when the blocker reaches a release-ready status). Both are legitimate -
+claiming every token is enforced at closure is not.
 
 ## Stage 2 - Plan: the tactical how
 
@@ -155,9 +166,12 @@ the plan and rewritten its `**Complexity:**` line where the plan disagrees (see
    Quiz mode, not from you. In an **unattended pass** a decision with a researched, ticket-reversible
    recommendation is taken and recorded under `### Assumed (unattended, <date>)` (with the alternative and
    "owner may overrule") instead of blocking. `BlockQuestions` stays for one-way and outward steps,
-   contract changes, scope, money, and facts only the owner knows - and its reason note is then the
-   question itself, a literal `Q: ...?` token that the block-note gate refuses a note without. A slow run
-   is never asked about: it is recorded as a release item (Stage 4), not a question.
+   contract changes, scope, money, facts only the owner knows (whose reason note is a literal `Q: ..?`
+   token), and pre-implementation owner actions on a device, at the desk, or in an outside console account
+   (recorded as `- **DO:** <action>` in `### 3.3 Owner inputs (Approval gate)` and a literal `DO: <action>`
+   token in `statusNote`, S0042). The block-note gate refuses a `BlockQuestions` note that carries neither
+   `Q: ..?` nor `DO: <action>`. A slow run is never asked about: it is recorded as a release item (Stage 4),
+   not a question.
 4. Pre-edit guards: read-only zones; back up an oversized file into `temp/<ticket>/`; refuse an edit projected
    past the file-size ceiling; paired-file guard.
 5. Flip the step in-progress.
@@ -172,7 +186,9 @@ the plan and rewritten its `**Complexity:**` line where the plan disagrees (see
   Trivial in-scope fixes are done on the spot. A read-only context cannot mutate the catalog - it returns
   park *candidates* to its caller.
 - A finding belonging to another registered project is captured there with `spec-draft.ps1 -Project <key>`,
-  with its evidence in the ticket; the reply names the drafted `<key>:<id>`.
+  with its evidence in the ticket; the reply names the drafted `<key>:<id>`. If that other project's ticket
+  must land before the current ticket can proceed, record `Blocker: <key>:<id>` in section 10 or `statusNote`
+  and move the current ticket to `BlockByOtherTask` (never `BlockExternal`).
 - **Scratch goes to `temp/<ticket>/`** (or `temp/scratch/`), never the repo root. On Windows a short
   repo-local temp path is a **correctness** constraint, not tidiness - MAX_PATH silently breaks a
   path-sensitive child process.
@@ -350,11 +366,13 @@ starts it with `/spec-quiz` (`/sq`) - the [spec-quiz](../spec-quiz/SKILL.md) ski
 any project and carries the mechanics; the procedure below is its authority.
 
 1. **Resolve each ticket from its authoritative record**, never from a filename. Only `BlockQuestions`
-   clears here. `BlockNeedUserTest` needs a run (Sweep mode), `BlockExternal` needs the outside party, and
-   `BlockByOtherTask` clears on its blocker's status - unless the owner picks a fallback that removes the
+   clears here. `BlockNeedUserTest` needs a post-implementation device run (Sweep mode), `BlockExternal`
+   needs the party outside the portfolio, and `BlockByOtherTask` clears on its local or cross-repo
+   (`Blocker: <repoKey>:<id>`) blocker's status - unless the owner picks a fallback that removes the
    dependency, which is a question like any other. Report the rest and mutate nothing.
-2. **Extract the decision points**: the questions in the block's reason note, plus every open research
-   item and unfilled owner input that note points at. On request (`--assumed`) the sitting also lists the
+2. **Extract the decision points**: the questions (`Q: ..?`) and pre-implementation owner actions
+   (`DO: <action>`) in the block's reason note, plus every open research item and unfilled owner input
+   (including `- **DO:** <action>` lines in `### 3.3 Owner inputs (Approval gate)`) that note points at. On request (`--assumed`) the sitting also lists the
    ticket's `### Assumed (unattended, <date>)` entries - each with what was taken, the alternative it was
    weighed against and the date - so the owner can review and overrule them in the same sitting. An
    overrule is an answer of step 5's kind: the entry is marked `overruled <date>` with the owner's answer,
@@ -364,11 +382,14 @@ any project and carries the mechanics; the procedure below is its authority.
 3. **Research each one before asking.** Whatever the architecture, the code, a contract or a decision
    already recorded settles is **not asked**: fill it in and list it in the report as *resolved without
    asking*, with what settled it ([AI_USAGE.md](../../rules/AI_USAGE.md) §1). Only a genuine owner call -
-   scope, product intent, priority, wording, platform reach, build versus buy - becomes a question. In the
+   scope, product intent, priority, wording, platform reach, build versus buy - or a pre-implementation
+   owner `DO:` action (device, desk, or outside console account step) goes to the owner. In the
    reference sitting this settled 5 of 20 decision points without a word to the owner. Nothing left to
    ask -> write the fills and go to step 6.
-4. **Ask multiple choice.** Each question specific, 2-4 options, each with its one-line consequence, the
-   researched recommendation **listed first** and marked recommended. Most-blocking first, in rounds where
+4. **Ask multiple choice (and present `DO:` actions).** Each question specific, 2-4 options, each with its one-line consequence, the
+   researched recommendation **listed first** and marked recommended. For a `- **DO:** <action>` item,
+   show the exact action line to the owner and take the result (completed with the observed output/value,
+   or an alternative/skip decision) as the owner input (S0042). Most-blocking first, in rounds where
    the runtime caps a round, never more than unblocking needs. The questions that arrive here are the
    owner-owned ones only: since S0039 an unattended pass takes a researched, ticket-reversible
    recommendation itself and records it under `### Assumed (unattended, <date>)`, so a reversible default
@@ -426,7 +447,7 @@ An unattended pass runs without human interaction in a headless queue session.
   foreground, before setting `Implemented` or `BlockNeedUserTest`. An empty or absent key means the
   repo declares none: write "no compile command" in the note and do not invent a run. Fix a compile
   failure inside the pass or write it into the ticket; no other run above 5 s is authorized.
-- **Assume the reversible, ask the rest**: a choice that is reversible inside the ticket and has a researched recommendation is taken, not asked - record it under `### Assumed (unattended, <date>)` with the alternative and "owner may overrule", and the pass goes on (S0039). `BlockQuestions` is for one-way and outward steps (publish, release, store submit), contract changes, scope, money, and facts only the owner knows, and its note is then the question itself: a literal `Q: ...?` token that the block-note gate refuses a note without. A non-question impediment parks elsewhere - an action only the owner can perform goes to `BlockNeedUserTest`, a tool defect becomes a Draft ticket against that tool, a deferred idea its own Draft. A slow run is never asked about: it is recorded as a release item.
+- **Assume the reversible, ask the rest**: a choice that is reversible inside the ticket and has a researched recommendation is taken, not asked - record it under `### Assumed (unattended, <date>)` with the alternative and "owner may overrule", and the pass goes on (S0039). `BlockQuestions` is for one-way and outward steps (publish, release, store submit), contract changes, scope, money, facts only the owner knows (whose note carries a literal `Q: ..?` token), and pre-implementation owner actions on a device, at the desk, or in an outside console account (recorded as `- **DO:** <action>` in `### 3.3 Owner inputs (Approval gate)` and a literal `DO: <action>` token in `statusNote`, S0042). Post-implementation device verification goes to `BlockNeedUserTest`; a wait on another registered repository in the portfolio is filed there with `spec-draft.ps1 -Project <key>`, written as `Blocker: <key>:<id>`, and parked in `BlockByOtherTask` (`BlockExternal` is only for parties outside the portfolio); a deferred idea becomes its own Draft. A slow run is never asked about: it is recorded as a release item.
 - **Autonomous stopping**: take this one ticket as far as it goes and do not start another. When it cannot move, set the matching `Block*` status with a `statusNote` naming what is missing.
 - **Claim**: a lease on the ticket whose reason is `run-spec-queue` followed by an instance name is the claim the runner made for you: it is yours.
 - **Context handoff for in-progress work**: when a pass leaves a multi-step ticket `In Progress` with work done and must stop before completion (or upon approaching turn or context limits), it writes `<tempDir>/<id>/context-handoff.json` (specifying `id`, `tokens`, `boundary`) before ending. The runner checks this marker and relaunches up to `handoffCap` with a fresh context instead of recording an idle or no-progress drop.

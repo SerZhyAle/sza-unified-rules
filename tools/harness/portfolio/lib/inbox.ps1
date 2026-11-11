@@ -130,7 +130,8 @@ function Get-PqInboxCounts($Rows) {
 
 # The first local (same-repository) `Blocker: <id>` token of the ticket's spec whose blocker is not released - the
 # picker's release test, the one xrepo.ps1 runs for qualified blockers - as "key:id", else $null. A blocker that
-# cannot be read holds, like xrepo.ps1's 'unreadable'.
+# cannot be read holds, like xrepo.ps1's 'unreadable'. Only the repository's ticket-id grammar distinguishes a
+# local token from prose; the profile is read per repository, not through the single-project profile cache.
 function Get-PqInboxLocalHold($ByKey, $Snaps, [string] $RepoKey, [string] $Id) {
     if ($null -eq (Get-Variable -Name PqStatusSets -Scope Script -ErrorAction Ignore)) { return $null }
     if (-not $ByKey.ContainsKey($RepoKey)) { return $null }
@@ -138,10 +139,23 @@ function Get-PqInboxLocalHold($ByKey, $Snaps, [string] $RepoKey, [string] $Id) {
     if ($null -eq $t) { return $null }
     $spec = Read-PqSpecText $t.file
     if (-not $spec) { return $null }
+    $pattern = [string]$script:PqRepoDefaults.grammar.ticketIdPattern
+    $profileFile = Join-Path ([string]$ByKey[$RepoKey].path) '.sza-profile.json'
+    if ([IO.File]::Exists($profileFile)) {
+        try {
+            $profile = ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($profileFile)) -DateKind String -NoEnumerate
+            $grammar = Get-PqLwField $profile 'grammar'
+            $configured = Get-PqLwText $grammar 'ticketIdPattern'
+            if ($configured) { $pattern = $configured }
+        } catch { return $null }
+    }
+    try { $idRegex = [regex]::new('\A(?:' + $pattern + ')\z', [Text.RegularExpressions.RegexOptions]::IgnoreCase) }
+    catch { return $null }
     $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
     foreach ($m in [regex]::Matches($spec, '(?i)(?:Blocker|Блокер)\s*:\s*\**\s*([A-Za-z][A-Za-z0-9_-]*(?:\s*:\s*[A-Za-z][A-Za-z0-9_-]*)?)')) {
         $val = $m.Groups[1].Value -replace '\s*:\s*', ':'
         if ($val.Contains(':')) { continue }   # a qualified token: xrepo.ps1's own walk owns it
+        if (-not $idRegex.IsMatch($val)) { continue }
         if ($val -ceq $Id) { continue }
         if (-not $seen.Add($val)) { continue }
         $b = Get-PqXrepoTicket $ByKey[$RepoKey] $val $Snaps

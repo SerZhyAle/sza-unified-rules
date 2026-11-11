@@ -356,6 +356,19 @@ try {
         $releasedRank = Get-PqXrepoFilteredRank -Registry $reg -Ranker $ranker
         Check ($releasedRank.plan.Count -eq 2 -and $releasedRank.excluded.xrepo -eq 0) 'the released ticket returns to the plan'
         Check ($releasedRank.skipped.Count -eq 0) 'no blocker is reported after release'
+
+        # S0042: a BlockByOtherTask ticket whose qualified blocker lives in statusNote is also held until release.
+        [IO.File]::WriteAllText($specEmulator, "# S0001`nbody without blocker token`n", [Text.Encoding]::UTF8)
+        [IO.File]::WriteAllText($ledger, (@(
+            '{"id":"S0001","name":"task one","status":"BlockByOtherTask","statusNote":"waiting on sibling. Blocker: other:S0009","priority":80,"file":"PLAN/S0001_task-one.md","created":"2026-11-11","updated":"2026-11-11 10:00"}'
+            '{"id":"S0002","name":"task two","status":"Draft","priority":50,"file":"PLAN/S0002_task-two.md","created":"2026-11-11","updated":"2026-11-11 10:00"}'
+        ) -join "`n") + "`n", [Text.Encoding]::UTF8)
+        [IO.File]::WriteAllText($otherLedger, '{"id":"S0009","status":"Draft","file":"PLAN/S0009_other.md"}' + "`n", [Text.Encoding]::UTF8)
+        $noteBlocked = Get-PqXrepoBlock -Registry $reg -RepoKey 'demo' -TicketId 'S0001'
+        Check ($null -ne $noteBlocked -and $noteBlocked.blocker -ceq 'other:S0009' -and $noteBlocked.state -ceq 'open') 'statusNote qualified blocker holds BlockByOtherTask ticket'
+        [IO.File]::WriteAllText($otherLedger, '{"id":"S0009","status":"Verified","file":"PLAN/S0009_other.md"}' + "`n", [Text.Encoding]::UTF8)
+        $noteReleased = Get-PqXrepoBlock -Registry $reg -RepoKey 'demo' -TicketId 'S0001'
+        Check ($null -eq $noteReleased) 'statusNote qualified blocker releases when sibling ticket is Verified'
     }
 
     Write-Host "`nportfolio-s0016-tests: PASS ($case cases)" -ForegroundColor Green

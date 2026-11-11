@@ -1,4 +1,4 @@
-#requires -Version 7.0
+﻿#requires -Version 7.0
 <#
 .SYNOPSIS
     The one seam between the shipped harness and the project it runs in (S2402).
@@ -192,7 +192,7 @@ $Script:SzaProfileDefaults = [ordered]@{
         # What a queue child is told when the project names nothing, or names a command it does not
         # have (Resolve-SzaPromptTemplate). The plugin's lifecycle skill runs in every repository that
         # has the sza plugin; until 2026-10-28 this was '/spec-all {Id}', a command only FMS_A has.
-        promptTemplate   = '/sza:spec-to-audit {Id} - the ticket is {specPath} in {repoRoot}; change its status only with {updatePath} -Id {Id} -Status <s>, never by editing the Status line; never read or change a ticket of another repository. This is a headless pass: start no background agent or command, wait for each in the foreground, and set the status before your last message. A choice that is reversible inside the ticket and has a researched recommendation is taken, not asked: record it under ### Assumed (unattended, <date>) with the alternative and "owner may overrule", and go on. BlockQuestions is only for one-way or outward steps, contract changes, scope, money, or facts only the owner knows, and its note is the question itself (a literal Q: ...? token - the block-note gate refuses a note without it). A slow run is never asked about - record it as a release item. Compile gate: if you edited compiled source, run the repository''s declared compile-only command once before setting Implemented or BlockNeedUserTest - commands.compileCheck in this repo''s .sza-profile.json names it; fix a failure inside the pass or write it into the ticket before the status, and run nothing else above 5 s. An empty or absent command means the repo declares none: take that as the absence and write it into the note - an Implemented note says "compiled, not tested" or "no compile command"; BlockNeedUserTest requires the declared check passed or the repo declaring none.'
+        promptTemplate   = '/sza:spec-to-audit {Id} - the ticket is {specPath} in {repoRoot}; change its status only with {updatePath} -Id {Id} -Status <s>, never by editing the Status line; never read or change a ticket of another repository (except filing a cross-repo blocker with spec-draft.ps1 -Project <key>, recording Blocker: <key>:<id>, and setting BlockByOtherTask; BlockExternal is only for parties outside the portfolio). This is a headless pass: start no background agent or command, wait for each in the foreground, and set the status before your last message. A choice that is reversible inside the ticket and has a researched recommendation is taken, not asked: record it under ### Assumed (unattended, <date>) with the alternative and "owner may overrule", and go on. BlockQuestions is only for one-way or outward steps, contract changes, scope, money, facts only the owner knows (a literal Q: ..? token in statusNote), or a pre-implementation owner action on a device, at the desk, or in an outside console account (write - **DO:** <action> in ### 3.3 Owner inputs and a literal DO: <action> token in statusNote - the block-note gate refuses a note without Q: ..? or DO:). A slow run is never asked about - record it as a release item. Compile gate: if you edited compiled source, run the repository''s declared compile-only command once before setting Implemented or BlockNeedUserTest - commands.compileCheck in this repo''s .sza-profile.json names it; fix a failure inside the pass or write it into the ticket before the status, and run nothing else above 5 s. An empty or absent command means the repo declares none: take that as the absence and write it into the note - an Implemented note says "compiled, not tested" or "no compile command"; BlockNeedUserTest requires the declared check passed or the repo declaring none.'
         decisionStatuses = @('Draft', 'Approved', 'Tactical', 'In Progress', 'Partial', 'Broken', 'BlockQuestions')
         cheapStatuses    = @('Implemented', 'BlockNeedUserTest')
         cheapTierMax     = 3
@@ -212,18 +212,27 @@ $Script:SzaProfileDefaults = [ordered]@{
         # values are aliases the runner's argsTemplate turns into a model id, so a project that pins
         # a generation (`claude-{model}-5-5`) keeps pinning it and only this map names the tier.
         complexityModels     = [ordered]@{ light = 'haiku'; medium = 'sonnet'; hard = 'opus' }
+        # The reasoning effort a queue child launches with, by the model the runner chose (S0041, rule 12
+        # of HARNESS-PROFILE 0.16). The shipped default is the owner's 2026-09-30 child decision, recorded
+        # in FastMediaSorter Android's .claude/runner/model-effort.json: haiku xhigh, sonnet xhigh, opus
+        # medium. Consulted only when the pass's agent record names no effort (rule 42) - every non-Claude
+        # record carries one - and a model the map does not name launches with none, which is what the
+        # absent key meant before 0.16: the flag is dropped from the template and the CLI's own default
+        # (for Claude, the owner's interactive settings) stands. Resolved instance first by the runner's
+        # Get-InstanceSetting, so a project pins a per-instance map the same way as argsTemplate.
+        effortByModel        = [ordered]@{ haiku = 'xhigh'; sonnet = 'xhigh'; opus = 'medium' }
         # The child invocation, per runner instance. A key is the -Instance name; the value may
         # carry `command`, `argsTemplate` and `modelPolicy`, each falling back to the shared value
         # beside it. Empty is the honest default: every instance launches the same command, which
         # is what a single-provider project wants and what this file described before S2698.
         instances        = [ordered]@{}
         # The argument vector handed to the child, as a template. The substitutions are {prompt},
-        # {permissionMode} and {model}; an element carrying {model} is dropped together with the
-        # flag before it when no model was chosen, because an empty element in ArgumentList is a
-        # real empty argument rather than an absent one. Templated rather than appended: a second
-        # provider spells the model flag differently and takes the prompt in a different position,
-        # so the part that varies is the whole vector, not its tail.
-        argsTemplate     = @('-p', '{prompt}', '--permission-mode', '{permissionMode}', '--model', '{model}')
+        # {permissionMode}, {model} and {effort}; an element carrying {model} or {effort} is dropped
+        # together with the flag before it when no value was chosen, because an empty element in
+        # ArgumentList is a real empty argument rather than an absent one. Templated rather than
+        # appended: a second provider spells the model flag differently and takes the prompt in a
+        # different position, so the part that varies is the whole vector, not its tail.
+        argsTemplate     = @('-p', '{prompt}', '--permission-mode', '{permissionMode}', '--model', '{model}', '--effort', '{effort}')
         # How a queue child is told from the operator's own interactive session, matched against
         # the process command line. The default is the headless flag of the default command; an
         # instance running another agent overrides it, or -Stop, -Kill and the "a stop is still

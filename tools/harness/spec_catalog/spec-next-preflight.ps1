@@ -233,7 +233,7 @@ $rankedLive = New-Object System.Collections.Generic.List[object]
 foreach ($r in $ranked) {
     if ($skipCache.Contains($r.id)) {
         $cachedReason = [string]$skipCache[$r.id].reason
-        if ($cachedReason -like 'blocker-not-verified*') {
+        if ($cachedReason -like 'blocker-not-verified*' -or $cachedReason -like 'blocker-cross-repo*') {
             $skipCacheOverriddenIds += $r.id
         }
         else {

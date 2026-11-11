@@ -154,18 +154,19 @@ function Get-PqUtcDate([DateTimeOffset]$Now) {
     return $Now.UtcDateTime.ToString('yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture)
 }
 
-# ---- the event-name registry: every name of the catalog EVENTS.md (TASK-FLOW rule 57), 76 on 2026-10-27 ----
+# ---- the event-name registry: every name of the catalog EVENTS.md (TASK-FLOW rule 57), 78 on 2026-11-11 ----
 
 function Get-PqEventNames {
     $names = [string[]]@(
         'agent.fallback', 'agent.hold', 'agent.probe', 'agent.resume', 'agent.unproven',
         'analyze.run',
+        'build.delivered',
         'claim.lost', 'claim.ok', 'claim.try',
         'dispatch.noSlot', 'dispatch.pick', 'dispatch.skip',
         'finding.close', 'finding.escalate', 'finding.open',
         'improve.ticket',
         'inbox.add', 'inbox.clear',
-        'ingest.ledgerDiff', 'ingest.repoRun', 'ingest.transcript',
+        'ingest.drain', 'ingest.ledgerDiff', 'ingest.packet', 'ingest.repoRun', 'ingest.transcript',
         'intake.robotDraft',
         'lease.observed', 'lock.observed',
         'log.error', 'log.rotate',

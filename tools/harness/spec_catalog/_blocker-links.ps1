@@ -1,4 +1,4 @@
-# Shared resolver for a spec's DIRECTIONAL blocker links.
+﻿# Shared resolver for a spec's DIRECTIONAL blocker links.
 #
 # Dot-sourced, never invoked: this file sets no preferences, holds no mutable state and
 # knows nothing about the catalog journal, so a consumer inherits only these functions.
@@ -65,4 +65,30 @@ function Get-BlockerLinks {
     $ids = @($ids | Sort-Object -Unique)
     if ($SelfId) { $ids = @($ids | Where-Object { $_ -ne $SelfId }) }
     return $ids
+}
+
+function Get-QualifiedBlockerLinks {
+    # Resolve cross-repository directional blockers written as `Blocker: <repoKey>:<id>` (or
+    # `Блокер: <repoKey>:<id>`) in the spec file or the catalog record's statusNote (TASK-FLOW
+    # rule 52, S0042). Kept separate from Get-BlockerLinks so a local-id reader never mistakes
+    # `<id>` for a local ticket id.
+    param(
+        [string] $SpecText,
+        [string] $StatusNote
+    )
+
+    $text = if ($null -ne $SpecText) { [string]$SpecText } else { '' }
+    $note = if ($null -ne $StatusNote) { [string]$StatusNote } else { '' }
+
+    $pattern = '(?i)(?<![`<])(?:Blocker|Блокер)\s*:\s*\**\s*([a-z](?:[a-z-][a-z0-9-]*)?):([A-Za-z][A-Za-z0-9_-]*\d[A-Za-z0-9_-]*)'
+    $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+    $pairs = [System.Collections.Generic.List[string]]::new()
+    foreach ($source in @($text, $note)) {
+        if (-not $source) { continue }
+        foreach ($m in [regex]::Matches($source, $pattern)) {
+            $pair = $m.Groups[1].Value.ToLowerInvariant() + ':' + $m.Groups[2].Value
+            if ($seen.Add($pair)) { [void]$pairs.Add($pair) }
+        }
+    }
+    return @($pairs.ToArray())
 }

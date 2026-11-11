@@ -198,9 +198,71 @@ projects: it prints the id's status in the current project and every project whe
 questions (`BlockQuestions`), tests (`BlockNeedUserTest`), outside (`BlockExternal`), chain (`BlockByOtherTask`),
 unbuilt (`Implemented`) - with the count, the oldest age and the command that clears the kind, then the tickets with
 id, age and note. A chain ticket prints as its chain root (`fms-web:S0021 (held, owner decision) frees 8`), walking
-the `Blocker:` tokens with the same release test the picker uses; `-Json` gives the same records to the GUI.
+the `Blocker:` tokens with the same release test the picker uses. A local token counts only when its id matches the
+project's `grammar.ticketIdPattern` (default `^S\d{4}$`); other words are prose. `-Json` gives the same records to the GUI.
 `quiz-list.ps1 -Status <name[,name]>` lists any other statuses through the same reader (default `BlockQuestions`).
 `pq status` ends with the same five counts and points at `pq inbox`.
+
+The phone inbox listener files incoming packets as Draft tickets. `install-inbox-watcher.ps1` registers the
+listener and a separate drain every 10 minutes; `drain-inbox.ps1` also runs manually. Each drain ingests
+pending packets, then calls `pq start -Ticket <key>:<id>` for at most three filed tickets, oldest first.
+The dispatcher retains its normal locks, leases, stops and registry gates; a named start passes queue hold
+lines only for that ticket. Packets without a known project wait for the owner. `-MaxTickets` changes the
+cap and `-FileOnly` records the tickets for the regular queue instead. The cursor beside the spool prevents
+repeat starts, and `result.json` records each outcome; an interrupted start is not repeated automatically.
+`pq status` shows new packets, filed tickets waiting for the drain and their oldest age.
+
+## Remote delivery - build-deliver
+
+After a pass changed a project, `build-deliver.ps1` (S0048) builds a fresh version and puts it where the owner
+can test it from the phone: the synced Drive folder `C:\GD	c\SZA\_APP` (the `SZA_DELIVERY_ROOT` variable or
+`-DeliveryRoot` overrides it). No new channel: the Drive sync is the transport, the Store is never touched.
+
+```
+<root>\<key>\<version>pp.exe          the artifact, delivered
+<root>\<key>\<version>pp.exe.sha256   "<hash>  <name>" (the GitHub sidecar shape)
+<root>\<key>\LATEST                     names the newest delivered version; the phone/WEB side reads it
+```
+
+```powershell
+pwsh -NoProfile -File tools/harness/portfolio/build-deliver.ps1 -Project oneclickrunner                 # build + deliver
+pwsh -NoProfile -File tools/harness/portfolio/build-deliver.ps1 -Project oneclickrunner -Json -Ticket S0123
+```
+
+- **The build command is discovered, never hardcoded**: `-BuildCommand`, else the project's optional profile
+  member `delivery.buildCommand`, else the repository root's `build.ps1`. A repo's `release.ps1` and its
+  `STORE_PUBLISHING.md` / `DEV/RELEASE.md` runbooks are probed and reported by the store staging plan, never
+  auto-invoked - a release is the owner's own paid path. Optional `delivery` members:
+  `buildCommand` (a command line relative to the repo), `versionCommand` (prints the version as its last
+  line), `artifactPatterns` (glob patterns relative to the repo; without them the fresh
+  exe/apk/msix/aab/msi/zip/appx under the repo is found by write time).
+- **The version is read, not guessed**: `-Version`, else `versionCommand`, else the stamp the build put into
+  the artifact (`FileVersion`), else the newest tag matching the stamp's `versionShape.tagRegex`. A build
+  whose version does not resolve is refused (exit 4).
+- **The build runs under the `resources/build` token** (rule 62) with the ticket id (else `build-deliver`), so
+  it never races a PQ pass building the same repository; a busy token is waited out (`-TokenWaitSeconds`).
+- Exit codes: 0 delivered (or built, with `-BuildOnly`), 2 a bad invocation (unknown project, no build
+  command, conflicting switches), 3 the build failed or the token never freed, 4 the version did not resolve.
+- One `build.delivered` event per delivery (EVENTS.md 3.9); with `-Ticket` the delivery is also a note on that
+  ticket's ledger row, written through the project's own `update.ps1`. `-DeliverOnly -Artifact <file>` delivers
+  an already-built artifact; `pq status` ends with a `delivered: <key> <version> (age)` line per project.
+- The drain builds too: `drain-inbox.ps1 -After <key>:<id>` builds that ticket's project once its pass ran and
+  its status reached `Implemented`/`BlockNeedUserTest`, and a packet whose text asked for a build ("собери",
+  the ingest notes it in the ticket) is built the same way automatically. Each build decision lands in the
+  packet's `result.json` as `builds` (additive): `delivered` with the version, `refused`/`not-built` with the
+  reason, `deferred` to the next drain.
+
+**Publishing to the Microsoft Store is different, and stays one-way.** A packet phrased "опубликуй ... in MS
+Store" is recognized at ingest (`publishIntent: "ms-store"|"github"|"winget"` in `result.json`, a note in the
+drafted ticket) - the agent then works it with the `store-publish` skill.
+`stage-store-publish.ps1 -Project <key> [-Ticket <id> -SetStatus]` stages everything an agent can do: the
+unsigned MSIX through the repo's own `msix/build-msix.ps1` with the reserved identity passed only where that
+script accepts it, the packed `<Identity>` read back and asserted against the frozen anchors
+(`CN=F98ACEDB-...` / `SZA`), the WACK verdict read from a staged report, the listing export-merge step
+named - and then it STOPS: the Partner Center upload is the [PUBLIC] one-way manual step (the `msstore` CLI
+needs a service principal an individual MSA does not have), so the report spells the click path, records
+`uploaded: false` and, with `-SetStatus`, moves the ticket to `BlockExternal` through the project's own
+tooling. No code path in the canon ever performs the store upload automatically.
 
 ## Putting a task into a project's queue
 

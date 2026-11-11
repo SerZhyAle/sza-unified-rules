@@ -456,6 +456,9 @@ Run-Case 'ingest-multi-project-cross-links' {
         Assert-That ($calls.Count -eq 2 -and [string]$calls[0].project -ceq 'proj-a' -and [string]$calls[1].project -ceq 'proj-b') 'the fan-out order or count is wrong'
         Assert-That ("$($calls[1].text)".IndexOf("Filed together with the same packet as $($pairs[0])") -ge 0) "the second ticket was not cross-linked with the first"
         Assert-That ("$($calls[0].text)".IndexOf('Filed together') -lt 0) 'the first ticket must not link forward'
+        foreach ($call in $calls) {
+            Assert-That ("$($call.text)".Contains("$id/result.json")) 'a ticket did not link to the shared list of assigned ids'
+        }
         $events = @(Get-SpoolEvents | Where-Object { $_.ev -ceq 'ingest.packet' -and $_.d.packetId -ceq $id -and $_.d.outcome -ceq 'processed' })
         Assert-That ($events.Count -eq 1 -and [string]$events[0].d.project -ceq 'proj-a,proj-b') 'the event lost the project list'
     }
@@ -511,6 +514,62 @@ Run-Case 'ingest-refuses-to-cross-the-idempotency-line' {
     Assert-That (@(Get-StubCalls).Count -eq $before) 'already/ still captured'
 }
 
+Run-Case 'dedup-finds-long-spec-and-matches-the-whole-packet-id' {
+    $plan = Join-Path $script:projects['proj-a'] 'PLAN'
+    $path = Join-Path $plan 'S8765_long.md'
+    [IO.File]::WriteAllText($path, ('x' * 9000) + "`nFiled from phone packet pk-longer by the PC inbox watcher (S0046).`n", [Text.UTF8Encoding]::new($false))
+    try {
+        Assert-That (@(Find-InboxPacketTickets -RootPath $script:projects['proj-a'] -Key 'proj-a' -PacketId 'pk-longer').Count -eq 1) 'long request hides the provenance marker'
+        Assert-That (@(Find-InboxPacketTickets -RootPath $script:projects['proj-a'] -Key 'proj-a' -PacketId 'pk-long').Count -eq 0) 'a packet id prefix matched another packet'
+    }
+    finally { [IO.File]::Delete($path) }
+}
+Run-Case 'dedup-respects-profile-specs-and-archive-paths' {
+    $repo = Join-Path $scratch 'custom-specs'
+    $null = [IO.Directory]::CreateDirectory((Join-Path $repo 'tickets'))
+    $null = [IO.Directory]::CreateDirectory((Join-Path $repo 'archive'))
+    [IO.File]::WriteAllText((Join-Path $repo '.sza-profile.json'), '{"paths":{"specsDir":"tickets","specArchiveDir":"archive"}}')
+    [IO.File]::WriteAllText((Join-Path $repo 'archive/S4321_old.md'), 'Filed from phone packet pk-custom by the PC inbox watcher (S0046).')
+    $hits = @(Find-InboxPacketTickets -RootPath $repo -Key 'proj-a' -PacketId 'pk-custom')
+    Assert-That ($hits.Count -eq 1 -and $hits[0].pair -ceq 'proj-a:S4321') 'the custom archive was not scanned'
+}
+Run-Case 'recovery-preserves-the-newer-retry-record' {
+    $id = 'pk-retry-crash'
+    $processing = Join-Path $script:spoolRoot 'processing'
+    $new = Join-Path $script:spoolRoot 'new'
+    $null = [IO.Directory]::CreateDirectory((Join-Path $processing $id))
+    Write-InboxAttempts -Path (Get-InboxAttemptsPath -StageDir $processing -PacketId $id) -Attempts ([pscustomobject]@{ attempts = 1; nextRetryAtEpochMs = 1; lastError = 'old' })
+    Write-InboxAttempts -Path (Get-InboxAttemptsPath -StageDir $new -PacketId $id) -Attempts ([pscustomobject]@{ attempts = 2; nextRetryAtEpochMs = 2; lastError = 'new' })
+    $null = Invoke-InboxRecovery -Root $script:spoolRoot
+    $record = Read-InboxAttempts (Get-InboxAttemptsPath -StageDir $new -PacketId $id)
+    Assert-That ([int]$record.attempts -eq 2) 'recovery replaced the newer retry count'
+}
+Run-Case 'recovery-finishes-a-refusal' {
+    $id = 'pk-refusal-recovery'
+    $dir = Join-Path (Join-Path $script:spoolRoot 'processing') $id
+    $null = [IO.Directory]::CreateDirectory($dir)
+    Write-InboxSpoolJson -Path (Join-Path $dir 'reason.json') -Document @{ error = 'TextInvalid'; detail = 'test' }
+    $null = Invoke-InboxRecovery -Root $script:spoolRoot
+    Assert-That ([IO.File]::Exists((Join-Path (Join-Path (Join-Path $script:spoolRoot 'failed') $id) 'reason.json'))) 'interrupted refusal did not reach failed/'
+}
+Run-Case 'malformed-committed-manifest-is-eventually-refused' {
+    $id = 'pk-bad-json'
+    $dir = Join-Path (Join-Path $script:spoolRoot 'new') $id
+    $null = [IO.Directory]::CreateDirectory($dir)
+    $manifest = Join-Path $dir 'manifest.json'
+    [IO.File]::WriteAllBytes($manifest, [byte[]]@(255))
+    [IO.File]::SetLastWriteTimeUtc($manifest, [DateTime]::UtcNow.AddMinutes(-2))
+    $claim = Claim-InboxPacket -Root $script:spoolRoot -PacketId $id
+    Assert-That $claim.ok 'old malformed manifest was never claimed'
+    $r = Invoke-InboxIngestPacket -Root $script:spoolRoot -PacketPath $claim.path
+    Assert-That ($r.reason -ceq 'ManifestInvalidJson') "unexpected refusal: $($r.reason)"
+}
+Run-Case 'inline-text-is-not-replaced-by-log-attachment' {
+    $manifest = @{ text = 'owner request' }
+    $source = Get-InboxTextSource -Manifest $manifest -PacketPath $script:spoolRoot -Files @(@{ name = 'app.txt'; role = 'log' })
+    Assert-That ($source.kind -ceq 'member' -and $source.text -ceq 'owner request') 'a log replaced the owner request'
+}
+
 Write-Host 'the event name'
 
 Run-Case 'event-name-added-additively' {
@@ -558,6 +617,11 @@ Write-Host -NoNewline 'CASE  watcher (single-instance lock + one -Once drain) ..
 $m = New-TestManifest $drainId 'A live packet for the one-shot watcher.'
 $m.project = 'proj-b'
 $null = Publish-TestPacket $m
+# Keep unrelated recovery fixtures out of this integration case and its capture subprocess.
+if ([IO.Directory]::Exists((Join-Path (Join-Path $script:spoolRoot 'new') 'pk-2'))) {
+    Write-InboxAttempts -Path (Get-InboxAttemptsPath -StageDir (Join-Path $script:spoolRoot 'new') -PacketId 'pk-2') `
+        -Attempts ([pscustomobject]@{ attempts = 1; nextRetryAtEpochMs = [DateTimeOffset]::UtcNow.AddMinutes(5).ToUnixTimeMilliseconds(); lastError = 'fixture' })
+}
 $exitRefused = $null
 $exitDrain = $null
 $instanceLock = [Threading.Mutex]::new($true, (Get-InboxWatcherLockName -Root $script:spoolRoot))

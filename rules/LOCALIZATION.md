@@ -46,6 +46,12 @@ specifics marked *(overlay)*.
   every surface** - the site toggle, the `README_<lang>` suffix, and the in-app UI (Ukrainian is `uk`
   everywhere, not `uk` in the app and `ua` in the README). One code per language, portfolio-wide (see
   [DOCUMENTATION_CONCEPT.md](DOCUMENTATION_CONCEPT.md) §3).
+- **One canonical `og:locale` `ll_CC` map across the portfolio's 13 languages**:
+  `en` -> `en_US`, `ru` -> `ru_RU`, `uk` -> `uk_UA`, `ar` -> `ar_AR`, `bn` -> `bn_BD`, `de` -> `de_DE`,
+  `es` -> `es_MX`, `fr` -> `fr_FR`, `hi` -> `hi_IN`, `id` -> `id_ID`, `pt` -> `pt_BR`, `ur` -> `ur_PK`,
+  `zh` -> `zh_CN`. **One exception**: a page written in a regional variety takes that variety's territory
+  (`epub2html` keeps `pt_PT`, its text being European Portuguese). Reconciled divergences: `cyrflip`
+  `ar_SA` -> `ar_AR`, `epub2html` `bn_IN` -> `bn_BD`.
 - The same fact has one authoritative source and is rendered per language - translations are render
   targets, not independent re-authorings that drift.
 - Two page models are both valid: **separate per-language files** (`docs.html` / `docs.ru.html` /

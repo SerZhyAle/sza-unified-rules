@@ -1,7 +1,7 @@
 #requires -Version 7.0
 <#
 .SYNOPSIS
-    Install (or remove) the S0046 inbox watcher's scheduled task: watch-inbox.ps1 at logon, with a repeating backstop.
+    Install (or remove) the inbox watcher and the periodic inbox drain.
 
 .DESCRIPTION
     The always-on half of the phone-ticket inbox (S0046): a scheduled task that
@@ -16,9 +16,13 @@
     on first start, the same way publish-projects.ps1 creates them.
 
     The manual form stays supported: pwsh -NoProfile -File watch-inbox.ps1 (a second start exits 3).
+    A separate task runs drain-inbox.ps1 every 10 minutes and dispatches filed tickets through PQ.
 
 .PARAMETER TaskName
     The name of the scheduled task ('SZA inbox watcher' by default).
+
+.PARAMETER DrainTaskName
+    The name of the periodic drain task ('SZA inbox drain' by default).
 
 .PARAMETER InboxRoot
     Pinned into the task's command line; left out, the watcher uses SZA_INBOX_ROOT or the default root.
@@ -44,6 +48,7 @@
 [CmdletBinding(PositionalBinding = $false)]
 param(
     [string]$TaskName = 'SZA inbox watcher',
+    [string]$DrainTaskName = 'SZA inbox drain',
     [string]$InboxRoot = '',
     [int]$RepeatMinutes = 5,
     [switch]$Uninstall,
@@ -54,6 +59,11 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $watchScript = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'watch-inbox.ps1'))
+$drainScript = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'drain-inbox.ps1'))
+if ($RepeatMinutes -lt 1 -or $TaskName -eq $DrainTaskName -or -not [IO.File]::Exists($drainScript)) {
+    [Console]::Error.WriteLine('install-inbox-watcher: invalid interval or task names, or drain-inbox.ps1 is missing')
+    exit 2
+}
 if (-not [IO.File]::Exists($watchScript)) {
     [Console]::Error.WriteLine("install-inbox-watcher: watch-inbox.ps1 is not beside this script ($watchScript)")
     exit 1
@@ -61,14 +71,14 @@ if (-not [IO.File]::Exists($watchScript)) {
 $pwshExe = (Get-Command pwsh -CommandType Application | Select-Object -First 1).Source
 
 if ($Uninstall) {
-    if ($DryRun) { Write-Host "install-inbox-watcher: -DryRun - would unregister the task '$TaskName'"; exit 0 }
+    if ($DryRun) { Write-Host "install-inbox-watcher: -DryRun - would unregister '$TaskName' and '$DrainTaskName'"; exit 0 }
     try {
-        if (-not (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue)) {
-            [Console]::Error.WriteLine("install-inbox-watcher: no task named '$TaskName'")
+        $found = @(@($TaskName, $DrainTaskName) | Where-Object { Get-ScheduledTask -TaskName $_ -ErrorAction SilentlyContinue })
+        if ($found.Count -eq 0) {
+            [Console]::Error.WriteLine('install-inbox-watcher: neither task exists')
             exit 2
         }
-        $null = Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
-        Write-Host "install-inbox-watcher: task '$TaskName' removed"
+        foreach ($name in $found) { $null = Unregister-ScheduledTask -TaskName $name -Confirm:$false; Write-Host "install-inbox-watcher: task '$name' removed" }
         exit 0
     }
     catch {
@@ -81,9 +91,12 @@ if ($Uninstall) {
 $argument = "-NoProfile -WindowStyle Hidden -File `"$watchScript`""
 if ($InboxRoot) { $argument += " -InboxRoot `"$InboxRoot`"" }
 $display = "at logon, and the same resident start every $RepeatMinutes min as the backstop: pwsh $argument"
+$drainArgument = "-NoProfile -WindowStyle Hidden -File `"$drainScript`""
+if ($InboxRoot) { $drainArgument += " -InboxRoot `"$InboxRoot`"" }
 
 if ($DryRun) {
     Write-Host "install-inbox-watcher: -DryRun - would register the task '$TaskName', $display"
+    Write-Host "install-inbox-watcher: -DryRun - would register '$DrainTaskName' every 10 min: pwsh $drainArgument"
     exit 0
 }
 
@@ -101,6 +114,10 @@ try { $settings.ExecutionTimeLimit = 'PT0S' } catch { }
 try {
     $null = Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger @($atLogon, $backstop) -Settings $settings -Description `
         "S0046: watches the phone-ticket inbox and files each packet as a Draft ticket through spec-draft. Resident at logon; the repeating trigger re-arms it every $RepeatMinutes minutes."
+    $drainAction = New-ScheduledTaskAction -Execute $pwshExe -Argument $drainArgument
+    $drainTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 10) -RepetitionDuration (New-TimeSpan -Days 3650)
+    $null = Register-ScheduledTask -TaskName $DrainTaskName -Action $drainAction -Trigger $drainTrigger -Settings $settings -Description 'S0047: ingests and dispatches incoming tickets through named PQ starts every 10 minutes.'
+    Write-Host "install-inbox-watcher: task '$DrainTaskName' registered - every 10 min"
     $manual = "pwsh -NoProfile -File `"$watchScript`""
     if ($InboxRoot) { $manual += " -InboxRoot `"$InboxRoot`"" }
     Write-Host "install-inbox-watcher: task '$TaskName' registered - $display"

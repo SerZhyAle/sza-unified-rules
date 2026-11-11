@@ -52,7 +52,7 @@
     0 every packet decided (done/ or failed/; a re-queued retry wait included)
     1 a packet left undecided in processing\
     2 bad invocation (no packet to ingest, an unclaimable one, a bad inbox root)
-    3 -All and nothing was pending
+    3 -All found nothing pending, or another watcher owns this inbox
 #>
 [CmdletBinding(PositionalBinding = $false)]
 param(
@@ -80,4 +80,16 @@ if ($MaxFiles -gt 0) { $cli.MaxFiles = $MaxFiles }
 if ($SpecDraft) { $cli.SpecDraft = $SpecDraft }
 
 . (Join-Path $PSScriptRoot 'lib\inbox-ingest.ps1')
-exit (Invoke-InboxIngestCli @cli)
+try { $lockRoot = Resolve-InboxSpoolRoot $InboxRoot }
+catch { [Console]::Error.WriteLine("ingest-inbox: $($_.Exception.Message)"); exit 2 }
+$lock = [Threading.Mutex]::new($false, (Get-InboxWatcherLockName -Root $lockRoot))
+$held = $false
+try {
+    try { $held = $lock.WaitOne(0) } catch [Threading.AbandonedMutexException] { $held = $true }
+    if (-not $held) { Write-Host 'ingest-inbox: watcher owns this inbox; no ingest started'; exit 3 }
+    exit (Invoke-InboxIngestCli @cli)
+}
+finally {
+    if ($held) { $lock.ReleaseMutex() }
+    $lock.Dispose()
+}

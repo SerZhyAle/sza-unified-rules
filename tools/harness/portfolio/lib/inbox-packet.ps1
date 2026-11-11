@@ -113,8 +113,14 @@ function Read-InboxPacketManifest {
         $result.errors = @(New-InboxProblem 'ManifestMissing' '$' "no manifest.json at $Path")
         return $result
     }
-    $bytes = [IO.File]::ReadAllBytes($Path)
-    $text = [Text.UTF8Encoding]::new($false, $true).GetString($bytes)
+    try {
+        $bytes = [IO.File]::ReadAllBytes($Path)
+        $text = [Text.UTF8Encoding]::new($false, $true).GetString($bytes)
+    }
+    catch {
+        $result.errors = @(New-InboxProblem 'ManifestInvalidJson' '$' "the manifest cannot be read as UTF-8: $($_.Exception.Message)")
+        return $result
+    }
     if ($text.Length -gt 0 -and $text[0] -eq [char]0xFEFF) { $text = $text.Substring(1) }
     $parsed = Read-InboxPacketJson -Raw $text
     $result.ok = $parsed.ok

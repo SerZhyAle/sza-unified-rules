@@ -174,6 +174,34 @@ not understand, and it makes the round trip checkable without a Partner Center s
 `-text` in `.gitattributes` so git never normalizes its line endings. Run this round trip before any real
 merge; recommend creating the fixture in any repo that lacks one.
 
+## The machine submission channel - prepare versus publish
+
+When the owner has configured the machine channel (setup and rotation:
+[store-machine-channel.md](store-machine-channel.md)), a release may run the read-only preflight
+([Store-Preflight.ps1](../../../tools/Store-Preflight.ps1)) before the tag. It reads the product's state
+through `msstore submission get` (read-only verbs only, allow-list enforced in the script), reads the Store ID
+from the product's identity file, and decides:
+
+- **Ready** - the channel may run for this product: nothing pending, pricing `Free`, the candidate version
+  strictly greater than the live one read from the live submission, the package unsigned.
+- **Refused** (exit 1) - stop, naming the product and the reason: a submission already pending (whoever made
+  it); a pending draft the channel itself created (it may then be changed only by the channel until the owner
+  commits or deletes it); a mandatory update or a paid product with Store-managed consumables; a pricing
+  object that is not `Free` round-trippable (Pricing Version 2 - the machine path never writes pricing); a
+  candidate version not strictly greater than live; a signed package (`AppxSignature.p7x` present); no live
+  submission (the first publication and the age rating stay in the console); or state it could not read - fail
+  closed.
+- **Manual** (exit 2) - the CLI is missing or unconfigured, the token was refused, or the recorded credential
+  is past its expiry date: one line says the Store step is manual and the release continues exactly as without
+  the channel. A channel failure after the tag never fails the release or stops the other channels.
+
+`-Json` prints the per-run evidence record: Store ID, package version, the submission id the Store returned,
+the polled status values with their times, and the listing path - never a Seller ID, Tenant ID, Client ID or
+any secret. The listing path is one per release: the CSV export-merge flow above **or** the submission-JSON
+metadata path, never both on one submission (a console edit of an API-made submission breaks the API's hold
+on it). These rules restate the `windows-store` proposal of 2026-11-11; they stay `UNVERIFIED` until a first
+draft goes through and bind nobody until the contract owner folds them in.
+
 ## Submission click path
 
 **First submission**: Apps and games > `<product>` > **Packages** (upload the unsigned `.msix`) >
@@ -183,7 +211,8 @@ upload screenshots) > **Properties** (category) > **Age ratings** (IARC) > **Pri
 
 **Update**: **Create new submission** > replace the package (same identity, higher version) > refresh listings
 and "What's new" > submit. The remap is monotonic so no manual bump is needed - verify it exceeds the
-published version anyway.
+published version anyway. When the machine channel is configured, the same gates apply before the tag through
+the preflight; the commit itself stays the owner's act.
 
 **Listing materials**: privacy policy URL (required when the app touches keyboard, clipboard, or personal
 data); at least one screenshot, PNG >= 1366x768 - real in-app captures beat composed marketing cards for a

@@ -37,7 +37,7 @@
 #                            passed only where they are accepted and the refusal is quoted in the ticket.
 #   Find-InboxPacketTickets -RootPath -Key -PacketId  the tickets an earlier ingest of this packet filed (the
 #                            provenance marker in the project's PLAN/), so a re-run after a crash mid-ingest
-#                            never files twice -> @{ pair; file } per hit; an unreadable root returns @().
+#                            -> @{ pair; file } per hit; an unreadable root or spec fails the scan closed.
 #   Resolve-InboxSpecDraft [-SpecDraft <script>]  the capture entry point: -SpecDraft, else SZA_SPEC_DRAFT, else
 #                            a spec-draft.ps1 on PATH, else the one beside the portfolio tools.
 #   Invoke-InboxIngestCli  the CLI body of ingest-inbox.ps1 (a single -Packet resumed, the -All drain).
@@ -55,6 +55,39 @@
 . (Join-Path $PSScriptRoot 'registry.ps1')
 
 $script:InboxProvenanceMark = 'phone packet'   # the marker every filed ticket carries: find it, never re-file
+
+# S0048: the packet's own words can name a publish channel or ask for a build. The recognition only READS - the
+# drafted ticket stays a normal Draft (the agent, not the transport, interprets the text) and the fields the
+# result carries are additive so an older reader skips them. ms-store first: the owner's phrasing for THE store.
+$script:InboxPublishIntentPatterns = [ordered]@{
+    'ms-store' = '(?i)ms[- ]?store|microsoft\s+store|\bв\s+стор\b|\bв\s+сторе\b|\bмс\s*стор'
+    'github'   = '(?i)github|гитхаб'
+    'winget'   = '(?i)winget|вингет'
+}
+$script:InboxBuildIntentPattern = '(?i)\bсобери\w*\b|\bсобрать\b|\bсборк\w*\b|\bbuild a (new )?version\b|\bmake (me )?a build\b'
+
+function Get-InboxIntentText {
+    param([Parameter(Mandatory)]$Source)
+    try {
+        if ($Source.kind -ceq 'payload') { return [IO.File]::ReadAllText($Source.path, [Text.Encoding]::UTF8) }
+        return [string]$Source.text
+    }
+    catch { return '' }
+}
+
+# -> 'ms-store' | 'github' | 'winget' | $null ("publish <project> in MS Store", "выложи в стор", "вингет").
+function Get-InboxPublishIntent {
+    param([Parameter(Mandatory)][string]$Text)
+    foreach ($k in @($script:InboxPublishIntentPatterns.Keys)) {
+        if ($Text -cmatch $script:InboxPublishIntentPatterns[$k]) { return [string]$k }
+    }
+    return $null
+}
+
+function Test-InboxBuildIntent {
+    param([Parameter(Mandatory)][string]$Text)
+    return ($Text -cmatch $script:InboxBuildIntentPattern)
+}
 
 function Write-InboxIngestEvent {
     param($Log, [string]$Outcome, [string]$PacketId, [string]$Project, $Tickets, [string]$Reason)
@@ -97,25 +130,43 @@ function Test-InboxProjectAcceptsAttach {
 # files - a crash between the capture and the result write leaves exactly those, and the pre-scan below turns them
 # into the idempotency guard for a re-queued packet ("plus the dedup query against the spec catalog", done
 # criterion 4: this scan catches the OPEN duplicate a re-file would create; spec-draft's -DedupQuery catches a
-# closed one with exit 3). Only the head of each file is read; 500 files max.
+# closed one with exit 3). The marker can follow a long owner request in any spec.
 function Find-InboxPacketTickets {
     param(
         [string]$RootPath,
         [Parameter(Mandatory)][string]$Key,
         [Parameter(Mandatory)][string]$PacketId
     )
-    if ([string]::IsNullOrWhiteSpace($RootPath) -or -not [IO.Directory]::Exists($RootPath)) { return @() }
-    $planDir = Join-Path $RootPath 'PLAN'
-    if (-not [IO.Directory]::Exists($planDir)) { return @() }
-    $marker = "$($script:InboxProvenanceMark) $PacketId"
+    if ([string]::IsNullOrWhiteSpace($RootPath) -or -not [IO.Directory]::Exists($RootPath)) { throw "InboxDedupRootMissing: $RootPath" }
+    $specsDir = 'PLAN'
+    $archiveDir = ''
+    $profilePath = Join-Path $RootPath '.sza-profile.json'
+    if ([IO.File]::Exists($profilePath)) {
+        try {
+            $profile = ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($profilePath)) -AsHashtable -DateKind String
+            if ($profile -isnot [Collections.IDictionary]) { throw 'profile is not an object' }
+            $paths = $profile['paths']
+            if ($paths -is [Collections.IDictionary] -and $paths['specsDir']) { $specsDir = [string]$paths['specsDir'] }
+            if ($paths -is [Collections.IDictionary] -and $paths['specArchiveDir']) { $archiveDir = [string]$paths['specArchiveDir'] }
+        }
+        catch { throw "InboxDedupProfileUnreadable: $profilePath" }
+    }
+    $planDir = [IO.Path]::GetFullPath((Join-Path $RootPath $specsDir))
+    if (-not [IO.Directory]::Exists($planDir)) { throw "InboxDedupPlanMissing: $planDir" }
+    $scanRoots = @($planDir)
+    if ($archiveDir) {
+        $archivePath = [IO.Path]::GetFullPath((Join-Path $RootPath $archiveDir))
+        $planPrefix = $planDir.TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
+        if ([IO.Directory]::Exists($archivePath) -and $archivePath -ine $planDir -and -not $archivePath.StartsWith($planPrefix, [StringComparison]::OrdinalIgnoreCase)) { $scanRoots += $archivePath }
+    }
+    $marker = 'Filed from phone packet ' + [regex]::Escape($PacketId) + '(?:, sent from [^\r\n]*)? by the PC inbox watcher \(S0046\)\.'
     $hits = [Collections.Generic.List[object]]::new()
-    foreach ($f in @(Get-ChildItem -LiteralPath $planDir -Recurse -Filter '*.md' -File -ErrorAction SilentlyContinue | Select-Object -First 500)) {
+    foreach ($f in @(Get-ChildItem -LiteralPath $scanRoots -Recurse -Filter '*.md' -File -ErrorAction Stop)) {
         try {
             $head = [IO.File]::ReadAllText($f.FullName, [Text.Encoding]::UTF8)
-            if ($head.Length -gt 8192) { $head = $head.Substring(0, 8192) }
-            if ($head.IndexOf($marker, [StringComparison]::Ordinal) -lt 0) { continue }
+            if ($head -cnotmatch $marker) { continue }
         }
-        catch { continue }
+        catch { throw "InboxDedupReadFailed: $($f.FullName): $($_.Exception.Message)" }
         $m = [regex]::Match($f.Name, '^(?<id>[A-Za-z]+-?[0-9]+)')
         if (-not $m.Success) { continue }
         $hits.Add([pscustomobject]@{ pair = "${Key}:$($m.Groups['id'].Value)"; file = $f.FullName })
@@ -150,14 +201,14 @@ function Get-InboxIngestTargets {
     $targets = [Collections.Generic.List[string]]::new()
     $unknown = [Collections.Generic.List[string]]::new()
     foreach ($k in $ordered) {
-        if ($known.Contains($k)) { $targets.Add($k); continue }
+        if ($known.Contains($k)) { if (-not $targets.Contains($k)) { $targets.Add($k) }; continue }
         $unknown.Add($k)
         if (-not $targets.Contains('canon')) { $targets.Add('canon') }
     }
     return @{ targets = @($targets); unknown = @($unknown) }
 }
 
-# The owner's words: a text-role payload file, else a .md/.txt payload, else the text member. kind none = the
+# The owner's words: a text-role payload file, else the text member, else a .md/.txt payload. kind none = the
 # packet carries nothing a ticket could be written from (the reader accepts such a manifest; the ingest refuses
 # it with the reader's own reason name TextInvalid).
 function Get-InboxTextSource {
@@ -169,12 +220,12 @@ function Get-InboxTextSource {
     foreach ($f in @($Files)) {
         if ([string]$f.role -ceq 'text') { return @{ kind = 'payload'; name = [string]$f.name; path = (Join-Path $PacketPath ([string]$f.name)) } }
     }
-    foreach ($f in @($Files)) {
-        if ([string]$f.name -cmatch '\.(md|txt)$') { return @{ kind = 'payload'; name = [string]$f.name; path = (Join-Path $PacketPath ([string]$f.name)) } }
-    }
     $text = Get-InboxMember $Manifest 'text'
     if ($text.has -and $text.value -is [string] -and -not [string]::IsNullOrWhiteSpace($text.value)) {
         return @{ kind = 'member'; name = $null; path = $null; text = $text.value }
+    }
+    foreach ($f in @($Files)) {
+        if ([string]$f.name -cmatch '\.(md|txt)$' -and [string]$f.role -cne 'log') { return @{ kind = 'payload'; name = [string]$f.name; path = (Join-Path $PacketPath ([string]$f.name)) } }
     }
     return @{ kind = 'none'; name = $null; path = $null; text = $null }
 }
@@ -199,7 +250,7 @@ function New-InboxTicketText {
     $from = if ($SenderName) { ", sent from $SenderName" } else { '' }
     $lines.Add("Filed from $marks$from by the PC inbox watcher (S0046).")
     foreach ($n in $notes) { $lines.Add($n) }
-    $body = $owner.TrimEnd() + "`n`n" + (($lines | ForEach-Object { $_ }) -join "`n") + "`n"
+    $body = $owner + "`n`n" + (($lines | ForEach-Object { $_ }) -join "`n") + "`n"
     $temp = [IO.Path]::GetTempFileName()
     [IO.File]::WriteAllText($temp, $body, [Text.UTF8Encoding]::new($false))
     return @{ path = $temp; temp = $true }
@@ -293,6 +344,10 @@ function Invoke-InboxIngestPacket {
             Write-InboxIngestEvent -Log $Log -Outcome 'failed' -PacketId $packetId -Reason 'RetryQueued'
             return @{ outcome = 'requeued'; ok = $false; tickets = @(); reason = 'RetryQueued'; detail = $Why; attempts = [int]$r.attempts; retryAt = $r.nextRetryAtEpochMs }
         }
+        if ($r.outcome -ceq 'error') {
+            Write-InboxIngestEvent -Log $Log -Outcome 'failed' -PacketId $packetId -Reason $r.error
+            return @{ outcome = 'pending'; ok = $false; tickets = @(); reason = $r.error; detail = $Detail; attempts = [int]$r.attempts }
+        }
         $move = Fail-InboxPacket -Root $Root -PacketId $packetId -Error 'RetryCeiling' -Detail $Detail
         Write-InboxIngestEvent -Log $Log -Outcome 'failed' -PacketId $packetId -Reason 'RetryCeiling'
         return @{ outcome = 'failed'; ok = ([bool]$move.ok); tickets = @(); reason = 'RetryCeiling'; detail = $Why; attempts = [int]$r.attempts; moveError = $move.error }
@@ -318,6 +373,7 @@ function Invoke-InboxIngestPacket {
         if ($read.ok) { $registry = $read.registry }
     }
     catch { $registry = $null }
+    if ($null -eq $registry) { return (& $retry 'the project registry is unavailable' 'Cannot safely deduplicate without the project registry') }
 
     $targets = Get-InboxIngestTargets -Manifest $check.packet -Registry $registry
     $sender = (Get-InboxMember $check.packet 'senderDeviceName').value
@@ -325,6 +381,12 @@ function Invoke-InboxIngestPacket {
     if ($source.kind -ceq 'none') {
         return (& $fail 'TextInvalid' 'no ticket text: neither the text member nor a payload file carries words' 'refused')
     }
+
+    # S0048: what the owner's own words ask for beyond the ticket itself. Read once, recorded in result.json and
+    # as a note in every ticket this packet drafts; the recognition changes no routing and files no separate type.
+    $intentText = Get-InboxIntentText $source
+    $publishIntent = Get-InboxPublishIntent $intentText
+    $buildIntent = Test-InboxBuildIntent $intentText
 
     $attachFiles = @(foreach ($f in @($check.files)) {
         if ($source.kind -ceq 'payload' -and [string]$f.name -ceq [string]$source.name) { continue }
@@ -346,16 +408,31 @@ function Invoke-InboxIngestPacket {
         # The pre-scan: this packet already filed a ticket here (a crash between the capture and the result write)
         # - reused, never re-filed. The dedup query below catches the closed ticket; this catches the open one.
         if ($repoPath) {
-            $hits = Find-InboxPacketTickets -RootPath $repoPath -Key $key -PacketId $packetId
+            try { $hits = Find-InboxPacketTickets -RootPath $repoPath -Key $key -PacketId $packetId }
+            catch { return (& $retry "the dedup scan of $key failed" $_.Exception.Message) }
             foreach ($h in @($hits)) { $tickets.Add($h.pair); $verdicts.Add('already-filed') }
             if (@($hits).Count -gt 0) { continue }
         }
+        else { return (& $retry "the registry has no path for $key" 'Cannot safely deduplicate without the project path') }
 
         $notes = [Collections.Generic.List[string]]::new()
         if (@($targets.unknown).Count -gt 0) {
             $quoted = (@($targets.unknown) | ForEach-Object { "'$_'" }) -join ', '
             $one = (@($targets.unknown).Count -eq 1)
             $notes.Add("The phone asked for $(if ($one) { 'project' } else { 'projects' }) $quoted; $(if ($one) { 'that key is' } else { 'those keys are' }) not registered on this PC, so the ticket is filed here for triage (pq problems reports it).")
+        }
+        if ($publishIntent) {
+            $notes.Add("The packet asks for a publish ($publishIntent): work it by skills/store-publish (channel order - GitHub Release, Store in parallel, winget last); the store/winget legs are one-way [PUBLIC] - stage everything and stop at the manual owner step (BlockExternal/BlockNeedUserTest).")
+        }
+        if ($buildIntent) {
+            $notes.Add("The packet asks for a new build: when the work lands Implemented/BlockNeedUserTest, the drain produces it with -After <key>:<id> or build-deliver -Project <key> -Ticket <id>, and the fresh version is delivered to the Drive folder the phone can reach.")
+        }
+        if (@($targets.targets).Count -gt 1) {
+            # The ids do not exist when the first capture runs. All tickets point to the same durable result,
+            # which lists every assigned key:id once the fan-out succeeds, including after a resumed ingest.
+            $resultPath = Join-Path (Join-Path (Join-Path $Root 'done') $packetId) 'result.json'
+            $resultUri = ([Uri]::new([IO.Path]::GetFullPath($resultPath))).AbsoluteUri
+            $notes.Add("Sibling tickets for this packet ($(@($targets.targets) -join ', ')): [packet result]($resultUri). The result lists every assigned ticket id after filing finishes.")
         }
         if ($tickets.Count -gt 0) {
             $notes.Add("Filed together with the same packet as $(@($tickets) -join ', ').")
@@ -411,9 +488,15 @@ function Invoke-InboxIngestPacket {
         verdict  = $verdict
         at       = [DateTimeOffset]::UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'")
     }
+    if (@($targets.unknown).Count -gt 0) { $result['unknownProjects'] = [string[]]@($targets.unknown) }
+    # S0048, additive: what the owner's words asked for (absent when the text names no channel / no build).
+    if ($publishIntent) { $result['publishIntent'] = $publishIntent }
+    if ($buildIntent) { $result['buildIntent'] = $true }
     $move = Complete-InboxPacket -Root $Root -PacketId $packetId -Result $result
     if (-not $move.ok) {
-        return (& $retry "the result was written but the move to done/ failed" $move.message)
+        if ($move.error -ceq 'ResultWriteFailed') { return (& $retry 'the result could not be written' $move.message) }
+        # A committed result must stay in processing/ for recovery; re-queueing it makes it an unexpected file.
+        return @{ outcome = 'pending'; ok = $false; tickets = $result.tickets; reason = $move.error; detail = $move.message; attempts = 0 }
     }
     Write-InboxIngestEvent -Log $Log -Outcome 'processed' -PacketId $packetId -Project $projectField -Tickets $result.tickets
     return @{ outcome = 'processed'; ok = $true; tickets = $result.tickets; reason = $null; detail = $null; attempts = 0; verdict = $verdict; result = $result }

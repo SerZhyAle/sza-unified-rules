@@ -57,7 +57,7 @@ catch { Write-Output $_.Exception.Message; exit 2 }
     if ($CatalogRoot) {
         $vectorDir = Join-Path $CatalogRoot 'rule-adoption/vectors'
         $manifest = Get-Content (Join-Path $vectorDir 'manifest.json') -Raw | ConvertFrom-Json
-        Assert-That ($manifest.contracts.'REPO-STAMP' -eq '0.13' -and $manifest.contracts.'HARNESS-PROFILE' -eq '0.15') 'Stale catalog versions'
+        Assert-That ($manifest.contracts.'REPO-STAMP' -eq '0.13' -and $manifest.contracts.'HARNESS-PROFILE' -eq '0.16') 'Stale catalog versions'
         Assert-That ($manifest.files.Count -eq 2 -and $manifest.sources.Count -eq $sources.Count) 'Incomplete artifact manifest'
         foreach ($entry in $manifest.files) {
             Assert-That ($entry.path -in @('reader-cases.json', 'reader-verdicts.json')) 'Unexpected vector artifact path'
@@ -98,6 +98,14 @@ catch { Write-Output $_.Exception.Message; exit 2 }
         $cases.Add(@{ name = 'profile commands.compileCheck declared'; kind = 'profile'; accepted = $true; compileCheck = $true;
             input = @{ future = 42; modules = @{ names = @() }; paths = @{ changelog = $null }; commands = @{ compileCheck = 'pwsh -NoProfile -File tools/Invoke-Tests.ps1 -Build modern' } } })
         $cases.Add(@{ name = 'profile commands.compileCheck absent'; kind = 'profile'; accepted = $true; compileCheck = $false;
+            input = @{ future = 42; modules = @{ names = @() }; paths = @{ changelog = $null } } })
+        # S0041 (HARNESS-PROFILE 0.16, rule 12): the optional robot effort map and its absence. A declared
+        # object merges key by key over the shipped default (rule 3), so one declared model overrides that
+        # alias alone and the other two keep the shipped values; the shipped default argsTemplate carries
+        # --effort {effort} in both cases, dropped when no effort resolves.
+        $cases.Add(@{ name = 'profile runner.effortByModel declared'; kind = 'profile'; accepted = $true; effortByModel = $true;
+            input = @{ future = 42; modules = @{ names = @() }; paths = @{ changelog = $null }; runner = @{ effortByModel = @{ sonnet = 'high' } } } })
+        $cases.Add(@{ name = 'profile runner.effortByModel absent'; kind = 'profile'; accepted = $true; effortByModel = $false;
             input = @{ future = 42; modules = @{ names = @() }; paths = @{ changelog = $null } } })
     }
     $observed = [System.Collections.Generic.List[object]]::new()
@@ -154,6 +162,19 @@ catch { Write-Output $_.Exception.Message; exit 2 }
                             $null -ne $p.commands.statusCommands.Implemented -and $null -ne $p.commands.aliases) 'commands.compileCheck declared case wrong'
                     } else {
                         Assert-That ([string]$p.commands.compileCheck -ceq '') 'commands.compileCheck absence does not read as declared-none'
+                    }
+                    # S0041: the effort map, declared or absent, reads beside the shipped default, and
+                    # the shipped template carries the substitution the map fills.
+                    Assert-That (@([string[]]$p.runner.argsTemplate) -contains '--effort' -and
+                        @([string[]]$p.runner.argsTemplate) -contains '{effort}') 'the shipped template lost --effort {effort}'
+                    if ($case.effortByModel) {
+                        Assert-That ([string]$p.runner.effortByModel.sonnet -ceq 'high' -and
+                            [string]$p.runner.effortByModel.opus -ceq 'medium' -and
+                            [string]$p.runner.effortByModel.haiku -ceq 'xhigh') 'the declared effort map did not merge over the shipped default'
+                    } else {
+                        Assert-That ([string]$p.runner.effortByModel.sonnet -ceq 'xhigh' -and
+                            [string]$p.runner.effortByModel.haiku -ceq 'xhigh' -and
+                            [string]$p.runner.effortByModel.opus -ceq 'medium') 'the shipped effort default is wrong'
                     }
                 } else { Assert-That ($result.output -match '^HARNESS-PROFILE:.*update' -and $result.output -notmatch '"paths"') $result.output }
             }
@@ -233,7 +254,7 @@ artifacts: none
         Write-Json $verdictFile @($observed.ToArray())
         $sourceHashes = foreach ($source in $sources) { @{ path = $source; sha256 = (Get-TextHash (Join-Path $SourceRoot $source)) } }
         Write-Json (Join-Path $ExportDirectory 'manifest.json') @{
-            contracts = @{ 'REPO-STAMP' = '0.13'; 'HARNESS-PROFILE' = '0.15'; 'RULE-DELIVERY' = '0.12' }
+            contracts = @{ 'REPO-STAMP' = '0.13'; 'HARNESS-PROFILE' = '0.16'; 'RULE-DELIVERY' = '0.12' }
             command = 'pwsh -NoProfile -File tools/tests/export-contract-vectors.ps1 -CatalogRoot <catalog>'
             sourceHash = 'SHA-256 of the source file with CRLF read as LF, so a checkout under any autocrlf setting matches; the files below are catalog-resident and hashed as stored'
             sources = @($sourceHashes); files = @(

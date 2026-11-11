@@ -91,9 +91,8 @@
     because for a ticket the queue actually offers, the status does not vary. PLAN/RELEASE_QUEUE.md
     holds everything below Implemented and runner.decisionStatuses lists exactly those, so the first
     test above answers "strong" for every queue ticket and the tier test is never reached; the cheap
-    statuses describe RELEASE_READY.md, the file the runner does not take work from. Measured on the
-    full run journal, 2026-09-07: 625 runs strong against 65 cheap, and all 65 cheap ones came from
-    the two ready-file statuses. Under shape the order is
+    statuses describe RELEASE_READY.md, the file the runner does not take work from. Under shape the
+    order is
 
       1. a status in runner.alwaysStrongStatuses  -> strong (BlockQuestions, whose whole product is
          a set of questions put to the owner),
@@ -101,15 +100,20 @@
          and hard name haiku, sonnet and opus. In a runner.cheapStatuses state the run audits code
          the tree already carries, so the answer never rises above the cheap model there,
       3. a status in runner.cheapStatuses         -> cheap,
-      4. tier at or above runner.strongTierMin    -> strong,
-      5. tier from 1 to runner.shapeCheapTierMax  -> cheap, whatever the status,
-      6. anything else                            -> falls through to the tiered order, unchanged.
+      4. anything else                            -> -DefaultModel (sonnet since S0041).
 
-    Step 6 falls through rather than defaulting to strong on purpose: a ticket with no tier, or with
-    a status neither list names, must get exactly what it gets today, or the policy would change
-    behaviour where it promised nothing. Step 5 starts at 1 for the same reason - a blank or zero
-    tier is not a small ticket, it is an unstated one. Step 2 is skipped for the same reason when the
-    line is absent or names no known level: an unstated complexity is not a light one.
+    Step 4 is the owner's decision of 2026-11-11 (S0041), and it replaced what sat there until then -
+    the two tier tests (strongTierMin, shapeCheapTierMax) and, past them, the fall-through into the
+    tiered order whose decision-status test answered strong: measured over 2026-10-28..11-10, 126 of
+    201 opus passes ran on tickets that had declared no level, half the robot's Claude spend routed by
+    an author's omission. An ungraded ticket now launches the default model, whose first act (the
+    lifecycle skill's stage 0) is to research and write the `**Complexity:**` line; the NEXT launch of
+    the ticket obeys the level it wrote, because the line is re-read at every launch and never cached.
+    The tier tests went with the fall-through for the reason the blank-tier floor below the tiered
+    order had already stated: a tier is a roadmap label, and routing by an unstated complexity is
+    routing by omission. Step 3 stays ahead of step 4 so the code-complete states keep the cheap model
+    whatever a -CheapModel override names, and step 1 stays ahead of everything because a
+    BlockQuestions run's questions are put to a human, which a cheaper model does not make cheaper.
 
     The complexity line is read from the spec's own header at every launch, never cached. That is
     the whole revision mechanism: a pass that disagrees with the level after its research rewrites
@@ -194,6 +198,11 @@ param(
     [string] $StrongModel = 'opus',
     [string] $CheapModel = 'sonnet',
 
+    # The model an ungraded ticket launches under -ModelPolicy shape: the owner's 2026-11-11 decision
+    # (S0041) is sonnet, and the pass's first act is to write the Complexity line, so the NEXT launch
+    # of the ticket routes by what it declared instead of by the omission.
+    [string] $DefaultModel = 'sonnet',
+
     # Name for this instance when several run in parallel. Keeps journals and per-ticket logs apart.
     [string] $Instance = 'a',
 
@@ -261,6 +270,13 @@ if ([string]::IsNullOrWhiteSpace($RepoRoot)) { $RepoRoot = Get-SzaProjectRoot }
 # The portfolio dispatcher sets this in the pass's environment rather than passing the switch, so a runner stand-in
 # with a fixed parameter list keeps working.
 if ($env:SZA_PQ_EXIT_ON_LIMIT -ceq '1') { $ExitOnLimit = $true }
+# S0041's context trial, off by default: a reversible switch the night trial sets in the environment
+# the runner itself runs in - never a repository's settings, which the owner's interactive sessions
+# share. On it, a Claude child whose CLI names the flags launches with --strict-mcp-config (plus the
+# repository's own .mcp.json, so an Android override survives), --disallowedTools for the three
+# tools whose instructions bloat every session start, and FORCE_PROMPT_CACHING_5M=1 in the child's
+# environment alone. Off, or a CLI that names none of them, no trial controls are added.
+$trialContext = ($env:SZA_PQ_TRIAL_CONTEXT -ceq '1')
 
 if ($Help) {
     Show-SzaHelp $PSCommandPath
@@ -336,21 +352,39 @@ function Expand-ChildArgs {
     return $out
 }
 
-$script:ChildTakesSessionIdAnswer = $null
-
-function Test-ChildTakesSessionId {
+function Resolve-ChildEffort {
     <#
-        Whether this instance's CLI lists --session-id in its own --help (S4265). Asked once per
-        process and remembered.
-
-        The runner launches every child under a session id it chose, so that a child which ended on
-        the usage limit can be read back from its transcript by name. A CLI that does not know the
-        flag would reject EVERY launch, so the flag is added only on the CLI's own say-so, and a CLI
-        that cannot be asked gets none: the runner then behaves exactly as it did before the flag
-        existed and a limit is recognised from the -Quiet log alone. The question is bounded, because
-        a command that answers --help by starting something interactive must not hold the queue.
+        The reasoning effort one child launches with (S0041, HARNESS-PROFILE rule 12). The pass's
+        agent record names its own effort first (rule 42 - every non-Claude record carries one); a
+        Claude pass, whose record is absent, takes the model it was given to runner.effortByModel,
+        resolved instance first by the same chain Get-InstanceSetting reads. A model the map does
+        not name launches with no effort: the template drops the flag and the CLI's own default
+        stands, which is exactly what every launch did before the map existed.
     #>
-    if ($null -ne $script:ChildTakesSessionIdAnswer) { return $script:ChildTakesSessionIdAnswer }
+    param([string] $RecordEffort, [string] $Model)
+    if (-not [string]::IsNullOrWhiteSpace($RecordEffort)) { return $RecordEffort }
+    if ([string]::IsNullOrWhiteSpace($Model)) { return '' }
+    try {
+        $map = Get-InstanceSetting -Field 'effortByModel'
+        if (Test-SzaHasProperty -Object $map -Name $Model) { return [string]$map.$Model }
+    } catch {
+        # An unreadable map is an absence, not a failure: launch without the flag.
+        return ''
+    }
+    return ''
+}
+
+$script:ChildTakesSessionIdAnswer = $null
+$script:ChildHelpText = $null
+
+function Get-ChildHelpText {
+    <#
+        The resolved CLI's own --help text, asked once per process and remembered (S4265). Two
+        questions are read from it - whether the CLI lists --session-id, and (S0041) whether it
+        lists the trial flags - and they must come from the same fetch, because a CLI that answers
+        --help by starting something interactive must not be started twice.
+    #>
+    if ($null -ne $script:ChildHelpText) { return $script:ChildHelpText }
 
     $help = ''
     try {
@@ -374,7 +408,33 @@ function Test-ChildTakesSessionId {
         $help = ''
     }
 
-    $script:ChildTakesSessionIdAnswer = ($help -match '--session-id\b')
+    $script:ChildHelpText = $help
+    return $script:ChildHelpText
+}
+
+function Test-ChildHelpLists {
+    <#
+        Whether the resolved CLI's --help lists -Pattern. A flag a CLI does not name is never added:
+        an unknown argument would reject EVERY launch, so capability is the CLI's own say-so.
+    #>
+    param([Parameter(Mandatory)][string] $Pattern)
+    return ((Get-ChildHelpText) -match [regex]::Escape($Pattern))
+}
+
+function Test-ChildTakesSessionId {
+    <#
+        Whether this instance's CLI lists --session-id in its own --help (S4265). Asked once per
+        process and remembered, from the same fetch the trial flags read (Get-ChildHelpText).
+
+        The runner launches every child under a session id it chose, so that a child which ended on
+        the usage limit can be read back from its transcript by name. A CLI that does not know the
+        flag would reject EVERY launch, so the flag is added only on the CLI's own say-so, and a CLI
+        that cannot be asked gets none: the runner then behaves exactly as it did before the flag
+        existed and a limit is recognised from the -Quiet log alone.
+    #>
+    if ($null -ne $script:ChildTakesSessionIdAnswer) { return $script:ChildTakesSessionIdAnswer }
+
+    $script:ChildTakesSessionIdAnswer = (Test-ChildHelpLists '--session-id')
     if (-not $script:ChildTakesSessionIdAnswer) {
         Write-Host ("run-spec-queue: '{0}' --help does not list --session-id - children run without it, so a usage limit is recognised from the -Quiet log only." -f $runnerCommand) -ForegroundColor DarkYellow
     }
@@ -389,10 +449,17 @@ if ($AgentJson.Trim()) {
         exit 2
     }
 }
-$childEffort = if ($null -ne $script:AgentRecord -and (Test-SzaHasProperty -Object $script:AgentRecord -Name 'effort')) { [string]$script:AgentRecord.effort } else { '' }
+# The pass's own effort (TASK-FLOW rule 42), when a record names one. A Claude pass names none; its
+# effort is resolved per ticket from the profile's effortByModel, by Resolve-ChildEffort below.
+$recordEffort = if ($null -ne $script:AgentRecord -and (Test-SzaHasProperty -Object $script:AgentRecord -Name 'effort')) { [string]$script:AgentRecord.effort } else { '' }
 $runnerCommand = [string](Get-InstanceSetting -Field 'command')
 $runnerArgsTemplate = @(Get-InstanceSetting -Field 'argsTemplate')
 $headlessMatch = [string](Get-InstanceSetting -Field 'headlessMatch')
+$isClaudeChild = if ($null -ne $script:AgentRecord) {
+    (Test-SzaHasProperty -Object $script:AgentRecord -Name 'name') -and [string]$script:AgentRecord.name -ceq 'claude'
+} else {
+    [IO.Path]::GetFileNameWithoutExtension($runnerCommand) -ieq 'claude'
+}
 $claudeCmd = Get-Command $runnerCommand -ErrorAction SilentlyContinue
 $claude = if ($claudeCmd) { $claudeCmd.Source } else { $null }
 if (-not $claude -and $runnerCommand -eq 'claude') {
@@ -739,32 +806,21 @@ function Get-TicketComplexity {
 function Select-ModelFor {
     <#
         The whole decision, in one place. It reads the catalog's status and tier, and - only under
-        -ModelPolicy shape - the one header line of the spec that declares its complexity.
+        -ModelPolicy shape - the one header line of the spec that declares its complexity. A ticket
+        with no record falls through the same tests as one with an empty status: a missing reading is
+        not evidence of size, and under shape it ends at the default like any other ungraded ticket.
     #>
     param($Ticket)
 
     if ($ModelPolicy -eq 'default') { return '' }
     if ($ModelPolicy -eq 'fixed') { return $Model }
-    if ($null -eq $Ticket) { return $StrongModel }
 
     $status = [string]$Ticket.status
 
-    # The two sources spell the tier differently and both are legitimate: select.ps1 returns the
-    # integer 2, the preflight ranker returns the label "3 - Moderate (ad-hoc)". A plain TryParse
-    # succeeds on the first and fails on the second, leaving tier 0 - so every queue-picked ticket
-    # silently missed the cheap tier. Take the leading integer from whichever shape arrives.
-    $tier = 0
-    if ($null -ne $Ticket.tier -and ([string]$Ticket.tier) -match '^\s*(\d+)') {
-        $tier = [int]$Matches[1]
-    }
-
     # SHAPE decides before status, and only under -ModelPolicy shape. The order below is the canon's;
-    # the three cut lines are the project's (runner.alwaysStrongStatuses, runner.strongTierMin,
-    # runner.shapeCheapTierMax in the profile). The justification for the status-first order that
-    # follows holds only while the status distinguishes tickets, and for a ticket taken off the
-    # queue it does not: all seven decision statuses give the same answer, so tier is the only
-    # signal that varies there. Nothing here returns a default - an uncovered ticket falls through
-    # to the tiered order below and gets exactly what it gets today.
+    # the cut lines are the project's (runner.alwaysStrongStatuses and runner.cheapStatuses in the
+    # profile). Nothing here consults a tier: since S0041 an ungraded ticket takes the default model,
+    # and a declared level outranks every roadmap label the record may carry.
     if ($ModelPolicy -eq 'shape') {
         if (@(Get-SzaProfileValue 'runner.alwaysStrongStatuses') -contains $status) { return $StrongModel }
 
@@ -772,7 +828,7 @@ function Select-ModelFor {
         # is a roadmap label and this is the author's - or the previous pass's - statement about the
         # work itself, and it is read at every launch so a pass that revised the level after its
         # research is obeyed by the next one. A level the profile does not map, or a profile that
-        # predates the key, is treated as no declaration: the ticket then gets what it got before.
+        # predates the key, is treated as no declaration: the ticket then gets the default below.
         $level = Get-TicketComplexity -Ticket $Ticket
         if ($level) {
             $mapped = ''
@@ -798,7 +854,7 @@ function Select-ModelFor {
             }
         }
 
-        # The code-complete states are tested BEFORE the strong tier, and this order was set by a
+        # The code-complete states are tested BEFORE the default, and this order was set by a
         # measurement rather than by taste. Written the other way round - strong tier first - shape
         # upgraded 12 tier-4 tickets sitting in Implemented and BlockNeedUserTest from cheap to
         # strong while moving only 7 down, so the policy whose entire purpose is to reach the cheap
@@ -807,14 +863,26 @@ function Select-ModelFor {
         # already made is not a big decision still to take.
         if (@(Get-SzaProfileValue 'runner.cheapStatuses') -contains $status) { return $CheapModel }
 
-        $strongTierMin = [int](Get-SzaProfileValue 'runner.strongTierMin')
-        if ($strongTierMin -gt 0 -and $tier -ge $strongTierMin) { return $StrongModel }
+        # S0041, the owner's decision of 2026-11-11: no recognised level launches the default model,
+        # not the strong one. Measured over 2026-10-28..11-10, 126 of 201 opus passes ran on tickets
+        # that had declared no level - half the robot's Claude spend routed by an author's omission.
+        # The default's first act (the lifecycle skill's stage 0) is to research and write the
+        # `**Complexity:**` line, and the NEXT launch obeys the level it wrote. This replaces the
+        # tier tests (strongTierMin, shapeCheapTierMax) and the fall-through into the tiered order
+        # that sat here until then: a tier is a roadmap label, and an unstated complexity is not a
+        # hard one, so neither may route where the declaration is absent. A BlockQuestions run above
+        # is the one strong answer that survives without a level.
+        return $DefaultModel
+    }
 
-        # The floor of 1 excludes a blank or zero tier, which is an unstated size rather than a
-        # small one - 6 of the 44 open decision-status tickets carried no tier when this was
-        # written, and routing them by absence would be routing them by an author's omission.
-        $shapeCheapTierMax = [int](Get-SzaProfileValue 'runner.shapeCheapTierMax')
-        if ($tier -ge 1 -and $tier -le $shapeCheapTierMax) { return $CheapModel }
+    # The two sources spell the tier differently and both are legitimate: select.ps1 returns the
+    # integer 2, the preflight ranker returns the label "3 - Moderate (ad-hoc)". A plain TryParse
+    # succeeds on the first and fails on the second, leaving tier 0 - so every queue-picked ticket
+    # silently missed the cheap tier. Take the leading integer from whichever shape arrives. The
+    # tiered policy below is the only reader.
+    $tier = 0
+    if ($null -ne $Ticket.tier -and ([string]$Ticket.tier) -match '^\s*(\d+)') {
+        $tier = [int]$Matches[1]
     }
 
     # STATUS decides before tier, because a status names what work is left while a tier only names
@@ -1164,7 +1232,7 @@ Write-Host ("  permission     : {0}" -f $PermissionMode)
 Write-Host ("  model policy   : {0}" -f $(
     switch ($ModelPolicy) {
         'tiered'  { "tiered ($StrongModel, $CheapModel for Implemented and tier 1-2)" }
-        'shape'   { "shape (a spec's Complexity light/medium/hard picks haiku/sonnet/opus; without one $CheapModel for tier 1-2 and Implemented, $StrongModel otherwise)" }
+        'shape'   { "shape (a spec's Complexity light/medium/hard picks haiku/sonnet/opus; without a recognised level $DefaultModel, the cheap statuses $CheapModel, always-strong statuses $StrongModel)" }
         'fixed'   { "fixed ($Model)" }
         'default' { 'CLI default' }
     }))
@@ -1174,6 +1242,9 @@ Write-Host ("  instance       : {0}" -f $Instance)
 Write-Host ("  stop files     : {0}  (all instances)" -f $stopFileAll)
 Write-Host ("                   {0}  (this one)" -f $stopFileMine)
 Write-Host ("  limit hold     : {0}" -f $limitHoldPath)
+if ($trialContext) {
+    Write-Host '  trial context  : ON (S0041) - Claude only: strict MCP plus the repository .mcp.json, no Workflow/ScheduleWakeup/ReportFindings, 5-minute caching; flags require CLI support' -ForegroundColor Magenta
+}
 Write-Host ''
 
 if ($DryRun) {
@@ -1431,8 +1502,11 @@ while ($true) {
     $prompt = $prompt.Replace('{specPath}', $specPath).Replace('{specpath}', $specPath).Replace('<spec path>', $specPath)
     $prompt = $prompt.Replace('{repoRoot}', $RepoRoot).Replace('{reporoot}', $RepoRoot).Replace('<repo root>', $RepoRoot)
     $prompt = $prompt.Replace('{updatePath}', $updateRel).Replace('{updatepath}', $updateRel).Replace('<update.ps1 path>', $updateRel)
+    if ($isClaudeChild -and $ModelPolicy -eq 'shape' -and -not $childComplexity) {
+        $prompt += ' Before other ticket work, research the ticket and write its **Complexity:** line as light, medium or hard with the reason for your assessment.'
+    }
     $childArgs = @(Expand-ChildArgs -Template $runnerArgsTemplate -Prompt $prompt `
-            -Mode $PermissionMode -Model $childModel -Effort $childEffort)
+            -Mode $PermissionMode -Model $childModel -Effort (Resolve-ChildEffort -RecordEffort $recordEffort -Model $childModel))
 
     # S4265: the child runs under a session id the runner chose, so that if it ends on the usage
     # limit its transcript is found by that name and never by guessing the CLI's project directory.
@@ -1444,6 +1518,25 @@ while ($true) {
     $sessionId = $plannedSessionId
     if ($sessionId -and (Test-ChildTakesSessionId) -and [array]::IndexOf($childArgs, '--session-id') -lt 0) {
         $childArgs += @('--session-id', $sessionId)
+    }
+
+    # S0041's context trial, appended after the template like the session id above, and only on a
+    # Claude child whose own --help names the flag. --strict-mcp-config with the
+    # repository's .mcp.json beside it keeps the one MCP configuration the repository declared and
+    # drops the user-scope servers whose tool definitions bloat every session start; a repository
+    # that declares none launches with none. The disallowed tools are the three whose instructions
+    # the study measured at 12.4k of every session start.
+    if ($trialContext -and $isClaudeChild) {
+        if (Test-ChildHelpLists '--strict-mcp-config') {
+            $childArgs += '--strict-mcp-config'
+            $mcpFile = Join-Path $RepoRoot '.mcp.json'
+            if ((Test-Path -LiteralPath $mcpFile -PathType Leaf) -and [array]::IndexOf($childArgs, '--mcp-config') -lt 0) {
+                $childArgs += @('--mcp-config', $mcpFile)
+            }
+        }
+        if (Test-ChildHelpLists '--disallowedTools') {
+            $childArgs += @('--disallowedTools', 'Workflow', 'ScheduleWakeup', 'ReportFindings')
+        }
     }
 
     # ProcessStartInfo.ArgumentList, never Start-Process -ArgumentList. Start-Process joins the array
@@ -1481,6 +1574,13 @@ while ($true) {
         $psi.Environment[(Get-SzaEnvName 'AGENT_ID')] = $sessionId
     } elseif ($psi.Environment.ContainsKey((Get-SzaEnvName 'AGENT_ID'))) {
         $psi.Environment.Remove((Get-SzaEnvName 'AGENT_ID'))
+    }
+    if ($trialContext -and $isClaudeChild -and (Test-ChildHelpLists '--strict-mcp-config')) {
+        # The third trial control, and the only one that is an environment variable: five-minute
+        # prompt caching, set into the CHILD's environment alone - never a repository's settings
+        # file, which the owner's interactive sessions share. Gated on the same probe as the flag,
+        # because it is a Claude Code variable and no other CLI reads it.
+        $psi.Environment['FORCE_PROMPT_CACHING_5M'] = '1'
     }
 
     $logFile = $null

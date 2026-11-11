@@ -6,6 +6,10 @@
 #
 #   Get-PqTicketLevel -RepoPath <dir> -TicketId <id>
 #       light, medium or hard from the spec's `**Complexity:**` line (rule 51, the runner's reader), or '' for none.
+#   Get-PqTicketLevelInfo -RepoPath <dir> -TicketId <id>
+#       the same one reading of the line, with the answer named: level, why (declared, noLine, noFile or
+#       unrecognised) and captureDefault (the recognised 'medium - not assessed at capture' text). The doctor
+#       reports on the why; nothing re-derives the regex a second time.
 #   Get-PqAgentPrompt -Agent <record> -RepoPath <dir>
 #       @{ ok; template; why }. slash: template $null (the repository's own runner.promptTemplate, as today). file: a
 #       template that tells the agent to open the pipeline's command file, when the repository's template is a slash
@@ -27,27 +31,46 @@
 
 $script:PqFastFailureSeconds = 120
 
-function Get-PqTicketLevel {
+# One reading of the `**Complexity:**` line (rule 51), with the answer named. The level is the contract's
+# three words (the Russian spellings included), and why says how it was reached: declared, noLine (no
+# `**Complexity:**` in the header window), noFile (no record, no file named, the file gone, the ledger
+# unreadable) or unrecognised (a value the reader does not accept - a Stage 0 rung such as
+# "Complex (..)" reads as no declaration, on purpose). captureDefault is true only for the capture text
+# 'medium - not assessed at capture': a recognised level under rule 51 that is still not an assessment,
+# which S0041 reports separately rather than redefining the recognition.
+function Get-PqTicketLevelInfo {
     param([Parameter(Mandatory)][string]$RepoPath, [Parameter(Mandatory)][string]$TicketId)
+    $info = [pscustomobject]@{ level = ''; why = 'noLine'; captureDefault = $false }
     try {
         $snap = Get-PqLedgerSnapshot -RepoPath $RepoPath
-        if (-not $snap.tickets.Contains($TicketId)) { return '' }
+        if (-not $snap.tickets.Contains($TicketId)) { $info.why = 'noFile'; return $info }
         $file = [string]$snap.tickets[$TicketId].file
-        if (-not $file) { return '' }
+        if (-not $file) { $info.why = 'noFile'; return $info }
         $spec = Resolve-PqRepoPathValue $snap.root $file
-        if (-not [IO.File]::Exists($spec)) { return '' }
+        if (-not [IO.File]::Exists($spec)) { $info.why = 'noFile'; return $info }
         $raw = ''
         foreach ($line in (Get-Content -LiteralPath $spec -TotalCount 40 -Encoding UTF8)) {
             if ($line -match '^\*\*Complexity:\*\*\s*(.+?)\s*$') { $raw = $Matches[1]; break }
         }
+        if (-not $raw) { $info.why = 'noLine'; return $info }
         switch -Regex ($raw.ToLowerInvariant()) {
-            '^(light|лёгкий|легкий)\b' { return 'light' }
-            '^(medium|средний)\b' { return 'medium' }
-            '^(hard|сложный)\b' { return 'hard' }
+            '^(light|лёгкий|легкий)\b' { $info.level = 'light'; $info.why = 'declared'; break }
+            '^(medium|средний)\b' {
+                $info.level = 'medium'; $info.why = 'declared'
+                if ($raw -imatch 'not assessed at capture') { $info.captureDefault = $true }
+                break
+            }
+            '^(hard|сложный)\b' { $info.level = 'hard'; $info.why = 'declared'; break }
+            default { $info.why = 'unrecognised' }
         }
     }
-    catch { }
-    return ''
+    catch { $info.why = 'noFile' }
+    return $info
+}
+
+function Get-PqTicketLevel {
+    param([Parameter(Mandatory)][string]$RepoPath, [Parameter(Mandatory)][string]$TicketId)
+    return (Get-PqTicketLevelInfo -RepoPath $RepoPath -TicketId $TicketId).level
 }
 
 function Get-PqAgentPrompt {

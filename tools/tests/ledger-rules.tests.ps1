@@ -1,4 +1,4 @@
-#requires -Version 7.0
+﻿#requires -Version 7.0
 <#
     Exercise the TASK-FLOW rules that the runner suite (batch-runner.tests.ps1) and the day-0 rehearsal do
     not reach, against throwaway projects and the shipped harness tools: the ledger and its files (rules 1,
@@ -354,17 +354,35 @@ try {
         # (g) The process level: the closing gate and the picker, in a throwaway project.
         $p = New-Project 'a-qblock' @('one', 'two')
         Add-Content (Join-Path $p (Get-Row $p 'S0001').file) "`n## 10. Links`n`nBlocker: other-repo:S0099`n"
-        # A ticket whose only blocker is in another repository is not parked in BlockByOtherTask; the dispatcher holds it (rule 52).
+        # S0042 (TASK-FLOW rule 52): a ticket whose only blocker is a qualified cross-repo token may stand in
+        # BlockByOtherTask; the closing gate accepts it while still refusing S0002 (which carries no blocker).
         $gate = Invoke-Tool $p 'spec_catalog/check-block-note.ps1' @('-Id', 'S0001', '-NewStatus', 'BlockByOtherTask', '-StatusNote', 'waiting on other-repo:S0099', '-NoteSupplied')
-        Assert-That ($gate.code -eq 1) "(g) check-block-note with only 'Blocker: other-repo:S0099' in section 10 exited $($gate.code), not 1: $($gate.output)"
-        Assert-That ($gate.output -match 'records no blocker in a directional channel') "(g) check-block-note with only 'Blocker: other-repo:S0099' did not say it records no directional blocker: $($gate.output)"
-        # The local picker does not enforce the token: the ticket stays selectable.
+        Assert-That ($gate.code -eq 0) "(g) check-block-note with 'Blocker: other-repo:S0099' in section 10 exited $($gate.code), not 0: $($gate.output)"
+        $gateEmpty = Invoke-Tool $p 'spec_catalog/check-block-note.ps1' @('-Id', 'S0002', '-NewStatus', 'BlockByOtherTask', '-StatusNote', 'waiting on nothing', '-NoteSupplied')
+        Assert-That ($gateEmpty.code -eq 1 -and $gateEmpty.output -match 'records no blocker in a directional channel') "(g) check-block-note on S0002 with no blocker did not refuse: $($gateEmpty.output)"
+        # While S0001 stays in Draft, the local picker does not enforce the cross-repo token: S0001 stays selectable.
         $pick = Invoke-Tool $p 'spec_catalog/spec-next-preflight.ps1' @('-NoDrift', '-Format', 'json')
         $json = @($pick.output -split "`r?`n" | Where-Object { $_.Trim().StartsWith('{') } | Select-Object -Last 1)
         Assert-That ($pick.code -eq 0 -and $json.Count -eq 1) "(g) spec-next-preflight exited $($pick.code) without a JSON payload: $($pick.output)"
         $picked = $json[0] | ConvertFrom-Json
-        Assert-That ($picked.selected.id -eq 'S0001') "(g) with 'Blocker: other-repo:S0099' in its section 10 the picker selected '$($picked.selected.id)', not S0001"
-        Assert-That (@($picked.auto_skipped | Where-Object { $_.id -eq 'S0001' }).Count -eq 0) "(g) the picker auto-skipped S0001 for 'Blocker: other-repo:S0099': $(@($picked.auto_skipped | Where-Object { $_.id -eq 'S0001' } | ForEach-Object { $_.reason }) -join ',')"
+        Assert-That ($picked.selected.id -eq 'S0001') "(g) with 'Blocker: other-repo:S0099' in Draft S0001, the picker selected '$($picked.selected.id)', not S0001"
+        # Once S0001 is parked in BlockByOtherTask on the cross-repo blocker, the local picker holds it (blocker-cross-repo)
+        # rather than releasing it prematurely, while SZA_PQ_PICKER=1 offers it to the portfolio dispatcher.
+        $upd = Invoke-Tool $p 'spec_catalog/update.ps1' @('-Id', 'S0001', '-Status', 'BlockByOtherTask', '-StatusNote', 'waiting on other-repo:S0099')
+        Assert-That ($upd.code -eq 0) "(g) update.ps1 to BlockByOtherTask failed: $($upd.output)"
+        $pickLocal = Invoke-Tool $p 'spec_catalog/spec-next-preflight.ps1' @('-NoDrift', '-Format', 'json')
+        $pickedLocal = (@($pickLocal.output -split "`r?`n" | Where-Object { $_.Trim().StartsWith('{') } | Select-Object -Last 1))[0] | ConvertFrom-Json
+        Assert-That ($pickedLocal.selected.id -eq 'S0002') "(g) local picker released BlockByOtherTask S0001 prematurely instead of selecting S0002: $($pickedLocal.selected.id)"
+        Assert-That (@($pickedLocal.auto_skipped | Where-Object { $_.id -eq 'S0001' -and $_.reason -like 'blocker-cross-repo*' }).Count -eq 1) "(g) local picker did not skip S0001 with blocker-cross-repo"
+        $origPq = $env:SZA_PQ_PICKER
+        try {
+            $env:SZA_PQ_PICKER = '1'
+            $pickPq = Invoke-Tool $p 'spec_catalog/spec-next-preflight.ps1' @('-NoDrift', '-Format', 'json')
+            $pickedPq = (@($pickPq.output -split "`r?`n" | Where-Object { $_.Trim().StartsWith('{') } | Select-Object -Last 1))[0] | ConvertFrom-Json
+            Assert-That ($pickedPq.selected.id -eq 'S0001') "(g) with SZA_PQ_PICKER=1 the picker did not offer S0001 to the portfolio dispatcher: $($pickedPq.selected.id)"
+        } finally {
+            $env:SZA_PQ_PICKER = $origPq
+        }
     }
 
     Test-Case 'rule 10: every way a ledger can be wrong fails validation, and each failure names what is wrong' {
