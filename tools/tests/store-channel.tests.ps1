@@ -59,9 +59,10 @@ try {
     $script:reply = Get-StoreReply -Status 'PendingCommit' -WithId
     Invoke-Case 'pending submission (a)' 1 'pending or non-published submission' | Out-Null
     Assert-Channel ($script:LastEvidence.refusal -ceq 'pending-submission') 'pending refusal not recorded'
-    $answer = Invoke-Case 'channel-created draft (f)' 1 'created by this channel' '2.0.0.0' @{ ChannelSubmissionIds = @('11111111-2222-3333-4444-555555555555') }
+    $answer = Invoke-Case 'channel-created draft (f)' 1 'created by the channel' '2.0.0.0' @{ ChannelSubmissionIds = @('11111111-2222-3333-4444-555555555555') }
     Assert-Channel ($script:LastEvidence.refusal -ceq 'mixed-edit') 'mixed-edit refusal not recorded'
     Assert-Channel (($answer -join ' ') -notmatch 'manual') 'mixed-edit reported as manual'
+    Assert-Channel (($answer -join ' ') -notmatch '11111111-2222-3333-4444-555555555555') 'submission identifier leaked in the refusal'
     $script:reply = Get-StoreReply -Status 'Published' -Mandatory
     Invoke-Case 'mandatory update (e)' 1 'mandatory update' | Out-Null
     Assert-Channel ($script:LastEvidence.refusal -ceq 'mandatory-update') 'mandatory-update refusal not recorded'
@@ -84,6 +85,9 @@ try {
     Invoke-Case 'signed package (c)' 1 'signed' '2.0.0.0' @{ PackagePath = $signed } | Out-Null
     Assert-Channel ($script:LastEvidence.refusal -ceq 'signed-package') 'signed-package refusal not recorded'
     Invoke-Case 'missing package (c)' 1 'package to stage is missing' '2.0.0.0' @{ PackagePath = (Join-Path $scratch 'no-such.msix') } | Out-Null
+    $broken = Join-Path $scratch 'broken.msix'
+    [IO.File]::WriteAllText($broken, 'not an archive')
+    Invoke-Case 'unreadable package' 1 'cannot read the package' '2.0.0.0' @{ PackagePath = $broken } | Out-Null
     $script:reply = 'Could not find a pending submission or published submission'
     Invoke-Case 'no live submission (rule 25)' 1 'no live submission' | Out-Null
     $plain = Join-Path $scratch 'plain.msix'
@@ -197,8 +201,8 @@ exit /b %SZA_TEST_STORE_EXIT%
     $jsonLines = @($jsonRun | Where-Object { "$_" })
     Assert-Channel ($LASTEXITCODE -eq 0 -and $jsonLines.Count -eq 1) "the -Json run printed $($jsonLines.Count) lines with exit $LASTEXITCODE"
     $evidence = $jsonLines[0] | ConvertFrom-Json
-    Assert-Channel ($evidence.mode -ceq 'ready' -and $evidence.storeId -ceq 'ABCDEFGHIJKL' -and $evidence.listingPath -ceq 'store/listingData.csv') 'the process evidence record is wrong'
-    Assert-Channel (($jsonLines -join ' ') -notmatch 'SHOULD-NOT-ECHO') 'an account identifier reached the -Json output'
+    Assert-Channel ($evidence.mode -ceq 'ready' -and $evidence.submission -ceq 'published' -and $evidence.pricing -ceq 'Free') 'the process evidence record is wrong'
+    Assert-Channel (($jsonLines -join ' ') -notmatch 'SHOULD-NOT-ECHO|ABCDEFGHIJKL|11111111-2222-3333-4444-555555555555|listingData') 'an identifier or caller-supplied path reached the -Json output'
     $cliCalls = @(Get-Content $storeCalls -ErrorAction SilentlyContinue)
     Assert-Channel ($cliCalls.Count -ge 1 -and ($cliCalls -join "`n") -match 'submission get ABCDEFGHIJKL') 'the stub saw no read-only submission get call'
 

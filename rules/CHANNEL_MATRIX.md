@@ -21,7 +21,7 @@ publishes to a store/index (irreversible, one-way).
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | GitHub Release | `v*` tag push | [PAID] [PUBLIC] | `gh auth` ambient | self (`.sha256`) | release body <- CHANGELOG | - | asset downloads + checksum matches |
 | winget | PR to `microsoft/winget-pkgs` | [PUBLIC] | `gh` + one-time CLA | Microsoft re-hosts | `winget/*.yaml` (committed) | `PackageIdentifier` | `winget install --manifest`, then `winget search` after merge |
-| Microsoft Store (MSIX) | read-only preflight, then machine channel (`msstore` submission API) when configured - **commit only by the owner's act**; **manual** Partner Center upload when unconfigured or the credential expired | [PUBLIC] | one Entra app credential held on the owner's machine (never in a repo); console for the manual path | **Store re-signs** (no cert in repo) | `store/listingData.csv` **or** submission-JSON metadata - one listing path per release | MSIX Identity `Name` + `Publisher` | dashboard shows new version; update over a prior MSIX |
+| Microsoft Store (MSIX) | manual Partner Center submission by default; read-only `msstore` preflight before the tag when configured; commit only by the owner's act | [PUBLIC] | one Entra app credential held on the owner's machine (never in a repo); console for the manual path | **Store re-signs** (no cert in repo) | `store/listingData.csv` or a future submission-JSON metadata path | MSIX Identity `Name` + `Publisher` | dashboard shows new version; update over a prior MSIX |
 | Chrome Web Store | `ext-cws-v*` tag push | [PAID] [PUBLIC] | CWS API creds + `cws-key` (git-ignored) | CRX / CWS | `extension/store/LISTING.md` | Chrome **item id** | store page shows version; installed copies update |
 | Edge Add-ons | `ext-edge-v*` tag push | [PAID] [PUBLIC] | Edge Partner API | Edge | same `extension/store/LISTING.md` | Edge **product id** (distinct from Chrome) | dashboard shows version; independent of Chrome |
 | VS Code Marketplace | **manual** `vsce publish` (only if the extension subtree changed) | [PUBLIC] | Marketplace PAT (Azure DevOps-backed) | Marketplace | `package.json` + `README.md` + `CHANGELOG.md` | extension id `<publisher>.<name>` | gallery shows version; installed copies auto-update |
@@ -106,22 +106,17 @@ paths; detect packaging at runtime via `GetCurrentPackageFullName`.
   associated, application registered, the read-only calls `apps list`, `submission status` and `submission get`
   answered); no write has gone through it yet, and the proposed submission-channel rules (19-26 of the
   `windows-store` proposal of 2026-11-11) stay `UNVERIFIED` until a first draft goes through - they bind nobody
-  until the contract owner folds them in. *Prepare* (build, read-back, listing) may leave a draft; *publish*
-  commits to certification and happens only behind the owner's explicit act naming the Store ID and the package
-  version - never in a default run. The shared read-only preflight (`tools/Store-Preflight.ps1`) runs before the
-  tag and refuses, naming the product and the reason, when: a submission is already pending (a draft, in
-  certification or waiting for release, whoever made it - it is never deleted or replaced, and `msstore publish`
-  never runs over one); the pending draft was created by this channel (it may then be changed only by the channel
-  until the owner commits or deletes it); a package carries a mandatory update, or the product is paid or uses
-  Store-managed consumables; the pricing object is not `Free` round-trippable (Pricing Version 2 - the machine
-  path never writes pricing); the candidate version is not strictly greater than the live one, read from the live
-  submission; the package is signed (`AppxSignature.p7x` present); or the product has no live submission (the
-  first publication and the age rating stay in the console). When the channel is unconfigured, the credential is
+  until the contract owner accepts them. A future machine *prepare* may leave a draft; *publish* commits to
+  certification and requires the owner's explicit act naming the Store ID and package version. The shared
+  read-only preflight (`tools/Store-Preflight.ps1`) runs before the tag when configured. It refuses, naming the
+  product and reason, for a non-published submission, non-Free or missing pricing, a candidate version not
+  strictly greater than each live package, or no live submission. It also checks an optional supplied package for
+  a signature and live packages for a mandatory update; it does not establish pricing round-trip capability or
+  detect Store-managed consumables. When the channel is unconfigured, the credential is
   expired or the token request is refused, the preflight prints one line that the Store step is manual and the
   release continues - a channel failure after the tag never fails the release or stops the other channels. A
-  channel run keeps evidence, per run and without any account identifier or secret: the Store ID, the package
-  version, the submission id the Store returned, the polled status values with their times, and which listing
-  path was used. Credential hygiene: a credential value never passes through an agent chat, a log, a repository
+  preflight JSON output contains no identifiers or raw response data. Credential hygiene: a credential value
+  never passes through an agent chat, a log, a repository
   file, or a command line kept in shell history; no script in this repo runs `msstore info` or echoes
   configuration; a value that reached an agent chat is treated as exposed and rotated, recorded by date only.
   Setup, read-only checks and their limits live in the `store-publish` skill's

@@ -182,12 +182,10 @@ When the owner has configured the machine channel (setup and rotation:
 through `msstore submission get` (read-only verbs only, allow-list enforced in the script), reads the Store ID
 from the product's identity file, and decides:
 
-- **Ready** - the channel may run for this product: nothing pending, pricing `Free`, the candidate version
-  strictly greater than the live one read from the live submission, the package unsigned.
+- **Ready** - the supplied checks passed: nothing pending, pricing `Free`, and, if supplied, a candidate
+  version greater than every live package and an unsigned package. This does not authorize a write.
 - **Refused** (exit 1) - stop, naming the product and the reason: a submission already pending (whoever made
-  it); a pending draft the channel itself created (it may then be changed only by the channel until the owner
-  commits or deletes it); a mandatory update or a paid product with Store-managed consumables; a pricing
-  object that is not `Free` round-trippable (Pricing Version 2 - the machine path never writes pricing); a
+  it); a mandatory update; a pricing object that is not confirmed `Free`; a
   candidate version not strictly greater than live; a signed package (`AppxSignature.p7x` present); no live
   submission (the first publication and the age rating stay in the console); or state it could not read - fail
   closed.
@@ -195,12 +193,9 @@ from the product's identity file, and decides:
   is past its expiry date: one line says the Store step is manual and the release continues exactly as without
   the channel. A channel failure after the tag never fails the release or stops the other channels.
 
-`-Json` prints the per-run evidence record: Store ID, package version, the submission id the Store returned,
-the polled status values with their times, and the listing path - never a Seller ID, Tenant ID, Client ID or
-any secret. The listing path is one per release: the CSV export-merge flow above **or** the submission-JSON
-metadata path, never both on one submission (a console edit of an API-made submission breaks the API's hold
-on it). These rules restate the `windows-store` proposal of 2026-11-11; they stay `UNVERIFIED` until a first
-draft goes through and bind nobody until the contract owner folds them in.
+`-Json` prints a sanitized preflight result without identifiers or raw response fields. The proposed listing
+paths and submission evidence remain `UNVERIFIED` and bind nobody until the contract owner accepts them. The
+preflight does not establish pricing round-trip capability or detect Store-managed consumables.
 
 ## Submission click path
 

@@ -271,10 +271,8 @@ Release's asset URL and SHA256:
 3. **Microsoft Store** - build the MSIX unsigned with the real Partner Center identity, then follow the
    manual Partner Center upload and listing flow by default. Committing a submission is the owner's act.
    After the tag, a Store channel failure is reported and never fails the release or stops other channels.
-   Record the per-run channel evidence in the repo's release state: Store ID, package version, the
-   submission id the Store returned, the polled status values with their times, and which listing path was
-   used - never a Seller ID, Tenant ID, Client ID or any secret (the machine channel page in the
-   `store-publish` skill holds the format).
+   The preflight's sanitized JSON result omits identifiers and raw responses; the future submission
+   evidence format remains part of the pending proposal (see the machine channel page in `store-publish`).
 4. **Any extra channel**: VS Code Marketplace (own semver clock, only if the subtree changed), Chrome/Edge
    (independent reviews), Play tracks, sideload, VR.
 5. **Site publish**, if the repo serves one - see [feature-to-site](../feature-to-site/SKILL.md).

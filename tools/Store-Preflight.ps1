@@ -22,10 +22,8 @@ param(
 # a missing or unusable identity file, a product with no live submission, or any state it cannot
 # read; 2 the channel is unavailable (CLI missing or unconfigured, token refused, recorded credential
 # expired) - the Store step is manual and a release continues. -Json prints the per-run evidence
-# record (store id, package version, the submission id the Store returned, the polled status with its
-# time, the listing path); it never prints a Seller ID, Tenant ID, Client ID, secret or the raw CLI
-# response. No draft, upload, commit or rollout is implemented here; committing a submission is the
-# owner's act.
+# record without identifiers, arbitrary CLI fields or secrets. No draft, upload, commit or rollout is
+# implemented here; committing a submission is the owner's act.
 
 # Keep the executable boundary here: callers cannot pass an arbitrary CLI operation.
 function Invoke-StoreRead {
@@ -73,6 +71,11 @@ function Invoke-StorePreflight {
           [string]$CredentialExpiry, [string]$ListingPath)
     $checkedAt = (Get-Date).ToString('o')
     $script:LastEvidence = @{ checkedAt = $checkedAt; productName = $Product; candidateVersion = $Candidate; listingPath = $ListingPath }
+    if ($Product -cnotmatch '^[A-Za-z][A-Za-z0-9 ._-]{0,79}$') {
+        Set-StoreEvidence @{ mode = 'refused'; refusal = 'invalid-input' }
+        Write-Output 'Store preflight: invalid product name.'
+        return 1
+    }
     if ($CredentialExpiry) {
         $expiry = [datetime]::MinValue
         if (-not [datetime]::TryParse($CredentialExpiry, [ref]$expiry)) {
@@ -134,7 +137,12 @@ function Invoke-StorePreflight {
             Write-Output "$($Product): the package to stage is missing."
             return 1
         }
-        if (Test-SignedStorePackage $PackagePath) {
+        try { $signed = Test-SignedStorePackage $PackagePath } catch {
+            Set-StoreEvidence @{ mode = 'refused'; refusal = 'invalid-package' }
+            Write-Output "$($Product): cannot read the package."
+            return 1
+        }
+        if ($signed) {
             Set-StoreEvidence @{ mode = 'refused'; refusal = 'signed-package'; detail = 'the packed archive holds an AppxSignature.p7x entry' }
             Write-Output "$($Product): the package is signed (AppxSignature.p7x); the Store re-signs at certification - never upload a signed package."
             return 1
@@ -193,7 +201,7 @@ function Invoke-StorePreflight {
         if ($submissionId -and $ChannelSubmissionIds -ccontains $submissionId) {
             Set-StoreEvidence @{ mode = 'refused'; refusal = 'mixed-edit'; detail = "submission $submissionId was created by this channel; only the channel may change it until the owner commits or deletes it" }
             Write-Output "$($Product): pending or non-published submission; stop."
-            Write-Output "$($Product): submission $submissionId was created by this channel and may be changed only by the channel until the owner commits or deletes it."
+            Write-Output "$($Product): this submission was created by the channel; stop and leave it untouched."
             return 1
         }
         Set-StoreEvidence @{ mode = 'refused'; refusal = 'pending-submission'; detail = "status $status" }
@@ -257,7 +265,17 @@ if ($MyInvocation.InvocationName -ne '.') {
         -CredentialExpiry $CredentialExpiry -ListingPath $ListingPath)
     $code = $messages[-1]
     if ($Json) {
-        ConvertTo-Json $script:LastEvidence -Depth 5 -Compress | Write-Output
+        # Only fixed, non-identifying values may cross the output boundary. CLI fields and caller
+        # input can contain arbitrary text, so do not serialize the internal evidence wholesale.
+        $evidence = [ordered]@{ mode = $script:LastEvidence.mode; checkedAt = $script:LastEvidence.checkedAt }
+        if ($script:LastEvidence.refusal) { $evidence.refusal = $script:LastEvidence.refusal }
+        if ($script:LastEvidence.status) {
+            $evidence.submission = if ($script:LastEvidence.status -ceq 'Published') { 'published' } else { 'non-published' }
+        }
+        if ($script:LastEvidence.pricing) {
+            $evidence.pricing = if ($script:LastEvidence.pricing -ceq 'Free') { 'Free' } else { 'other' }
+        }
+        ConvertTo-Json $evidence -Depth 5 -Compress | Write-Output
     } else {
         $messages | Select-Object -SkipLast 1 | Write-Output
     }

@@ -124,11 +124,10 @@ The three rules that decide most outcomes:
 - **The listing CSV is export-then-merge, never hand-authored.** Partner Center `ID` values are
   account-specific; a direct upload is rejected. Take a fresh export every attempt.
 
-**Prepare and publish are separate steps.** *Prepare* - the preflight, the unsigned build, the read-back, the
-listing - may end with a draft in the Store and nothing more; a draft left by prepare is not a dry run. *Publish*
-commits the submission to certification and happens only behind the owner's explicit act naming the Store ID and
-the package version - never in a default run, and never for a submission the console made (proposal rule 22
-shape, `UNVERIFIED` until a first draft goes through). Before the tag, run the read-only preflight
+**Prepare and publish are separate steps.** A future machine *prepare* may leave a draft in the Store; that is
+not a dry run. *Publish* commits the submission to certification and requires the owner's explicit act naming
+the Store ID and package version. A console-created submission is handled only in Partner Center. The machine
+write path and its proposed contract rules remain pending and `UNVERIFIED`. Before the tag, when configured, run the read-only preflight
 ([Store-Preflight.ps1](../../tools/Store-Preflight.ps1)): it refuses with the product and the reason when the
 Store state forbids a run (a pending submission, a channel-created draft, a mandatory update, non-`Free`
 pricing, a version not strictly greater than live, a signed package, no live submission), and it prints one
