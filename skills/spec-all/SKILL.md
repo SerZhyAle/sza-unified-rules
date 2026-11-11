@@ -1,6 +1,6 @@
 ---
 name: spec-all
-description: Take one ticket of any SZA project from where it stands to its audit - claim the ticket's lease, check drift, then run the spec-to-audit lifecycle for it (spec, plan, implement, evidence, self-audit) and release the lease. A new idea text is captured as a Draft first. Use on /spec-all, /sa, "take S0123 to done", "do this ticket", "work this ticket end to end", or on the Russian phrasings - "доведи тикет до конца", "прогони тикет", "сделай тикет", "возьми S0123 в работу". Owner-invoked; one ticket, then stop; it never tags, publishes or releases.
+description: Take one ticket of any SZA project from where it stands to its audit - claim the ticket's lease, check drift, then run the spec-to-audit lifecycle for it (spec, plan, implement, evidence, self-audit) and release the lease. A new idea text is captured as a Draft first. The ticket may be named across projects as <key>:<id> (fms-web:S0123), and a bare project key takes that project's next eligible ticket. Use on /spec-all, /sa, "take S0123 to done", "do this ticket", "work this ticket end to end", "/sa fms-web:S0123", "/sa fms-web", or on the Russian phrasings - "доведи тикет до конца", "прогони тикет", "сделай тикет", "возьми S0123 в работу", "возьми тикет проекта fms-web". Owner-invoked; one ticket, then stop; it never tags, publishes or releases.
 ---
 
 # Spec all - one ticket, end to end
@@ -20,6 +20,8 @@ own stages, paths and flags (`-m`); in that project that file is the command and
 ```text
 /spec-all S0123            the ticket, in the project of the current folder
 /spec-all <slug>           a ticket by its slug
+/spec-all fms-web:S0123    one ticket of a registered project, from any folder
+/spec-all fms-web          the next eligible ticket of that project, from any folder; then stop
 /spec-all <idea text>      capture the idea as a Draft ticket (spec-draft), then work that ticket
 ```
 
@@ -45,17 +47,42 @@ pwsh -NoProfile -WorkingDirectory "<project root>" -File "<root>/tools/harness/s
 ```
 
 A project with its own `scripts/spec_catalog/` names its entry points in its `CLAUDE.md`; use those, same arguments.
-Read the project's agent-rules file first - the slots spec-to-audit lists (build, test, closure) are filled from it.
+Read the agent-rules file of the project the ticket belongs to (Step 1's `root`) first - the slots spec-to-audit lists (build, test, closure) are filled from it.
 
-## Step 1 - Name the ticket
+## Step 1 - Name the ticket and its project
 
-| Argument | Do |
-| --- | --- |
-| `S0123` (the project's own id shape) | use it |
-| a slug | `spec_catalog/select.ps1 -Query <slug> -Format json` - the query matches the whole slug only; a hit -> its id, `[]` -> say the slug is unknown and stop (a partial word is not searched, and free text is an idea, below) |
-| free text | capture it with the [spec-draft](../spec-draft/SKILL.md) skill's script for this project (its Step 3, the owner's words verbatim); the id is on its `drafted <key>:<id>` line. Capturing is all that step does - research starts in Step 3 |
+Ticket ids are unique only inside one project (`S0021` is a different ticket in each of several), so the project is
+named **before** any ticket is read. The argument goes through the resolver, which decides the same way every time and
+only reads (from the folder the command was typed in):
+
+```powershell
+pwsh -NoProfile -File "<root>/tools/harness/portfolio/resolve-ticket.ps1" -Arg "<the argument text>"
+```
+
+One JSON line comes back: `{ kind, project, root, id, slug, reason }`. Exit 0 is a reading; exit 2 is `refused` or
+`ambiguous` - print its `reason` in one line and **stop**. Nothing else is tried: a failed or ambiguous lookup never
+operates on a same-numbered ticket in the current project.
+
+| `kind` | Argument | Do |
+| --- | --- | --- |
+| `ticket` | `<key>:<id>`, `<key>` a registered project | use `id` in the project at `root` |
+| `project-next` | a bare registered project key | pick that project's next eligible ticket, as [spec-next](../spec-next/SKILL.md) Step 1 does (`spec-next-preflight.ps1 -Claim` with `-WorkingDirectory` set to `root`); work the ticket it selects, then stop. `selected` null -> print `selected_none_reason` and stop |
+| `local-id` | `S0123` (the project's own id shape) | use `id` in the current project |
+| `local-slug` | a slug of the current project | `id` is the hit (the resolver ran `select`'s whole-slug match on the ledger) |
+| `idea` | free text | capture it with the [spec-draft](../spec-draft/SKILL.md) skill's script for this project (its Step 3, the owner's words verbatim); the id is on its `drafted <key>:<id>` line. Capturing is all that step does - research starts in Step 3 |
+
+**Precedence, first match wins:** (1) `<key>:<id>` with a registered key; (2) a bare token equal to a registered project
+key (exact, case-sensitive), no other words; (3) the current project's own id shape; (4) a slug of the current project;
+(5) free text is an idea. A token that is both a registered key and a local id or slug is **ambiguous** and refused with
+one line naming both readings (`use <key>:<id> or the slug with its id`) - the skill never guesses. A `<token>:<id>`
+whose token is not a registered key is not a project reference. A registered key with an id its ledger does not hold is
+refused (`no such ticket in <key>`).
 
 ## Step 2 - Claim the lease and read the ticket, in one call
+
+The project root is the resolver's `root` (the current project's for a local reading). **Every** tool call from here to
+the release runs with `-WorkingDirectory` set to it - the lease, the status moves, the audit - so a ticket of another
+project is never read or changed through the current folder.
 
 ```powershell
 pwsh -NoProfile -WorkingDirectory "<project root>" -File "<root>/tools/harness/spec_catalog/spec-preamble.ps1" -Id <id> -Reason "spec-all"
@@ -116,7 +143,9 @@ owns it, and the next step if there is one. When the next step is a release, say
 ## What this skill never does
 
 - Work a ticket whose lease a live sibling holds, or skip the release of its own lease.
-- Take a second ticket: when this one ends, it stops. The next one is `/spec-next` or `pq`.
+- Take a second ticket: when this one ends, it stops. The next one is `/spec-next` or `pq`. A bare project key is one
+  ticket too, never the project's queue.
+- Fall back to a same-numbered ticket of the current project when a `<key>:<id>` lookup fails or is ambiguous.
 - Answer an owner question itself - a ticket that needs the owner's call goes to `BlockQuestions` and stops.
 - Tag, publish, release, commit or push unless the project's own rules and the owner's request say to commit.
 - Edit `spec-catalog.jsonl` or the queue files by hand.

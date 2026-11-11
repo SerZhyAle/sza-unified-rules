@@ -7,7 +7,15 @@
 #   Get-PqRank -Registry <obj> [-Queue <Read-PqQueueFile result>] -HeadProvider <sb param($Repo,$Exclude,$ForceId)>
 #              [-Exclude <repo:id[]>] [-SkipRepos <key[]>] [-Slots <int>] [-Busy <hashtable key->int>]
 #              [-Occupied <key[]>] [-Stopped <key[]>] [-TicketBlocked <hashtable 'repo:id'->'resource'|'deviceLevel'>]
-#              [-Fill depth|breadth] [-StopAfter <int>]
+#              [-Fill depth|breadth] [-StopAfter <int>] [-NamedTicket <key:id>] [-OnlyRepo <key>]
+#
+#   -NamedTicket key:id (S0027, `pq start -Ticket`): only that repository is active and its single entry is exactly that
+#   ticket, whatever its rank; the queue file's rows are ignored and so are its hold lines for that repository (the whole-
+#   project hold row, and the hold row of that exact ticket) - the lines themselves stay in the file and keep holding every
+#   other ticket. Everything else still applies: the registry's enabled and hold flags, a stop, occupancy, the exclusion
+#   lists, and the picker's own gates. The result then also carries named = @{ repo; id; offered; why; heldBypassed }, and
+#   rank.result carries 'named' and 'heldBypassed'; without the parameter neither key exists.
+#   -OnlyRepo key (`pq start -Repo`): only that repository is ranked, in its own ticket order, every hold kept.
 #
 #   -StopAfter n > 0: the walk of step 3 ends once n distinct heads are found, so a caller that reads only the first
 #   candidate (the dispatcher loop, status) does not pay one picker run per queue row it never looks at. The first n
@@ -45,6 +53,75 @@ function Get-PqRankIds($Items) {
         })
 }
 
+# '<key>:<id>' split on the first colon: @{ repo; id }, or $null when it is not that shape (no key, no id, a blank).
+function ConvertTo-PqNamedTicket([string]$Text) {
+    if ([string]::IsNullOrEmpty($Text)) { return $null }
+    $i = $Text.IndexOf(':')
+    if ($i -le 0 -or $i -ge $Text.Length - 1) { return $null }
+    $key = $Text.Substring(0, $i)
+    $id = $Text.Substring($i + 1)
+    if ($key -match '\s' -or $id -match '\s') { return $null }
+    return @{ repo = $key; id = $id }
+}
+
+# The checks of `pq start -Ticket / -Repo` that need no worker slot (S0027): @{ ok; name; message; named }. Pure.
+function Test-PqStartTarget {
+    param([Parameter(Mandatory)]$Registry, [string]$Ticket = '', [string]$Repo = '', [int]$MaxTickets = 0)
+    $keys = @(@($Registry.repos) | ForEach-Object { [string](Get-PqRankValue $_ 'key') })
+    $bad = { param($n, $m) @{ ok = $false; name = $n; message = $m; named = $null } }
+    if ($Ticket -and $Repo) { return (& $bad 'ArgumentConflict' '-Ticket and -Repo cannot be used together') }
+    if ($Ticket) {
+        $named = ConvertTo-PqNamedTicket $Ticket
+        if ($null -eq $named) { return (& $bad 'ArgumentInvalid' "-Ticket '$Ticket' is not <key>:<id>") }
+        if ($keys -cnotcontains $named.repo) { return (& $bad 'UnknownRepoKey' "no repository '$($named.repo)' in the registry") }
+        if ($MaxTickets -gt 1) { return (& $bad 'ArgumentInvalid' "-MaxTickets $MaxTickets with -Ticket: a named start is one pass (use 0 or 1)") }
+        return @{ ok = $true; name = $null; message = $null; named = $named }
+    }
+    if ($Repo -and $keys -cnotcontains $Repo) { return (& $bad 'UnknownRepoKey' "no repository '$Repo' in the registry") }
+    return @{ ok = $true; name = $null; message = $null; named = $null }
+}
+
+# One line for `pq: ticket <key>:<id> not run - <reason>`: what the loop itself held back (-Marks: xblocked, transient,
+# occupied - the loop's hashtables - and exclude, its list) first, then the named result of the rank.
+function Get-PqNamedNotRunReason {
+    param($Rank, [Parameter(Mandatory)][string]$Key, [Parameter(Mandatory)][string]$Id, [hashtable]$Marks = @{})
+    $tk = "$Key`:$Id"
+    $xb = Get-PqRankValue $Marks 'xblocked'
+    if ($null -ne $xb -and $xb.ContainsKey($tk)) { return "it waits on a blocker in another project ($($xb[$tk].blocker))" }
+    $tr = Get-PqRankValue $Marks 'transient'
+    if ($null -ne $tr -and $tr.ContainsKey($tk)) {
+        if ([string]$tr[$tk].why -ceq 'deviceLevel') { return 'it needs real hardware (Verify: device) and robots never take it' }
+        return 'it waits for a machine resource (build, emulator) that another pass holds'
+    }
+    $oc = Get-PqRankValue $Marks 'occupied'
+    if ($null -ne $oc -and $oc.ContainsKey($Key)) {
+        if ([string]$oc[$Key].why -ceq 'workerCap') { return "the project's worker cap is reached" }
+        return 'the project is occupied by a live owner session (the robot yields)'
+    }
+    if (@(Get-PqRankValue $Marks 'exclude' @()) -ccontains $tk) { return 'the ticket was excluded earlier in this run' }
+    $n = Get-PqRankValue $Rank 'named'
+    $why = [string](Get-PqRankValue $n 'why' '')
+    switch ($why) {
+        'unknownRepo' { return 'no such project in the registry' }
+        'disabled' { return 'the project is disabled in the registry (enabled is false)' }
+        'hold' { return "the project is on hold in the registry (pq release $Key)" }
+        'heldByQueue' { return 'the project is under a hold line of the queue file' }
+        'stopped' { return 'the project is stopped (its shared stop file exists)' }
+        'occupied' { return 'the project is occupied (another worker holds it, or a live owner session)' }
+        'skipped' { return 'the project was skipped by the caller' }
+        'excluded' { return 'the ticket is excluded in this run (dropped, stopped or waiting on a resource)' }
+        'leased' { return 'the ticket holds a live lease (another session or pass is working it)' }
+        'notRanked' { return 'the project offers no such ticket (absent, closed, or a status no robot works)' }
+        'malformed' { return "the ticket's ledger row is malformed" }
+        'notOffered' { return 'the picker does not offer the ticket now' }
+        'pickerFailed' { return 'the picker failed' }
+        'idle-hold' { return 'the picker holds it (idle-run hold)' }
+        'owner-gate' { return 'the picker holds it (owner gate)' }
+        '' { return 'it is not offered' }
+        default { return "the picker holds it ($why)" }
+    }
+}
+
 function Get-PqRank {
     param(
         [Parameter(Mandatory)]$Registry,
@@ -58,8 +135,25 @@ function Get-PqRank {
         [string[]]$Stopped = @(),
         [hashtable]$TicketBlocked = @{},
         [ValidateSet('', 'depth', 'breadth')][string]$Fill = '',
-        [ValidateRange(0, [int]::MaxValue)][int]$StopAfter = 0
+        [ValidateRange(0, [int]::MaxValue)][int]$StopAfter = 0,
+        [string]$NamedTicket = '',
+        [string]$OnlyRepo = ''
     )
+    $namedMode = $false
+    $namedRepo = ''
+    $namedId = ''
+    if ($NamedTicket) {
+        if ($OnlyRepo) { throw 'ArgumentConflict: -NamedTicket and -OnlyRepo are exclusive' }
+        $nt = ConvertTo-PqNamedTicket $NamedTicket
+        if ($null -eq $nt) { throw "ArgumentInvalid: -NamedTicket '$NamedTicket' is not <key>:<id>" }
+        $namedMode = $true
+        $namedRepo = $nt.repo
+        $namedId = $nt.id
+    }
+    $onlyKey = if ($namedMode) { $namedRepo } else { $OnlyRepo }
+    $heldBypassed = $false
+    $namedOffered = $false
+    $namedWhy = $null
     $sw = [Diagnostics.Stopwatch]::StartNew()
     if (-not $Fill) { $Fill = [string](Get-PqRankValue $Registry 'fill' 'depth') }
     if ($Slots -lt 0) { $Slots = [int](Get-PqRankValue $Registry 'maxWorkers' 5) }
@@ -92,6 +186,8 @@ function Get-PqRank {
     $repoExclude = @{}
     foreach ($k in $repos.Keys) { $repoExclude[$k] = [Collections.Generic.List[string]]::new() }
     foreach ($h in $heldRows) {
+        # A named ticket passes through the hold lines that name its project or itself; the lines stay in the file.
+        if ($namedMode -and $h.repo -ceq $namedRepo -and ($null -eq $h.id -or $h.id -ceq $namedId)) { $heldBypassed = $true; continue }
         if ($null -eq $h.id) { $null = $heldRepos.Add($h.repo) }
         elseif ($repoExclude.ContainsKey($h.repo)) { $repoExclude[$h.repo].Add($h.id); $excluded.held++ }
     }
@@ -112,6 +208,7 @@ function Get-PqRank {
     }
     $active = [ordered]@{}
     foreach ($k in $repos.Keys) {
+        if ($onlyKey -and $k -cne $onlyKey) { continue }
         if (@($SkipRepos) -ccontains $k) { continue }
         $rec = $repos[$k].record
         if ((Get-PqRankValue $rec 'enabled' $false) -ne $true) { $skipped.Add([ordered]@{ repo = $k; why = 'disabled' }); $excluded.held++; continue }
@@ -124,6 +221,12 @@ function Get-PqRank {
         $busyNow = if ($Busy.ContainsKey($k)) { [int]$Busy[$k] } else { 0 }
         $active[$k] = @{ cap = [Math]::Max(0, $cap - $busyNow); used = 0; planned = [Collections.Generic.List[string]]::new()
             counted = $false; failed = $false; none = $null; picks = 0 }
+    }
+
+    if ($namedMode -and -not $active.Contains($namedRepo)) {
+        $namedWhy = 'skipped'
+        if (-not $repos.Contains($namedRepo)) { $namedWhy = 'unknownRepo' }
+        else { foreach ($sk in $skipped) { if ($sk.repo -ceq $namedRepo) { $namedWhy = [string]$sk.why; break } } }
     }
 
     # The provider, memoised per (repo, exclusion, forced id), with the exclusion counts taken once per repository.
@@ -184,7 +287,12 @@ function Get-PqRank {
                 package = $row.package; row = $row.line })
     }
     foreach ($k in @($active.Keys | Sort-Object -Stable -Property @{ Expression = { $repos[$_].rank } }, @{ Expression = { $repos[$_].index } })) {
-        if ($rowsOf.ContainsKey($k)) { foreach ($x in $rowsOf[$k]) { $entries.Add($x) } }
+        if ($namedMode) {
+            # One entry: the named ticket itself; the queue file's rows of the repository are not consulted.
+            $entries.Add(@{ repo = $k; kind = 'ticket'; id = $namedId; source = 'named'; rule = 'named'; score = 0
+                    package = $null; row = $null })
+        }
+        elseif ($rowsOf.ContainsKey($k)) { foreach ($x in $rowsOf[$k]) { $entries.Add($x) } }
         elseif (-not $mentioned.Contains($k)) {
             $entries.Add(@{ repo = $k; kind = 'head'; id = $null; source = 'repoOrder'; rule = 'repoRank'; score = $repos[$k].rank
                     package = $null; row = $null; unlisted = $true })
@@ -216,6 +324,7 @@ function Get-PqRank {
     foreach ($e in $entries) {
         if ($StopAfter -gt 0 -and $found -ge $StopAfter) { break }
         $p = & $pickOne $e $false
+        if ($namedMode) { $namedOffered = ($null -ne $p.head); $namedWhy = if ($namedOffered) { $null } else { [string]$p.why } }
         if ($null -eq $p.head) {
             if ($e.kind -eq 'ticket') { $walk.Add(@{ entry = $e; head = $null; why = "notOffered:$($p.why)"; id = $e.id }) }
             continue
@@ -307,11 +416,17 @@ function Get-PqRank {
     }
     $sw.Stop()
     $heads = @($candidates | ForEach-Object { [ordered]@{ repo = $_.repo; id = $_.id; source = $_.source; score = $_.score } })
-    $events.Add(@{ ev = 'rank.result'; d = [ordered]@{ heads = $heads; excluded = $excluded; autoSkipReasons = $autoSkip; fill = $Fill
-                ms = [int]$sw.ElapsedMilliseconds; queueRows = $queueRows.Count; queueBad = $queueBad } })
-    return @{
+    $resultD = [ordered]@{ heads = $heads; excluded = $excluded; autoSkipReasons = $autoSkip; fill = $Fill
+        ms = [int]$sw.ElapsedMilliseconds; queueRows = $queueRows.Count; queueBad = $queueBad }
+    if ($namedMode) { $resultD.named = "$namedRepo`:$namedId"; $resultD.heldBypassed = $heldBypassed }
+    $events.Add(@{ ev = 'rank.result'; d = $resultD })
+    $result = @{
         candidates = $candidates.ToArray(); plan = $plan.ToArray(); skipped = $skipped.ToArray(); excluded = $excluded
         autoSkipReasons = $autoSkip; fill = $Fill; heads = $heads; ms = [int]$sw.ElapsedMilliseconds
         queueRows = $queueRows.Count; queueBad = $queueBad; events = $events.ToArray()
     }
+    if ($namedMode) {
+        $result.named = @{ repo = $namedRepo; id = $namedId; offered = $namedOffered; why = $namedWhy; heldBypassed = $heldBypassed }
+    }
+    return $result
 }

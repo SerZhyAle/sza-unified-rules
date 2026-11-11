@@ -23,7 +23,11 @@ function Get-PqNextRank {
         [string[]]$Exclude = @(),
         [string[]]$Occupied = @(),
         [int]$Slots = -1,
-        [int]$StopAfter = 0
+        [int]$StopAfter = 0,
+        # S0027: a named ticket 'key:id' (queue-file hold lines for it are bypassed, its repository is the only one ranked)
+        # and a repository-only restriction 'key' (every hold kept); see Get-PqRank.
+        [string]$NamedTicket = '',
+        [string]$OnlyRepo = ''
     )
     if (-not $HarnessRoot) { $HarnessRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..')) }
     if (@($Occupied).Count -eq 0) {
@@ -49,7 +53,11 @@ function Get-PqNextRank {
     }
 
     $qp = Get-PqQueuePath $Registry
-    $queue = Read-PqQueueFile -Path $qp -KnownRepos (Get-PqKnownKeys $Registry) -TicketLookup $lookup
+    # A named start reads the queue file for its hold lines only and never walks its rows, so the per-row ledger
+    # lookup (one child process per repository) is not paid.
+    $queueArgs = @{ Path = $qp; KnownRepos = (Get-PqKnownKeys $Registry) }
+    if (-not $NamedTicket) { $queueArgs.TicketLookup = $lookup }
+    $queue = Read-PqQueueFile @queueArgs
     $pickerCache = @{}
     $provider = {
         param($Repo, $Ex, $ForceId)
@@ -60,7 +68,10 @@ function Get-PqNextRank {
     }
 
     $n = if ($Slots -ge 0) { $Slots } else { [int](Get-PqValue $Registry 'maxWorkers' 1) }
-    return (Get-PqRank -Registry $Registry -Queue $queue -HeadProvider $provider -Slots $n -Exclude $Exclude -Occupied $Occupied -Stopped (Get-PqStoppedRepos $Registry) -StopAfter $StopAfter)
+    $rankArgs = @{ Registry = $Registry; Queue = $queue; HeadProvider = $provider; Slots = $n; Exclude = $Exclude; Occupied = $Occupied; Stopped = (Get-PqStoppedRepos $Registry); StopAfter = $StopAfter }
+    if ($NamedTicket) { $rankArgs.NamedTicket = $NamedTicket }
+    if ($OnlyRepo) { $rankArgs.OnlyRepo = $OnlyRepo }
+    return (Get-PqRank @rankArgs)
 }
 
 # Keys of enabled repositories whose shared queue stop file (rule 26, paths.queueStopFile) exists: the owner's `rs`, or
@@ -184,6 +195,32 @@ function Set-PqWorkerState([int]$Slot, [string]$Repo = $null, [string]$Ticket = 
         $tmp = "$wf.$PID.tmp"
         [IO.File]::WriteAllText($tmp, (($obj | ConvertTo-Json -Compress)), [Text.Encoding]::UTF8)
         [IO.File]::Move($tmp, $wf, $true)
+    }
+}
+
+# Reserve the repository and ticket together with the worker state. Ranking is only a snapshot: another
+# worker can choose the same candidate before either has published its assignment.
+function Request-PqWorkerAssignment {
+    param([int]$Slot, $Repo, [string]$Ticket, [string]$Title, [string]$Agent, [int]$AgentMax = 1)
+    Invoke-PqStateLock {
+        $runDir = Join-Path (Get-PqRoot) 'run'
+        $own = Read-PqState (Join-Path $runDir "worker-$Slot.json")
+        if ($null -eq $own -or [int](Get-PqValue $own 'pid' 0) -ne $PID -or -not (Test-PqStateOwner $own)) { return $false }
+        $key = [string]$Repo.key
+        $limit = if ((Get-PqValue $Repo 'concurrent' $false) -eq $true) { [int](Get-PqValue $Repo 'maxWorkers' 1) } else { 1 }
+        $count = 0
+        $agentCount = 0
+        foreach ($file in [IO.Directory]::GetFiles($runDir, 'worker-*.json')) {
+            $state = Read-PqState $file
+            if (-not (Test-PqStateOwner $state)) { continue }
+            if ((Get-PqValue $state 'agent') -ceq $Agent) { $agentCount++ }
+            if ((Get-PqValue $state 'repository') -cne $key) { continue }
+            if ((Get-PqValue $state 'ticket') -ceq $Ticket) { return $false }
+            $count++
+        }
+        if ($count -ge $limit -or $agentCount -ge $AgentMax) { return $false }
+        Set-PqWorkerState -Slot $Slot -Repo $key -Ticket $Ticket -Title $Title -Agent $Agent
+        return $true
     }
 }
 
@@ -499,8 +536,23 @@ function Start-PqLoop {
         [int]$PollSeconds = 0,
         [string]$RunnerScript = '',
         # A clock time the run ends at (S0016 R56): no new pass after it, a waiting loop ends at once.
-        [Nullable[datetime]]$Until = $null
+        [Nullable[datetime]]$Until = $null,
+        # S0027: 'key:id' = exactly one pass on that ticket whatever its rank, then exit (never waits, never another
+        # ticket; exit 3 with a reason when it is not run); 'key' = a normal worker that ranks only that project.
+        [string]$OnlyTicket = '',
+        [string]$OnlyRepo = ''
     )
+    $named = $null
+    $namedFail = ''
+    if ($OnlyTicket -or $OnlyRepo) {
+        $tv = Test-PqStartTarget -Registry $Registry -Ticket $OnlyTicket -Repo $OnlyRepo -MaxTickets $MaxTickets
+        if (-not $tv.ok) { Write-PqError $tv.name $tv.message; return 2 }
+        $named = $tv.named
+    }
+    if ($null -ne $named) {
+        $MaxTickets = 1
+        $Drain = [switch]$true
+    }
     $root = Initialize-PqRoot
     $stopPath = Join-Path $root 'STOP'
     $slot = Invoke-PqStateLock {
@@ -528,13 +580,18 @@ function Start-PqLoop {
     $log = Open-PqLog -Writer "w$slot" -Run $runId
 
     $enabledRepos = @(@($Registry.repos) | Where-Object { $_.enabled -eq $true })
-    $null = Write-PqEvent -Log $log -Ev 'run.start' -Run $runId -Worker $slot -D ([ordered]@{
+    $startD = [ordered]@{
         mode = 'pool'
         slots = [int]$Registry.maxWorkers
         drain = [bool]$Drain
         repos = $enabledRepos.Count
         pid = $PID
-    })
+    }
+    if ($null -ne $named) { $startD.target = "ticket:$($named.repo):$($named.id)" }
+    elseif ($OnlyRepo) { $startD.target = "repo:$OnlyRepo" }
+    $null = Write-PqEvent -Log $log -Ev 'run.start' -Run $runId -Worker $slot -D $startD
+    $repoOnly = @{}
+    if ($OnlyRepo) { $repoOnly.OnlyRepo = $OnlyRepo }
     Write-PqOwnerAction 'start'
 
     $harness = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
@@ -634,6 +691,7 @@ function Start-PqLoop {
                 # The pause (R56): no pass is launched, those running are not touched (there is none in flight between turns);
                 # `pq resume` removes the file. A stop or the end time still ends a paused worker, at the top of this turn.
                 if (Test-PqPaused) {
+                    if ($null -ne $named) { $namedFail = 'the queue is paused (pq resume continues it)'; break }
                     if (-not $paused) {
                         $null = Write-PqEvent -Log $log -Ev 'run.pause' -Run $runId -Worker $slot -D ([ordered]@{ by = 'cli' })
                         Write-Host 'paused - pq resume continues'
@@ -743,7 +801,11 @@ function Start-PqLoop {
                 $rankExclude = @($exclude) + @($transient.Keys) + @($stopTickets)
                 $rankOccupied = @($occupied) + @($occupiedMarks.Keys) + @($stopRepos) + @($capRepos)
                 $rank = $null
-                if ($drainNow -and $drainCarry) {
+                if ($null -ne $named) {
+                    # A named start asks the rank for that one ticket only: no drain carry, no breadth fill.
+                    $rank = Get-PqNextRank -Registry $Registry -HarnessRoot $harness -Exclude $rankExclude -Occupied $rankOccupied -Slots 1 -StopAfter 1 -NamedTicket $OnlyTicket
+                }
+                elseif ($drainNow -and $drainCarry) {
                     # A drain (rule 47) goes on with the ticket whose pass was in flight when it was read, as long as the
                     # repository still offers it; the rank is not asked.
                     $dc = $drainCarry -split ':', 2
@@ -761,10 +823,10 @@ function Start-PqLoop {
                 }
                 else {
                     if ((Get-PqValue $Registry 'fill' 'depth') -ceq 'breadth' -and $busyRepos.Count -gt 0) {
-                        $rank = Get-PqNextRank -Registry $Registry -HarnessRoot $harness -Exclude $rankExclude -Occupied (@($rankOccupied) + @($busyRepos)) -Slots 1 -StopAfter 1
+                        $rank = Get-PqNextRank -Registry $Registry -HarnessRoot $harness -Exclude $rankExclude -Occupied (@($rankOccupied) + @($busyRepos)) -Slots 1 -StopAfter 1 @repoOnly
                         if (@($rank.candidates).Count -eq 0) { $rank = $null }
                     }
-                    if ($null -eq $rank) { $rank = Get-PqNextRank -Registry $Registry -HarnessRoot $harness -Exclude $rankExclude -Occupied $rankOccupied -Slots 1 -StopAfter 1 }
+                    if ($null -eq $rank) { $rank = Get-PqNextRank -Registry $Registry -HarnessRoot $harness -Exclude $rankExclude -Occupied $rankOccupied -Slots 1 -StopAfter 1 @repoOnly }
                 }
                 foreach ($e in @($rank.events)) {
                     $null = Write-PqEvent -Log $log -Ev $e.ev -Run $runId -Worker $slot -D $e.d
@@ -772,6 +834,13 @@ function Start-PqLoop {
 
                 # 5. Handle empty candidates
                 if (@($rank.candidates).Count -eq 0) {
+                    if ($null -ne $named) {
+                        # Never waits and never takes another ticket: the loop's own mark (a blocker, a resource, the
+                        # owner's occupancy, the worker cap) first, then what the rank said about the named ticket.
+                        $namedFail = Get-PqNamedNotRunReason -Rank $rank -Key $named.repo -Id $named.id -Marks @{ xblocked = $xblocked; transient = $transient; occupied = $occupiedMarks; exclude = @($exclude) }
+                        $null = Write-PqEvent -Log $log -Ev 'run.stop' -Run $runId -Worker $slot -D ([ordered]@{ level = 'drain'; reason = 'owner'; passesInFlight = 0 })
+                        break
+                    }
                     if ($Drain) {
                         if ($passCount -eq 0) { Write-Host 'nothing to do' }
                         $null = Write-PqEvent -Log $log -Ev 'run.stop' -Run $runId -Worker $slot -D ([ordered]@{
@@ -847,6 +916,11 @@ function Start-PqLoop {
 
                 # 6. We have a candidate
                 $cand = $rank.candidates[0]
+                # A named start runs the named ticket or nothing: the rank offers that one entry, and this is the guard.
+                if ($null -ne $named -and ([string]$cand.repo -cne $named.repo -or [string]$cand.id -cne $named.id)) {
+                    $namedFail = "the rank offered $($cand.repo):$($cand.id) instead - not taken"
+                    break
+                }
                 if ($waiting) { Write-Host 'queue resumed'; $waiting = $false }
                 $repoKey = [string]$cand.repo
                 $ticketId = [string]$cand.id
@@ -927,6 +1001,7 @@ function Start-PqLoop {
                     $null = Write-PqEvent -Log $log -Ev 'dispatch.skip' -Run $runId -Repo $repoKey -Id $ticketId -Worker $slot -D ([ordered]@{ why = 'noAgent' })
                     # Said once per change, not every half minute: a weekly limit is a wait of days.
                     $noAgentWhy = Get-PqNoAgentSummary -Pick $pick -Registry $Registry
+                    if ($null -ne $named) { $namedFail = "no provider of the order may take it now ($noAgentWhy)"; break }
                     if ($noAgentWhy -cne $noAgentSaid) {
                         Write-Host "ticket $repoKey`:$ticketId - no provider of the order may take it now ($noAgentWhy); checking again every 30 s"
                         $noAgentSaid = $noAgentWhy
@@ -938,6 +1013,11 @@ function Start-PqLoop {
                 $agentName = [string]$pick.agent
                 $agentArgs = if ($agentName -ceq 'claude') { @() } else { Get-PqAgentPassArgs $pick }
 
+                if (-not (Request-PqWorkerAssignment -Slot $slot -Repo $repoRec -Ticket $ticketId -Title $ticketTitle -Agent $agentName -AgentMax ([int](Get-PqValue $pick.record 'maxParallel' 1)))) {
+                    $occupiedMarks[$repoKey] = @{ until = [DateTime]::UtcNow.AddSeconds(5); why = 'workerCap' }
+                    continue
+                }
+
                 # Rule 62: the machine-wide tokens the ticket's own **Verify:** level takes (build, emulator); a ticket that
                 # cannot get them is passed over for a minute and the next candidate is taken; hardware is never offered.
                 $verify = Get-PqTicketVerify -RepoPath $repoPath -TicketId $ticketId
@@ -945,6 +1025,7 @@ function Start-PqLoop {
                 $resReq = Request-PqResources -Registry $Registry -RepoKey $repoKey -TicketId $ticketId -Verify $verify -PassId $passIdNext
                 foreach ($sk in @($resReq.stale)) { $null = Write-PqEvent -Log $log -Ev 'resource.release' -Run $runId -Worker $slot -D ([ordered]@{ resource = ($sk -split '/')[0]; stale = $sk }) }
                 if (-not $resReq.ok) {
+                    Set-PqWorkerState -Slot $slot
                     $tk = "$repoKey`:$ticketId"
                     $recheck = if ($resReq.why -ceq 'deviceLevel') { 600 } else { 60 }
                     $transient[$tk] = @{ until = [DateTime]::UtcNow.AddSeconds($recheck); why = $(if ($resReq.why -ceq 'deviceLevel') { 'deviceLevel' } else { 'resource' }) }
@@ -972,6 +1053,7 @@ function Start-PqLoop {
                     $currentRepoLock = Lock-PqRepo -RepoKey $repoKey
                     if (-not $currentRepoLock) {
                         if ($null -ne $heldResources) { $null = Remove-PqResources -RepoKey $heldResourcesRepo -TicketId $heldResourcesId; $heldResources = $null }
+                        Set-PqWorkerState -Slot $slot
                         continue
                     }
                 }
@@ -980,10 +1062,10 @@ function Start-PqLoop {
                 if ([IO.File]::Exists($stopPath)) {
                     if ($null -ne $heldResources) { $null = Remove-PqResources -RepoKey $heldResourcesRepo -TicketId $heldResourcesId; $heldResources = $null }
                     if ($currentRepoLock) { Unlock-PqRepo -LockFile $currentRepoLock; $currentRepoLock = $null }
+                    Set-PqWorkerState -Slot $slot
                     continue
                 }
 
-                Set-PqWorkerState -Slot $slot -Repo $repoKey -Ticket $ticketId -Title $ticketTitle -Agent $agentName
                 $passNum = $passCount + 1
                 $passId = "$runId.$passNum"
                 $statusBefore = [string]$cand.status
@@ -1231,10 +1313,21 @@ function Start-PqLoop {
                 $d.retryIn = $retryIn
                 $null = Write-PqEvent -Log $log -Ev 'run.error' -Run $runId -Worker $slot -D $d
                 $dropPart = if ($turnKey) { " ($turnKey dropped)" } else { '' }
+                if ($null -ne $named) {
+                    $namedFail = "the turn failed ($($err.Exception.Message)$where)"
+                    Write-Host "turn failed: $($err.Exception.Message)$where$dropPart"
+                    break
+                }
                 Write-Host "turn failed: $($err.Exception.Message)$where$dropPart - the loop goes on in $retryIn s"
                 $waiting = $false
                 for ($w = 0; $w -lt $retryIn -and -not [IO.File]::Exists($stopPath); $w++) { Start-Sleep -Seconds 1 }
             }
+        }
+        # A named start exits 0 only when its pass ran; any other ending (a reason above, STOP, the end time) is 3.
+        if ($null -ne $named -and $passCount -eq 0 -and $exitCode -eq 0) {
+            if (-not $namedFail) { $namedFail = 'the run was stopped before the pass (STOP, a stop request or the end time)' }
+            Write-Host "pq: ticket $($named.repo):$($named.id) not run - $namedFail"
+            $exitCode = 3
         }
     }
     catch {

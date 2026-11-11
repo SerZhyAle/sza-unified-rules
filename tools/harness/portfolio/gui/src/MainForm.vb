@@ -90,6 +90,7 @@ Partial Class MainForm
         AddButtonColumn(dgvRepos, "colNewSpec", "Spec", "+ Spec...", 65)
         AddButtonColumn(dgvRepos, "colQueue", "Tickets", "Open Queue", 85)
         AddButtonColumn(dgvRepos, "colFolder", "Folder", "Open VSCode", 95)
+        AddButtonColumn(dgvRepos, "colStartRepo", "Worker", "Start here", 80)
 
         dgvWorkers.Columns.Clear()
         AddTextColumn(dgvWorkers, "colSlot", "Slot", 45)
@@ -146,6 +147,7 @@ Partial Class MainForm
         AddHandler btnUp.Click, Sub() MoveProjectAsync(-1)
         AddHandler btnDown.Click, Sub() MoveProjectAsync(1)
         AddHandler btnPin.Click, Sub() SteerAsync("pin", requireTicket:=True)
+        AddHandler btnRunNow.Click, Sub() RunNowAsync()
         AddHandler btnHold.Click, Sub() SteerAsync("hold", requireTicket:=False)
         AddHandler btnRelease.Click, Sub() SteerAsync("release", requireTicket:=False)
 
@@ -336,6 +338,7 @@ Partial Class MainForm
                     If(r.IdleRows > 0, $"; {r.IdleRows} of them idle-held: the last runs of each ended without moving its status, so the runner passes it over until a run of it moves the status (naming the ticket runs it anyway)", "")
                 If r.BlockedRows > 0 Then row.Cells("colBlocked").Style.ForeColor = p.StatusWarning
                 row.Cells("colOrder").ToolTipText = $"rank {r.Rank}"
+                row.Cells("colStartRepo").ToolTipText = $"Starts a worker that takes tickets of '{r.Key}' only, in their order ('pq start -Repo {r.Key}'). Holds, STOP and the other safeguards apply as for any start."
 
                 Dim statusCell = row.Cells("colStatus")
                 If r.IsHeld Then
@@ -540,6 +543,93 @@ Partial Class MainForm
         End Try
     End Sub
 
+    ' Run now takes 'repo:ticket' like Pin Top, plus a bare ticket id resolved against the selected project.
+    ' Returns "" after telling the user why the steer box is not a runnable target.
+    Private Function ResolveRunNowTarget() As String
+        Dim target = txtSteer.Text.Trim()
+        If target = "" Then
+            MessageBox.Show(Me, "Enter a ticket: 'repo:ticket', or a ticket id with a project selected (select a project, or double-click a worker or a pass).",
+                            "Run now", MessageBoxButtons.OK, MessageBoxIcon.Information)
+            Return ""
+        End If
+        If Not target.Contains(":"c) Then
+            Dim bare = target
+            Dim isProject = dgvRepos.Rows.Cast(Of DataGridViewRow)().Any(Function(r) String.Equals(CStr(r.Cells("colKey").Value), bare, StringComparison.Ordinal))
+            Dim selected = SelectedRepoKey()
+            If isProject Then
+                MessageBox.Show(Me, $"Run now takes one ticket, 'repo:ticket' - '{target}' names a whole project. Use 'Start here' on its row to work a project.",
+                                "Run now", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                Return ""
+            End If
+            If selected = "" Then
+                MessageBox.Show(Me, $"'{target}' has no project - use 'repo:ticket', or select a project first.",
+                                "Run now", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                Return ""
+            End If
+            target = $"{selected}:{target}"
+        End If
+        Dim colon = target.IndexOf(":"c)
+        If colon <= 0 OrElse colon = target.Length - 1 OrElse target.IndexOf(":"c, colon + 1) >= 0 OrElse target.Contains(" "c) Then
+            MessageBox.Show(Me, $"'{target}' is not a ticket target - use 'repo:ticket', for example 'fms-web:S0028'.",
+                            "Run now", MessageBoxButtons.OK, MessageBoxIcon.Information)
+            Return ""
+        End If
+        txtSteer.Text = target
+        Return target
+    End Function
+
+    ' 'pq start -Ticket repo:id' is one pass on exactly that ticket, then pq exits, so the panel waits for it. A pass
+    ' takes minutes: it runs hidden and outside _isCliBusy (Stop and the steering verbs stay usable), and only this
+    ' button is held until it ends. Exit 3 is "valid target, not run" - the reason line is what the owner needs.
+    Private _isRunNowBusy As Boolean = False
+
+    Private Async Sub RunNowAsync()
+        If _isRunNowBusy Then
+            LogConsole("A Run now pass is already executing, please wait..")
+            Return
+        End If
+        Dim target = ResolveRunNowTarget()
+        If target = "" Then Return
+
+        _isRunNowBusy = True
+        btnRunNow.Enabled = False
+        Try
+            LogConsole($"Run now: 'pq start -Ticket {target}' - one pass on exactly this ticket, then it stops. A pass takes minutes; the result is logged here..")
+            Dim res = Await PqCli.RunSilentAsync("start", "-Ticket", target)
+            If IsDisposed Then Return
+            If res.Success Then
+                LogConsole($"Run now {target}: the pass ran (exit 0).{Environment.NewLine}{LastLines(res.Output, 6)}")
+            ElseIf res.ExitCode = 3 Then
+                Dim reason = NotRunReason(res)
+                LogConsole($"Run now {target}: not run (exit 3) - {reason}")
+                MessageBox.Show(Me, $"'{target}' was not run.{Environment.NewLine}{Environment.NewLine}{reason}", "Run now", MessageBoxButtons.OK, MessageBoxIcon.Information)
+            Else
+                LogConsole($"pq start -Ticket {target} failed (exit {res.ExitCode}): {res.Message}")
+                MessageBox.Show(Me, $"pq start -Ticket {target} failed (exit {res.ExitCode}).{Environment.NewLine}{Environment.NewLine}{LastLines(res.Message, 4)}", "Run now", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+            End If
+        Finally
+            _isRunNowBusy = False
+            If Not IsDisposed Then
+                btnRunNow.Enabled = True
+                RefreshAll()
+            End If
+        End Try
+    End Sub
+
+    ' The last 'pq: ticket ... not run - <cause>' line of the output; failing that, the last line pq printed.
+    Private Shared Function NotRunReason(res As CliResult) As String
+        Dim lines = (res.Output & Environment.NewLine & res.ErrorOutput).Split({ControlChars.Cr, ControlChars.Lf}, StringSplitOptions.RemoveEmptyEntries).Select(Function(l) l.Trim()).Where(Function(l) l <> "").ToList()
+        Dim hit = lines.LastOrDefault(Function(l) l.StartsWith("pq: ticket", StringComparison.Ordinal) AndAlso l.Contains(" not run"))
+        If hit IsNot Nothing Then Return hit
+        Return If(lines.Count > 0, lines(lines.Count - 1), "pq gave no reason line (see the console of a manual run).")
+    End Function
+
+    Private Shared Function LastLines(text As String, count As Integer) As String
+        Dim lines = text.Split({ControlChars.Cr, ControlChars.Lf}, StringSplitOptions.RemoveEmptyEntries).Select(Function(l) l.TrimEnd()).Where(Function(l) l <> "").ToList()
+        If lines.Count = 0 Then Return ""
+        Return String.Join(Environment.NewLine, lines.Skip(Math.Max(0, lines.Count - count)))
+    End Function
+
     Private Sub DgvRepos_SelectionChanged(sender As Object, e As EventArgs)
         If _isRefreshing Then Return
         Dim key = SelectedRepoKey()
@@ -579,6 +669,16 @@ Partial Class MainForm
                 LogConsole($"Opening folder in VS Code: {r.Path}")
                 Dim err = PqCli.OpenVsCode(r.Path)
                 If err IsNot Nothing Then LogConsole($"Cannot open VS Code for {r.Path}: {err}")
+            Case "colStartRepo"
+                ' A worker for one project runs for as long as the project has tickets: a visible terminal like Start,
+                ' where pq's own refusal (unknown or held project, STOP, no agent) stays on screen.
+                LogConsole($"Launching 'pq start -Repo {r.Key}' in a new terminal..")
+                Dim err = PqCli.LaunchInteractive("start", "-Repo", r.Key)
+                If err IsNot Nothing Then
+                    LogConsole($"Launch failed: {err}")
+                    MessageBox.Show(Me, $"Cannot start a worker on '{r.Key}':{Environment.NewLine}{err}", "Start on this project", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                End If
+                RefreshAll()
         End Select
     End Sub
 

@@ -34,6 +34,7 @@ Partial Class MainForm
     Friend lblSteer As Label
     Friend txtSteer As TextBox
     Friend btnPin As Button
+    Friend btnRunNow As Button
     Friend btnHold As Button
     Friend btnRelease As Button
     Friend dgvRepos As DataGridView
@@ -101,6 +102,7 @@ Partial Class MainForm
         Me.lblSteer = New Label()
         Me.txtSteer = New TextBox()
         Me.btnPin = New Button()
+        Me.btnRunNow = New Button()
         Me.btnHold = New Button()
         Me.btnRelease = New Button()
         Me.dgvRepos = New DataGridView()
@@ -269,7 +271,7 @@ Partial Class MainForm
         ' --- splitMain ---
         Me.splitMain.Name = "splitMain"
         Me.splitMain.Dock = DockStyle.Fill
-        Me.splitMain.SplitterDistance = 600
+        Me.splitMain.SplitterDistance = 660
         Me.splitMain.SplitterWidth = 5
 
         ' --- Left: Projects & Queues ---
@@ -324,46 +326,53 @@ Partial Class MainForm
 
         Me.txtSteer.Name = "txtSteer"
         Me.txtSteer.Location = New Point(115, 9)
-        Me.txtSteer.Size = New Size(180, 26)
+        Me.txtSteer.Size = New Size(150, 26)
         Me.txtSteer.AccessibleName = "Steer Target Input"
         Me.tipMain.SetToolTip(Me.txtSteer, "Enter project key (e.g. 'fms-web') or ticket token (e.g. 'fms-web:S0028')")
 
         Me.btnPin.Name = "btnPin"
         Me.btnPin.Text = "&Pin Top"
-        Me.btnPin.Location = New Point(302, 6)
-        Me.btnPin.Size = New Size(75, 32)
+        Me.btnPin.Location = New Point(272, 6)
+        Me.btnPin.Size = New Size(70, 32)
         Me.btnPin.AccessibleName = "Pin ticket to top"
         Me.tipMain.SetToolTip(Me.btnPin, "Pins ticket to top of PORTFOLIO_QUEUE.md ('pq pin <target>')")
 
+        Me.btnRunNow.Name = "btnRunNow"
+        Me.btnRunNow.Text = "Run &now"
+        Me.btnRunNow.Location = New Point(346, 6)
+        Me.btnRunNow.Size = New Size(78, 32)
+        Me.btnRunNow.AccessibleName = "Run named ticket now"
+        Me.tipMain.SetToolTip(Me.btnRunNow, "Runs exactly this ticket now, whatever its rank, one pass, then stops ('pq start -Ticket <repo:ticket>'). Needs 'repo:ticket', or a ticket id with a project selected. A hold line in PORTFOLIO_QUEUE.md does not stop it; occupancy, locks, limits and STOP still do.")
+
         Me.btnHold.Name = "btnHold"
         Me.btnHold.Text = "&Hold"
-        Me.btnHold.Location = New Point(382, 6)
-        Me.btnHold.Size = New Size(65, 32)
+        Me.btnHold.Location = New Point(428, 6)
+        Me.btnHold.Size = New Size(58, 32)
         Me.btnHold.AccessibleName = "Hold ticket or project"
         Me.tipMain.SetToolTip(Me.btnHold, "Marks ticket or project as held ('pq hold <target>')")
 
         Me.btnRelease.Name = "btnRelease"
         Me.btnRelease.Text = "Re&lease"
-        Me.btnRelease.Location = New Point(452, 6)
-        Me.btnRelease.Size = New Size(75, 32)
+        Me.btnRelease.Location = New Point(490, 6)
+        Me.btnRelease.Size = New Size(70, 32)
         Me.btnRelease.AccessibleName = "Release held ticket or project"
         Me.tipMain.SetToolTip(Me.btnRelease, "Removes hold from ticket or project ('pq release <target>')")
 
         Me.btnUp.Name = "btnUp"
         Me.btnUp.Text = "▲"
-        Me.btnUp.Location = New Point(534, 6)
-        Me.btnUp.Size = New Size(36, 32)
+        Me.btnUp.Location = New Point(566, 6)
+        Me.btnUp.Size = New Size(34, 32)
         Me.btnUp.AccessibleName = "Move project up in rank"
         Me.tipMain.SetToolTip(Me.btnUp, "Moves selected project higher in rank order")
 
         Me.btnDown.Name = "btnDown"
         Me.btnDown.Text = "▼"
-        Me.btnDown.Location = New Point(574, 6)
-        Me.btnDown.Size = New Size(36, 32)
+        Me.btnDown.Location = New Point(604, 6)
+        Me.btnDown.Size = New Size(34, 32)
         Me.btnDown.AccessibleName = "Move project down in rank"
         Me.tipMain.SetToolTip(Me.btnDown, "Moves selected project lower in rank order")
 
-        Me.pnlSteer.Controls.AddRange({Me.lblSteer, Me.txtSteer, Me.btnPin, Me.btnHold, Me.btnRelease, Me.btnUp, Me.btnDown})
+        Me.pnlSteer.Controls.AddRange({Me.lblSteer, Me.txtSteer, Me.btnPin, Me.btnRunNow, Me.btnHold, Me.btnRelease, Me.btnUp, Me.btnDown})
 
         ' DataGridView Repos
         Me.dgvRepos.Name = "dgvRepos"
@@ -538,19 +547,20 @@ Partial Class MainForm
         Me.btnArrange.TabIndex = 12
         Me.txtSteer.TabIndex = 13
         Me.btnPin.TabIndex = 14
-        Me.btnHold.TabIndex = 15
-        Me.btnRelease.TabIndex = 16
-        Me.btnUp.TabIndex = 17
-        Me.btnDown.TabIndex = 18
-        Me.dgvRepos.TabIndex = 19
-        Me.dgvWorkers.TabIndex = 20
-        Me.dgvPasses.TabIndex = 21
-        Me.btnToggleConsole.TabIndex = 22
-        Me.chkAutoRefresh.TabIndex = 23
-        Me.btnRefreshNow.TabIndex = 24
-        Me.btnClearConsole.TabIndex = 25
-        Me.btnCopyConsole.TabIndex = 26
-        Me.txtConsole.TabIndex = 27
+        Me.btnRunNow.TabIndex = 15
+        Me.btnHold.TabIndex = 16
+        Me.btnRelease.TabIndex = 17
+        Me.btnUp.TabIndex = 18
+        Me.btnDown.TabIndex = 19
+        Me.dgvRepos.TabIndex = 20
+        Me.dgvWorkers.TabIndex = 21
+        Me.dgvPasses.TabIndex = 22
+        Me.btnToggleConsole.TabIndex = 23
+        Me.chkAutoRefresh.TabIndex = 24
+        Me.btnRefreshNow.TabIndex = 25
+        Me.btnClearConsole.TabIndex = 26
+        Me.btnCopyConsole.TabIndex = 27
+        Me.txtConsole.TabIndex = 28
 
         Me.splitMain.Panel1.ResumeLayout(False)
         Me.splitMain.Panel2.ResumeLayout(False)

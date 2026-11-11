@@ -128,6 +128,7 @@ $harness = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $pwshExe = (Get-Process -Id $PID).Path
 . (Join-Path $PSScriptRoot 'lib/picker.ps1')
 . (Join-Path $PSScriptRoot 'lib/ledger-watch.ps1')
+. (Join-Path $harness 'spec_catalog/attachment-capture.ps1')
 
 function Stop-Draft([int] $Code, [string] $Message) {
     Write-Host "spec-draft: $Message" -ForegroundColor Red
@@ -274,12 +275,16 @@ if (-not $rec) {
 }
 
 $profileFile = Join-Path $root '.sza-profile.json'
+$attachmentPaths = @()
+if ($Attach) {
+    try { $attachmentPaths = @(Resolve-DraftAttachments $Attach) }
+    catch { Stop-Draft 2 $_.Exception.Message }
+}
 if (-not (Test-Path -LiteralPath $profileFile -PathType Leaf)) {
     # ---- 2b. no task flow at all: one plain ticket file, numbered the way the project already numbers ----
     # Refusing here sent the owner to a setup they had not asked for. The ticket is captured, but only as a file; no
     # profile, ledger or queue row is written, because a second numbering scheme inside a project that has its own
     # (Streams_Player's SP-NNNN) is worse than a ticket pq cannot pick up. The report says that pq cannot.
-    if ($Attach) { Stop-Draft 2 'a project with no task flow has no capture script that takes attachments; put the content in the text, or attach the file by hand after capture' }
     $label = if ($rec) { [string]$rec.key } else { Split-Path -Leaf $root }
     $planRel = [string]$script:PqRepoDefaults.paths.specsDir
     $planDir = Join-Path $root $planRel
@@ -379,10 +384,13 @@ if (-not (Test-Path -LiteralPath $profileFile -PathType Leaf)) {
             $tplLines.Insert($at, "**Complexity:** $Complexity")
             $body = $tplLines -join $eol
         }
-        $body = $body.Replace('{{TEXT}}', [IO.File]::ReadAllText($textFull, [Text.Encoding]::UTF8))
-
         if (-not (Test-Path -LiteralPath $planDir -PathType Container)) { New-Item -ItemType Directory -Path $planDir -Force | Out-Null }
-        [IO.File]::WriteAllText($fileFull, $body, [Text.UTF8Encoding]::new($false))
+        try {
+            $attachmentBlock = Copy-DraftAttachments -Paths $attachmentPaths -SpecPath $fileFull -Newline $eol
+            $body = $body.Replace('{{TEXT}}', ([IO.File]::ReadAllText($textFull, [Text.Encoding]::UTF8) + $attachmentBlock))
+            [IO.File]::WriteAllText($fileFull, $body, [Text.UTF8Encoding]::new($false))
+        }
+        catch { Stop-Draft 1 "could not complete $fileRel or its attachments: $($_.Exception.Message); inspect the ticket folder before retrying" }
     }
     finally { $lock.ReleaseMutex(); $lock.Dispose() }
 

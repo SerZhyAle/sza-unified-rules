@@ -63,6 +63,9 @@
     Capture anyway after a closed hit - the old defect really did come back, and the new ticket is a
     report rather than a duplicate.
 
+.PARAMETER Attach
+    Semicolon-separated files copied into the ticket's attachments folder and linked in section 0.
+
 .PARAMETER Help
     Print this help.
 
@@ -91,6 +94,7 @@ param(
     [int]    $Tier = -1,
     [string] $DedupQuery = '',
     [string] $Complexity = '',
+    [string] $Attach = '',
     [switch] $AllowClosedDuplicate,
     [string] $ProjectRoot = '',
     [switch] $Help
@@ -113,6 +117,7 @@ if ($Help) {
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'attachment-capture.ps1')
 
 function Stop-BadInvocation([string] $Reason) {
     Write-Host "capture-draft: $Reason" -ForegroundColor Red
@@ -143,6 +148,11 @@ if ($TextFile) {
     $Text = [IO.File]::ReadAllText((Resolve-Path -LiteralPath $TextFile).Path, [Text.Encoding]::UTF8)
 }
 if ([string]::IsNullOrWhiteSpace($Text)) { Stop-BadInvocation 'the text is empty - a ticket with no words has nothing to be worked from' }
+$attachmentPaths = @()
+if ($Attach) {
+    try { $attachmentPaths = @(Resolve-DraftAttachments $Attach) }
+    catch { Stop-BadInvocation $_.Exception.Message }
+}
 if (-not $Name) { $Name = $Slug }
 
 $root = Get-SzaProjectRoot
@@ -152,6 +162,9 @@ if (-not (Test-Path -LiteralPath $templatePath -PathType Leaf)) {
     Stop-BadInvocation "no ticket template at $templatePath - run scaffold/init-task-flow.ps1 first"
 }
 $template = [IO.File]::ReadAllText($templatePath)
+if ($Attach -and -not $template.Contains('{{TEXT}}')) {
+    Stop-BadInvocation "the ticket template $templatePath has no {{TEXT}} token for the request and attachment links"
+}
 $pwshExe = (Get-Process -Id $PID).Path
 
 if ($DedupQuery) {
@@ -211,7 +224,8 @@ try {
         $lines.Insert($at, "**Complexity:** $Complexity")
         $body = $lines -join $eol
     }
-    $body = $body.Replace('{{TEXT}}', $Text)
+    $attachmentBlock = Copy-DraftAttachments -Paths $attachmentPaths -SpecPath $filePath -Newline $eol
+    $body = $body.Replace('{{TEXT}}', ($Text + $attachmentBlock))
     [IO.File]::WriteAllText($filePath, $body, [Text.UTF8Encoding]::new($false))
 } catch {
     Write-Host "capture-draft: ledger row $id was written but its spec file was not: $($_.Exception.Message)" -ForegroundColor Red

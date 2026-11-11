@@ -161,6 +161,8 @@ the plan and rewritten its `**Complexity:**` line where the plan disagrees (see
   symptom and evidence, reported as `parked: <id>`, and left alone. **Never switch the active ticket.**
   Trivial in-scope fixes are done on the spot. A read-only context cannot mutate the catalog - it returns
   park *candidates* to its caller.
+- A finding belonging to another registered project is captured there with `spec-draft.ps1 -Project <key>`,
+  with its evidence in the ticket; the reply names the drafted `<key>:<id>`.
 - **Scratch goes to `temp/<ticket>/`** (or `temp/scratch/`), never the repo root. On Windows a short
   repo-local temp path is a **correctness** constraint, not tidiness - MAX_PATH silently breaks a
   path-sensitive child process.

@@ -1,6 +1,6 @@
 ---
 name: spec-next
-description: Work the next ticket of the project's queue without naming it - the harness picks the first eligible ticket in the queue order and claims its lease, then /spec-all takes it from there. One ticket, one pass, then stop. Use on /spec-next, /sn, "what should I work on next", "take the next ticket", "pick the next ticket", or on the Russian phrasings - "возьми следующий тикет", "что дальше по очереди", "следующая задача из очереди". Owner-invoked; it never tags, publishes or releases.
+description: Work the next ticket of the project's queue without naming it - the harness picks the first eligible ticket in the queue order and claims its lease, then /spec-all takes it from there. Takes no argument, or a registered project key (/spec-next fms-web) to work that project's next ticket from any folder. One ticket, one pass, then stop. Use on /spec-next, /sn, "what should I work on next", "take the next ticket", "pick the next ticket", "/sn fms-web", or on the Russian phrasings - "возьми следующий тикет", "что дальше по очереди", "следующая задача из очереди", "следующий тикет проекта fms-web". Owner-invoked; it never tags, publishes or releases.
 ---
 
 # Spec next - /spec-all on the head of the queue
@@ -8,7 +8,17 @@ description: Work the next ticket of the project's queue without naming it - the
 `/spec-next` is [spec-all](../spec-all/SKILL.md) with the ticket chosen by the project's queue instead of by the
 owner. One ticket, one pass, then stop. A loop over the whole queue is the portfolio runner (`pq`), not this.
 
-`/sn` is the same command (skill `sn`). It takes no argument: a ticket the owner names is `/spec-all <id>`.
+`/sn` is the same command (skill `sn`). A ticket the owner names is `/spec-all <id>` (or `/spec-all <key>:<id>`), not this.
+
+## Usage
+
+```text
+/spec-next                 the head of the queue of the project of the current folder
+/spec-next fms-web         the head of the queue of that registered project, from any folder
+```
+
+Nothing else is accepted: `/spec-next fms-web:S0123` and any other text are refused in one line (a named ticket is
+`/spec-all`).
 
 A project that ships its own `.claude/commands/spec-next.md` (FastMediaSorter_mob_v2) has its own picker, with its
 own scripts and the `-m` flag; in that project that file is the command and this skill is not used.
@@ -18,7 +28,17 @@ own scripts and the `-m` flag; in that project that file is the command and this
 The same resolution as [spec-all](../spec-all/SKILL.md) Step 0, including the rule that every harness call is
 `pwsh -NoProfile -WorkingDirectory "<project root>" -File "<root>/tools/harness/<cluster>/<script>.ps1"`.
 
-## Step 1 - Pick and claim, in one call
+## Step 1 - Name the project, then pick and claim, in one call
+
+The argument goes through the resolver, the same one [spec-all](../spec-all/SKILL.md) Step 1 uses, in next mode:
+
+```powershell
+pwsh -NoProfile -File "<root>/tools/harness/portfolio/resolve-ticket.ps1" -Mode next -Arg "<the argument text, empty for none>"
+```
+
+It prints `{ kind, project, root, ... }`. Exit 0 (`project-next`) -> `root` is the `<project root>` of every call below
+(the current project's when no key was given). Exit 2 (`refused`: a ticket id, other text, or no project at or above
+the folder) -> print its `reason` in one line and **stop**.
 
 ```powershell
 pwsh -NoProfile -WorkingDirectory "<project root>" -File "<root>/tools/harness/spec_catalog/spec-next-preflight.ps1" -Claim -Reason "spec-next"
@@ -41,6 +61,7 @@ and on the release.
 
 ## Step 2 - Delegate
 
-Invoke the Skill tool with skill `sza:spec-all` and the picked id as its args, and follow it exactly from its Step 2:
-claim (answers `already-mine`), drift, the stage the status names, release, report. Nothing of it is restated or
-overridden here.
+Invoke the Skill tool with skill `sza:spec-all` and the picked ticket as its args - `<key>:<id>` (the resolver's
+`project` and the picked id) when the project is not the one of the current folder, the bare id when it is - and
+follow it exactly from its Step 2: claim (answers `already-mine`), drift, the stage the status names, release,
+report. Nothing of it is restated or overridden here.

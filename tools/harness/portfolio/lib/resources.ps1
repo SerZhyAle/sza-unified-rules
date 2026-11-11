@@ -93,7 +93,11 @@ function Request-PqResources {
                 $cap = [int](Get-PqValue $res $t $(if ($t -ceq 'build') { 3 } else { 1 }))
                 $h = Get-PqResourceHeld -Token $t -ClearStale
                 foreach ($s in @($h.stale)) { $stale.Add("$t/$s") }
-                $mine = @($h.live | Where-Object { (Get-PqValue $_ 'repo') -ceq $resourceRepo -and (Get-PqValue $_ 'id') -ceq $resourceId }).Count
+                $sameTicket = @($h.live | Where-Object { (Get-PqValue $_ 'repo') -ceq $resourceRepo -and (Get-PqValue $_ 'id') -ceq $resourceId })
+                $mine = @($sameTicket | Where-Object { [int](Get-PqValue $_ 'pid' 0) -eq $PID -and (Get-PqValue $_ 'pass') -ceq $resourcePass }).Count
+                if ($sameTicket.Count -gt $mine) {
+                    return @{ ok = $false; held = @(); why = 'resource'; resource = $t; heldCount = @($h.live).Count; cap = $cap; stale = @($stale) }
+                }
                 if ($mine -eq 0 -and @($h.live).Count -ge $cap) {
                     return @{ ok = $false; held = @(); why = 'resource'; resource = $t; heldCount = @($h.live).Count; cap = $cap; stale = @($stale) }
                 }
@@ -112,22 +116,25 @@ function Request-PqResources {
                 [IO.File]::Move($tmp, $file, $true)
             }
             $first = $tokens[-1]
-            return @{ ok = $true; held = $tokens; why = $null; resource = $first; heldCount = ($counts[$first].held + 1); cap = $counts[$first].cap; stale = @($stale) }
+            return @{ ok = $true; held = $tokens; why = $null; resource = $first; heldCount = (@((Get-PqResourceHeld -Token $first).live).Count); cap = $counts[$first].cap; stale = @($stale) }
         })
 }
 
 function Remove-PqResources {
     param([Parameter(Mandatory)][string]$RepoKey, [Parameter(Mandatory)][string]$TicketId)
-    $released = [Collections.Generic.List[string]]::new()
-    try {
-        foreach ($t in @('build', 'emulator')) {
-            $file = Get-PqPath -Kind resourceToken -Token $t -Repo $RepoKey -Id $TicketId
-            if ([IO.File]::Exists($file)) {
-                Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue
-                $released.Add($t)
+    return (Invoke-PqStateLock {
+        $released = [Collections.Generic.List[string]]::new()
+        try {
+            foreach ($t in @('build', 'emulator')) {
+                $file = Get-PqPath -Kind resourceToken -Token $t -Repo $RepoKey -Id $TicketId
+                $state = Read-PqState $file
+                if ($null -ne $state -and [int](Get-PqValue $state 'pid' 0) -eq $PID -and (Test-PqProcessAlive $PID (Get-PqValue $state 'procStart'))) {
+                    Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue
+                    $released.Add($t)
+                }
             }
         }
-    }
-    catch { }
-    return @($released)
+        catch { }
+        return @($released)
+    })
 }

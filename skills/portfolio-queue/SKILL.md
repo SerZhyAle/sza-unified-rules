@@ -34,14 +34,42 @@ any folder.
 | stop them | `pq stop` (after the passes in flight), `pq stop -Level kill` (now), `pq stop -Repo <key>` / `-Agent <name>` / `-Ticket <key:id>` / `-Worker <n>` for one target |
 | pause, then go on | `pq pause`, `pq resume` |
 | move a project or a ticket up, hold it, release it | `pq queue` / `pq tickets <key>` open the two files; `pq pin <key:id>`, `pq hold <key[:id]>`, `pq release <key[:id]>`, `pq rank`, `pq arrange` |
+| run exactly this ticket now, whatever its rank | `pq start -Ticket <key>:<id>` - hand the command to the owner (see "Run one ticket or one project" below) |
+| keep a worker on one project only | `pq start -Repo <key>` - hand the command to the owner |
 | which providers work, in what order, who is out of limit | `pq agents` (and `-Order codex,claude`, `-Release <provider>`) |
 | is the setup sound | `pq doctor`, `pq list` |
+
+## Run one ticket or one project
+
+Two ways to aim a worker without touching the saved order (`pq rank`, `PORTFOLIO_QUEUE.md` stay as they are):
+
+| Command | What runs |
+| --- | --- |
+| `pq start -Ticket <key>:<id>` | exactly one pass on that ticket, whatever its rank, through the normal loop (occupancy, repository lock, lease, resources, provider order, run row, events); then it exits. It never waits for the ticket and never takes another one |
+| `pq start -Repo <key>` | a normal worker that ranks only that project: ticket order, stops, waiting, `-Drain`, `-MaxTickets` and `-Until` as usual |
+
+`-Ticket` and `-Repo` together are refused. A malformed `-Ticket`, an unknown project key or an unknown `-Repo` key exits 2
+with `pq: <Name> - <message>` before anything starts. A valid target that does not run (ticket absent or not offered, leased,
+blocked, repository occupied, stopped or disabled, no agent, resource busy) exits 3 and prints the reason; exit 0 only when
+the pass ran.
+
+**The hold rule (owner decision 2026-11-11).** `-Ticket` runs the named ticket **through a hold line of
+`PORTFOLIO_QUEUE.md`** - a whole-project hold row or the ticket's own `hold` row - and does **not** remove it. Only those
+queue-file lines are bypassed. Still in force for the named ticket: the registry's own `hold` and `enabled: false`,
+occupancy, the repository lock, the lease, resource tokens, a provider out of limit, `STOP`, and the picker's gates (status
+not eligible or `Block*`, an unreleased cross-repo `Blocker:`). `-Repo` bypasses nothing: every hold stays. `pq release`
+stays the owner's call.
+
+The same two aims exist in `PQ Control Panel` (**Run now** beside Pin Top, **Start on this project** on a project row) and
+in the one-ticket skills: `/spec-all <key>:<id>` and `/sa <key>:<id>` work one named ticket of any project from any folder,
+`/spec-all <key>` and `/spec-next <key>` take that project's next eligible ticket, then stop.
 
 ## What this skill does not do
 
 - **It does not start a worker.** `pq start` runs until stopped and spends the owner's tokens; the owner starts it from the
   `PQ Start` shortcut or a terminal of their own. Say so and give the command (`pq start`, `pq start -MaxTickets 1` for one
-  pass, `pq start -Drain` to end when nothing is ranked, `pq start -Until 23:00`). Run it only when the owner names that
+  pass, `pq start -Drain` to end when nothing is ranked, `pq start -Until 23:00`, `pq start -Ticket <key>:<id>` for one
+  named ticket, `pq start -Repo <key>` for one project). Run it only when the owner names that
   exact start, and then in a background process, never in the foreground of a chat.
 - **It does not edit the two queue files by hand.** The owner's order is theirs; use the verbs above, which keep it.
 - **It does not change a ticket's status.** Status moves through the ticket tool (TASK-FLOW rule 4); a stop never decides a

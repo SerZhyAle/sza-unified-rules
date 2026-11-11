@@ -1,6 +1,6 @@
 ---
 name: spec-draft
-description: Capture a task description or a problem as a Draft ticket in any SZA project - the owner's words kept verbatim in the spec, the row added to the project's own ticket queue (PLAN/RELEASE_QUEUE.md), and a plain report of whether the portfolio queue (pq) will pick it up and when. Use on /spec-draft, "draft a spec", "park this task", "add a bug to pq", "put this in the queue of <project>", or on the Russian phrasings - "создай спеку", "спека для проекта", "закинь задачу в очередь", "добавь баг в pq", "задача для <проект>", "зафиксируй проблему в проекте". Owner-invoked; it does not work the ticket and does not research it.
+description: Capture a task description or a problem as a Draft ticket in any SZA project - the owner's words kept verbatim in the spec, the row added to the project's own ticket queue (PLAN/RELEASE_QUEUE.md), and a plain report of whether the portfolio queue (pq) will pick it up and when. Use on /spec-draft, "draft a spec", "park this task", "add a bug to pq", "put this in the queue of <project>", or on the Russian phrasings - "создай спеку", "спека для проекта", "закинь задачу в очередь", "добавь баг в pq", "задача для <проект>", "зафиксируй проблему в проекте". It also captures agent-noticed findings; it does not work the ticket or research it.
 ---
 
 # Spec draft - one task into a project's queue and the portfolio queue
@@ -118,11 +118,10 @@ was in flight** - a capture never switches the active ticket, and the ticket is 
 - Lift a hold, enable a project, register one, or reorder `PORTFOLIO_QUEUE.md` - except the single `pq pin` row that
   `-Pin` writes on the owner's explicit word, or that a `hotfix-` ticket gets by the owner's standing rule that an
   urgent blocker goes first. The automatic projection refresh keeps existing order and holds.
-- Capture a finding an agent noticed on its own as a plain draft. In a project `pq` works, a fresh Draft is
-  eligible at once, before anyone has triaged it (FastMediaSorter_mob_v2 measured its runner attempting three
-  fresh parked drafts within half an hour of capture). Such a finding goes through the project's own parking
-  mechanism if it has one (FastMediaSorter_mob_v2: its `/spec-draft -Parked`), or is reported to the owner instead.
 - Commit, push, or run the ticket.
+
+An agent-noticed finding is captured as an ordinary `Draft`, which the runner may take. Use `BlockQuestions`
+only when the ticket records an actual question that needs the owner's answer.
 
 ## Gates - what refuses
 

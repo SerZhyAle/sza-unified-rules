@@ -290,6 +290,17 @@ empty: wait, see Waiting
 - `pq start -Drain` exits instead of waiting: 0 after at least one pass, 3 when nothing ran. `-MaxTickets N` ends the loop
   after N passes; `-Until <time>` (`HH:mm`, or a date and time) ends it at a clock time - no new pass after it, and a
   waiting worker ends at once.
+- `pq start -Ticket <key>:<id>` runs exactly that ticket now, whatever its rank, and exits: one pass through the normal
+  path (occupancy, repository lock, lease, resource tokens, provider order, the run row and the events), never a wait and
+  never another ticket. It passes through the hold lines of `PORTFOLIO_QUEUE.md` that name its project or the ticket itself;
+  the lines stay in the file and keep holding everything else. Nothing else is bypassed: the registry's `hold` and
+  `enabled`, a stop, the owner's occupancy, a live lease, a provider's spent limit and the picker's gates (a `Block*`
+  status, the owner gate) still apply. Exit 0 only when the pass ran; 3 with `pq: ticket <key>:<id> not run - <reason>`
+  when it did not; 2 (before a worker slot is taken) for a malformed `-Ticket`, an unknown project key, or `-Ticket`
+  together with `-Repo`. `-MaxTickets` with it must be 0 or 1. `pq start -Repo <key>` is a normal worker that ranks only
+  that project - its ticket order, stops, waiting, `-Drain`, `-MaxTickets` and `-Until` as usual, every hold kept. Neither
+  mode changes the project order or the queue file; `run.start` carries `target` (`ticket:<key>:<id>`, `repo:<key>`) and
+  `rank.result` carries `named` and `heldBypassed` for the named start.
 - A pass child does not inherit the starting agent's session variables, so `pq` may be started from an agent's shell as well
   as from a shortcut.
 

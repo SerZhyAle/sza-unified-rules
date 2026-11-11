@@ -39,11 +39,21 @@
                                                    record gets the shipped one; with -Release clear a provider's
                                                    limit hold, so it is tried again at once
     pq doctor [-All]                                check the enabled repositories (all with -All); writes nothing
-    pq start [-Drain] [-MaxTickets <n>] [-Until <time>]
+    pq start [-Drain] [-MaxTickets <n>] [-Until <time>] [-Ticket <key:id> | -Repo <key>]
                                                    run one worker; wait when empty, or exit with -Drain; -Until
                                                    ends the run at a clock time (HH:mm, today or tomorrow, or a
                                                    full date and time): no new pass after it, a waiting worker ends
-                                                   at once
+                                                   at once; -Ticket <key:id> runs exactly that ticket whatever its
+                                                   rank - one pass through the normal path (occupancy, repository
+                                                   lock, lease, resources, provider order), then exit; it never waits
+                                                   and never takes another ticket; it passes through the hold lines
+                                                   of PORTFOLIO_QUEUE.md that name its project or itself (they stay
+                                                   in the file) and nothing else - the registry's hold and enabled
+                                                   flags, stops, occupancy, leases and the picker's gates still
+                                                   apply; -MaxTickets with it must be 0 or 1; -Repo <key> is a normal
+                                                   worker that ranks only that project, every hold kept; neither
+                                                   changes the project order or the queue file; -Ticket and -Repo
+                                                   together are refused
     pq stop [-Level drain|pass|halt|kill] [-Kill] [-Worker <n>] [-Repo <key>] [-Agent <name>] [-Ticket <key:id>]
                                                    stop; the level is pass by default (the passes in flight end, then
                                                    the worker stops), drain lets a pass-in-flight ticket go on while it
@@ -83,7 +93,9 @@
     The portfolio root is SZA_PORTFOLIO_ROOT, else %USERPROFILE%\.sza\portfolio.
 
     Exit codes: 0 done; 1 doctor found a failure; 2 invalid invocation or a named error ('pq: <Name> - <message>'
-    on stderr); 3 start -Drain ran no pass, or a previous STOP is still draining live workers.
+    on stderr; a malformed -Ticket, an unknown project key and -Ticket with -Repo are refused this way before a worker
+    slot is taken); 3 start -Drain ran no pass, or a previous STOP is still draining live workers, or start -Ticket did
+    not run its ticket ('pq: ticket <key:id> not run - <reason>' on the console; exit 0 only when its pass ran).
 #>
 param(
     [string]$Verb,
@@ -548,12 +560,17 @@ function Invoke-PqDoctor {
 function Invoke-PqStart {
     $read = Get-PqRegistryOrFail
     if ($null -eq $read) { return 2 }
+    # S0027: -Ticket <key>:<id> and -Repo <key> are checked before a worker slot is taken; a bad one launches nothing.
+    $target = Test-PqStartTarget -Registry $read.registry -Ticket $Ticket -Repo $Repo -MaxTickets $MaxTickets
+    if (-not $target.ok) { Write-PqError $target.name $target.message; return 2 }
     $a = @{
         Registry = $read.registry
         Drain = $Drain
         MaxTickets = $MaxTickets
         PollSeconds = $PollSeconds
     }
+    if ($Ticket) { $a.OnlyTicket = $Ticket }
+    if ($Repo) { $a.OnlyRepo = $Repo }
     if ($RunnerScript) { $a.RunnerScript = $RunnerScript }
     if ($Until) {
         $at = ConvertTo-PqUntil $Until
