@@ -176,7 +176,7 @@ $Script:SzaProfileDefaults = [ordered]@{
         # What a queue child is told when the project names nothing, or names a command it does not
         # have (Resolve-SzaPromptTemplate). The plugin's lifecycle skill runs in every repository that
         # has the sza plugin; until 2026-10-28 this was '/spec-all {Id}', a command only FMS_A has.
-        promptTemplate   = '/sza:spec-to-audit {Id} - an unattended queue pass, nobody answers questions: take this one ticket as far as it goes and do not start another. When it cannot move, set the matching Block status with a statusNote naming what is missing. A lease on the ticket whose reason is run-spec-queue followed by an instance name is the claim the runner made for you: it is yours.'
+        promptTemplate   = '/sza:spec-to-audit {Id} - the ticket is {specPath} in {repoRoot}; change its status only with {updatePath} -Id {Id} -Status <s>, never by editing the Status line; never read or change a ticket of another repository. This is a headless pass: start no background agent or command, wait for each in the foreground, and set the status before your last message.'
         decisionStatuses = @('Draft', 'Approved', 'Tactical', 'In Progress', 'Partial', 'Broken', 'BlockQuestions')
         cheapStatuses    = @('Implemented', 'BlockNeedUserTest')
         cheapTierMax     = 3

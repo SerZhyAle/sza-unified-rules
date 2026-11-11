@@ -83,11 +83,11 @@ $table = @(
        Description = 'Capture a task or a problem as a Draft ticket in a project''s queue, the owner''s words verbatim. Plugin skill. Short form: /sd' }
     @{ Name = 'sd';         Skill = 'sza:spec-draft'; Hint = 'same arguments as /spec-draft'
        Description = 'Alias -> /spec-draft' }
-    @{ Name = 'spec-next';  Skill = 'sza:spec-next';  Hint = '(no argument)'
+    @{ Name = 'spec-next';  Skill = 'sza:spec-next';  Hint = '[<project-key>]'
        Description = 'Take the first eligible ticket of this project''s queue, claim it and run it end to end. Plugin skill. Short form: /sn' }
     @{ Name = 'sn';         Skill = 'sza:spec-next';  Hint = 'same arguments as /spec-next'
        Description = 'Alias -> /spec-next' }
-    @{ Name = 'spec-all';   Skill = 'sza:spec-all';   Hint = '<Sxxxx | slug | idea text>'
+    @{ Name = 'spec-all';   Skill = 'sza:spec-all';   Hint = '<Sxxxx | <key>:<Sxxxx> | <project-key> | slug | idea text>'
        Description = 'Take one ticket from its current status to the audit: lease, drift, spec, plan, implement, evidence, self-audit. Plugin skill. Short form: /sa' }
     @{ Name = 'sa';         Skill = 'sza:spec-all';   Hint = 'same arguments as /spec-all'
        Description = 'Alias -> /spec-all' }

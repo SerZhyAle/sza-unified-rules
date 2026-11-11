@@ -74,8 +74,10 @@ operates on a same-numbered ticket in the current project.
 **Precedence, first match wins:** (1) `<key>:<id>` with a registered key; (2) a bare token equal to a registered project
 key (exact, case-sensitive), no other words; (3) the current project's own id shape; (4) a slug of the current project;
 (5) free text is an idea. A token that is both a registered key and a local id or slug is **ambiguous** and refused with
-one line naming both readings (`use <key>:<id> or the slug with its id`) - the skill never guesses. A `<token>:<id>`
-whose token is not a registered key is not a project reference. A registered key with an id its ledger does not hold is
+one line naming both readings (`use <key>:<id> or the slug with its id`) - the skill never guesses. A near-miss of
+`<key>:<id>` - an unregistered key with a ticket-shaped id, a key in another case, a space after the colon, words after
+the token, a key with no id - is **refused** (exit 2), never captured as an idea; plain text that merely contains a colon
+is still an idea. A registered key with an id its ledger does not hold is
 refused (`no such ticket in <key>`).
 
 ## Step 2 - Claim the lease and read the ticket, in one call

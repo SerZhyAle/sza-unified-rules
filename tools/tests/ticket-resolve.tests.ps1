@@ -13,7 +13,8 @@
       1. <key>:<id> resolves to the named project's ticket, from the other project's folder.
       2. The same id in both projects resolves to the NAMED one; a bare number is the id's trailing digits.
       3. A registered key with an id the project does not hold is refused and never falls back to the current project.
-      4. A token before the colon that is not a registered key is not a project reference (idea, never a lookup).
+      4. A near-miss of <key>:<id> (unknown key with a ticket-shaped id, other case, a space, extra words, no id) is
+         refused; plain text with a colon stays an idea. Never a lookup in the current project.
       5. A bare registered key is the next ticket of that project (project-next).
       6. A bare key that is also a local slug, or the local id shape, is refused as ambiguous, naming both readings.
       7. The current project's id shape, a slug, an unknown hyphenated slug, free text and an empty argument.
@@ -108,13 +109,26 @@ try {
         $r = Resolve-It 'beta:S0099'
         Assert-That ($r.code -eq 2 -and $r.kind -eq 'refused' -and $r.reason -like 'no such ticket in beta*') "got $($r | ConvertTo-Json -Compress)"
     }
-    Run-Case '4. an unregistered token before the colon is not a project reference' {
+    Run-Case '4. a near-miss of <key>:<id> is refused, never captured as an idea; plain text with a colon stays an idea' {
+        # An unregistered key with a ticket-shaped id, a key in another case, a space after the colon, words after the
+        # token, a key with no id: all refused (exit 2), nothing falls through to a Draft in the current project.
         $r = Resolve-It 'zeta:S0021'
-        Assert-That ($r.code -eq 0 -and $r.kind -eq 'idea' -and $r.project -eq 'alpha' -and $null -eq $r.id) "got $($r | ConvertTo-Json -Compress)"
+        Assert-That ($r.code -eq 2 -and $r.kind -eq 'refused' -and $r.reason -like "unknown project 'zeta'*" -and $r.reason -like '*alpha, beta, gamma*') "zeta, got $($r | ConvertTo-Json -Compress)"
+        $r = Resolve-It 'betta:S0077'
+        Assert-That ($r.code -eq 2 -and $r.kind -eq 'refused' -and $r.reason -like "unknown project 'betta'*") "betta, got $($r | ConvertTo-Json -Compress)"
         $r = Resolve-It 'Beta:S0077'          # a key is exact and case-sensitive
-        Assert-That ($r.kind -eq 'idea') "Beta: got $($r | ConvertTo-Json -Compress)"
-        $r = Resolve-It 'beta:S0077 and more words'
-        Assert-That ($r.kind -eq 'idea') "several words are an idea, got $($r | ConvertTo-Json -Compress)"
+        Assert-That ($r.code -eq 2 -and $r.kind -eq 'refused' -and $r.reason -like '*case-sensitive*beta:<id>*') "Beta, got $($r | ConvertTo-Json -Compress)"
+        $r = Resolve-It 'beta: S0077'
+        Assert-That ($r.code -eq 2 -and $r.kind -eq 'refused' -and $r.reason -like 'malformed project reference*') "space, got $($r | ConvertTo-Json -Compress)"
+        $r = Resolve-It 'beta:S0077 please'
+        Assert-That ($r.code -eq 2 -and $r.kind -eq 'refused' -and $r.reason -like 'malformed project reference*') "extra words, got $($r | ConvertTo-Json -Compress)"
+        $r = Resolve-It 'beta:'
+        Assert-That ($r.code -eq 2 -and $r.kind -eq 'refused' -and $r.reason -like 'malformed project reference*') "no id, got $($r | ConvertTo-Json -Compress)"
+        # Text that merely contains a colon is still an idea.
+        $r = Resolve-It 'note: the crash on rotate'
+        Assert-That ($r.code -eq 0 -and $r.kind -eq 'idea' -and $r.project -eq 'alpha') "note:, got $($r | ConvertTo-Json -Compress)"
+        $r = Resolve-It 'see:docs'
+        Assert-That ($r.code -eq 0 -and $r.kind -eq 'idea' -and $r.project -eq 'alpha') "see:docs, got $($r | ConvertTo-Json -Compress)"
     }
     Run-Case '5. a bare registered key is the next ticket of that project' {
         $r = Resolve-It 'beta'

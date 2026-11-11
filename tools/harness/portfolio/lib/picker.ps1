@@ -155,6 +155,10 @@ function Get-PqPickerHead {
         $why = if ((Get-PqPayloadIds $payload.malformed) -ccontains $ForceId) { 'malformed' } else { 'notRanked' }
         return @{ ok = $true; head = $null; payload = $payload; why = $why; error = $null; ms = $ms }
     }
+    $why = Get-PqAutoSkipReason $payload $ForceId
+    if ($why) {
+        return @{ ok = $true; head = $null; payload = $payload; why = $why; error = $null; ms = $ms }
+    }
     $above = if ($at -gt 0) { $ranked[0..($at - 1)] } else { @() }
     $second = Invoke-PqPicker -RepoPath $RepoPath -Exclude (@($Exclude) + @($above)) -HarnessRoot $HarnessRoot -TimeoutSeconds $TimeoutSeconds
     $ms += $second.ms

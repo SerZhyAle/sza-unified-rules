@@ -115,6 +115,7 @@ try {
         Assert-That ($r.named.offered -eq $true -and $r.named.heldBypassed -eq $true -and $r.named.repo -ceq 'beta' -and $r.named.id -ceq 'B1') 'named result wrong'
         $d = (Get-ResultEvent $r).d
         Assert-That ($d.named -ceq 'beta:B1' -and $d.heldBypassed -eq $true) 'rank.result lacks named / heldBypassed'
+        Assert-That (@($d.heads).Count -eq 1 -and $d.heads[0].source -ceq 'queueFile' -and $r.candidates[0].rule -ceq 'queueFile') "named head carries a value outside the EVENTS.md enum: source=$($d.heads[0].source) rule=$($r.candidates[0].rule)"
         Assert-That (@($queue.held).Count -eq 2 -and @($queue.held | Where-Object { $_.repo -ceq 'beta' -and $null -eq $_.id }).Count -eq 1) 'the hold row left the queue object'
         Assert-That (@($r.skipped | Where-Object { $_.why -ceq 'heldByQueue' }).Count -eq 0) 'beta is still skipped as held'
     }

@@ -14,8 +14,10 @@
       1. "<key>:<id>", one token, <key> a registered project key (exact, case-sensitive)
                          -> kind ticket in that project; an id the project's ledger does not hold is refused
                             ("no such ticket in <key>") and NEVER looked up in the current project.
-                            A "<token>:<id>" whose token is not a registered key is not a project reference at all and
-                            falls through (it may be an idea or a slug with a colon).
+                            A near-miss is refused too, never captured as an idea: a registered key in another case, a
+                            registered key with a space after the colon / words after the token / no id, and an
+                            unregistered key whose id part is ticket-shaped (digits, letters+digits, or the current
+                            project's id pattern). Any other text with a colon ("note: ..", "see:docs") is an idea.
       2. a bare token equal to a registered key, no other words
                          -> kind project-next (the next eligible ticket of that project, then stop). When the same
                             token is also the id shape or a slug of the current project, it is ambiguous: refused.
@@ -160,6 +162,26 @@ if ($isToken -and $text -match '^([a-z][a-z0-9-]*):(\S+)$') {
         if ($hits.Count -eq 0) { Out-Reading 'refused' $key $root $null $null "no such ticket in ${key}: '$want' is not in its ledger" }
         if ($hits.Count -gt 1) { Out-Reading 'ambiguous' $key $root $null $null "'$want' matches several tickets in ${key} ($(@($hits | ForEach-Object { $_.Id }) -join ', ')); use the full id" }
         Out-Reading 'ticket' $key $root $hits[0].Id $hits[0].Name "ticket $($hits[0].Id) of project $key"
+    }
+}
+
+# 1b. a near-miss of "<key>:<id>" is never an idea (it would be captured as a Draft in the CURRENT project and worked):
+#     a registered key spelled in another case, a registered key with a space after the colon or words after the token,
+#     a registered key with no id, and an unregistered key whose id part looks like a ticket id.
+$firstWord = ($text -split '\s+')[0]
+if ($firstWord -match '^([A-Za-z][A-Za-z0-9_-]*):(.*)$') {
+    $nmKey = $Matches[1]; $nmRest = $Matches[2]
+    $exact = Get-RegisteredProject $nmKey
+    $caseHit = @($registered | Where-Object { [string]$_.key -ieq $nmKey }) | Select-Object -First 1
+    if ($exact) {
+        # An exact registered key that reached here was not one clean "<key>:<id>" token (that returned above).
+        Out-Reading 'refused' $nmKey $null $null $null "malformed project reference '$text': write exactly ${nmKey}:<id> as one word (no space, no words after it); free text may not begin with '${nmKey}:'"
+    }
+    if ($caseHit) {
+        Out-Reading 'refused' ([string]$caseHit.key) $null $null $null "project keys are case-sensitive: '$nmKey' is not registered, '$($caseHit.key)' is - write $($caseHit.key):<id>"
+    }
+    if ($isToken -and $nmRest.Length -gt 0 -and ($nmRest -match '^\d+$' -or $nmRest -match '^[A-Za-z]{1,8}-?\d+$' -or ($hereRoot -and (Test-IdShape $hereRoot $nmRest)))) {
+        Out-Reading 'refused' $null $null $null $null "unknown project '$nmKey' in '$text' (registered: $(Get-Keys)); nothing was captured and no ticket of the current project was touched"
     }
 }
 

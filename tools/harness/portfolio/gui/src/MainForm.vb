@@ -99,6 +99,7 @@ Partial Class MainForm
         AddTextColumn(dgvWorkers, "colWorkerTicket", "Ticket", 90)
         AddTextColumn(dgvWorkers, "colWorkerTitle", "Title", 180)
         AddTextColumn(dgvWorkers, "colElapsed", "Running", 80)
+        AddTextColumn(dgvWorkers, "colSeen", "Last seen", 120)
         AddTextColumn(dgvWorkers, "colWorkerAlive", "State", 60)
 
         dgvPasses.Columns.Clear()
@@ -298,7 +299,7 @@ Partial Class MainForm
             Dim workersScroll = FirstVisibleRow(dgvWorkers)
             dgvWorkers.Rows.Clear()
             For Each w In workers
-                Dim idx = dgvWorkers.Rows.Add(w.Slot, w.Pid, w.Repository, w.Ticket, w.Title, w.Elapsed, If(w.Alive, "Alive", "Dead"))
+                Dim idx = dgvWorkers.Rows.Add(w.Slot, w.Pid, w.Repository, w.Ticket, w.Title, w.Elapsed, w.LastSeenText, If(w.Alive, "Alive", "Dead"))
                 If w.Alive Then
                     dgvWorkers.Rows(idx).DefaultCellStyle.ForeColor = p.StatusSuccess
                     dgvWorkers.Rows(idx).DefaultCellStyle.Font = _boldWorkers
@@ -672,6 +673,8 @@ Partial Class MainForm
             Case "colStartRepo"
                 ' A worker for one project runs for as long as the project has tickets: a visible terminal like Start,
                 ' where pq's own refusal (unknown or held project, STOP, no agent) stays on screen.
+                ' A click anywhere in the cell, or a double click, must not start two workers that spend tokens: ask first.
+                If MessageBox.Show(Me, $"Start a worker that takes tickets of '{r.Key}' only?", "Start on this project", MessageBoxButtons.YesNo, MessageBoxIcon.Question) <> DialogResult.Yes Then Exit Select
                 LogConsole($"Launching 'pq start -Repo {r.Key}' in a new terminal..")
                 Dim err = PqCli.LaunchInteractive("start", "-Repo", r.Key)
                 If err IsNot Nothing Then

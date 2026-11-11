@@ -49,6 +49,9 @@ Public Class WorkerInfo
     Public Property Ticket As String = ""
     Public Property Title As String = ""
     Public Property Since As String = ""
+    Public Property Seen As String = ""
+    Public Property SeenMinutes As Integer? = Nothing
+    Public Property LastSeenText As String = ""
     Public Property Alive As Boolean
     Public Property Elapsed As String = ""
 End Class
@@ -614,7 +617,8 @@ Public Class PortfolioState
                         .Repository = Str(root, "repository"),
                         .Ticket = Str(root, "ticket"),
                         .Title = Str(root, "title"),
-                        .Since = Str(root, "since")
+                        .Since = Str(root, "since"),
+                        .Seen = Str(root, "seen")
                     }
                     w.Alive = IsStateOwnerAlive(w.Pid, w.StartedAt)
 
@@ -622,6 +626,15 @@ Public Class PortfolioState
                     If DateTimeOffset.TryParse(w.Since, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, since) Then
                         Dim elapsed = DateTimeOffset.UtcNow - since
                         If elapsed.Ticks >= 0 Then w.Elapsed = $"{Math.Floor(elapsed.TotalMinutes):00}m {elapsed.Seconds:00}s"
+                    End If
+
+                    Dim seenRaw = If(w.Seen <> "", w.Seen, w.Since)
+                    Dim seenDt As DateTimeOffset
+                    If DateTimeOffset.TryParse(seenRaw, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, seenDt) Then
+                        Dim seenElapsed = DateTimeOffset.UtcNow - seenDt
+                        Dim minAgo = Math.Max(0, CInt(Math.Floor(seenElapsed.TotalMinutes)))
+                        w.SeenMinutes = minAgo
+                        w.LastSeenText = $"last seen {minAgo} min ago"
                     End If
                     list.Add(w)
                 End Using

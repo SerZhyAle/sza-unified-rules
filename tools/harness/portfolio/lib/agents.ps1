@@ -1,4 +1,4 @@
-# The agent of a pass (TASK-FLOW rules 42 and 48; S0016 R9, R17, R26, R27): the first agent of the owner's agentOrder
+﻿# The agent of a pass (TASK-FLOW rules 42 and 48; S0016 R9, R17, R26, R27): the first agent of the owner's agentOrder
 # that may take the ticket, and the machine-wide per-agent hold that makes a spent agent wait while the next one works.
 #
 # Dot-source this file after paths.ps1, registry.ps1, ledger-watch.ps1 and loop.ps1; it defines functions only, sets
@@ -124,7 +124,7 @@ function Test-PqAgentHeld($Hold, $Agent) {
 }
 
 function Set-PqAgentHold {
-    param([Parameter(Mandatory)][string]$Name, [string]$Pass, [string]$Source = 'fastFailure', [string]$Detector = 'unproven', [string]$Until)
+    param([Parameter(Mandatory)][string]$Name, [string]$Pass, [string]$Source = 'fastFailure', [string]$Detector = 'unproven', [string]$Until, [string]$Text = '')
     # Resolved before the lock: the lock's body sees Invoke-PqStateLock's own $name, which shadows $Name.
     $file = Get-PqPath -Kind hold -Agent $Name
     $agentName = $Name
@@ -150,6 +150,7 @@ function Set-PqAgentHold {
             writtenAt = [DateTimeOffset]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
             pass = $Pass
         }
+        if ($Text) { $obj.text = $Text }
         $tmp = "$file.$PID.tmp"
         [IO.File]::WriteAllText($tmp, ($obj | ConvertTo-Json -Compress), [Text.UTF8Encoding]::new($false))
         [IO.File]::Move($tmp, $file, $true)
@@ -265,8 +266,9 @@ function Get-PqRunnerLimitUntil {
     catch { return $null }
 }
 
-# When the limit lifts, read from the text of a limit message (S0016, the real z.ai message of 2026-11-10):
+# When the limit lifts, read from the text of a limit message (S0016, S0035):
 #   `Usage limit reached for 5 hour. Your limit will reset at 2026-11-11 00:34:51`   a clock time, in the provider's zone
+#   `You've hit your usage limit. Try again at 2:38 AM.`                             a daily clock time (Codex)
 #   `Individual quota reached. .. Resets in 57h10m24s.`                              a span from now
 # -Offset is the provider's UTC offset for the clock form (`+08:00` for z.ai: its reset time reads 1 h 20 min after the
 # call, against 7 h 20 min if it were Kyiv time and 9 h 20 min if UTC, for a five hour window); empty reads it as this
@@ -290,10 +292,32 @@ function ConvertFrom-PqLimitText {
         }
     }
     else {
-        $m = [regex]::Match($Text, '(?i)resets?\s+in\s+(?:(\d+)\s*d[a-z]*\s*)?(?:(\d+)\s*h[a-z]*\s*)?(?:(\d+)\s*m[a-z]*\s*)?(?:(\d+)\s*s[a-z]*)?')
-        if ($m.Success -and ($m.Groups[1].Success -or $m.Groups[2].Success -or $m.Groups[3].Success -or $m.Groups[4].Success)) {
-            $g = { param($i) if ($m.Groups[$i].Success) { [int]$m.Groups[$i].Value } else { 0 } }
-            $at = $Now.Add([timespan]::new((& $g 1), (& $g 2), (& $g 3), (& $g 4)))
+        # S0035: Codex clock time format without date ("try again at 2:38 AM", "resets at 14:38")
+        $mCodex = [regex]::Match($Text, '(?i)(?:try again|retry|resets?)\s+(?:at|on)\s+(?<time>\d{1,2}:\d{2}(?::\d{2})?\s*(?:[ap]\.?m\.?)?)')
+        if ($mCodex.Success) {
+            $timeStr = ($mCodex.Groups['time'].Value -replace '\.', '').Trim()
+            $parsed = [datetime]::MinValue
+            if ([datetime]::TryParse($timeStr, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref]$parsed)) {
+                $zone = $null
+                if ($Offset -match '^\s*([+-]?)(\d{1,2}):(\d{2})\s*$') {
+                    $zone = [timespan]::new([int]$Matches[2], [int]$Matches[3], 0)
+                    if ($Matches[1] -ceq '-') { $zone = $zone.Negate() }
+                }
+                $localNow = if ($null -ne $zone) { $Now.ToOffset($zone) } else { $Now.ToLocalTime() }
+                $targetDate = $localNow.Date
+                $candidate = [DateTimeOffset]::new($targetDate.Year, $targetDate.Month, $targetDate.Day, $parsed.Hour, $parsed.Minute, $parsed.Second, $localNow.Offset)
+                if ($candidate -le $localNow) {
+                    $candidate = $candidate.AddDays(1)
+                }
+                $at = $candidate
+            }
+        }
+        else {
+            $m = [regex]::Match($Text, '(?i)resets?\s+in\s+(?:(\d+)\s*d[a-z]*\s*)?(?:(\d+)\s*h[a-z]*\s*)?(?:(\d+)\s*m[a-z]*\s*)?(?:(\d+)\s*s[a-z]*)?')
+            if ($m.Success -and ($m.Groups[1].Success -or $m.Groups[2].Success -or $m.Groups[3].Success -or $m.Groups[4].Success)) {
+                $g = { param($i) if ($m.Groups[$i].Success) { [int]$m.Groups[$i].Value } else { 0 } }
+                $at = $Now.Add([timespan]::new((& $g 1), (& $g 2), (& $g 3), (& $g 4)))
+            }
         }
     }
     if ($null -eq $at) { return $null }
@@ -302,16 +326,65 @@ function ConvertFrom-PqLimitText {
     return $at.UtcDateTime.ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
 }
 
-# The reset time in the pass's own log (<runs folder>\<ticket>.log, written because a record with a limit pattern runs the
+# S0035: Read the matched limit text from the runner's limit-hold.<agent>.json (truncated to at most 300 characters).
+function Get-PqRunnerLimitText {
+    param([Parameter(Mandatory)][string]$RepoPath, [Parameter(Mandatory)][string]$Agent)
+    try {
+        $paths = Get-PqRepoPaths -RepoPath $RepoPath
+        $file = Join-Path $paths.RunsDir $(if ($Agent -ceq 'claude') { 'limit-hold.json' } else { "limit-hold.$Agent.json" })
+        if (-not [IO.File]::Exists($file)) { return $null }
+        $txt = Get-PqValue (ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($file))) 'text'
+        if ([string]::IsNullOrWhiteSpace($txt)) { return $null }
+        $s = [string]$txt
+        if ($s.Length -gt 300) { $s = $s.Substring(0, 300) }
+        return $s
+    }
+    catch { return $null }
+}
+
+# The reset time in the pass's own log (<runs folder>\<ticket>.<agent>.log or <ticket>.log, written because a record with a limit pattern runs the
 # runner -Quiet): for the providers whose limit the runner could not time (resetsAt null). $null when there is none.
 function Get-PqLogLimitUntil {
     param([Parameter(Mandatory)][string]$RepoPath, [Parameter(Mandatory)][string]$TicketId, $Record)
     try {
         $paths = Get-PqRepoPaths -RepoPath $RepoPath
-        $file = Join-Path $paths.RunsDir "$TicketId.log"
+        $agentName = [string](Get-PqValue $Record 'name' '')
+        $file = if ($agentName) { Join-Path $paths.RunsDir "$TicketId.$agentName.log" } else { $null }
+        if (-not $file -or -not [IO.File]::Exists($file)) {
+            $file = Join-Path $paths.RunsDir "$TicketId.log"
+        }
         if (-not [IO.File]::Exists($file)) { return $null }
         $offset = [string](Get-PqValue (Get-PqValue $Record 'limitDetector') 'resetOffset' '')
         return (ConvertFrom-PqLimitText -Text ([IO.File]::ReadAllText($file)) -Offset $offset)
+    }
+    catch { return $null }
+}
+
+# S0035: Read the matched limit line directly from the pass's log if not already captured in the hold file.
+function Get-PqLogLimitText {
+    param([Parameter(Mandatory)][string]$RepoPath, [Parameter(Mandatory)][string]$TicketId, $Record)
+    try {
+        $paths = Get-PqRepoPaths -RepoPath $RepoPath
+        $agentName = [string](Get-PqValue $Record 'name' '')
+        $file = if ($agentName) { Join-Path $paths.RunsDir "$TicketId.$agentName.log" } else { $null }
+        if (-not $file -or -not [IO.File]::Exists($file)) {
+            $file = Join-Path $paths.RunsDir "$TicketId.log"
+        }
+        if (-not [IO.File]::Exists($file)) { return $null }
+        $pattern = [string](Get-PqValue (Get-PqValue $Record 'limitDetector') 'pattern' '')
+        $pat = if ($pattern) { $pattern } else { 'hit your (.{1,40}?) limit' }
+        $content = [IO.File]::ReadAllText($file)
+        $tail = if ($content.Length -gt 4000) { $content.Substring($content.Length - 4000) } else { $content }
+        if ($tail -match $pat) {
+            foreach ($l in ($tail -split '\r?\n')) {
+                if ($l -match $pat) {
+                    $s = $l.Trim()
+                    if ($s.Length -gt 300) { $s = $s.Substring(0, 300) }
+                    return $s
+                }
+            }
+        }
+        return $null
     }
     catch { return $null }
 }

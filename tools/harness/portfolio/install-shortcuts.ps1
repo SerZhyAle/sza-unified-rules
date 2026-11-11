@@ -180,7 +180,9 @@ foreach ($folder in $folders) {
 
         $isGuide = $s.ContainsKey('Guide') -and $s.Guide
         $target = if ($isGuide) { $guide } else { $pwshExe }
-        $arguments = if ($isGuide) { '' } else { "-NoExit -NoProfile -File `"$pq`" $($s.Pq)" }
+        $arguments = if ($isGuide) { '' }
+                     elseif ($s.Name -eq 'PQ Start') { "-NoExit -NoProfile -Command `"for (;;) { & '$pq' start; if (`$LASTEXITCODE -ne 0) { break } }`"" }
+                     else { "-NoExit -NoProfile -File `"$pq`" $($s.Pq)" }
         $icon = if ($isGuide) { '' } else { "$pwshExe,0" }
         $dir = if ($isGuide) { $PSScriptRoot } else { $workDir }
 

@@ -6,7 +6,7 @@
 #                              with every character that is not a letter or a digit written as '-'>), or $null.
 #   Get-PqPassSessions         the session ids the dispatcher's own passes ran under (run\pass-sessions.json).
 #   Add-PqPassSessions         remember more of them; the file keeps the newest 200.
-#   Get-PqRepoOccupancy        is a repository that is not `concurrent` occupied by a live manual session: @{ occupied; by;
+#   Get-PqRepoOccupancy        is a repository occupied by a live manual session: @{ occupied; by;
 #                              holderKind; ageSeconds; detail }. Two kinds of evidence are read:
 #                                transcript - a session transcript of the repository written within `occupiedMinutes`
 #                                             (registry, default 10; the owner set 3) that is not one of the passes' own;
@@ -35,8 +35,13 @@ function Get-PqPassSessions {
     try {
         $path = Get-PqPassSessionsPath
         if ([IO.File]::Exists($path)) {
-            $doc = ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($path)) -DateKind String -NoEnumerate
-            foreach ($id in @($doc)) { if ($id) { [void]$set.Add([string]$id) } }
+            $doc = ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($path)) -DateKind String
+            foreach ($item in @($doc)) {
+                if ($null -eq $item) { continue }
+                foreach ($id in ([string]$item -split '\s+')) {
+                    if ($id) { [void]$set.Add($id) }
+                }
+            }
         }
     }
     catch { }
@@ -54,11 +59,21 @@ function Add-PqPassSessions([string[]]$Ids) {
             $all = [Collections.Generic.List[string]]::new()
             try {
                 if ([IO.File]::Exists($path)) {
-                    foreach ($id in @(ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($path)) -DateKind String -NoEnumerate)) { if ($id) { $all.Add([string]$id) } }
+                    $existing = ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($path)) -DateKind String
+                    foreach ($item in @($existing)) {
+                        if ($null -eq $item) { continue }
+                        foreach ($id in ([string]$item -split '\s+')) {
+                            if ($id -and -not $all.Contains($id)) { $all.Add($id) }
+                        }
+                    }
                 }
             }
             catch { }
-            foreach ($id in $new) { if (-not $all.Contains($id)) { $all.Add($id) } }
+            foreach ($entry in $new) {
+                foreach ($id in ([string]$entry -split '\s+')) {
+                    if ($id -and -not $all.Contains($id)) { $all.Add($id) }
+                }
+            }
             $keep = if ($all.Count -gt 200) { $all.GetRange($all.Count - 200, 200) } else { $all }
             $tmp = "$path.$PID.tmp"
             [IO.File]::WriteAllText($tmp, (ConvertTo-Json -InputObject @($keep) -Compress), [Text.UTF8Encoding]::new($false))
@@ -76,6 +91,26 @@ function Test-PqLeaseIsPass($Lease, $PassSessions) {
     return ($sid -and $null -ne $PassSessions -and $PassSessions.Contains($sid))
 }
 
+function Test-PqTranscriptIsRobot([string]$FilePath) {
+    try {
+        if (-not [IO.File]::Exists($FilePath)) { return $false }
+        $fs = [IO.File]::Open($FilePath, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+        try {
+            $buf = [byte[]]::new(1024)
+            $read = $fs.Read($buf, 0, 1024)
+            if ($read -le 0) { return $false }
+            $snippet = [Text.Encoding]::UTF8.GetString($buf, 0, $read)
+            return ($snippet.Contains('an unattended queue pass'))
+        }
+        finally {
+            $fs.Dispose()
+        }
+    }
+    catch {
+        return $false
+    }
+}
+
 function Get-PqRepoOccupancy {
     param([Parameter(Mandatory)]$Repo, [Parameter(Mandatory)]$Registry, [string]$HarnessRoot, [switch]$NoLease)
     $path = [string]$Repo.path
@@ -87,10 +122,13 @@ function Get-PqRepoOccupancy {
         $newest = $null
         $newestId = ''
         try {
+            $cutoff = [DateTime]::UtcNow.AddMinutes(-$minutes)
             foreach ($f in [IO.Directory]::GetFiles($dir, '*.jsonl')) {
+                $t = [IO.File]::GetLastWriteTimeUtc($f)
+                if ($t -lt $cutoff) { continue }
                 $sid = [IO.Path]::GetFileNameWithoutExtension($f)
                 if ($own.Contains($sid)) { continue }
-                $t = [IO.File]::GetLastWriteTimeUtc($f)
+                if (Test-PqTranscriptIsRobot $f) { continue }
                 if ($null -eq $newest -or $t -gt $newest) { $newest = $t; $newestId = $sid }
             }
         }

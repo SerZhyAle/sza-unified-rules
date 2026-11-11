@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Drive the release queue one ticket at a time, each in its own fresh Claude Code process.
 
@@ -173,7 +173,14 @@ param(
     [int] $MaxTickets = 0,
 
     # Hard ceiling per ticket. The child is killed with its whole process tree when it overruns.
-    [int] $TimeoutMinutes = 90,
+    [double] $TimeoutMinutes = 90,
+
+    # S0031: How long a child may continue running after having advanced its ticket status to Block*,
+    # Implemented or Verified, before the runner terminates the process tree (preventing worker hangs).
+    [double] $StatusGraceMinutes = 5.0,
+
+    # S0031: Hard ceiling for deadline extensions when child transcript activity is detected.
+    [int] $MaxTimeoutMinutes = 150,
 
     # How the child's model is chosen. 'tiered' reads it off the ticket (see the description);
     # 'fixed' uses -Model for every ticket; 'default' passes nothing and lets the CLI decide.
@@ -410,9 +417,10 @@ if (-not $claude) {
 
 $preflight = (Get-SzaHarnessScript 'spec_catalog/spec-next-preflight.ps1')
 $select = (Get-SzaHarnessScript 'spec_catalog/select.ps1')
+$update = (Get-SzaHarnessScript 'spec_catalog/update.ps1')
 $skipCache = (Get-SzaHarnessScript 'spec_catalog/skip-cache.ps1')
 $leaseScript = (Get-SzaHarnessScript 'locks/ticket-lease.ps1')
-foreach ($required in @($preflight, $select)) {
+foreach ($required in @($preflight, $select, $update)) {
     if (-not (Test-Path $required)) {
         Write-Host "run-spec-queue: required script missing - $required" -ForegroundColor Red
         exit 2
@@ -1073,12 +1081,16 @@ function Resolve-RunOutcome {
         [string] $StatusBefore,
         [string] $StatusAfter,
         [int] $ElapsedSeconds,
-        [switch] $LimitHit
+        [switch] $LimitHit,
+        [switch] $ProviderErrorHit
     )
 
     $resolved = $Outcome
     if ($LimitHit -and ($resolved -eq 'ok' -or $resolved -eq 'timeout')) {
         $resolved = 'limit-hit'
+    }
+    if ($ProviderErrorHit -and ($resolved -eq 'ok' -or $resolved -eq 'timeout' -or $resolved -eq 'child-failed')) {
+        $resolved = 'provider-error'
     }
     if ($resolved -eq 'ok') {
         if ($null -ne $ExitCode -and [int]$ExitCode -ne 0) {
@@ -1249,6 +1261,7 @@ $endedOnLimit = $false
 # right after its own start from being relaunched forever.
 $relaunchId = $null
 $handoffCounts = @{}
+$providerErrorStreaks = @{}
 $handoffCap = 6
 
 while ($true) {
@@ -1402,7 +1415,22 @@ while ($true) {
     try { $host.UI.RawUI.WindowTitle = "$id$titleSuffix | run-spec-queue ($Instance)" } catch { }
 
     # --- run it in its own process --------------------------------------------------------
-    $prompt = $PromptTemplate.Replace('{id}', $id)
+    $ticketRec = if ($ticket -and $ticket.file) { $ticket } else { Get-TicketRecord -Id $id }
+    $specPath = if ($ticketRec -and $ticketRec.file) { [string]$ticketRec.file } else { '' }
+    $updateRel = if (-not [string]::IsNullOrWhiteSpace($update)) {
+        if ($update.StartsWith($RepoRoot, [StringComparison]::OrdinalIgnoreCase)) {
+            $update.Substring($RepoRoot.Length).TrimStart('\', '/').Replace('\', '/')
+        } else {
+            $update.Replace('\', '/')
+        }
+    } else {
+        'tools/harness/spec_catalog/update.ps1'
+    }
+    $prompt = $PromptTemplate
+    $prompt = $prompt.Replace('{id}', $id).Replace('{Id}', $id).Replace('<id>', $id)
+    $prompt = $prompt.Replace('{specPath}', $specPath).Replace('{specpath}', $specPath).Replace('<spec path>', $specPath)
+    $prompt = $prompt.Replace('{repoRoot}', $RepoRoot).Replace('{reporoot}', $RepoRoot).Replace('<repo root>', $RepoRoot)
+    $prompt = $prompt.Replace('{updatePath}', $updateRel).Replace('{updatepath}', $updateRel).Replace('<update.ps1 path>', $updateRel)
     $childArgs = @(Expand-ChildArgs -Template $runnerArgsTemplate -Prompt $prompt `
             -Mode $PermissionMode -Model $childModel -Effort $childEffort)
 
@@ -1457,7 +1485,7 @@ while ($true) {
 
     $logFile = $null
     if ($Quiet) {
-        $logFile = Join-Path $runDir ("{0}.log" -f $id)
+        $logFile = Join-Path $runDir $(if ($agentScope) { "{0}.{1}.log" -f $id, $agentScope } else { "{0}.log" -f $id })
         $psi.RedirectStandardOutput = $true
         $psi.RedirectStandardError = $true
         Write-Host ("  output -> {0}" -f $logFile) -ForegroundColor DarkGray
@@ -1557,26 +1585,112 @@ while ($true) {
             # ADD time, so a ticket with no plan - or a child that ticks nothing - dies exactly when
             # it did before this.
             $deadline = $started.AddMinutes($TimeoutMinutes)
+            $transcriptCapDeadline = $started.AddMinutes($MaxTimeoutMinutes)
             $stepMarks = Get-TicketStepMarkCount -Id $id
             $stepMarksAtStart = $stepMarks
             $extensions = 0
             $timedOut = $false
+            $childTranscriptPath = $null
+            $statusMovedAt = $null
+            $stoppedAfterStatus = $false
+
             while ($true) {
                 $remainingMs = [int](($deadline - (Get-Date)).TotalMilliseconds)
-                if ($remainingMs -le 0) { $timedOut = -not $proc.HasExited; break }
-                # Sliced so a new step mark is noticed inside the window rather than after it. A
-                # ticket with no tactical folder gives no signal, so it waits in one slice and pays
-                # nothing for the polling.
-                $sliceMs = if ($null -eq $stepMarks) { $remainingMs } else { [Math]::Min($remainingMs, 60000) }
+                if ($remainingMs -le 0) {
+                    # S0031: check if child transcript was active in the last 15 minutes before declaring timeout
+                    if ($sessionId -and (Get-Date) -lt $transcriptCapDeadline) {
+                        if ($null -eq $childTranscriptPath) {
+                            try { $childTranscriptPath = Find-ChildTranscript -SessionId $sessionId } catch { }
+                        }
+                        if ($childTranscriptPath -and (Test-Path -LiteralPath $childTranscriptPath)) {
+                            try {
+                                $lastWrite = (Get-Item -LiteralPath $childTranscriptPath).LastWriteTime
+                                if (((Get-Date) - $lastWrite).TotalMinutes -lt 15) {
+                                    $candidate = (Get-Date).AddMinutes(15)
+                                    $newDeadline = if ($candidate -lt $transcriptCapDeadline) { $candidate } else { $transcriptCapDeadline }
+                                    if ($newDeadline -gt $deadline) {
+                                        $deadline = $newDeadline
+                                        $extensions++
+                                        Write-Host ("  {0}{2}: child transcript active ({1:N1} min ago) - deadline extended to {3} (cap {4} min)." -f `
+                                                $id, ((Get-Date) - $lastWrite).TotalMinutes, $titleSuffix, $deadline.ToString('HH:mm:ss'), $MaxTimeoutMinutes) -ForegroundColor DarkGray
+                                        continue
+                                    }
+                                }
+                            } catch { }
+                        }
+                    }
+                    $timedOut = -not $proc.HasExited
+                    break
+                }
+
+                # S0031: Wake every 60 s also when the ticket has no tactical folder, to poll ledger status.
+                # When StatusGraceMinutes is configured shorter (e.g. in targeted tests), poll at that interval.
+                $pollIntervalMs = [Math]::Min(60000, [Math]::Max(1000, [int]([TimeSpan]::FromMinutes($StatusGraceMinutes).TotalMilliseconds)))
+                $sliceMs = [Math]::Min($remainingMs, $pollIntervalMs)
+                if ($null -ne $statusMovedAt) {
+                    $statusRemainingMs = [int](([TimeSpan]::FromMinutes($StatusGraceMinutes) - ((Get-Date) - $statusMovedAt)).TotalMilliseconds)
+                    if ($statusRemainingMs -gt 0) {
+                        $sliceMs = [Math]::Max(500, [Math]::Min($sliceMs, $statusRemainingMs))
+                    }
+                }
                 if ($proc.WaitForExit($sliceMs)) { break }
-                if ($null -eq $stepMarks) { continue }
-                $now = Get-TicketStepMarkCount -Id $id
-                if ($null -ne $now -and $now -gt $stepMarks) {
-                    $stepMarks = $now
-                    $deadline = (Get-Date).AddMinutes($TimeoutMinutes)
-                    $extensions++
-                    Write-Host ("  {0}{3}: step {1} of its plan ticked - deadline moved to {2}." -f `
-                            $id, $now, $deadline.ToString('HH:mm:ss'), $titleSuffix) -ForegroundColor DarkGray
+
+                # S0031: When the ticket has left statusBefore for a Block*, Implemented or Verified status
+                # and StatusGraceMinutes have passed, stop the process tree and record the pass as ok.
+                $currentStatus = Get-TicketStatus -Id $id
+                if ($currentStatus -and $currentStatus -ne $statusBefore) {
+                    $isTerminalOrBlocked = ($currentStatus -like 'Block*') -or ($currentStatus -eq 'Implemented') -or ($currentStatus -eq 'Verified')
+                    if ($isTerminalOrBlocked) {
+                        if ($null -eq $statusMovedAt) {
+                            $statusMovedAt = Get-Date
+                        } elseif (((Get-Date) - $statusMovedAt).TotalMinutes -ge $StatusGraceMinutes) {
+                            Write-Host ''
+                            Write-Host ("  run-spec-queue: {0}{2} moved to {1} and remained running for {3} min - stopping the process tree (recorded ok)." -f $id, $currentStatus, $titleSuffix, $StatusGraceMinutes) -ForegroundColor DarkCyan
+                            Stop-ProcessTree -ProcessId $proc.Id
+                            & pwsh -NoProfile -File (Get-SzaHarnessScript 'locks/ticket-lease.ps1') -Verb Release -Id $id 2>&1 | Out-Null
+                            $stoppedAfterStatus = $true
+                            $outcome = 'ok'
+                            $exitCode = 0
+                            break
+                        }
+                    } else {
+                        $statusMovedAt = $null
+                    }
+                } else {
+                    $statusMovedAt = $null
+                }
+
+                if ($null -ne $stepMarks) {
+                    $now = Get-TicketStepMarkCount -Id $id
+                    if ($null -ne $now -and $now -gt $stepMarks) {
+                        $stepMarks = $now
+                        $deadline = (Get-Date).AddMinutes($TimeoutMinutes)
+                        $extensions++
+                        Write-Host ("  {0}{3}: step {1} of its plan ticked - deadline moved to {2}." -f `
+                                $id, $now, $deadline.ToString('HH:mm:ss'), $titleSuffix) -ForegroundColor DarkGray
+                    }
+                }
+
+                # S0031: Proactive transcript deadline extension if approaching deadline
+                if ($remainingMs -le 60000 -and $sessionId -and (Get-Date) -lt $transcriptCapDeadline) {
+                    if ($null -eq $childTranscriptPath) {
+                        try { $childTranscriptPath = Find-ChildTranscript -SessionId $sessionId } catch { }
+                    }
+                    if ($childTranscriptPath -and (Test-Path -LiteralPath $childTranscriptPath)) {
+                        try {
+                            $lastWrite = (Get-Item -LiteralPath $childTranscriptPath).LastWriteTime
+                            if (((Get-Date) - $lastWrite).TotalMinutes -lt 15) {
+                                $candidate = (Get-Date).AddMinutes(15)
+                                $newDeadline = if ($candidate -lt $transcriptCapDeadline) { $candidate } else { $transcriptCapDeadline }
+                                if ($newDeadline -gt $deadline) {
+                                    $deadline = $newDeadline
+                                    $extensions++
+                                    Write-Host ("  {0}{2}: child transcript active ({1:N1} min ago) - deadline extended to {3} (cap {4} min)." -f `
+                                            $id, ((Get-Date) - $lastWrite).TotalMinutes, $titleSuffix, $deadline.ToString('HH:mm:ss'), $MaxTimeoutMinutes) -ForegroundColor DarkGray
+                                }
+                            }
+                        } catch { }
+                    }
                 }
             }
             if ($timedOut) {
@@ -1593,6 +1707,9 @@ while ($true) {
                 Stop-ProcessTree -ProcessId $proc.Id
                 # A killed child cannot release its ticket lease; drop it so a later run is not refused.
                 & pwsh -NoProfile -File (Get-SzaHarnessScript 'locks/ticket-lease.ps1') -Verb Release -Id $id 2>&1 | Out-Null
+            } elseif ($stoppedAfterStatus) {
+                $outcome = 'ok'
+                $exitCode = 0
             } else {
                 $exitCode = $proc.ExitCode
             }
@@ -1608,6 +1725,40 @@ while ($true) {
                 [System.IO.File]::WriteAllText($logFile, $body, [System.Text.Encoding]::UTF8)
             } catch {
                 Write-Host ("  run-spec-queue: could not write {0} - {1}" -f $logFile, $_.Exception.Message) -ForegroundColor DarkYellow
+            }
+        }
+
+        # S0031: On a timeout the runner writes the status note "killed at N min, work left in the tree, see <log>"
+        # through update.ps1, so the next pass reads it first.
+        if ($outcome -eq 'timeout') {
+            $timeoutElapsed = [int][Math]::Round(((Get-Date) - $started).TotalMinutes)
+            if ($timeoutElapsed -le 0) { $timeoutElapsed = [int][Math]::Max(1, [Math]::Ceiling($TimeoutMinutes)) }
+            $logRef = if (-not [string]::IsNullOrWhiteSpace($logFile)) {
+                if ($logFile.StartsWith($RepoRoot, [StringComparison]::OrdinalIgnoreCase)) {
+                    $logFile.Substring($RepoRoot.Length).TrimStart('\', '/').Replace('\', '/')
+                } else {
+                    $logFile.Replace('\', '/')
+                }
+            } elseif ($sessionId) {
+                $transcript = if ($sessionId) { Find-ChildTranscript -SessionId $sessionId } else { $null }
+                if ($transcript) {
+                    if ($transcript.StartsWith($RepoRoot, [StringComparison]::OrdinalIgnoreCase)) {
+                        $transcript.Substring($RepoRoot.Length).TrimStart('\', '/').Replace('\', '/')
+                    } else {
+                        $transcript.Replace('\', '/')
+                    }
+                } else {
+                    "session $sessionId"
+                }
+            } else {
+                "queue log"
+            }
+            $timeoutNote = "killed at {0} min, work left in the tree, see {1}" -f $timeoutElapsed, $logRef
+            try {
+                & pwsh -NoProfile -File $update -Id $id -StatusNote $timeoutNote 2>&1 | Out-Null
+                Write-Host ("  run-spec-queue: {0} status note updated on timeout -> `"{1}`"" -f $id, $timeoutNote) -ForegroundColor DarkYellow
+            } catch {
+                Write-Host ("  run-spec-queue: could not set timeout status note for {0} - {1}" -f $id, $_.Exception.Message) -ForegroundColor DarkYellow
             }
         }
     } catch {
@@ -1646,6 +1797,49 @@ while ($true) {
     }
 
     $statusAfter = Get-TicketStatus -Id $id
+
+    # S0029: reconcile a hand-edited status line from the spec header.
+    # When the spec header's first **Status:** differs from the ledger, call update.ps1 -Status <header value>
+    # (the gates still judge it) and log "status reconciled from the spec header"; a refused move is recorded
+    # as outcome status-drift, not no-progress.
+    $recAfter = Get-TicketRecord -Id $id
+    if ($null -ne $recAfter -and -not [string]::IsNullOrWhiteSpace([string]$recAfter.file)) {
+        $specFileAfter = Join-Path $RepoRoot ([string]$recAfter.file)
+        if (Test-Path -LiteralPath $specFileAfter -PathType Leaf) {
+            $specText = [IO.File]::ReadAllText($specFileAfter)
+            $rxStatus = [regex]'(?m)^\*\*Status:\*\*\s*(?<status>[^\r\n]+)(?:\r?\n\*\*Status note:\*\*\s*(?<note>[^\r\n]*))?'
+            $mStatus = $rxStatus.Match($specText)
+            if ($mStatus.Success) {
+                $rawHeaderStatus = $mStatus.Groups['status'].Value.Trim()
+                $vocab = @(Get-SzaProfileValue 'grammar.statusVocabulary') | Sort-Object { $_.Length } -Descending
+                $headerStatus = $null
+                foreach ($w in $vocab) {
+                    if ($rawHeaderStatus -ceq $w -or $rawHeaderStatus.StartsWith("$w ", [StringComparison]::Ordinal)) {
+                        $headerStatus = $w
+                        break
+                    }
+                }
+                if ($null -ne $headerStatus -and $headerStatus -ne $statusAfter) {
+                    $headerNote = if ($mStatus.Groups['note'].Success -and -not [string]::IsNullOrWhiteSpace($mStatus.Groups['note'].Value)) {
+                        $mStatus.Groups['note'].Value.Trim()
+                    } else { $null }
+
+                    $updateArgs = @('-NoProfile', '-File', $update, '-Id', $id, '-Status', $headerStatus)
+                    if ($null -ne $headerNote) {
+                        $updateArgs += @('-StatusNote', $headerNote)
+                    }
+                    $updateOutput = & pwsh @updateArgs 2>&1
+                    if ($LASTEXITCODE -eq 0) {
+                        Write-Host ("  run-spec-queue: {0} status reconciled from the spec header ({1} -> {2})" -f $id, $statusAfter, $headerStatus) -ForegroundColor DarkCyan
+                        $statusAfter = $headerStatus
+                    } else {
+                        Write-Host ("  run-spec-queue: {0} status reconciliation from spec header refused by gates: {1}" -f $id, ($updateOutput | Out-String).Trim()) -ForegroundColor DarkYellow
+                        $outcome = 'status-drift'
+                    }
+                }
+            }
+        }
+    }
     $elapsedSeconds = [int]((Get-Date) - $started).TotalSeconds
     $elapsed = [int]((Get-Date) - $started).TotalMinutes
 
@@ -1661,6 +1855,16 @@ while ($true) {
             $limitSignal = Get-LimitSignal -TranscriptPath $transcript -LogBody $logBody -ExitCode $exitCode -Pattern $agentLimitPattern
         } catch {
             $limitSignal = $null
+        }
+    }
+
+    $providerErrorSignal = $null
+    if ($outcome -eq 'ok' -or $outcome -eq 'timeout' -or ($null -ne $exitCode -and [int]$exitCode -ne 0)) {
+        try {
+            $transcript = if ($sessionId) { Find-ChildTranscript -SessionId $sessionId } else { $null }
+            $providerErrorSignal = Get-ProviderErrorSignal -TranscriptPath $transcript -LogBody $logBody -ExitCode $exitCode
+        } catch {
+            $providerErrorSignal = $null
         }
     }
 
@@ -1681,7 +1885,8 @@ while ($true) {
     # A context handoff under the cap is relaunched: the child stopped on purpose with work left.
     $verdict = Resolve-RunOutcome -Outcome $outcome -ExitCode $exitCode `
             -StatusBefore $statusBefore -StatusAfter $statusAfter -ElapsedSeconds $elapsedSeconds `
-            -LimitHit:($null -ne $limitSignal)
+            -LimitHit:($null -ne $limitSignal) `
+            -ProviderErrorHit:($null -ne $providerErrorSignal)
     $outcome = $verdict.Outcome
     $moved = $verdict.Moved
     $ranAny = $true
@@ -1707,7 +1912,18 @@ while ($true) {
             $resetsAt = $null
         }
         $limitHold = Write-LimitHold -Path $limitHoldPath -ResetsAt $resetsAt `
-                -RateLimitType $limitSignal.RateLimitType -Instance $Instance -Ticket $id
+                -RateLimitType $limitSignal.RateLimitType -Instance $Instance -Ticket $id `
+                -Text $limitSignal.Text
+    } elseif ($outcome -eq 'provider-error') {
+        # A provider error is an infrastructure outage, not a ticket failure.
+        # It is not added to $processed, so it is offered again.
+        if ($pickedFrom -ne 'queue') { $relaunchId = $id }
+        $providerStreak = 1 + [int]$providerErrorStreaks[$id]
+        $providerErrorStreaks[$id] = $providerStreak
+        $sleepSec = [Math]::Min(600, 120 * $providerStreak)
+        Write-Host ("  {0} hit provider outage ({1}) - ticket not dropped, sleeping {2}s before retry (streak {3})." -f `
+            $id, $(if ($providerErrorSignal) { $providerErrorSignal.Error } else { 'transient API error' }), $sleepSec, $providerStreak) -ForegroundColor DarkYellow
+        Start-Sleep -Seconds $sleepSec
     } elseif ($relaunch) {
         $relaunchId = $id
     } else {
@@ -1725,7 +1941,7 @@ while ($true) {
     $series = Get-IdleRunSeries -Id $id -Refresh
     Add-Member -InputObject $runRecord -NotePropertyName 'idle' -NotePropertyValue $series.Count -Force
 
-    $colour = if ($moved) { 'Green' } elseif ($outcome -eq 'context-handoff') { 'Cyan' } elseif ($outcome -eq 'limit-hit') { 'Magenta' } elseif ($outcome -ne 'ok') { 'Red' } else { 'Yellow' }
+    $colour = if ($moved) { 'Green' } elseif ($outcome -eq 'context-handoff') { 'Cyan' } elseif ($outcome -eq 'limit-hit') { 'Magenta' } elseif ($outcome -eq 'provider-error') { 'DarkYellow' } elseif ($outcome -ne 'ok') { 'Red' } else { 'Yellow' }
     Write-Host ''
     Write-Host ("  {0}{5}: {1} -> {2}   ({3}, {4} min)" -f $id, $statusBefore, $statusAfter, $outcome, $elapsed, $titleSuffix) -ForegroundColor $colour
     if ($relaunch) {
@@ -1737,6 +1953,8 @@ while ($true) {
         $until = if ($null -ne $limitHold.Until) { $limitHold.Until.LocalDateTime.ToString('yyyy-MM-dd HH:mm:ss') } else { 'unknown' }
         Write-Host ("  {0} ended on the {1} usage limit (read from the {2}) - not counted against the ticket, and no child starts before {3}." -f `
                 $id, $limitSignal.RateLimitType, $limitSignal.Source, $until) -ForegroundColor Magenta
+    } elseif ($outcome -eq 'provider-error') {
+        Write-Host ("  {0} ended on a provider outage ({1}) - not counted against the ticket." -f $id, $(if ($providerErrorSignal) { $providerErrorSignal.Error } else { 'transient API error' })) -ForegroundColor DarkYellow
     } elseif (-not $moved) {
         Write-Host ("  {0} did not move - dropped for the rest of this run." -f $id) -ForegroundColor DarkYellow
     }

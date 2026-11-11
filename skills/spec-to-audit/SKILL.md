@@ -377,6 +377,17 @@ finding has been read by nobody but its author. The campaign closes only on the 
 owner's device tests are drained once afterwards, in Sweep mode. Load
 [references/audit-campaign.md](references/audit-campaign.md) for the method and the measured yields.
 
+## Unattended pass - headless queue runs
+
+An unattended pass runs without human interaction in a headless queue session.
+
+- **The ticket and tool are named up front**: the ticket is `<spec path>` in `<repo root>`; change its status only with `<update.ps1 path> -Id <id> -Status <s>`, never by editing the `**Status:**` line.
+- **Strict repo boundary**: never read or change a ticket of another repository.
+- **Foreground execution only**: this is a headless pass: start no background agent or command, wait for each in the foreground, and set the status before your last message. In headless mode the end of the turn is the end of the pass; orphaned background work fails.
+- **Autonomous stopping**: take this one ticket as far as it goes and do not start another. When it cannot move, set the matching `Block*` status with a `statusNote` naming what is missing.
+- **Claim**: a lease on the ticket whose reason is `run-spec-queue` followed by an instance name is the claim the runner made for you: it is yours.
+- **Context handoff for in-progress work**: when a pass leaves a multi-step ticket `In Progress` with work done and must stop before completion (or upon approaching turn or context limits), it writes `<tempDir>/<id>/context-handoff.json` (specifying `id`, `tokens`, `boundary`) before ending. The runner checks this marker and relaunches up to `handoffCap` with a fresh context instead of recording an idle or no-progress drop.
+
 ## The self-audit checklist
 
 Each question has a mechanical answer.

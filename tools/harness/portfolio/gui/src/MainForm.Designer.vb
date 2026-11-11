@@ -338,7 +338,7 @@ Partial Class MainForm
         Me.tipMain.SetToolTip(Me.btnPin, "Pins ticket to top of PORTFOLIO_QUEUE.md ('pq pin <target>')")
 
         Me.btnRunNow.Name = "btnRunNow"
-        Me.btnRunNow.Text = "Run &now"
+        Me.btnRunNow.Text = "R&un now"
         Me.btnRunNow.Location = New Point(346, 6)
         Me.btnRunNow.Size = New Size(78, 32)
         Me.btnRunNow.AccessibleName = "Run named ticket now"

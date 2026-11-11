@@ -101,6 +101,32 @@ function Get-PqRunStats($Runs) {
     }
 }
 
+function Get-PqStatusFigures($Runs) {
+    $ended = [ordered]@{}
+    $byAgent = [ordered]@{}
+    $gates = [ordered]@{}
+    foreach ($status in @('BlockQuestions', 'BlockNeedUserTest', 'BlockExternal', 'BlockByOtherTask', 'Implemented')) {
+        $gates[$status] = [ordered]@{ entered = 0; left = 0 }
+    }
+    foreach ($row in @($Runs)) {
+        $before = [string](Get-PqValue $row 'statusBefore' '')
+        $after = [string](Get-PqValue $row 'statusAfter' '')
+        $agent = [string](Get-PqValue $row 'agent' '')
+        if (-not $after) { $after = '(unknown)' }
+        if (-not $agent) { $agent = '(unknown)' }
+        if (-not $ended.Contains($after)) { $ended[$after] = 0 }
+        $ended[$after]++
+        if (-not $byAgent.Contains($agent)) { $byAgent[$agent] = [ordered]@{} }
+        if (-not $byAgent[$agent].Contains($after)) { $byAgent[$agent][$after] = 0 }
+        $byAgent[$agent][$after]++
+        # A missing endpoint cannot establish a transition.
+        if (-not $before -or $after -eq '(unknown)' -or $before -ceq $after) { continue }
+        if ($gates.Contains($after)) { $gates[$after].entered++ }
+        if ($gates.Contains($before)) { $gates[$before].left++ }
+    }
+    return [ordered]@{ ended = $ended; byAgent = $byAgent; gates = $gates }
+}
+
 function Group-PqRunsBy($Runs, [string]$Field) {
     $groups = [ordered]@{}
     foreach ($r in @($Runs)) {
@@ -166,11 +192,18 @@ function Get-PqFindings {
     $cyc = @(& $of 'xrepo.cycle')
     if ($cyc.Count -gt 0) { & $add 'PQ-XREPO01' 'medium' 'owner' "$($cyc.Count) cross-repository blocker cycle(s)" $cyc.Count 1 @($cyc | ForEach-Object { Get-PqEventRef $_ }) }
 
-    # PQ-DATA01: the log itself - a gap in seq, an error, an unparsable line.
+    # PQ-DATA01: the log itself - a gap in seq, an error, an unparsable line, or unhandled run.error.
     $logErr = @(& $of 'log.error')
+    $runErr = @(& $of 'run.error' | Where-Object { (Get-PqValue $_.d 'stage' '') -cne 'provider-pause' })
     $unexplained = @(@($Gaps) | Where-Object { (Get-PqValue $_ 'explained' $true) -eq $false })
-    if ($logErr.Count -gt 0 -or $unexplained.Count -gt 0 -or $Bad -gt 0) {
-        & $add 'PQ-DATA01' 'high' 'runner' "log health: $($logErr.Count) log.error, $($unexplained.Count) unexplained seq gap(s), $Bad unparsable line(s)" ($logErr.Count + $unexplained.Count + $Bad) 1 @($logErr | ForEach-Object { Get-PqEventRef $_ })
+    if ($logErr.Count -gt 0 -or $runErr.Count -gt 0 -or $unexplained.Count -gt 0 -or $Bad -gt 0) {
+        $parts = [Collections.Generic.List[string]]::new()
+        if ($logErr.Count -gt 0) { $parts.Add("$($logErr.Count) log.error") }
+        if ($runErr.Count -gt 0) { $parts.Add("$($runErr.Count) run.error") }
+        if ($unexplained.Count -gt 0) { $parts.Add("$($unexplained.Count) unexplained seq gap(s)") }
+        if ($Bad -gt 0) { $parts.Add("$Bad unparsable line(s)") }
+        $evRefs = @($logErr + $runErr | ForEach-Object { Get-PqEventRef $_ })
+        & $add 'PQ-DATA01' 'high' 'runner' ("log health: " + ($parts -join ', ')) ($logErr.Count + $runErr.Count + $unexplained.Count + $Bad) 1 $evRefs
     }
 
     # PQ-COST02: `light` that needed 3+ passes in over 30 % of its tickets (at least five tickets).
@@ -210,6 +243,7 @@ function Get-PqReport {
     $outcomes = [ordered]@{}
     foreach ($g in @($runs | Group-Object { [string](Get-PqValue $_ 'outcome' 'unknown') } | Sort-Object Count -Descending)) { $outcomes[$g.Name] = $g.Count }
     $report.outcomes = $outcomes
+    $report.statuses = Get-PqStatusFigures $runs
     foreach ($field in @('agent', 'model', 'complexity', 'repo')) {
         $split = [ordered]@{}
         foreach ($k in @((Group-PqRunsBy $runs $field).Keys)) {
@@ -234,7 +268,8 @@ function Get-PqReport {
     $report.stops = $stops
     $report.intake = [ordered]@{ robotFiled = (& $count 'intake.robotDraft'); capped = @($events | Where-Object { $_.ev -ceq 'intake.robotDraft' -and (Get-PqValue $_.d 'capped' $false) -eq $true }).Count }
     $report.limits = [ordered]@{ passLimits = (& $count 'pass.limit'); holds = (& $count 'agent.hold'); resumes = (& $count 'agent.resume'); fallbacks = (& $count 'agent.fallback') }
-    $report.telemetry = [ordered]@{ events = $events.Count; logErrors = (& $count 'log.error'); seqGaps = @($ev.gaps).Count; unparsable = $ev.bad; unsupported = $ev.unsupported }
+    $runErrCount = @($events | Where-Object { $_.ev -ceq 'run.error' -and (Get-PqValue $_.d 'stage' '') -cne 'provider-pause' }).Count
+    $report.telemetry = [ordered]@{ events = $events.Count; logErrors = (& $count 'log.error'); runErrors = $runErrCount; seqGaps = @($ev.gaps).Count; unparsable = $ev.bad; unsupported = $ev.unsupported }
     $report.findings = @(Get-PqFindings -Runs $runs -Events $events -Gaps $ev.gaps -Bad $ev.bad)
     return $report
 }

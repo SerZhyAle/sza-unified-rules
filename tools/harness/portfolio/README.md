@@ -52,7 +52,7 @@ fms-web:S0030           # a held ticket is skipped, the project's next one is ta
 | Element | Rule |
 | --- | --- |
 | package heading | a line of only digits, or `--`; the rows below it belong to it |
-| `hold` heading | a line of only the word `hold`; every row below it is out of reach until the row is removed |
+| `hold` heading | a line of only the word `hold`; every row below it is out of reach of every robot until the row is removed; only `pq start -Ticket <key>:<id>` of that exact ticket (or of a ticket of a held project) passes it, and removes nothing |
 | row | `<key>`, `<key>:*` or `<key>:<id>`; the key is the one `pq list` prints; anything after the key is a comment |
 | order | projects by registry `rank`; inside one project, numbered packages ascending, then `--`; inside a package, line order |
 | a repository named only by `<key>:<id>` rows | offers those named tickets; synchronization adds every other locally queued ticket right after that project's last row |
@@ -299,7 +299,8 @@ empty: wait, see Waiting
   when it did not; 2 (before a worker slot is taken) for a malformed `-Ticket`, an unknown project key, or `-Ticket`
   together with `-Repo`. `-MaxTickets` with it must be 0 or 1. `pq start -Repo <key>` is a normal worker that ranks only
   that project - its ticket order, stops, waiting, `-Drain`, `-MaxTickets` and `-Until` as usual, every hold kept. Neither
-  mode changes the project order or the queue file; `run.start` carries `target` (`ticket:<key>:<id>`, `repo:<key>`) and
+  mode changes the project order or reorders the queue file; each runs the per-turn queue sync and file-to-ledger
+  registration for its own project only and no discovery; `run.start` carries `target` (`ticket:<key>:<id>`, `repo:<key>`) and
   `rank.result` carries `named` and `heldBypassed` for the named start.
 - A pass child does not inherit the starting agent's session variables, so `pq` may be started from an agent's shell as well
   as from a shortcut.
@@ -465,7 +466,7 @@ nothing to follow for a Codex or Gemini pass.
 | Command | Shows |
 | --- | --- |
 | `pq inbox [-Json]` | what waits for the owner across all projects: one line per kind (count, oldest age, the command that clears it), then the tickets with id, age and note; `BlockByOtherTask` as chain roots |
-| `pq report [-Days n]` | the last n days (7): passes, moved and ok shares, outcomes, the splits by agent, model, complexity and repository (only where n is at least 5), waiting, occupancy, resources, stops, robot-filed tickets, limits, log health and the open findings; `-Json` for the object |
+| `pq report [-Days n]` | the last n days (7): passes, moved and ok shares, outcomes, ending statuses overall and by agent, entries and exits for owner-waiting statuses, the splits by agent, model, complexity and repository (only where n is at least 5), waiting, occupancy, resources, stops, robot-filed tickets, limits, log health and the open findings; `-Json` for the object |
 | `pq problems [-Days n]` | the open findings only, severity first, each with the events behind it: `PQ-RACE01` (a lost claim), `PQ-SAFE01` (a tripwire), `PQ-SAFE02` (the robot-filed cap), `PQ-LIMIT01` (a limit with no reset time), `PQ-THRASH01`, `PQ-RES03` (a token waited on for 30 minutes), `PQ-STALL01`, `PQ-XREPO01` (a blocker cycle), `PQ-DATA01` (a log gap or error), `PQ-COST02` (`light` that needed three passes), `PQ-ADOPT01` (a repository far below the median) |
 | `pq trace <key:id>` | every event of one ticket in time order, grouped by pass |
 | `pq export [-What runs|events] [-Format jsonl|csv] [-Days n]` | the run rows (default) or the events, to stdout |
@@ -473,6 +474,10 @@ nothing to follow for a Codex or Gemini pass.
 
 They only read `runs.jsonl` and the event files and compute each time; nothing is filed or written. The finding lifecycle
 (`finding.open` and `finding.close`), the daily digest and the `from-telemetry` tickets are not built.
+
+Ending statuses count passes, not unique tickets. An unchanged status is neither an entry nor an exit;
+where either endpoint is missing, no transition is counted. Missing ending statuses and agents are shown as
+`(unknown)`. `Implemented` appears with the owner-waiting statuses because it waits for an audit.
 
 A repository's own queue stop works on the portfolio too. While its shared stop file (`temp/STOP-SPEC-QUEUE`, written by
 its `rs` or by a release freeze) exists, `pq` takes no ticket there and `PQ Dry-run` prints `skip <key> - stopped`; it

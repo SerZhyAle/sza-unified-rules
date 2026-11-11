@@ -60,7 +60,7 @@ occupancy, the repository lock, the lease, resource tokens, a provider out of li
 not eligible or `Block*`, an unreleased cross-repo `Blocker:`). `-Repo` bypasses nothing: every hold stays. `pq release`
 stays the owner's call.
 
-The same two aims exist in `PQ Control Panel` (**Run now** beside Pin Top, **Start on this project** on a project row) and
+The same two aims exist in `PQ Control Panel` from the build that follows this change (**Run now** beside Pin Top, **Start on this project** on a project row) and
 in the one-ticket skills: `/spec-all <key>:<id>` and `/sa <key>:<id>` work one named ticket of any project from any folder,
 `/spec-all <key>` and `/spec-next <key>` take that project's next eligible ticket, then stop.
 

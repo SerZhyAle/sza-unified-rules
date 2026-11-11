@@ -231,7 +231,7 @@ function Get-LimitSignal {
 
         With neither, $null: the run stays whatever it was.
     .OUTPUTS
-        Source ('transcript' or 'log'), ResetsAt (unix seconds or $null), RateLimitType.
+        Source ('transcript' or 'log'), ResetsAt (unix seconds or $null), RateLimitType, Text.
     #>
     param(
         [string] $TranscriptPath = '',
@@ -259,20 +259,79 @@ function Get-LimitSignal {
         $type = [string](Get-LimitJsonProperty $quota 'rateLimitType')
         if ([string]::IsNullOrWhiteSpace($type)) { $type = [string](Get-LimitJsonProperty $info 'rateLimitType') }
         if ([string]::IsNullOrWhiteSpace($type)) { $type = 'unknown' }
-        return [pscustomobject]@{ Source = 'transcript'; ResetsAt = $resetsAt; RateLimitType = $type }
+        return [pscustomobject]@{ Source = 'transcript'; ResetsAt = $resetsAt; RateLimitType = $type; Text = $null }
     }
 
     if (-not [string]::IsNullOrWhiteSpace($LogBody) -and ($null -eq $ExitCode -or [int64]$ExitCode -ne 0)) {
         $tail = if ($LogBody.Length -gt 4000) { $LogBody.Substring($LogBody.Length - 4000) } else { $LogBody }
         if ([string]::IsNullOrWhiteSpace($Pattern)) {
             if ($tail -match 'hit your (.{1,40}?) limit') {
-                return [pscustomobject]@{ Source = 'log'; ResetsAt = $null; RateLimitType = $Matches[1].Trim() }
+                $line = ''
+                foreach ($l in ($tail -split '\r?\n')) {
+                    if ($l -match 'hit your (.{1,40}?) limit') { $line = $l.Trim(); break }
+                }
+                if (-not $line -and $Matches[0]) { $line = $Matches[0].Trim() }
+                if ($line.Length -gt 300) { $line = $line.Substring(0, 300) }
+                return [pscustomobject]@{ Source = 'log'; ResetsAt = $null; RateLimitType = $Matches[1].Trim(); Text = $line }
             }
         }
         elseif ($tail -match $Pattern) {
             $type = if ($Matches.Count -gt 1) { ([string]$Matches[1]).Trim() } else { '' }
             if ([string]::IsNullOrWhiteSpace($type)) { $type = 'usage' }
-            return [pscustomobject]@{ Source = 'log'; ResetsAt = (ConvertFrom-LimitRetryText $tail); RateLimitType = $type }
+            $line = ''
+            foreach ($l in ($tail -split '\r?\n')) {
+                if ($l -match $Pattern) { $line = $l.Trim(); break }
+            }
+            if (-not $line -and $Matches[0]) { $line = $Matches[0].Trim() }
+            if ($line.Length -gt 300) { $line = $line.Substring(0, 300) }
+            return [pscustomobject]@{ Source = 'log'; ResetsAt = (ConvertFrom-LimitRetryText $tail); RateLimitType = $type; Text = $line }
+        }
+    }
+    return $null
+}
+
+function Get-ProviderErrorSignal {
+    <#
+    .SYNOPSIS
+        The API error or infrastructure outage a finished child ended on, or $null.
+    .DESCRIPTION
+        With a transcript, the last assistant record is checked: if apiError or error indicates
+        an outage, server error, or connection failure rather than a rate limit (which Get-LimitSignal
+        handles).
+        Without a transcript (or where the transcript record has no error), and only for a child
+        that did not exit 0, the tail of the log is inspected for API error messages
+        ("API Error: Can't reach the API server", "ENOTFOUND", "ECONNRESET", "ETIMEDOUT", "529 Overloaded",
+        or "API Error").
+    #>
+    param(
+        [string] $TranscriptPath = '',
+        [string] $LogBody = '',
+        $ExitCode = $null
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($TranscriptPath) -and (Test-Path -LiteralPath $TranscriptPath -PathType Leaf)) {
+        $record = Read-TranscriptLastAssistant -Path $TranscriptPath
+        if ($null -ne $record) {
+            $apiError = [string](Get-LimitJsonProperty $record 'apiError')
+            $error_ = [string](Get-LimitJsonProperty $record 'error')
+            $status = [string](Get-LimitJsonProperty $record 'apiErrorStatus')
+
+            $isLimit = ($apiError -eq 'usage_limit_reached') -or ($error_ -eq 'rate_limit' -and $status -eq '429')
+            if (-not $isLimit) {
+                if ($apiError -match '(?i)server_error|overloaded|api_req_failed|ENOTFOUND|ECONNRESET|ETIMEDOUT' -or
+                    $error_ -match '(?i)api_error|server_error|overloaded' -or
+                    $status -match '^(500|502|503|504|529)$') {
+                    $detail = if ($apiError) { $apiError } elseif ($error_) { $error_ } else { "HTTP $status" }
+                    return [pscustomobject]@{ Source = 'transcript'; Error = $detail }
+                }
+            }
+        }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($LogBody) -and ($null -eq $ExitCode -or [int64]$ExitCode -ne 0)) {
+        $tail = if ($LogBody.Length -gt 4000) { $LogBody.Substring($LogBody.Length - 4000) } else { $LogBody }
+        if ($tail -match '(?i)(?:API Error:\s*(?:Can''t reach the API server|Overloaded|[^\r\n]+)|ENOTFOUND|ECONNRESET|ETIMEDOUT|529\s+Overloaded)') {
+            return [pscustomobject]@{ Source = 'log'; Error = $Matches[0].Trim() }
         }
     }
     return $null
@@ -309,6 +368,7 @@ function Read-LimitHold {
         WrittenAt     = ConvertTo-LimitOffset (Get-LimitJsonProperty $data 'writtenAt')
         Instance      = [string](Get-LimitJsonProperty $data 'instance')
         Ticket        = [string](Get-LimitJsonProperty $data 'ticket')
+        Text          = [string](Get-LimitJsonProperty $data 'text')
     }
 }
 
@@ -390,7 +450,8 @@ function Write-LimitHold {
         $ResetsAt = $null,
         [string] $RateLimitType = '',
         [string] $Instance = '',
-        [string] $Ticket = ''
+        [string] $Ticket = '',
+        [string] $Text = ''
     )
 
     $policy = Get-LimitPolicy
@@ -429,6 +490,11 @@ function Write-LimitHold {
                 writtenAt     = $now.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'")
                 instance      = $Instance
                 ticket        = $Ticket
+            }
+            if (-not [string]::IsNullOrWhiteSpace($Text)) {
+                $tStr = $Text.Trim()
+                if ($tStr.Length -gt 300) { $tStr = $tStr.Substring(0, 300) }
+                $record.text = $tStr
             }
             $written = $false
             $temp = $null

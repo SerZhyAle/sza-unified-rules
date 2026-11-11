@@ -7,7 +7,7 @@
 #   Get-PqRank -Registry <obj> [-Queue <Read-PqQueueFile result>] -HeadProvider <sb param($Repo,$Exclude,$ForceId)>
 #              [-Exclude <repo:id[]>] [-SkipRepos <key[]>] [-Slots <int>] [-Busy <hashtable key->int>]
 #              [-Occupied <key[]>] [-Stopped <key[]>] [-TicketBlocked <hashtable 'repo:id'->'resource'|'deviceLevel'>]
-#              [-Fill depth|breadth] [-StopAfter <int>] [-NamedTicket <key:id>] [-OnlyRepo <key>]
+#              [-Fill depth|breadth] [-StopAfter <int>] [-NamedTicket <key:id>] [-OnlyRepo <key>] [-FirstHead]
 #
 #   -NamedTicket key:id (S0027, `pq start -Ticket`): only that repository is active and its single entry is exactly that
 #   ticket, whatever its rank; the queue file's rows are ignored and so are its hold lines for that repository (the whole-
@@ -21,6 +21,7 @@
 #   candidate (the dispatcher loop, status) does not pay one picker run per queue row it never looks at. The first n
 #   candidates are exactly those of the full walk; the alternatives of the last one, and the counts the walk would
 #   have added, cover only what was walked. 0 (the default) walks every entry.
+#   -FirstHead: the walk of step 3 stops walking a repository once its first head is found (one candidate per project).
 #
 #   The provider returns what Get-PqPickerHead returns: @{ ok; head; payload; why } ($Repo is the registry record).
 #
@@ -137,7 +138,8 @@ function Get-PqRank {
         [ValidateSet('', 'depth', 'breadth')][string]$Fill = '',
         [ValidateRange(0, [int]::MaxValue)][int]$StopAfter = 0,
         [string]$NamedTicket = '',
-        [string]$OnlyRepo = ''
+        [string]$OnlyRepo = '',
+        [switch]$FirstHead
     )
     $namedMode = $false
     $namedRepo = ''
@@ -288,8 +290,10 @@ function Get-PqRank {
     }
     foreach ($k in @($active.Keys | Sort-Object -Stable -Property @{ Expression = { $repos[$_].rank } }, @{ Expression = { $repos[$_].index } })) {
         if ($namedMode) {
-            # One entry: the named ticket itself; the queue file's rows of the repository are not consulted.
-            $entries.Add(@{ repo = $k; kind = 'ticket'; id = $namedId; source = 'named'; rule = 'named'; score = 0
+            # One entry: the named ticket itself; the queue file's rows of the repository are not consulted. source and
+            # rule carry the existing enum value 'queueFile' (EVENTS.md lists no other for heads[].source and
+            # dispatch.pick rule); the 'named' key of rank.result says it was the owner's explicit start.
+            $entries.Add(@{ repo = $k; kind = 'ticket'; id = $namedId; source = 'queueFile'; rule = 'queueFile'; score = 0
                     package = $null; row = $null })
         }
         elseif ($rowsOf.ContainsKey($k)) { foreach ($x in $rowsOf[$k]) { $entries.Add($x) } }
@@ -320,9 +324,11 @@ function Get-PqRank {
     # candidate above it.
     $walk = [Collections.Generic.List[object]]::new()
     $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    $reposWithHead = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
     $found = 0
     foreach ($e in $entries) {
         if ($StopAfter -gt 0 -and $found -ge $StopAfter) { break }
+        if ($FirstHead -and $reposWithHead.Contains($e.repo)) { continue }
         $p = & $pickOne $e $false
         if ($namedMode) { $namedOffered = ($null -ne $p.head); $namedWhy = if ($namedOffered) { $null } else { [string]$p.why } }
         if ($null -eq $p.head) {
@@ -331,6 +337,7 @@ function Get-PqRank {
         }
         $id = [string](Get-PqRankValue $p.head 'id')
         if (-not $seen.Add("$($e.repo):$id")) { continue }
+        $null = $reposWithHead.Add($e.repo)
         $walk.Add(@{ entry = $e; head = $p.head; why = $null; id = $id })
         $found++
     }
@@ -351,6 +358,7 @@ function Get-PqRank {
         foreach ($e in $entries) {
             $st = $active[$e.repo]
             while ($plan.Count -lt $Slots -and $st.used -lt $st.cap) {
+                if ($FirstHead -and $st.used -ge 1) { break }
                 $p = & $pickOne $e $true
                 if ($null -eq $p.head) { break }
                 & $addPlan $e $p.head
@@ -370,6 +378,7 @@ function Get-PqRank {
                 if ($doneTicket.Contains($i)) { continue }
                 $st = $active[$e.repo]
                 if ($st.used -ge $st.cap) { continue }
+                if ($FirstHead -and $st.used -ge 1) { continue }
                 $p = & $pickOne $e $true
                 if ($null -eq $p.head) { continue }
                 & $addPlan $e $p.head

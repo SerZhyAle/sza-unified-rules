@@ -10,7 +10,7 @@
                                                    concurrent false; -PermissionMode (acceptEdits, auto,
                                                    bypassPermissions, manual, dontAsk, plan) is written on its record
     pq list [-Json]                                 the registered repositories
-    pq dry-run [-Slots <n>] [-Json]                 the global order and the slot plan; launches and writes nothing
+    pq dry-run [-Slots <n>] [-Json] [-All]          the global order and the slot plan; launches and writes nothing
     pq queue [-Init] [-NoOpen]                      open PORTFOLIO_QUEUE.md, synced first: every registered
                                                    repository's queued tickets, new ones added to their project's
                                                    rows, changed and status refreshed, closed ones removed; then
@@ -52,8 +52,9 @@
                                                    flags, stops, occupancy, leases and the picker's gates still
                                                    apply; -MaxTickets with it must be 0 or 1; -Repo <key> is a normal
                                                    worker that ranks only that project, every hold kept; neither
-                                                   changes the project order or the queue file; -Ticket and -Repo
-                                                   together are refused
+                                                   changes the project order or reorders the queue file (each syncs
+                                                   its own project's rows only, and runs no discovery); -Ticket and
+                                                   -Repo together are refused
     pq stop [-Level drain|pass|halt|kill] [-Kill] [-Worker <n>] [-Repo <key>] [-Agent <name>] [-Ticket <key:id>]
                                                    stop; the level is pass by default (the passes in flight end, then
                                                    the worker stops), drain lets a pass-in-flight ticket go on while it
@@ -457,7 +458,7 @@ function Invoke-PqDryRun {
         return 0
     }
     $harness = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-    $rank = Get-PqNextRank -Registry $registry -HarnessRoot $harness -Slots $n
+    $rank = Get-PqNextRank -Registry $registry -HarnessRoot $harness -Slots $n -FirstHead:(-not $All)
     if ($Json) {
         ConvertTo-Json -InputObject ([ordered]@{ candidates = $rank.candidates; plan = $rank.plan; skipped = $rank.skipped; excluded = $rank.excluded
                 autoSkipReasons = $rank.autoSkipReasons; fill = $rank.fill; heads = $rank.heads; ms = $rank.ms; queueRows = $rank.queueRows; queueBad = $rank.queueBad }) -Depth 16
@@ -766,6 +767,14 @@ function Invoke-PqStatus {
                 $alive = Test-PqStateOwner $wObj
                 $target = if ($wObj.repository -and $wObj.ticket) { "$($wObj.repository):$($wObj.ticket)" } else { '-' }
                 $title = if ($wObj.PSObject.Properties['title']) { [string]$wObj.title } else { '' }
+                $seenRaw = if ($wObj.PSObject.Properties['seen']) { [string]$wObj.seen } else { [string]$wObj.since }
+                $seenMin = $null
+                if ($seenRaw) {
+                    $seenDt = [DateTimeOffset]::MinValue
+                    if ([DateTimeOffset]::TryParse($seenRaw, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::AssumeUniversal, [ref]$seenDt)) {
+                        $seenMin = [int][Math]::Max(0, [Math]::Floor(([DateTimeOffset]::UtcNow - $seenDt).TotalMinutes))
+                    }
+                }
                 $workers.Add([ordered]@{
                     slot = $k
                     pid = $p
@@ -773,6 +782,8 @@ function Invoke-PqStatus {
                     target = $target
                     title = $title
                     since = [string]$wObj.since
+                    seen = [string]$wObj.seen
+                    seenMinutes = $seenMin
                 })
             }
             catch { }
@@ -838,7 +849,8 @@ function Invoke-PqStatus {
         "Workers:"
         foreach ($w in $workers) {
             $targetStr = if ($w.title) { "$($w.target) ($($w.title))" } else { $w.target }
-            "  slot {0}  pid={1}  alive={2}  target={3}  since={4}" -f $w.slot, $w.pid, $w.alive.ToString().ToLowerInvariant(), $targetStr, $w.since
+            $seenPart = if ($null -ne $w.seenMinutes) { "  last seen $($w.seenMinutes) min ago" } else { '' }
+            "  slot {0}  pid={1}  alive={2}  target={3}  since={4}{5}" -f $w.slot, $w.pid, $w.alive.ToString().ToLowerInvariant(), $targetStr, $w.since, $seenPart
         }
     }
     if ($passesToday.Count -eq 0) {
@@ -980,6 +992,18 @@ function Invoke-PqReport {
     if ($h.n -eq 0) { 'no passes in the window' }
     else { "passes $($h.n)  moved $($h.moved) ($($h.movedShare)%)  ok $($h.ok) ($($h.okShare)%)  wall $($h.hours) h  minutes p50 $($h.minutesP50) p90 $($h.minutesP90)" }
     if ($r.outcomes.Count -gt 0) { 'outcomes: ' + (@($r.outcomes.Keys | ForEach-Object { "$_ $($r.outcomes[$_])" }) -join ', ') }
+    if ($r.statuses.ended.Count -gt 0) {
+        'ended in: ' + (@($r.statuses.ended.Keys | ForEach-Object { "$_ $($r.statuses.ended[$_])" }) -join ', ')
+        foreach ($agent in $r.statuses.byAgent.Keys) {
+            $counts = $r.statuses.byAgent[$agent]
+            "  ${agent}: " + (@($counts.Keys | ForEach-Object { "$_ $($counts[$_])" }) -join ', ')
+        }
+    }
+    'entered / left:'
+    foreach ($status in $r.statuses.gates.Keys) {
+        $counts = $r.statuses.gates[$status]
+        "  ${status}: $($counts.entered) / $($counts.left)"
+    }
     foreach ($field in @('agent', 'model', 'complexity', 'repo')) {
         $split = $r["by_$field"]
         if ($split.Count -eq 0) { continue }
@@ -993,7 +1017,7 @@ function Invoke-PqReport {
     if ($r.stops.Count -gt 0) { 'stops: ' + (@($r.stops.Keys | ForEach-Object { "$_ x$($r.stops[$_])" }) -join ', ') }
     "robot-filed tickets: $($r.intake.robotFiled) (capped $($r.intake.capped))"
     "limits: pass limits $($r.limits.passLimits), holds $($r.limits.holds), resumes $($r.limits.resumes), fallbacks $($r.limits.fallbacks)"
-    "log: $($r.telemetry.events) events, $($r.telemetry.logErrors) log.error, $($r.telemetry.seqGaps) seq gap(s), $($r.telemetry.unparsable) unparsable"
+    "log: $($r.telemetry.events) events, $($r.telemetry.logErrors) log.error, $($r.telemetry.runErrors) run.error, $($r.telemetry.seqGaps) seq gap(s), $($r.telemetry.unparsable) unparsable"
     if (@($r.findings).Count -eq 0) { 'findings: none' }
     else { 'findings:'; foreach ($f in $r.findings) { '  ' + (Format-PqFinding $f) } }
     return 0
