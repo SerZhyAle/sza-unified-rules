@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Contract | `TASK-FLOW` |
-| Version | 0.9, draft |
+| Version | 0.17, draft |
 | Home | the shared contracts catalog, domain `task-flow/` (the path is in [CLAUDE.md](../../CLAUDE.md)) |
 | Role | **shared implementation, partial**: `tools/harness/` supplies the ticket tools, repository runner and day-0 scaffold; `tools/harness/portfolio/` supplies the S0015 dispatcher, registry, queue, rank and event log. Remaining portfolio features belong to S0016. The owner is `shared`, so this repository edits the contract only through the canon session |
 
@@ -72,3 +72,6 @@
   picker, the closing gate and a manual session ignore it; the ledger suite case `rule 9 and 52` in
   `tools/tests/ledger-rules.tests.ps1` is what proves the local readers ignore it and never read it as a
   local id.
+- S0035 (0.17): provider limit holds carry parsed reset times and do not persist detector matched text (rule 48,
+  EVENTS 3.4/3.6); dispatcher waits for primary provider reset when <= 15 min for `In Progress` tickets
+  (`dispatch.skip` reason `limitResetNear`, rules 42 and 48).

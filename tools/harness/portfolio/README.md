@@ -241,7 +241,8 @@ loop:  stop files? -> end (see Stopping); paused? -> wait; end time (-Until) rea
        dropped tickets that changed, blockers released?     -> offer them again
        rank        -> first candidate not excluded
        blocker in another repository not released?          -> exclude it, rank again
-       the owner in that repository?                        -> skip it for half a minute, rank again
+       the owner in any repository (transcripts, all read before the rank)?  -> mark them, one walk goes past all of them
+       the owner in the one the rank returned (a lease)?    -> mark it, rank again
        agent       -> first of agentOrder that may take it
        the build / emulator resource the ticket's Verify: level needs is taken?  -> skip it for a minute, rank again
        repository lock -> worker slot -> run-spec-queue.ps1 -Ids <id> -MaxTickets 1 -Instance pq<k>   (waits for it)
@@ -253,7 +254,10 @@ empty: wait, see Waiting
   live there: a Claude Code transcript of that repository written within `occupiedMinutes` (registry, 3 minutes here; the
   shipped default is 10) that is not one of `pq`'s own passes, or a live ticket lease whose holder is not a `pq` pass. The
   worker prints `repository <key> is occupied (transcript, 55 s ago) - the robot waits for the owner`, takes the next
-  repository of the rank, looks at that one again after half a minute, and prints `is free again`. A pass already running
+  repository of the rank, and prints `is free again` when it offers a ticket there and the owner has gone. The transcripts
+  of every enabled repository are read before each rank (a directory listing and a 1 KB read each, no child process), so
+  one walk of the rank goes past all of them; a repository stays marked until its window can have run out - a transcript
+  only gets younger, so looking sooner cannot find it free - and never for less than half a minute. A pass already running
   is never interrupted when you arrive. The passes' own sessions are told apart by the session id the pass runs under,
   kept in `run\pass-sessions.json`. Not seen: an agent that writes no Claude transcript (Codex, Gemini), and a build or
   code lock whose holder has neither a transcript nor a lease.
@@ -406,9 +410,12 @@ A record for Codex, beside the Claude record (once `agents` is present, Claude n
 The command is `node` with Codex's own script, because the `codex` on PATH is a PowerShell shim a process cannot start
 directly. The record is the whole launch: `{model}` and `{effort}` come from the record, `{prompt}` from the repository. An
 optional `env` object sets environment variables for the pass only (a value may name a variable as `%NAME%`, so a key stays
-in your environment and never reaches the registry); the shipped `zai` record uses it. A pass whose output matches
-`limitDetector.pattern` and that exited non-zero has spent its provider's limit: the provider is held in
-`holds\<agent>.json` and the ticket goes to the next one (Model providers above).
+in your environment and never reaches the registry); the shipped `zai` record uses it. A pass whose output matches `limitDetector.pattern` and that exited non-zero has spent its provider's limit: the
+provider is held in `holds\<agent>.json` and the ticket goes to the next one. Exception (S0035): when a ticket is
+`In Progress` and the primary provider in `agentOrder` has an active hold whose reset time is 15 minutes or less away,
+the ticket waits for the primary provider's reset via temporary transient hold rather than delegating to fallback
+providers (a free fallback agent may remain idle during the wait). Matched detector text is never stored in holds or
+events.
 
 ## Waiting
 
@@ -531,7 +538,7 @@ environment values or keys.
 | `TicketQueueMissing` from `pq tickets` | there is no ticket queue file at the path the message prints; restore it, or point the profile's `paths.releaseQueue` at the right file |
 | a worker window was closed by force | its state files stay; the next start reclaims files whose process is gone. If only the worker process ended and its runner ran on, the repository stays `occupied` until that pass ends |
 | `skip <key> - stopped` | that repository's own queue stop file exists (its `rs`, or a release freeze) - see Stopping |
-| `repository <key> is occupied` | a session of yours wrote a transcript there within `occupiedMinutes`, or holds a live lease: the robot waits and looks again after half a minute; a session that ended is seen as gone after the window |
+| `repository <key> is occupied` | a session of yours wrote a transcript there within `occupiedMinutes`, or holds a live lease: the robot goes past it to the next repository and looks again when the window can have run out (never sooner than half a minute); a session that ended is seen as gone after the window |
 | `waits for the build resource` | `resources.build` tokens are all held (or `emulator`); the ticket is skipped for a minute. `Verify: device` tickets are never taken - the worker says so once |
 | `pq stop` says `no worker is running` | exit 3, nothing is written; a worker window may have been closed by force, see its state files in `run\` |
 | `paused - pq resume continues` | `PAUSE` is in the portfolio root: `pq resume` |

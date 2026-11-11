@@ -1,5 +1,5 @@
 #requires -Version 7.0
-# Tests for S0035: provider limit holds carry reset time, limit text capture, detector status in events,
+# Tests for S0035: provider limit holds carry reset time, limit text privacy, detector status in events,
 # per-agent log files, and wait for primary provider reset when <= 15 min.
 $ErrorActionPreference = 'Stop'
 $harness = Join-Path (Split-Path $PSScriptRoot -Parent) 'harness'
@@ -21,9 +21,9 @@ $env:SZA_PORTFOLIO_ROOT = $scratch
 
 try {
     # -----------------------------------------------------------------------------------------
-    # Case 1: Get-LimitSignal captures matched line (cut at 300 chars) & Write-LimitHold persists text
+    # Case 1: Get-LimitSignal line detection, no text capture, hold file privacy
     # -----------------------------------------------------------------------------------------
-    Write-Host "Case 1: Get-LimitSignal line capture and hold text persistence..." -NoNewline
+    Write-Host "Case 1: Get-LimitSignal detection and hold file text privacy..." -NoNewline
     $longPrefix = "Prefix line `n"
     $matchLine = "You have reached your OpenAI Codex usage limit for today. Try again at 2:38 AM."
     $longSuffix = "`nFollowing output line"
@@ -32,33 +32,29 @@ try {
     $sig = Get-LimitSignal -LogBody $logBody -ExitCode 1 -Pattern '(?i)usage limit|rate limit|quota'
     if ($null -eq $sig) { throw "Expected limit signal from log body, got null" }
     if ($sig.Source -ne 'log') { throw "Expected Source 'log', got '$($sig.Source)'" }
-    if ($sig.Text -ne $matchLine) { throw "Expected Text '$matchLine', got '$($sig.Text)'" }
+    if ($sig.Pattern -ne '(?i)usage limit|rate limit|quota') { throw "Expected Pattern preserved, got '$($sig.Pattern)'" }
+    # Absence of matched text property in signal
+    if ($sig.PSObject.Properties.Name -contains 'Text' -and $null -ne $sig.Text) {
+        throw "Expected signal not to capture raw matched text, found '$($sig.Text)'"
+    }
 
-    # Truncation test at 300 chars
-    $veryLongMatch = "Usage limit exceeded: " + ("A" * 350)
-    $sigLong = Get-LimitSignal -LogBody $veryLongMatch -ExitCode 1 -Pattern '(?i)usage limit'
-    if ($sigLong.Text.Length -ne 300) { throw "Expected Text truncated to 300 chars, got length $($sigLong.Text.Length)" }
-
-    # Write-LimitHold with Text
+    # Write-LimitHold without Text
     $holdFile = Join-Path $scratch 'limit-hold.codex.json'
     $nowSec = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() + 1800
-    $holdRes = Write-LimitHold -Path $holdFile -ResetsAt $nowSec -RateLimitType 'usage' -Instance 'pq1' -Ticket 'S0035' -Text $sig.Text
+    $holdRes = Write-LimitHold -Path $holdFile -ResetsAt $nowSec -RateLimitType 'usage' -Instance 'pq1' -Ticket 'S0035'
     if (-not (Test-Path -LiteralPath $holdFile)) { throw "Expected hold file to exist: $holdFile" }
 
-    # Read-LimitHold returns Text
+    # Verify raw JSON in hold file does not contain text property
+    $rawHoldJson = [IO.File]::ReadAllText($holdFile) | ConvertFrom-Json
+    if ($rawHoldJson.PSObject.Properties.Name -contains 'text') {
+        throw "Expected hold file JSON to omit 'text' property, found '$($rawHoldJson.text)'"
+    }
+
+    # Read-LimitHold returns no Text
     $readHold = Read-LimitHold -Path $holdFile
-    if ($readHold.Text -ne $matchLine) { throw "Expected Read-LimitHold.Text '$matchLine', got '$($readHold.Text)'" }
-
-    # Get-PqRunnerLimitText reads from repo runs dir
-    $fakeRepo = Join-Path $scratch 'fakeRepo'
-    $runsDir = Join-Path $fakeRepo 'temp/spec-queue'
-    $null = [IO.Directory]::CreateDirectory($runsDir)
-    [IO.File]::WriteAllText((Join-Path $fakeRepo '.sza-profile.json'), '{"schema":1}', [Text.Encoding]::UTF8)
-    $repoHoldFile = Join-Path $runsDir 'limit-hold.codex.json'
-    [IO.File]::Copy($holdFile, $repoHoldFile, $true)
-
-    $runnerText = Get-PqRunnerLimitText -RepoPath $fakeRepo -Agent 'codex'
-    if ($runnerText -ne $matchLine) { throw "Expected Get-PqRunnerLimitText '$matchLine', got '$runnerText'" }
+    if ($readHold.PSObject.Properties.Name -contains 'Text' -and $null -ne $readHold.Text) {
+        throw "Expected Read-LimitHold to omit Text property"
+    }
     Write-Host " PASS" -ForegroundColor Green
 
     # -----------------------------------------------------------------------------------------
@@ -102,6 +98,11 @@ try {
     # Case 3: Per-agent log files (<ticket>.<agent>.log)
     # -----------------------------------------------------------------------------------------
     Write-Host "Case 3: Per-agent pass log file inspection and isolation..." -NoNewline
+    $fakeRepo = Join-Path $scratch 'fakeRepo'
+    $runsDir = Join-Path $fakeRepo 'temp/spec-queue'
+    $null = [IO.Directory]::CreateDirectory($runsDir)
+    [IO.File]::WriteAllText((Join-Path $fakeRepo '.sza-profile.json'), '{"schema":1}', [Text.Encoding]::UTF8)
+
     $ticketId = "S9999"
     $codexLogFile = Join-Path $runsDir "$ticketId.codex.log"
     $geminiLogFile = Join-Path $runsDir "$ticketId.gemini.log"
@@ -115,37 +116,42 @@ try {
     $readCodexUntil = Get-PqLogLimitUntil -RepoPath $fakeRepo -TicketId $ticketId -Record $codexRecord
     if ($null -eq $readCodexUntil) { throw "Expected Get-PqLogLimitUntil to read from $ticketId.codex.log" }
 
-    $readCodexText = Get-PqLogLimitText -RepoPath $fakeRepo -TicketId $ticketId -Record $codexRecord
-    if ($readCodexText -notmatch "Try again at 2:38 AM") { throw "Expected Get-PqLogLimitText to read matched line, got '$readCodexText'" }
+    # Fallback to $ticketId.log when per-agent log does not exist
+    $fallbackTicket = "S8888"
+    $fallbackLog = Join-Path $runsDir "$fallbackTicket.log"
+    [IO.File]::WriteAllText($fallbackLog, $codexContent, [Text.Encoding]::UTF8)
+    $readFallbackUntil = Get-PqLogLimitUntil -RepoPath $fakeRepo -TicketId $fallbackTicket -Record $codexRecord
+    if ($null -eq $readFallbackUntil) { throw "Expected Get-PqLogLimitUntil to fall back to $fallbackTicket.log" }
     Write-Host " PASS" -ForegroundColor Green
 
     # -----------------------------------------------------------------------------------------
-    # Case 4: Event detector sourced from limitDetector.status & hold text
+    # Case 4: Event detector from limitDetector.status & absence of hold text
     # -----------------------------------------------------------------------------------------
-    Write-Host "Case 4: Event detector from limitDetector.status in pass.limit and agent.hold..." -NoNewline
-    # S0035 Set-PqAgentHold with Text and unproven detector
-    Set-PqAgentHold -Name 'codex' -Pass 'run1.1' -Source 'log' -Detector 'unproven' -Until $readCodexUntil -Text $readCodexText
+    Write-Host "Case 4: Event detector from limitDetector.status & hold text privacy..." -NoNewline
+    # Set-PqAgentHold with unproven detector and reset timestamp
+    Set-PqAgentHold -Name 'codex' -Pass 'run1.1' -Source 'log' -Detector 'unproven' -Until $readCodexUntil
     $holdState = Read-PqState (Get-PqPath -Kind hold -Agent 'codex')
     if ((Get-PqValue $holdState 'detector') -ne 'unproven') {
         throw "Expected hold detector 'unproven', got '$((Get-PqValue $holdState 'detector'))'"
     }
-    if ((Get-PqValue $holdState 'text') -ne $readCodexText) {
-        throw "Expected hold text '$readCodexText', got '$((Get-PqValue $holdState 'text'))'"
+    if ($holdState.PSObject.Properties.Name -contains 'text') {
+        throw "Expected hold state not to contain 'text' property, found '$($holdState.text)'"
     }
 
     # Verify event emission with unproven detector via Open-PqLog
     $evLog = Open-PqLog -Writer 'w1' -Run 'run1'
+    $patternId = [string]$codexRecord.limitDetector.pattern
     $null = Write-PqEvent -Log $evLog -Ev 'pass.limit' -Run 'run1' -Repo 'fake' -Id 'S9999' -Pass 'run1.1' -Worker 1 -D ([ordered]@{
         agent = 'codex'
         source = 'log'
         detector = 'unproven'
+        matched = $patternId
     })
     $null = Write-PqEvent -Log $evLog -Ev 'agent.hold' -Run 'run1' -Repo 'fake' -Id 'S9999' -Pass 'run1.1' -Worker 1 -Agent 'codex' -D ([ordered]@{
         agent = 'codex'
         until = $readCodexUntil
         source = 'log'
         detector = 'unproven'
-        text = $readCodexText
     })
     Close-PqLog $evLog
 
@@ -153,20 +159,16 @@ try {
     $evPassLimit = ConvertFrom-Json $lines[0]
     $evAgentHold = ConvertFrom-Json $lines[1]
     if ($evPassLimit.d.detector -ne 'unproven') { throw "Expected pass.limit detector 'unproven'" }
+    if ($evPassLimit.d.matched -ne $patternId) { throw "Expected pass.limit matched '$patternId'" }
+    if ($evPassLimit.d.PSObject.Properties.Name -contains 'text') { throw "Expected pass.limit to contain no 'text' field" }
     if ($evAgentHold.d.detector -ne 'unproven') { throw "Expected agent.hold detector 'unproven'" }
-    if ($evAgentHold.d.text -ne $readCodexText) { throw "Expected agent.hold text '$readCodexText'" }
+    if ($evAgentHold.d.PSObject.Properties.Name -contains 'text') { throw "Expected agent.hold to contain no 'text' field" }
     Write-Host " PASS" -ForegroundColor Green
 
     # -----------------------------------------------------------------------------------------
-    # Case 5: In-progress ticket waits for primary provider reset when <= 15 minutes away
+    # Case 5: Primary provider reset wait for In Progress ticket (both sides of 15 min threshold)
     # -----------------------------------------------------------------------------------------
     Write-Host "Case 5: Wait for primary provider reset <= 15 min for In Progress ticket..." -NoNewline
-    # Clear prior hold from earlier cases so we can set a clean 10 min hold
-    $null = Remove-PqAgentHold -Name 'codex'
-    $tenMinFromNow = [DateTimeOffset]::UtcNow.AddMinutes(10).ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
-    Set-PqAgentHold -Name 'codex' -Pass 'run1.1' -Source 'log' -Detector 'unproven' -Until $tenMinFromNow
-
-    # Test logic directly matching loop.ps1 dispatch check
     $fakeRegistry = [ordered]@{
         agentOrder = @('codex', 'gemini')
         agents = @(
@@ -175,26 +177,52 @@ try {
         )
     }
 
-    $firstAgentName = [string]$fakeRegistry.agentOrder[0]
-    $firstHold = Get-PqAgentHold $firstAgentName
-    $firstUntil = Get-PqValue $firstHold 'until'
-    $diffMin = ([DateTimeOffset]::Parse([string]$firstUntil) - [DateTimeOffset]::UtcNow).TotalMinutes
+    # 5a: <= 15 minutes away (e.g. 10 min) for 'In Progress' ticket -> WAITS
+    $null = Remove-PqAgentHold -Name 'codex'
+    $tenMinIso = [DateTimeOffset]::UtcNow.AddMinutes(10).ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
+    Set-PqAgentHold -Name 'codex' -Pass 'run1.1' -Source 'log' -Detector 'unproven' -Until $tenMinIso
 
-    # Ticket 1: In Progress -> should wait for primary provider (diffMin <= 15)
-    $ticketStatus1 = 'In Progress'
-    $shouldWait1 = ($ticketStatus1 -eq 'In Progress' -and $firstAgentName -and $diffMin -gt 0 -and $diffMin -le 15)
-    if (-not $shouldWait1) { throw "Expected In Progress ticket to wait when primary provider reset is <= 15 min" }
+    $wait1 = Get-PqPrimaryResetWait -Registry $fakeRegistry -TicketStatus 'In Progress' -PickedAgent 'gemini'
+    if ($null -eq $wait1) { throw "Expected In Progress ticket to wait when primary provider reset is 10 min away" }
+    if ($wait1.Agent -ne 'codex') { throw "Expected wait agent 'codex', got '$($wait1.Agent)'" }
+    if ($wait1.DiffMinutes -le 0 -or $wait1.DiffMinutes -gt 15) { throw "Expected diffMinutes within 0..15, got $($wait1.DiffMinutes)" }
 
-    # Ticket 2: Tactical (not started yet) -> does not wait, can fallback
-    $ticketStatus2 = 'Tactical'
-    $shouldWait2 = ($ticketStatus2 -eq 'In Progress' -and $firstAgentName -and $diffMin -gt 0 -and $diffMin -le 15)
-    if ($shouldWait2) { throw "Expected Tactical ticket not to be blocked by primary provider wait" }
+    # 5b: > 15 minutes away (e.g. 20 min) for 'In Progress' ticket -> DOES NOT WAIT (allowed fallback)
+    $null = Remove-PqAgentHold -Name 'codex'
+    $twentyMinIso = [DateTimeOffset]::UtcNow.AddMinutes(20).ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
+    Set-PqAgentHold -Name 'codex' -Pass 'run1.1' -Source 'log' -Detector 'unproven' -Until $twentyMinIso
 
-    # Ticket 3: Reset is > 15 minutes away (e.g. 45 min) -> does not wait
-    $fortyFiveMin = [DateTimeOffset]::UtcNow.AddMinutes(45).ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
-    $diffMinLong = ([DateTimeOffset]::Parse($fortyFiveMin) - [DateTimeOffset]::UtcNow).TotalMinutes
-    $shouldWait3 = ($ticketStatus1 -eq 'In Progress' -and $firstAgentName -and $diffMinLong -gt 0 -and $diffMinLong -le 15)
-    if ($shouldWait3) { throw "Expected ticket not to wait when primary provider reset is > 15 min" }
+    $wait2 = Get-PqPrimaryResetWait -Registry $fakeRegistry -TicketStatus 'In Progress' -PickedAgent 'gemini'
+    if ($null -ne $wait2) { throw "Expected In Progress ticket NOT to wait when primary provider reset is > 15 min" }
+
+    # 5c: Reset <= 15 min (10 min) but ticket is 'Tactical' (not In Progress) -> DOES NOT WAIT (allowed fallback)
+    $null = Remove-PqAgentHold -Name 'codex'
+    Set-PqAgentHold -Name 'codex' -Pass 'run1.1' -Source 'log' -Detector 'unproven' -Until $tenMinIso
+
+    $wait3 = Get-PqPrimaryResetWait -Registry $fakeRegistry -TicketStatus 'Tactical' -PickedAgent 'gemini'
+    if ($null -ne $wait3) { throw "Expected Tactical ticket NOT to wait for primary provider reset" }
+
+    # 5d: Reset <= 15 min (10 min) but ticket is 'Approved' -> DOES NOT WAIT
+    $wait4 = Get-PqPrimaryResetWait -Registry $fakeRegistry -TicketStatus 'Approved' -PickedAgent 'gemini'
+    if ($null -ne $wait4) { throw "Expected Approved ticket NOT to wait for primary provider reset" }
+
+    # 5e: Reset <= 15 min but picked agent IS the primary agent -> DOES NOT WAIT
+    $wait5 = Get-PqPrimaryResetWait -Registry $fakeRegistry -TicketStatus 'In Progress' -PickedAgent 'codex'
+    if ($null -ne $wait5) { throw "Expected no wait when picked agent is primary agent itself" }
+
+    # 5f: Verify dispatch.skip event emission for limitResetNear
+    $evLogWait = Open-PqLog -Writer 'w1' -Run 'run2'
+    $null = Write-PqEvent -Log $evLogWait -Ev 'dispatch.skip' -Run 'run2' -Repo 'fake' -Id 'S9999' -Worker 1 -D ([ordered]@{
+        why = 'limitResetNear'
+        agent = $wait1.Agent
+        until = $wait1.UntilIso
+    })
+    Close-PqLog $evLogWait
+    $waitLines = [IO.File]::ReadAllLines($evLogWait.Path)
+    $evSkip = ConvertFrom-Json $waitLines[-1]
+    if ($evSkip.ev -ne 'dispatch.skip') { throw "Expected event 'dispatch.skip', got '$($evSkip.ev)'" }
+    if ($evSkip.d.why -ne 'limitResetNear') { throw "Expected why 'limitResetNear'" }
+    if ($evSkip.d.agent -ne 'codex') { throw "Expected agent 'codex'" }
     Write-Host " PASS" -ForegroundColor Green
 
     Write-Host ""

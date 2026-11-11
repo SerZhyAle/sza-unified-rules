@@ -49,7 +49,9 @@ param(
 #     definition.
 #
 # Exit codes: 0 = a probe exists in a shape a bulk delete can drop, or the ticket is excused in
-#                 the baseline.
+#                 the baseline, or probes.enabled is false (S0036: a project that instruments nothing
+#                 has no probe to demand), or probes.scanRoots is an explicitly empty array (the
+#                 project declares no source root, HARNESS-PROFILE rule 3).
 #             1 = no probe, or a probe that shares its line with code - the transition must not
 #                 proceed. One code for both because the reaction is the same (fix the source and
 #                 re-run); the refusal text names which half fired.
@@ -60,6 +62,13 @@ param(
 #                 a probe for an id that names nothing, or to excuse it in the baseline forever.
 
 . (Join-Path $PSScriptRoot '_lib.ps1')
+
+# S0036 - read nowhere until here, while 10 of 17 profiles set it false: their web and docs repos
+# could not enter BlockNeedUserTest without a throwaway probe written only to pass this gate.
+if (-not [bool](Get-SzaProfileValue 'probes.enabled')) {
+    Write-Output "probes disabled"
+    exit 0
+}
 
 if (-not (Test-SzaTicketId $Id)) {
     # -ErrorAction Continue, not a bare Write-Error: _lib.ps1 sets $ErrorActionPreference = 'Stop',
@@ -88,6 +97,12 @@ if (-not (Test-Path -LiteralPath $probeLib)) {
 $repoRoot = (Get-SzaProjectRoot)
 $sourceRoots = @(Get-ProbeSourceRoot -RepoRoot $repoRoot)
 if ($sourceRoots.Count -eq 0) {
+    # S0036 - a profile that declares no root at all has nothing to look in; only a declared root
+    # missing on disk is the incomplete checkout the refusal below is for.
+    if (@(Get-SzaProfileValue 'probes.scanRoots').Count -eq 0) {
+        Write-Output "no source root, probe check skipped"
+        exit 0
+    }
     # "Could not look" is not "found nothing" - a checkout without the modules must not
     # silently certify every ticket as probed.
     Write-Error "No source root to scan under $repoRoot (expected one of: $((Get-SzaProfileValue 'probes.scanRoots') -join ', '))." -ErrorAction Continue

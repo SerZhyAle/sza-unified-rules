@@ -78,8 +78,10 @@ in the one-ticket skills: `/spec-all <key>:<id>` and `/sa <key>:<id>` work one n
 
 ## Reading the answer
 
-- A repository `occupied` by the owner is not a fault: the robot yields and looks again after half a minute. The window is
-  `occupiedMinutes` in `repos.json` (3 minutes on the owner's machine).
+- A repository `occupied` by the owner is not a fault: the robot yields, goes on to the next repository (all owner-held
+  repositories are read before one rank, so it does not come back to them one by one) and looks again when the window can
+  have run out. The window is `occupiedMinutes` in `repos.json` (3 minutes on the owner's machine). Any live session of yours
+  in that repository counts, this chat included: the robot cannot work in a repository while you work in it.
 - `pq problems` lists findings with stable ids (`PQ-RACE01`, `PQ-SAFE02`, `PQ-THRASH01`, `PQ-LIMIT01`, `PQ-DATA01` and others);
   a figure is printed with its n and a split only where n is at least 5. Say "no evidence" where the report does.
 - A provider out of limit is held machine-wide until its reset time (`pq agents` shows it); the ticket goes to the next

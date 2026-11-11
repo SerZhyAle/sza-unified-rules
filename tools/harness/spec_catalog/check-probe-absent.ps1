@@ -33,7 +33,8 @@ param(
 #     before its catalog critical section and before any Archived write. Other statuses are untouched.
 #     A hand-written update.ps1 -Status Archived reaches this gate like any other exit.
 #
-# Exit codes: 0 = no probe of this ticket remains in source.
+# Exit codes: 0 = no probe of this ticket remains in source, or probes.enabled is false (S0036), or
+#                 probes.scanRoots is an explicitly empty array (no source root declared).
 #             1 = at least one remains - the transition must not proceed.
 #             2 = bad invocation (malformed id, or an id no record carries), or sources unreadable.
 #                 Kept distinct from 1 for the reason check-probe-present.ps1 gives: "this ticket
@@ -41,6 +42,13 @@ param(
 #                 reactions.
 
 . (Join-Path $PSScriptRoot '_lib.ps1')
+
+# S0036 - the same key as check-probe-present.ps1: a project that instruments nothing has no probe
+# to leave behind.
+if (-not [bool](Get-SzaProfileValue 'probes.enabled')) {
+    Write-Output "probes disabled"
+    exit 0
+}
 
 if (-not (Test-SzaTicketId $Id)) {
     # -ErrorAction Continue, not a bare Write-Error: _lib.ps1 sets $ErrorActionPreference = 'Stop',
@@ -65,6 +73,11 @@ if (-not (Test-Path -LiteralPath $probeLib)) {
 $repoRoot = (Get-SzaProjectRoot)
 $sourceRoots = @(Get-ProbeSourceRoot -RepoRoot $repoRoot)
 if ($sourceRoots.Count -eq 0) {
+    # S0036 - no root declared at all is not an incomplete checkout; see check-probe-present.ps1.
+    if (@(Get-SzaProfileValue 'probes.scanRoots').Count -eq 0) {
+        Write-Output "no source root, probe check skipped"
+        exit 0
+    }
     # "Could not look" is not "found nothing" - a checkout without the modules must not silently
     # certify every ticket as clean, which here would mean certifying that nothing was left behind.
     Write-Error "No source root to scan under $repoRoot (expected one of: $((Get-SzaProfileValue 'probes.scanRoots') -join ', '))." -ErrorAction Continue

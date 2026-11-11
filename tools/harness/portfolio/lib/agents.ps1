@@ -124,7 +124,7 @@ function Test-PqAgentHeld($Hold, $Agent) {
 }
 
 function Set-PqAgentHold {
-    param([Parameter(Mandatory)][string]$Name, [string]$Pass, [string]$Source = 'fastFailure', [string]$Detector = 'unproven', [string]$Until, [string]$Text = '')
+    param([Parameter(Mandatory)][string]$Name, [string]$Pass, [string]$Source = 'fastFailure', [string]$Detector = 'unproven', [string]$Until)
     # Resolved before the lock: the lock's body sees Invoke-PqStateLock's own $name, which shadows $Name.
     $file = Get-PqPath -Kind hold -Agent $Name
     $agentName = $Name
@@ -150,7 +150,6 @@ function Set-PqAgentHold {
             writtenAt = [DateTimeOffset]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
             pass = $Pass
         }
-        if ($Text) { $obj.text = $Text }
         $tmp = "$file.$PID.tmp"
         [IO.File]::WriteAllText($tmp, ($obj | ConvertTo-Json -Compress), [Text.UTF8Encoding]::new($false))
         [IO.File]::Move($tmp, $file, $true)
@@ -326,20 +325,35 @@ function ConvertFrom-PqLimitText {
     return $at.UtcDateTime.ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
 }
 
-# S0035: Read the matched limit text from the runner's limit-hold.<agent>.json (truncated to at most 300 characters).
-function Get-PqRunnerLimitText {
-    param([Parameter(Mandatory)][string]$RepoPath, [Parameter(Mandatory)][string]$Agent)
+# S0035: When the primary provider in agentOrder is held with a reset time <= 15 minutes away,
+# an In Progress ticket waits for that reset instead of delegating to secondary fallback providers.
+function Get-PqPrimaryResetWait {
+    param(
+        [Parameter(Mandatory)] $Registry,
+        [Parameter(Mandatory)][string] $TicketStatus,
+        [Parameter(Mandatory)][string] $PickedAgent,
+        [DateTimeOffset] $Now = [DateTimeOffset]::UtcNow
+    )
+    if ($TicketStatus -ne 'In Progress') { return $null }
+    $firstAgentName = if ($Registry.agentOrder -and @($Registry.agentOrder).Count -gt 0) { [string]$Registry.agentOrder[0] } else { $null }
+    if (-not $firstAgentName -or -not $PickedAgent -or $PickedAgent -ceq $firstAgentName) { return $null }
+
+    $firstHold = Get-PqAgentHold $firstAgentName
+    $firstUntil = Get-PqValue $firstHold 'until'
+    if (-not $firstUntil) { return $null }
     try {
-        $paths = Get-PqRepoPaths -RepoPath $RepoPath
-        $file = Join-Path $paths.RunsDir $(if ($Agent -ceq 'claude') { 'limit-hold.json' } else { "limit-hold.$Agent.json" })
-        if (-not [IO.File]::Exists($file)) { return $null }
-        $txt = Get-PqValue (ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($file))) 'text'
-        if ([string]::IsNullOrWhiteSpace($txt)) { return $null }
-        $s = [string]$txt
-        if ($s.Length -gt 300) { $s = $s.Substring(0, 300) }
-        return $s
-    }
-    catch { return $null }
+        $u = [DateTimeOffset]::Parse([string]$firstUntil)
+        $diffMin = ($u - $Now).TotalMinutes
+        if ($diffMin -gt 0 -and $diffMin -le 15) {
+            return [pscustomobject]@{
+                Agent       = $firstAgentName
+                Until       = $u.UtcDateTime
+                UntilIso    = [string]$firstUntil
+                DiffMinutes = $diffMin
+            }
+        }
+    } catch { }
+    return $null
 }
 
 # The reset time in the pass's own log (<runs folder>\<ticket>.<agent>.log or <ticket>.log, written because a record with a limit pattern runs the
@@ -356,35 +370,6 @@ function Get-PqLogLimitUntil {
         if (-not [IO.File]::Exists($file)) { return $null }
         $offset = [string](Get-PqValue (Get-PqValue $Record 'limitDetector') 'resetOffset' '')
         return (ConvertFrom-PqLimitText -Text ([IO.File]::ReadAllText($file)) -Offset $offset)
-    }
-    catch { return $null }
-}
-
-# S0035: Read the matched limit line directly from the pass's log if not already captured in the hold file.
-function Get-PqLogLimitText {
-    param([Parameter(Mandatory)][string]$RepoPath, [Parameter(Mandatory)][string]$TicketId, $Record)
-    try {
-        $paths = Get-PqRepoPaths -RepoPath $RepoPath
-        $agentName = [string](Get-PqValue $Record 'name' '')
-        $file = if ($agentName) { Join-Path $paths.RunsDir "$TicketId.$agentName.log" } else { $null }
-        if (-not $file -or -not [IO.File]::Exists($file)) {
-            $file = Join-Path $paths.RunsDir "$TicketId.log"
-        }
-        if (-not [IO.File]::Exists($file)) { return $null }
-        $pattern = [string](Get-PqValue (Get-PqValue $Record 'limitDetector') 'pattern' '')
-        $pat = if ($pattern) { $pattern } else { 'hit your (.{1,40}?) limit' }
-        $content = [IO.File]::ReadAllText($file)
-        $tail = if ($content.Length -gt 4000) { $content.Substring($content.Length - 4000) } else { $content }
-        if ($tail -match $pat) {
-            foreach ($l in ($tail -split '\r?\n')) {
-                if ($l -match $pat) {
-                    $s = $l.Trim()
-                    if ($s.Length -gt 300) { $s = $s.Substring(0, 300) }
-                    return $s
-                }
-            }
-        }
-        return $null
     }
     catch { return $null }
 }

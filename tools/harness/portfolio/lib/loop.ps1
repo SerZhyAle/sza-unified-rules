@@ -16,6 +16,11 @@
 #   Get-PqDropChange            which of the three differs from the mark taken when the drop was made, or $null.
 #   Start-PqLoop                the main execution loop of pq start (V1-V9).
 
+# Consecutive provider-error passes per agent name. Declared here, never lazily in the loop: the runner is under strict
+# mode, where even `$null -ne $script:PqProviderStreaks` throws "cannot be retrieved because it has not been set" until
+# the variable exists, and that turn error dropped a ticket that had just closed Verified (S0035).
+$script:PqProviderStreaks = @{}
+
 function Get-PqNextRank {
     param(
         [Parameter(Mandatory)]$Registry,
@@ -948,6 +953,24 @@ function Start-PqLoop {
                     if ($null -ne $wrec -and (Get-PqValue $wrec 'concurrent' $false) -eq $true -and $wr.Count -ge [int](Get-PqValue $wrec 'maxWorkers' 1)) { $capRepos.Add([string]$wr.Name) }
                 }
 
+                # The owner's sessions are read for every repository before the rank, from transcripts alone, so a single walk
+                # goes past all of them: the rank hands back one head per walk, a walk costs seconds to minutes, and the
+                # half-minute mark of the first occupied repository had lapsed before the walk for the second was done, so
+                # the robot kept coming back to the same two repositories instead of reaching a free one. A repository stays
+                # marked until its window can have run out (a transcript only gets younger), and never less than 30 s.
+                if ($null -eq $named) {
+                    $ownerIn = Get-PqTranscriptOccupiedRepos -Registry $Registry -HarnessRoot $harness
+                    foreach ($ownerKey in @($ownerIn.Keys)) {
+                        $ownerOcc = $ownerIn[$ownerKey]
+                        $occupiedMarks[$ownerKey] = @{ until = [DateTime]::UtcNow.AddSeconds([Math]::Max(30, [int]$ownerOcc.freeInSeconds)); why = 'occupied' }
+                        if (-not $occupancyState.ContainsKey($ownerKey)) {
+                            $occupancyState[$ownerKey] = $true
+                            $null = Write-PqEvent -Log $log -Ev 'repo.occupied' -Run $runId -Repo $ownerKey -Worker $slot -D ([ordered]@{ by = $ownerOcc.by; holderKind = $ownerOcc.holderKind; age = $ownerOcc.ageSeconds })
+                            Write-Host "repository $ownerKey is occupied ($($ownerOcc.by), $($ownerOcc.ageSeconds) s ago) - the robot waits for the owner"
+                        }
+                    }
+                }
+
                 # 4. Rank. The loop reads only the first candidate, so the walk ends at the first head found: one picker run
                 # per queue row costs minutes on a queue of a hundred rows.
                 if (-not $waiting) { Write-Host 'ranking the queue' }
@@ -1111,7 +1134,7 @@ function Start-PqLoop {
                 # at again in half a minute, and the next repository of the rank is tried meanwhile.
                 $occ = Get-PqRepoOccupancy -Repo $repoRec -Registry $Registry -HarnessRoot $harness
                 if ($occ.occupied) {
-                    $occupiedMarks[$repoKey] = @{ until = [DateTime]::UtcNow.AddSeconds(30); why = 'occupied' }
+                    $occupiedMarks[$repoKey] = @{ until = [DateTime]::UtcNow.AddSeconds([Math]::Max(30, [int](Get-PqValue $occ 'freeInSeconds' 0))); why = 'occupied' }
                     if (-not $occupancyState.ContainsKey($repoKey)) {
                         $occupancyState[$repoKey] = $true
                         $null = Write-PqEvent -Log $log -Ev 'repo.occupied' -Run $runId -Repo $repoKey -Worker $slot -D ([ordered]@{ by = $occ.by; holderKind = $occ.holderKind; age = $occ.ageSeconds })
@@ -1175,26 +1198,20 @@ function Start-PqLoop {
 
                 # S0035: When the first provider's reset is less than 15 minutes away, wait for it instead of handing
                 # a half-done (In Progress) ticket to the next provider.
-                $firstAgentName = if ($Registry.agentOrder -and @($Registry.agentOrder).Count -gt 0) { [string]$Registry.agentOrder[0] } else { $null }
-                if ($ticketStatus -eq 'In Progress' -and $firstAgentName -and $pick.agent -and $pick.agent -cne $firstAgentName) {
-                    $firstHold = Get-PqAgentHold $firstAgentName
-                    $firstUntil = Get-PqValue $firstHold 'until'
-                    if ($firstUntil) {
-                        try {
-                            $u = [DateTimeOffset]::Parse([string]$firstUntil)
-                            $diffMin = ($u - [DateTimeOffset]::UtcNow).TotalMinutes
-                            if ($diffMin -gt 0 -and $diffMin -le 15) {
-                                $tk = "$repoKey`:$ticketId"
-                                $transient[$tk] = @{ until = $u.UtcDateTime; why = 'limitResetNear' }
-                                $null = Write-PqEvent -Log $log -Ev 'dispatch.skip' -Run $runId -Repo $repoKey -Id $ticketId -Worker $slot -D ([ordered]@{ why = 'limitResetNear'; agent = $firstAgentName; until = [string]$firstUntil })
-                                if (-not $transientSaid.ContainsKey($tk)) {
-                                    $transientSaid[$tk] = $true
-                                    Write-Host "ticket $tk is In Progress and primary provider '$firstAgentName' resets in $([Math]::Round($diffMin, 1)) min - waiting instead of fallback to '$($pick.agent)'"
-                                }
-                                continue
-                            }
-                        } catch { }
+                $primaryWait = Get-PqPrimaryResetWait -Registry $Registry -TicketStatus $ticketStatus -PickedAgent $pick.agent
+                if ($null -ne $primaryWait) {
+                    $tk = "$repoKey`:$ticketId"
+                    $transient[$tk] = @{ until = $primaryWait.Until; why = 'limitResetNear' }
+                    $null = Write-PqEvent -Log $log -Ev 'dispatch.skip' -Run $runId -Repo $repoKey -Id $ticketId -Worker $slot -D ([ordered]@{
+                        why = 'limitResetNear'
+                        agent = $primaryWait.Agent
+                        until = $primaryWait.UntilIso
+                    })
+                    if (-not $transientSaid.ContainsKey($tk)) {
+                        $transientSaid[$tk] = $true
+                        Write-Host "ticket $tk is In Progress and primary provider '$($primaryWait.Agent)' resets in $([Math]::Round($primaryWait.DiffMinutes, 1)) min - waiting instead of fallback to '$($pick.agent)'"
                     }
+                    continue
                 }
                 $noAgentSaid = ''
                 $agentName = [string]$pick.agent
@@ -1410,12 +1427,15 @@ function Start-PqLoop {
 
                 $detectorStatus = [string](Get-PqValue (Get-PqValue $pick.record 'limitDetector') 'status' 'unproven')
                 if (-not $detectorStatus) { $detectorStatus = 'unproven' }
+                $patternId = [string](Get-PqValue (Get-PqValue $pick.record 'limitDetector') 'pattern' '')
                 for ($limit = 0; $limit -lt $outcomeRes.limits; $limit++) {
-                    $null = Write-PqEvent -Log $log -Ev 'pass.limit' -Run $runId -Repo $repoKey -Id $ticketId -Pass $passId -Worker $slot -D ([ordered]@{
+                    $evD = [ordered]@{
                         agent = $agentName
                         source = 'log'
                         detector = $detectorStatus
-                    })
+                    }
+                    if ($patternId) { $evD.matched = $patternId }
+                    $null = Write-PqEvent -Log $log -Ev 'pass.limit' -Run $runId -Repo $repoKey -Id $ticketId -Pass $passId -Worker $slot -D $evD
                 }
 
                 # Rule 48: the only thing that moves a ticket to the next provider of agentOrder is the provider's usage
@@ -1431,12 +1451,9 @@ function Start-PqLoop {
                         # The runner times only a limit it reads from a Claude transcript; another provider's message may still
                         # say when it lifts, in the pass's own log.
                         if (-not $heldUntil -and $agentName -cne 'claude') { $heldUntil = Get-PqLogLimitUntil -RepoPath $repoPath -TicketId $ticketId -Record $pick.record }
-                        $heldText = Get-PqRunnerLimitText -RepoPath $repoPath -Agent $agentName
-                        if (-not $heldText -and $agentName -cne 'claude') { $heldText = Get-PqLogLimitText -RepoPath $repoPath -TicketId $ticketId -Record $pick.record }
-                        Set-PqAgentHold -Name $agentName -Pass $passId -Source 'log' -Detector $detectorStatus -Until $heldUntil -Text $heldText
+                        Set-PqAgentHold -Name $agentName -Pass $passId -Source 'log' -Detector $detectorStatus -Until $heldUntil
                         $agentHeldNow = $true
                         $holdData = [ordered]@{ agent = $agentName; until = $heldUntil; source = 'log'; detector = $detectorStatus }
-                        if ($heldText) { $holdData.text = $heldText }
                         $null = Write-PqEvent -Log $log -Ev 'agent.hold' -Run $runId -Repo $repoKey -Id $ticketId -Pass $passId -Worker $slot -Agent $agentName -D $holdData
                         $poll = [int](Get-PqValue $pick.record 'limitPollMinutes' 30)
                         $when = if ($heldUntil) { "until $(([DateTimeOffset]::Parse($heldUntil)).LocalDateTime.ToString('yyyy-MM-dd HH:mm'))" } else { "no reset time given, probed again in $poll min" }
@@ -1470,7 +1487,6 @@ function Start-PqLoop {
                 }
 
                 if ($outcomeRes.outcome -eq 'provider-error') {
-                    $script:PqProviderStreaks = if ($null -eq $script:PqProviderStreaks) { @{} } else { $script:PqProviderStreaks }
                     $pStreak = 1 + [int]$script:PqProviderStreaks[$agentName]
                     $script:PqProviderStreaks[$agentName] = $pStreak
                     $pSleep = [Math]::Min(600, 120 * $pStreak)
@@ -1483,7 +1499,7 @@ function Start-PqLoop {
                     Write-Host "provider error on $agentName (streak $pStreak) - sleeping ${pSleep}s before retrying ticket" -ForegroundColor DarkYellow
                     Start-Sleep -Seconds $pSleep
                 } else {
-                    if ($null -ne $script:PqProviderStreaks) { $script:PqProviderStreaks[$agentName] = 0 }
+                    if ($script:PqProviderStreaks.ContainsKey($agentName)) { $script:PqProviderStreaks[$agentName] = 0 }
                 }
 
                 if ($currentRepoLock) {

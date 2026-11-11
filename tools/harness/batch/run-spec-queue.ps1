@@ -1912,8 +1912,7 @@ while ($true) {
             $resetsAt = $null
         }
         $limitHold = Write-LimitHold -Path $limitHoldPath -ResetsAt $resetsAt `
-                -RateLimitType $limitSignal.RateLimitType -Instance $Instance -Ticket $id `
-                -Text $limitSignal.Text
+                -RateLimitType $limitSignal.RateLimitType -Instance $Instance -Ticket $id
     } elseif ($outcome -eq 'provider-error') {
         # A provider error is an infrastructure outage, not a ticket failure.
         # It is not added to $processed, so it is offered again.

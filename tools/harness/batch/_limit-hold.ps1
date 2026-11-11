@@ -231,7 +231,7 @@ function Get-LimitSignal {
 
         With neither, $null: the run stays whatever it was.
     .OUTPUTS
-        Source ('transcript' or 'log'), ResetsAt (unix seconds or $null), RateLimitType, Text.
+        Source ('transcript' or 'log'), ResetsAt (unix seconds or $null), RateLimitType, Pattern.
     #>
     param(
         [string] $TranscriptPath = '',
@@ -259,32 +259,20 @@ function Get-LimitSignal {
         $type = [string](Get-LimitJsonProperty $quota 'rateLimitType')
         if ([string]::IsNullOrWhiteSpace($type)) { $type = [string](Get-LimitJsonProperty $info 'rateLimitType') }
         if ([string]::IsNullOrWhiteSpace($type)) { $type = 'unknown' }
-        return [pscustomobject]@{ Source = 'transcript'; ResetsAt = $resetsAt; RateLimitType = $type; Text = $null }
+        return [pscustomobject]@{ Source = 'transcript'; ResetsAt = $resetsAt; RateLimitType = $type; Pattern = $null }
     }
 
     if (-not [string]::IsNullOrWhiteSpace($LogBody) -and ($null -eq $ExitCode -or [int64]$ExitCode -ne 0)) {
         $tail = if ($LogBody.Length -gt 4000) { $LogBody.Substring($LogBody.Length - 4000) } else { $LogBody }
         if ([string]::IsNullOrWhiteSpace($Pattern)) {
             if ($tail -match 'hit your (.{1,40}?) limit') {
-                $line = ''
-                foreach ($l in ($tail -split '\r?\n')) {
-                    if ($l -match 'hit your (.{1,40}?) limit') { $line = $l.Trim(); break }
-                }
-                if (-not $line -and $Matches[0]) { $line = $Matches[0].Trim() }
-                if ($line.Length -gt 300) { $line = $line.Substring(0, 300) }
-                return [pscustomobject]@{ Source = 'log'; ResetsAt = $null; RateLimitType = $Matches[1].Trim(); Text = $line }
+                return [pscustomobject]@{ Source = 'log'; ResetsAt = $null; RateLimitType = $Matches[1].Trim(); Pattern = 'hit your (.{1,40}?) limit' }
             }
         }
         elseif ($tail -match $Pattern) {
             $type = if ($Matches.Count -gt 1) { ([string]$Matches[1]).Trim() } else { '' }
             if ([string]::IsNullOrWhiteSpace($type)) { $type = 'usage' }
-            $line = ''
-            foreach ($l in ($tail -split '\r?\n')) {
-                if ($l -match $Pattern) { $line = $l.Trim(); break }
-            }
-            if (-not $line -and $Matches[0]) { $line = $Matches[0].Trim() }
-            if ($line.Length -gt 300) { $line = $line.Substring(0, 300) }
-            return [pscustomobject]@{ Source = 'log'; ResetsAt = (ConvertFrom-LimitRetryText $tail); RateLimitType = $type; Text = $line }
+            return [pscustomobject]@{ Source = 'log'; ResetsAt = (ConvertFrom-LimitRetryText $tail); RateLimitType = $type; Pattern = $Pattern }
         }
     }
     return $null
@@ -368,7 +356,6 @@ function Read-LimitHold {
         WrittenAt     = ConvertTo-LimitOffset (Get-LimitJsonProperty $data 'writtenAt')
         Instance      = [string](Get-LimitJsonProperty $data 'instance')
         Ticket        = [string](Get-LimitJsonProperty $data 'ticket')
-        Text          = [string](Get-LimitJsonProperty $data 'text')
     }
 }
 
@@ -450,8 +437,7 @@ function Write-LimitHold {
         $ResetsAt = $null,
         [string] $RateLimitType = '',
         [string] $Instance = '',
-        [string] $Ticket = '',
-        [string] $Text = ''
+        [string] $Ticket = ''
     )
 
     $policy = Get-LimitPolicy
@@ -490,11 +476,6 @@ function Write-LimitHold {
                 writtenAt     = $now.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'")
                 instance      = $Instance
                 ticket        = $Ticket
-            }
-            if (-not [string]::IsNullOrWhiteSpace($Text)) {
-                $tStr = $Text.Trim()
-                if ($tStr.Length -gt 300) { $tStr = $tStr.Substring(0, 300) }
-                $record.text = $tStr
             }
             $written = $false
             $temp = $null

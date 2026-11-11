@@ -6,8 +6,9 @@
 #                              with every character that is not a letter or a digit written as '-'>), or $null.
 #   Get-PqPassSessions         the session ids the dispatcher's own passes ran under (run\pass-sessions.json).
 #   Add-PqPassSessions         remember more of them; the file keeps the newest 200.
+#   Get-PqTranscriptOccupiedRepos  the enabled repositories a live manual session holds, by transcript alone.
 #   Get-PqRepoOccupancy        is a repository occupied by a live manual session: @{ occupied; by;
-#                              holderKind; ageSeconds; detail }. Two kinds of evidence are read:
+#                              holderKind; ageSeconds; freeInSeconds; detail }. Two kinds of evidence are read:
 #                                transcript - a session transcript of the repository written within `occupiedMinutes`
 #                                             (registry, default 10; the owner set 3) that is not one of the passes' own;
 #                                lease      - a live ticket lease whose holder is not a dispatcher pass.
@@ -136,7 +137,8 @@ function Get-PqRepoOccupancy {
         if ($null -ne $newest) {
             $age = ([DateTime]::UtcNow - $newest).TotalMinutes
             if ($age -lt $minutes) {
-                return @{ occupied = $true; by = 'transcript'; holderKind = 'manual'; ageSeconds = [int][Math]::Max(0, $age * 60); detail = $newestId }
+                # freeInSeconds: a transcript only gets younger, so the repository cannot be free before the window runs out.
+                return @{ occupied = $true; by = 'transcript'; holderKind = 'manual'; ageSeconds = [int][Math]::Max(0, $age * 60); freeInSeconds = [int][Math]::Ceiling([Math]::Max(0, ($minutes - $age) * 60)); detail = $newestId }
             }
         }
     }
@@ -155,12 +157,31 @@ function Get-PqRepoOccupancy {
                         if (Test-PqLeaseIsPass $lease $own) { continue }
                         $quiet = Get-PqValue $lease 'lastSeenMinutes'
                         $age = if ($null -ne $quiet) { [int]([double]$quiet * 60) } else { 0 }
-                        return @{ occupied = $true; by = 'lease'; holderKind = $(if ($live -ceq 'undetermined') { 'unknown' } else { 'manual' }); ageSeconds = $age; detail = [string](Get-PqValue $lease 'id' '') }
+                        return @{ occupied = $true; by = 'lease'; holderKind = $(if ($live -ceq 'undetermined') { 'unknown' } else { 'manual' }); ageSeconds = $age; freeInSeconds = 0; detail = [string](Get-PqValue $lease 'id' '') }
                     }
                 }
             }
         }
         catch { }
     }
-    return @{ occupied = $false; by = $null; holderKind = $null; ageSeconds = 0; detail = '' }
+    return @{ occupied = $false; by = $null; holderKind = $null; ageSeconds = 0; freeInSeconds = 0; detail = '' }
+}
+
+# Every enabled repository a session of the owner holds right now, read from transcripts alone: a directory listing and a
+# 1 KB read per repository, no lease listing and so no child process. The loop marks them all before it ranks, so one walk
+# of the rank goes past all of them. Without it the rank hands back one occupied repository per walk, a walk costs
+# seconds to minutes, and the half-minute mark of the first one has lapsed before the walk for the second one is done.
+# Returns an ordered map repository key -> the Get-PqRepoOccupancy result.
+function Get-PqTranscriptOccupiedRepos {
+    param([Parameter(Mandatory)]$Registry, [string]$HarnessRoot)
+    $found = [ordered]@{}
+    foreach ($r in @($Registry.repos)) {
+        if ((Get-PqValue $r 'enabled' $false) -ne $true) { continue }
+        $key = [string](Get-PqValue $r 'key' '')
+        if (-not $key) { continue }
+        try { $occ = Get-PqRepoOccupancy -Repo $r -Registry $Registry -HarnessRoot $HarnessRoot -NoLease }
+        catch { continue }
+        if ($occ.occupied) { $found[$key] = $occ }
+    }
+    return $found
 }

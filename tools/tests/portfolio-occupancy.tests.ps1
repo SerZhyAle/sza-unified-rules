@@ -143,7 +143,38 @@ try {
     }
     Write-Host " PASS" -ForegroundColor Green
 
-    Write-Host "`nAll 4 test cases passed successfully." -ForegroundColor Green
+    # Case 5: the whole registry is read in one go, so one walk of the rank can go past every occupied repository
+    Write-Host "Case 5: Get-PqTranscriptOccupiedRepos reads every repository and says when each can be free..." -NoNewline
+    $projectsDir = Join-Path (Join-Path $fakeProfile '.claude') 'projects'
+    $quietPath = 'P:\TEST\quiet-repo'
+    $null = [IO.Directory]::CreateDirectory((Join-Path $projectsDir ([regex]::Replace($quietPath, '[^A-Za-z0-9]', '-'))))
+    $offPath = 'P:\TEST\off-repo'
+    $offDir = Join-Path $projectsDir ([regex]::Replace($offPath, '[^A-Za-z0-9]', '-'))
+    $null = [IO.Directory]::CreateDirectory($offDir)
+    $offTranscript = Join-Path $offDir 'recent-manual.jsonl'
+    [IO.File]::WriteAllText($offTranscript, '{"user":"work in a disabled repository"}', [Text.Encoding]::UTF8)
+    [IO.File]::SetLastWriteTimeUtc($offTranscript, [DateTime]::UtcNow.AddSeconds(-5))
+    $registry5 = @{ occupiedMinutes = 5; repos = @(
+            @{ key = 'demo'; path = $fakeRepoPath; enabled = $true },
+            @{ key = 'quiet'; path = $quietPath; enabled = $true },
+            @{ key = 'off'; path = $offPath; enabled = $false },
+            @{ key = 'nofolder'; path = 'P:\TEST\no-folder-at-all'; enabled = $true }) }
+    $found = Get-PqTranscriptOccupiedRepos -Registry $registry5
+    $keys = @($found.Keys)
+    if ($keys.Count -ne 1 -or $keys[0] -cne 'demo') {
+        throw "Expected only 'demo' (enabled, recent manual transcript), got: $($keys -join ', ')"
+    }
+    # The newest manual transcript of 'demo' is 10 s old in a 5 minute window: free in about 290 s, never sooner.
+    $freeIn = [int]$found['demo'].freeInSeconds
+    if ($freeIn -lt 270 -or $freeIn -gt 300) {
+        throw "Expected freeInSeconds of about 290 for a 10 s old transcript in a 5 minute window, got $freeIn"
+    }
+    if ($loopContent -notmatch 'Get-PqTranscriptOccupiedRepos') {
+        throw "loop.ps1 does not read the owner's sessions of every repository before it ranks"
+    }
+    Write-Host " PASS" -ForegroundColor Green
+
+    Write-Host "`nAll 5 test cases passed successfully." -ForegroundColor Green
 }
 finally {
     $env:SZA_PORTFOLIO_ROOT = $origEnv
