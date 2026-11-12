@@ -170,7 +170,7 @@ function Test-PqRegistry {
                     if (-not (Test-PqIntValue $v) -or $v -lt 1) { & $add 'ResourceCapInvalid' "resources.$n" "resources.$n '$v' is not a positive integer" }
                 }
             }
-            if (Test-PqHasKey $res 'device') { & $add 'ResourceDeviceNotAllowed' 'resources.device' 'a robot is never offered hardware: resources.device is refused' }
+            if (Test-PqHasKey $res 'device') { & $add 'ResourceDeviceNotAllowed' 'resources.device' 'hardware is not a shared token: resources.device is refused' }
         }
     }
     if (Test-PqHasKey $Registry 'timing') {

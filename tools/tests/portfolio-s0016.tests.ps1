@@ -105,9 +105,11 @@ try {
         $holdsNeither = (-not [IO.File]::Exists((Get-PqPath -Kind resourceToken -Token 'build' -Repo 'demo' -Id 'S0011'))) -and (-not [IO.File]::Exists((Get-PqPath -Kind resourceToken -Token 'emulator' -Repo 'demo' -Id 'S0011')))
         Check $holdsNeither 'all-or-nothing: the refused emulator ticket holds neither token'
     }
-    Case 'device level is never offered to a robot' {
+    Case 'device level is offered to a robot and takes no token (TASK-FLOW 0.21)' {
         $d = Request-PqResources -Registry $reg -RepoKey 'demo' -TicketId 'S0012' -Verify 'device' -PassId 'p12'
-        Check (-not $d.ok -and $d.why -ceq 'deviceLevel') "device -> why=deviceLevel: $($d | ConvertTo-Json -Compress)"
+        Check ($d.ok -and @($d.held).Count -eq 0 -and $null -eq $d.why) "device -> ok, no tokens: $($d | ConvertTo-Json -Compress)"
+        $holdsNone = (-not [IO.File]::Exists((Get-PqPath -Kind resourceToken -Token 'build' -Repo 'demo' -Id 'S0012'))) -and (-not [IO.File]::Exists((Get-PqPath -Kind resourceToken -Token 'emulator' -Repo 'demo' -Id 'S0012')))
+        Check $holdsNone 'a device ticket holds neither token file'
     }
     Case "another pass's claim on the same ticket is rejected, a stale owner's token is cleared, only the owner releases" {
         $sleeper = Start-Process -FilePath 'pwsh' -ArgumentList @('-NoProfile', '-Command', 'Start-Sleep 60') -PassThru

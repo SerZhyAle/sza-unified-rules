@@ -828,6 +828,7 @@ function Start-PqLoop {
     # Held back for a moment by the loop itself: a repository the owner works in, a ticket that could not get its resource.
     $occupiedMarks = @{}
     $occupancyState = @{}
+    $stopNoticeState = @{}
     $transient = @{}
     $transientSaid = @{}
     $heldResources = $null
@@ -1111,6 +1112,26 @@ function Start-PqLoop {
                     $null = Write-PqEvent -Log $log -Ev $e.ev -Run $runId -Worker $slot -D $e.d
                 }
 
+                # A repository's own shared stop file (rule 26) takes it out of the rank without a word: no event names it, and
+                # a freeze that expired while nobody opened the repository leaves its stop in place for good - the freeze is
+                # cleared only when something reads it, and a repository the robot skips is never read. Said once per change,
+                # on the console like an occupied repository (the event catalog has no value for it), with the file's age.
+                $stoppedNow = @{}
+                foreach ($sk in @($rank.skipped)) { if ([string](Get-PqValue $sk 'why' '') -ceq 'stopped') { $stoppedNow[[string]$sk.repo] = $true } }
+                foreach ($sk in @($stoppedNow.Keys)) {
+                    if ($stopNoticeState.ContainsKey($sk)) { continue }
+                    $stopNoticeState[$sk] = $true
+                    $stopPath = ''
+                    $stopAge = ''
+                    try {
+                        $stopPath = [string](Get-PqRepoPaths -RepoPath ([string]$byKey[$sk].path)).StopFile
+                        $stopAge = ' (written {0:N1} h ago)' -f (([DateTime]::UtcNow - [IO.File]::GetLastWriteTimeUtc($stopPath)).TotalHours)
+                    }
+                    catch { }
+                    Write-Host "repository $sk is stopped - its own stop file $stopPath$stopAge; the robot takes no ticket there until it is gone (a release freeze clears it when read after its expiry: run the repository's release-freeze Status; or delete the file)"
+                }
+                foreach ($sk in @($stopNoticeState.Keys)) { if (-not $stoppedNow.ContainsKey($sk)) { $stopNoticeState.Remove($sk) } }
+
                 # 5. Handle empty candidates
                 if (@($rank.candidates).Count -eq 0) {
                     if ($null -ne $named) {
@@ -1318,7 +1339,7 @@ function Start-PqLoop {
                 }
 
                 # Rule 62: the machine-wide tokens the ticket's own **Verify:** level takes (build, emulator); a ticket that
-                # cannot get them is passed over for a minute and the next candidate is taken; hardware is never offered.
+                # cannot get them is passed over for a minute and the next candidate is taken; a device ticket takes none (0.21).
                 $verify = Get-PqTicketVerify -RepoPath $repoPath -TicketId $ticketId
                 $passIdNext = "$runId.$($passCount + 1)"
                 $resReq = Request-PqResources -Registry $Registry -RepoKey $repoKey -TicketId $ticketId -Verify $verify -PassId $passIdNext
@@ -1326,16 +1347,15 @@ function Start-PqLoop {
                 if (-not $resReq.ok) {
                     Set-PqWorkerState -Slot $slot
                     $tk = "$repoKey`:$ticketId"
-                    $recheck = if ($resReq.why -ceq 'deviceLevel') { 600 } else { 60 }
-                    $transient[$tk] = @{ until = [DateTime]::UtcNow.AddSeconds($recheck); why = $(if ($resReq.why -ceq 'deviceLevel') { 'deviceLevel' } else { 'resource' }) }
+                    $recheck = 60
+                    $transient[$tk] = @{ until = [DateTime]::UtcNow.AddSeconds($recheck); why = 'resource' }
                     $null = Write-PqEvent -Log $log -Ev 'dispatch.skip' -Run $runId -Repo $repoKey -Id $ticketId -Worker $slot -D ([ordered]@{ why = $resReq.why })
                     if ($resReq.why -ceq 'resource') {
                         $null = Write-PqEvent -Log $log -Ev 'resource.wait' -Run $runId -Repo $repoKey -Id $ticketId -Worker $slot -D ([ordered]@{ resource = $resReq.resource; verify = $verify; held = $resReq.heldCount; cap = $resReq.cap })
                     }
                     if (-not $transientSaid.ContainsKey($tk)) {
                         $transientSaid[$tk] = $true
-                        if ($resReq.why -ceq 'deviceLevel') { Write-Host "ticket $tk needs real hardware (Verify: device) - robots never take it" }
-                        else { Write-Host "ticket $tk waits for the $($resReq.resource) resource ($($resReq.heldCount) of $($resReq.cap) held) - the next ticket is taken" }
+                        Write-Host "ticket $tk waits for the $($resReq.resource) resource ($($resReq.heldCount) of $($resReq.cap) held) - the next ticket is taken"
                     }
                     continue
                 }

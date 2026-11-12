@@ -240,3 +240,21 @@ the 2026-09-03 entry did. Owed:
 ## Fast checks between releases (2026-10-29)
 
 - Ticket `tasks/TASK-12-fast-checks-between-releases.md` (Approved, first in `tasks/README.md`; the repo has no queue), created by the canon session from the owner's order of 2026-10-29 to switch off full builds and tests longer than 5 s between releases (canon TESTING_AND_QA section 2, highest priority). The tool has no tests, so the fast tier is grep and a direct look at the diff (plus an optional small static script), `dotnet build` and the `/verify` run-and-observe move to the pre-flight of `build.ps1 publish`, and `CLAUDE.md`, the command files and `docs/VALIDATION.md` are reworded to match.
+
+## Canon re-sync 2026-11-12 (ticket TASK-0007)
+
+Canon **2026.10.17.1 -> 2026.11.12.3**, core digest `sha256:b467aefe..` -> `sha256:af1470e6..` (recomputed with `check-compliance.ps1 -PrintDigest`). Staleness ladder: digest differs, last reconciliation 26 days old, so a warn-level re-sync: the changed rule docs were re-read (`git diff d06a64a..HEAD -- rules`: CONTRACTS, SECURITY_AND_PRIVACY, DOCUMENTATION_CONCEPT, UI_UX read in full diff; the release, CI, site and channel documents do not apply to a tool with no release boundary) and `version`, `coreDigest` and `reconciledOn` were written together; `adoptedOn` is untouched. `restamp-canon.ps1`, named in the 2026-10-17 entry, is not in plugin 2026.1112.3, so the three fields were written by hand (REPO-STAMP rule 8).
+
+**What the changed rules bind here.**
+
+- DOCUMENTATION_CONCEPT section 6, mandatory half: `docs/DOCUMENT_REGISTRY.jsonl` now has one record per file of `docs/` (23, topic, area, change triggers, role), checked in both directions by a direct read (0 missing, 0 unregistered). The stamp declares it with `docRegistryShape` 1 and `docRegistryFile`. The record shape follows `tools/docs/check-documents.py` of the canon (`topic`, `area`, `update_triggers`, `role`); the harness `document_registry/validate.ps1` uses a different, site-oriented shape (`id`, `title`, `category`, ...) and would not accept this file - a canon inconsistency, listed below.
+- SECURITY_AND_PRIVACY sections 7 and 9: `docs/SECURITY.md` holds the permission inventory (empty, dated, plus capability rows), the network inventory (ICMP, reverse DNS, TP-Link router client; no listening port) and the untrusted-input result for `ipnew.txt` and router replies. Two checks are recorded as not met: no size cap on `ipnew.txt` or router replies, and no worst-case bound test (the tool has no tests by design).
+- UI_UX: failure dialogs now say what happened plus one next step with the exception text as secondary details (`UserMessages.vb`); literal hex colours moved to a palette module holding the shared day tones (`Palette.vb`). The hit-target floor is now governed by `UI-SIZING` (32 logical units pointer, 48 touch for covered controls); the toolbar strip is declared 25 px high, so the measurement and any change stay with the existing remediation ticket for the unified UI contracts, not this one.
+- CONTRACTS: the repo holds no role beyond the index in `docs/contracts/README.md`; `docs/contracts/NO-ROLE.md` records that `ipnew.txt` and `settings.json` are private data and that `LAN-DISCOVERY` does not apply.
+
+**Verification.** `check-compliance: internal_IP_manager - 0 error(s), 0 warning(s) (overlay A, canon 2026.11.12.3)`, exit 0, 0.64 s. `build.ps1 check` exit 0. Not built and not run until the release.
+
+**Canon fixes needed (none applied from this session).**
+
+1. Two registry record shapes exist (`check-documents.py` versus `document_registry/validate.ps1`) and `docRegistryShape` has no defined values; no tool reads the stamp key.
+2. The plugin ships no `restamp-canon.ps1`, though the 2026-10-17 entry of this record names one.

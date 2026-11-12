@@ -1,5 +1,5 @@
 # Machine-wide exclusive resources of the robots (TASK-FLOW rule 62; S0016 R65, decision D17 of 2026-11-10: build 3,
-# emulator 1, device never).
+# emulator 1; device takes no token and, since TASK-FLOW 0.21, is offered to a robot like any other level).
 #
 # Dot-source this file after paths.ps1, ledger-watch.ps1 and loop.ps1; it defines functions only, sets no preference and
 # prints nothing.
@@ -8,7 +8,7 @@
 #       edit | build | emulator | device from the spec's `**Verify:** <level> - <reason>` line within its first 40 lines.
 #       No line, an unreadable spec or a value outside the table is `build` (rule 62: in doubt, the higher level).
 #   Get-PqVerifyTokens -Verify <level>
-#       the tokens that level takes: edit none, build `build`, emulator `build` and `emulator`; device is not offered.
+#       the tokens that level takes: edit none, build `build`, emulator `build` and `emulator`; device none (the pass does the work and parks the ticket in BlockNeedUserTest).
 #   Get-PqResourceHeld -Token <build|emulator> [-ClearStale]
 #       the live token files (and, with -ClearStale, the dead owners' files removed first, returned in .stale).
 #   Request-PqResources -Registry -RepoKey -TicketId -Verify -PassId
@@ -78,7 +78,6 @@ function Request-PqResources {
         [Parameter(Mandatory)]$Registry, [Parameter(Mandatory)][string]$RepoKey, [Parameter(Mandatory)][string]$TicketId,
         [Parameter(Mandatory)][string]$Verify, [string]$PassId = ''
     )
-    if ($Verify -ceq 'device') { return @{ ok = $false; held = @(); why = 'deviceLevel'; resource = $null; heldCount = 0; cap = 0; stale = @() } }
     $tokens = @(Get-PqVerifyTokens $Verify)
     if ($tokens.Count -eq 0) { return @{ ok = $true; held = @(); why = $null; resource = $null; heldCount = 0; cap = 0; stale = @() } }
     $res = Get-PqValue $Registry 'resources'

@@ -344,8 +344,8 @@ empty: wait, see Waiting
   kept in `run\pass-sessions.json`. Not seen: an agent that writes no Claude transcript (Codex, Gemini), and a build or
   code lock whose holder has neither a transcript nor a lease.
 - **Shared resources.** A ticket's `**Verify:** <level> - <why>` line names what proves it: `edit` takes nothing, `build`
-  one `build` token, `emulator` a `build` and the `emulator` token, `device` is never given to a robot (the hardware is
-  yours). No line, or a word outside the four, is `build`. The caps are `resources.build` (3) and `resources.emulator`
+  one `build` token, `emulator` a `build` and the `emulator` token, `device` takes no token and is worked like any other
+  level: the robot does the work and parks the ticket in `BlockNeedUserTest` (the hardware check is yours). No line, or a word outside the four, is `build`. The caps are `resources.build` (3) and `resources.emulator`
   (1) in the registry; a token is a file `resources\<token>\<key>__<id>.json` of the dispatcher that holds it, and one
   whose process is gone is cleared. A ticket that cannot get its token is skipped for a minute.
 - **`concurrent` and `fill`.** A `concurrent` repository takes at most its `maxWorkers` workers at once. With `fill`
@@ -636,9 +636,9 @@ environment values or keys.
 | refuses unattended work | the repository has no `permissionMode` - register it again with `-PermissionMode`, or set it in `repos.json` |
 | `TicketQueueMissing` from `pq tickets` | there is no ticket queue file at the path the message prints; restore it, or point the profile's `paths.releaseQueue` at the right file |
 | a worker window was closed by force | its state files stay; the next start reclaims files whose process is gone. If only the worker process ended and its runner ran on, the repository stays `occupied` until that pass ends |
-| `skip <key> - stopped` | that repository's own queue stop file exists (its `rs`, or a release freeze) - see Stopping |
+| `skip <key> - stopped`, or `repository <key> is stopped` in the worker's console | that repository's own queue stop file exists (its `rs`, or a release freeze) - see Stopping. A freeze that expired while nobody opened the repository leaves its stop in place for good, because the freeze clears itself only when something reads it and a skipped repository is never read: run the repository's own freeze Status (FMS_A: `scripts/utils/release-freeze.ps1 -Verb Status -Scope wear`, or `-Scope phone`), which removes the expired marker and the stop it asked for, or delete the file |
 | `repository <key> is occupied` | a session of yours wrote a transcript there within `occupiedMinutes`, or holds a live lease: the robot goes past it to the next repository and looks again when the window can have run out (never sooner than half a minute); a session that ended is seen as gone after the window |
-| `waits for the build resource` | `resources.build` tokens are all held (or `emulator`); the ticket is skipped for a minute. `Verify: device` tickets are never taken - the worker says so once |
+| `waits for the build resource` | `resources.build` tokens are all held (or `emulator`); the ticket is skipped for a minute. A `Verify: device` ticket takes no token, so it never waits here |
 | `pq stop` says `no worker is running` | exit 3, nothing is written; a worker window may have been closed by force, see its state files in `run\` |
 | `paused - pq resume continues` | `PAUSE` is in the portfolio root: `pq resume` |
 
