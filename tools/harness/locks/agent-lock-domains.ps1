@@ -56,23 +56,27 @@ if ($MyInvocation.InvocationName -ne '.') {
 # PowerShell hashtables are unordered, and an accidental reordering here is a deadlock.
 # S2402: the table is the project's (locks.domains in the profile: name, type, rank); the
 # rank rule and the fail-closed resolution below are the canon's and do not move.
+# The loop variables below are named for this file on purpose. It is dot-sourced, so a bare `$d` or `$r`
+# lands in the CALLER's scope and silently overwrites the caller's own variable of that name - which the
+# release-wait library (batch/_release-wait.ps1) made a live hazard by loading this file into the picker
+# and the runner, both of which use `$d` and `$r` at the top level.
 $Script:AgentLockDomainTable = @(
-    foreach ($d in @(Get-SzaProfileValue 'locks.domains')) {
-        [pscustomobject]@{ Domain = [string]$d.name; Type = [string]$d.type; Rank = [int]$d.rank }
+    foreach ($lockDomainDef in @(Get-SzaProfileValue 'locks.domains')) {
+        [pscustomobject]@{ Domain = [string]$lockDomainDef.name; Type = [string]$lockDomainDef.type; Rank = [int]$lockDomainDef.rank }
     }
 )
 if ($Script:AgentLockDomainTable.Count -eq 0) { throw 'agent-lock-domains: the profile declares no lock domains (locks.domains).' }
-foreach ($d in $Script:AgentLockDomainTable) {
-    if ($d.Type -notin @('Build', 'Code')) { throw "agent-lock-domains: domain '$($d.Domain)' has type '$($d.Type)'; only Build and Code exist." }
-    if ($d.Domain -notlike "$($d.Type).*") { throw "agent-lock-domains: domain '$($d.Domain)' must be named '<Type>.<Name>' for its type '$($d.Type)'." }
+foreach ($lockDomainDef in $Script:AgentLockDomainTable) {
+    if ($lockDomainDef.Type -notin @('Build', 'Code')) { throw "agent-lock-domains: domain '$($lockDomainDef.Domain)' has type '$($lockDomainDef.Type)'; only Build and Code exist." }
+    if ($lockDomainDef.Domain -notlike "$($lockDomainDef.Type).*") { throw "agent-lock-domains: domain '$($lockDomainDef.Domain)' must be named '<Type>.<Name>' for its type '$($lockDomainDef.Type)'." }
 }
 # S2402: the path -> domain rules are the project's (locks.pathRules, first match wins). A rule's
 # domain is a concrete domain, a bare type (= every domain of that type: the fail-closed answer),
 # or null (= exempt: the path is already serialised by something finer and takes no domain).
 $Script:AgentLockPathRules = @(
-    foreach ($r in @(Get-SzaProfileValue 'locks.pathRules')) {
-        $domainValue = if (Test-SzaHasProperty -Object $r -Name 'domain') { $r.domain } else { $null }
-        [pscustomobject]@{ Pattern = [string]$r.pattern; Domain = $(if ($null -eq $domainValue) { $null } else { [string]$domainValue }) }
+    foreach ($lockRuleDef in @(Get-SzaProfileValue 'locks.pathRules')) {
+        $lockRuleDomain = if (Test-SzaHasProperty -Object $lockRuleDef -Name 'domain') { $lockRuleDef.domain } else { $null }
+        [pscustomobject]@{ Pattern = [string]$lockRuleDef.pattern; Domain = $(if ($null -eq $lockRuleDomain) { $null } else { [string]$lockRuleDomain }) }
     }
 )
 
@@ -161,6 +165,27 @@ function Sort-AgentLockDomains {
     foreach ($name in $unique) { [void](Assert-AgentLockDomainName -Name $name) }
     return @(Get-AgentLockDomainTable | Where-Object { $unique -contains $_.Domain } |
         ForEach-Object { $_.Domain })
+}
+
+function Test-AgentLockPathExempt {
+    <#
+    .SYNOPSIS
+        True when the project's own path rules exempt this path from every code domain.
+    .DESCRIPTION
+        The same rule Resolve-CodeDomainsForPaths applies (locks.pathRules, first match wins, a rule
+        whose domain is null = exempt), asked of one path. It exists so a second reader of "what
+        counts as the code tree" - the release-wait stamp (batch/_release-wait.ps1) - reads the
+        project's rules instead of keeping a list of its own (the S1621 rule). A path no rule names
+        is NOT exempt: this is the fail-closed answer, and for that reader it means "counts as a
+        change", the safe direction to be wrong.
+    #>
+    param([Parameter(Mandatory)][string]$Path)
+
+    $normalised = (($Path -replace '\\', '/').Trim() -replace '^\./')
+    foreach ($candidate in $Script:AgentLockPathRules) {
+        if ($normalised -match $candidate.Pattern) { return ($null -eq $candidate.Domain) }
+    }
+    return $false
 }
 
 function Resolve-CodeDomainsForPaths {

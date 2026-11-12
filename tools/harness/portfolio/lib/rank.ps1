@@ -117,6 +117,7 @@ function Get-PqNamedNotRunReason {
         'notOffered' { return 'the picker does not offer the ticket now' }
         'pickerFailed' { return 'the picker failed' }
         'idle-hold' { return 'the picker holds it (idle-run hold)' }
+        'awaits-release' { return 'the picker holds it (only release-tier work is left and the code tree is unchanged since its last audit)' }
         'owner-gate' { return 'the picker holds it (owner gate)' }
         '' { return 'it is not offered' }
         default { return "the picker holds it ($why)" }
@@ -254,6 +255,9 @@ function Get-PqRank {
                 if ($autoSkip.Contains($reason)) { $autoSkip[$reason]++ } else { $autoSkip[$reason] = 1 }
                 switch ($reason) {
                     'idle-hold' { $excluded.idleHold++ }
+                    # TASK-FLOW 0.24 rule 67: counted with the idle hold - both mean "another pass would
+                    # repeat the last one" - so the rank.result payload keeps its keys.
+                    'awaits-release' { $excluded.idleHold++ }
                     'owner-gate' { $excluded.gated++ }
                     default { $excluded.blocked++ }
                 }

@@ -126,6 +126,13 @@ function Get-IdleRunMap {
         $count = 0
         $lastOutcome = ''
         $lastFinishedAt = ''
+        # TASK-FLOW 0.24 rule 67: the tree stamp of the NEWEST row, and of that row alone. A newer row
+        # without the field - a pass that ended in another state - is the answer "nothing awaits".
+        $lastAwaitsRelease = ''
+        $newest = $ordered[$ordered.Count - 1]
+        if ($newest.PSObject.Properties.Name -contains 'awaitsRelease') {
+            try { $lastAwaitsRelease = [string] $newest.awaitsRelease } catch { $lastAwaitsRelease = '' }
+        }
         for ($i = $ordered.Count - 1; $i -ge 0; $i--) {
             $record = $ordered[$i]
             $moved = $false
@@ -151,6 +158,7 @@ function Get-IdleRunMap {
             Count          = $count
             LastOutcome    = $lastOutcome
             LastFinishedAt = $lastFinishedAt
+            LastAwaitsRelease = $lastAwaitsRelease
         }
     }
 
@@ -166,7 +174,7 @@ function Get-IdleRunSeries {
     param([Parameter(Mandatory)][string] $Id, [switch] $Refresh)
     $map = Get-IdleRunMap -Refresh:$Refresh
     if ($map.ContainsKey($Id)) { return $map[$Id] }
-    return [pscustomobject]@{ Id = $Id; Count = 0; LastOutcome = ''; LastFinishedAt = '' }
+    return [pscustomobject]@{ Id = $Id; Count = 0; LastOutcome = ''; LastFinishedAt = ''; LastAwaitsRelease = '' }
 }
 
 function Test-IdleRunHeld {
