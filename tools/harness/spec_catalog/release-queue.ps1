@@ -21,7 +21,8 @@
 #   -List [-Release N] [-WithLeases]
 #                         Print the queue, optionally one release block. -WithLeases marks each
 #                         taken row inline and appends the holder detail block.
-#   -SetCurrent N         Point the "current-release:" marker at package N.
+#   -SetCurrent N         Point the "current-release:" marker at package N. A label only: the queue
+#                         ranking reads package headings and line order, never this marker.
 #   -Ship -Release N      Move block N into PLAN/RELEASE_QUEUE_DONE.md and advance the marker.
 #         [-Version X]    Stamp the shipped block with the released version name.
 #         [-DryRun]       Show what -Ship would move, change nothing.
@@ -184,6 +185,10 @@ switch ($PSCmdlet.ParameterSetName) {
         }
         Write-ReleaseQueue -Lines $lines
         Write-Output "release-queue: current release -> $SetCurrent"
+        # S3273: the marker labels, it does not order. The bare confirmation above read as "the queue
+        # now starts at N", while the runner never reads it - declaring a package current with a lower
+        # package still open handed the runner the deferred work and both files looked correct.
+        Write-Output 'release-queue: ranking is unaffected - the runner orders by package number ascending, then line order inside a package; the marker only labels the current release (new-ticket placement, the monitor line, the -Ship bump).'
         exit 0
     }
 

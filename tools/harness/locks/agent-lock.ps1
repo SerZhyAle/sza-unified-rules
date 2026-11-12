@@ -2230,11 +2230,19 @@ function Exit-AgentLockDomain {
         # caller releasing an unnamed owner keeps the pre-S2371 advisory semantics (a null
         # owner was releasable by anyone); a NAMED caller still cannot touch an unnamed
         # holder's live lock.
-        $mySessionId = Get-AgentSessionId
+        # S2761: "unnamed" is read off the RESOLVED identity, not off one environment variable. The
+        # chain is the explicit agent id, then CLAUDE_CODE_SESSION_ID, then the host-process walk, then
+        # pid-<PID> (agent-identity.ps1); HostWalk is 'not-reached' exactly when a variable answered, so
+        # any other value means nothing NAMED the caller. A named Codex session carries the explicit
+        # agent id and no CLAUDE_CODE_SESSION_ID; the env-only test classed it as unnamed and let it
+        # release a sibling's live legacy pid- lock. Resolved once: the walk is not free.
+        $callerIdentity = Get-AgentIdentityResolution
+        $mySessionId = $callerIdentity.Id
         $ownerSessionId = [string]$status.SessionId
+        $callerIsUnnamed = $callerIdentity.HostWalk -ne 'not-reached'
         $isMine = [string]::IsNullOrWhiteSpace($ownerSessionId) -or
                   ($ownerSessionId -eq $mySessionId) -or
-                  ($ownerSessionId -match '^pid-\d+$' -and [string]::IsNullOrWhiteSpace($env:CLAUDE_CODE_SESSION_ID)) -or
+                  ($ownerSessionId -match '^pid-\d+$' -and $callerIsUnnamed) -or
                   $status.Stale
         if (-not $isMine) {
             Write-Host "$($Name.ToUpper()).LOCK belongs to session $ownerSessionId (reason: '$($status.Reason)') - leaving it in place." -ForegroundColor Yellow

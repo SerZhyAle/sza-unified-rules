@@ -17,7 +17,7 @@ param(
     [string] $File,
     [int]    $Tier = -1,
     [int]    $Priority = -1,
-    [string] $StatusNote = $null,  # non-empty: set note; empty '': clear note; $null/omit: preserve
+    [string] $StatusNote = $null,  # non-empty: set note; empty '': clear note; $null/omit: preserve - except that a status change to a non-Block* status clears it (S2796)
     [switch] $Help
 )
 
@@ -118,7 +118,12 @@ if ($PSBoundParameters.ContainsKey('Name'))     { $updated.name     = $Name }
 if ($PSBoundParameters.ContainsKey('File'))     { $updated.file     = ($File -replace '\\','/') }
 if ($PSBoundParameters.ContainsKey('Priority')) { $updated.priority = $Priority }
 
-# StatusNote: explicit non-null value updates the record; auto-clear when leaving Block* without a note.
+# StatusNote: explicit non-null value updates the record; auto-clear on a status change that lands on a
+# non-Block* status without a new note. S2796: this used to fire only on the way OUT of a Block* status,
+# but Partial, Broken and In Progress write a note too, and Partial -> Verified left the audit failure
+# in the journal and in the spec header of a ticket that now claimed to be closed. A re-run of the SAME
+# status (a header repair, S2512) and a move between Block* statuses keep the note as before - a Block*
+# entry carries its own reason (TASK-FLOW rule 7).
 $resolvedNote = $null   # $null = don't touch header note; '' = clear; non-empty = set
 if ($PSBoundParameters.ContainsKey('StatusNote')) {
     $resolvedNote = $StatusNote   # caller's explicit intent (may be '' to clear)
@@ -131,8 +136,8 @@ if ($PSBoundParameters.ContainsKey('StatusNote')) {
             $updated.PSObject.Properties.Remove('statusNote')
         }
     }
-} elseif ($PSBoundParameters.ContainsKey('Status') -and $oldStatus -like 'Block*' -and $updated.status -notlike 'Block*') {
-    # Leaving a Block* status without a new note: auto-clear so stale notes don't linger.
+} elseif ($PSBoundParameters.ContainsKey('Status') -and $oldStatus -ne $updated.status -and $updated.status -notlike 'Block*') {
+    # Changing to a non-Block* status without a new note: auto-clear so stale notes don't linger.
     $resolvedNote = ''
     if ($updated.PSObject.Properties.Name -contains 'statusNote') {
         $updated.PSObject.Properties.Remove('statusNote')

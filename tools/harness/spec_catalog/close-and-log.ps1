@@ -26,6 +26,9 @@
 # Pass -SkipFuncLog or omit -FuncOp/-FuncDesc to skip the feature-inventory record.
 # Recording a capability (-FuncOp) REQUIRES -FeatArea, -FeatName and -FeatFlavors (csv); -FeatId is
 # optional and defaults to '<area-slug>.<name-slug>'. See the S1072 note below.
+# -FeatGate names the flag (or a NAME+NAME conjunction) that gates the capability, and is written into
+# the record's `gate` field; empty writes no gate. It is passed through to all_features/add.ps1, which
+# alone validates the names and rejects repeats - this script keeps no second validator (S2937).
 # Pass -StatusOnly to update only the journal status without close.ps1 (keeps no closed_at).
 #
 # S1063 - two invariants keep a bad call from half-closing a ticket:
@@ -39,6 +42,9 @@
 # to default to 'General' / an 80-char cut of -FuncDesc / 'standard'. Those produce a record that is
 # structurally valid, plausible, and false - validate.ps1 passes it, and the lie surfaces only in the
 # release showcase generated from this inventory. They are now required whenever -FuncOp is given.
+# S2937: the gate belongs to the same class of facts - which flag the capability is shipped behind is
+# told by the caller, never inferred from the flavors set. Before -FeatGate the sanctioned closure path
+# could not write the field at all, so a ledger check keyed to it would have failed every closure.
 # Exit codes: 0 all steps done | 1 a step failed (see the aggregate report) | 2 bad arguments
 # (nothing was mutated).
 
@@ -61,6 +67,8 @@ param(
     [string]$FeatArea = '',
     [string]$FeatName = '',
     [string]$FeatFlavors = '',
+    # S2937: optional. Empty = a record without a gate (the behaviour before this parameter existed).
+    [string]$FeatGate = '',
     # Empty = the profile's modules.default.
     [string]$CatalogModule = '',
     [string]$StatusNote = '',
@@ -138,6 +146,12 @@ if (-not $SkipFuncLog -and (($FuncOp -ne '') -xor ($FuncDesc -ne ''))) {
 # hatch is unchanged: a change that ships no capability passes -SkipFuncLog or omits -FuncOp.
 # Checked after the -FeatId/xor rules above so a call that is wrong in several ways still reports the
 # most specific reason first.
+# S2937: a gate with no capability record to carry it would be dropped without a word, the same
+# silent loss S1063 closes for every other argument. Names are NOT judged here - add.ps1 does that.
+if ($FeatGate.Trim() -ne '' -and ($SkipFuncLog -or $FuncOp -eq '')) {
+    Reject '-FeatGate is written into the capability record, but no record is being written (-FuncOp/-FuncDesc omitted or -SkipFuncLog given).'
+}
+
 if (-not $SkipFuncLog -and $FuncOp -ne '') {
     $missingFeat = @()
     if ($FeatArea -eq '') { $missingFeat += '-FeatArea' }
@@ -246,6 +260,8 @@ if (-not $SkipFuncLog -and $FuncOp -and $FuncDesc) {
         $recStatus = if ($FuncOp -eq 'DELETE') { 'removed' } else { 'active' }
         $addArgs = @{ Id = $recId; Area = $FeatArea; Name = $FeatName; Description = $FuncDesc; Flavors = $FeatFlavors; Spec = $Id; Status = $recStatus; Quiet = $true }
         if ($FeatNoLegal) { $addArgs.NoLegal = $true }
+        # S2937: passthrough only - add.ps1 -Gate validates the flag names, '+' conjunction and repeats.
+        if ($FeatGate.Trim() -ne '') { $addArgs.Gate = $FeatGate.Trim() }
         & $addScript @addArgs | Out-Null
         if ($LASTEXITCODE -ne 0) { throw "all_features/add.ps1 exited $LASTEXITCODE" }
     }

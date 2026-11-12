@@ -43,9 +43,13 @@
 # returns the next candidate in one shot (no manual re-rank needed). CSV,
 # repeated values, and space-separated ids are normalized into one set.
 #
+# The payload's current_release field echoes the release-queue marker for display only: the ranking
+# above reads package headings and line order, never that marker (S3273).
+#
 # Exit codes: 0 always (no candidate is a valid state, reported as selected=null; under -Claim a
 #   claim that neither won nor lost is reported as selected.lease.outcome = 'claim-error').
-#   2 - usage error only.
+#   2 - usage error only: a dash-led token that is not a declared option (S4397), or -ClaimAs
+#   without -Claim.
 
 [CmdletBinding(PositionalBinding = $false)]
 param(
@@ -62,6 +66,19 @@ param(
 )
 
 . (Join-Path $PSScriptRoot '..\_profile.ps1')
+
+# S4397: ValueFromRemainingArguments keeps the space-separated ids (-Exclude S0506 S0508) working, but
+# it also catches every option this script does not declare. A mistyped or too-new one (-Bogus, or
+# -Claim/-Reason on a harness that predates them) used to land in the exclude set as if it were an id
+# and the pick carried on without the behaviour the caller asked for - the swallowed -Claim of
+# 2026-10-19 left the selection/claim race open and reported success. A ticket id never starts with a
+# dash, so a dash-led token is an option nobody declared: refuse it before anything is read or claimed.
+$unknownOptions = @($AdditionalExclude | Where-Object { "$_" -match '^-' })
+if ($unknownOptions.Count -gt 0) {
+    Write-Error ("spec-next-preflight: unknown option(s): $($unknownOptions -join ', '). Declared: " +
+        '-Exclude, -NoDrift, -Format, -MaxScan, -Claim, -ClaimAs, -Reason. Nothing was ranked or claimed.') -ErrorAction Continue
+    exit 2
+}
 
 if (-not [string]::IsNullOrWhiteSpace($ClaimAs)) {
     if (-not $Claim) {

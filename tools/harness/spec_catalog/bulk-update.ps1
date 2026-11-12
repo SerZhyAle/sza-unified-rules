@@ -92,8 +92,9 @@ foreach ($ticketId in $Id) {
     }
 
     # S2581: apply the batch note the way update.ps1 applies its own - set when non-empty,
-    # remove when explicitly blank, and auto-clear on the way OUT of a Block* status so a
-    # stale reason cannot outlive the block it described.
+    # remove when explicitly blank, and auto-clear on any status change that lands on a non-Block*
+    # status so a stale reason cannot outlive the state it described (S2796; it used to fire only on
+    # the way out of a Block* status, which left a Partial/Broken note on a Verified ticket).
     if ($noteSupplied) {
         if ($StatusNote -ne '') {
             if ($updated.PSObject.Properties.Name -contains 'statusNote') { $updated.statusNote = $StatusNote }
@@ -103,7 +104,7 @@ foreach ($ticketId in $Id) {
             $updated.PSObject.Properties.Remove('statusNote')
         }
     }
-    elseif ($PSBoundParameters.ContainsKey('Status') -and $oldStatus -like 'Block*' -and $updated.status -notlike 'Block*') {
+    elseif ($PSBoundParameters.ContainsKey('Status') -and $oldStatus -ne $updated.status -and $updated.status -notlike 'Block*') {
         if ($updated.PSObject.Properties.Name -contains 'statusNote') {
             $updated.PSObject.Properties.Remove('statusNote')
         }

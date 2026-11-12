@@ -300,6 +300,35 @@ try {
         Assert-That ((Get-Row $p 'S0001').status -eq 'Implemented') 'the status was not updated to Implemented'
     }
 
+    Test-Case 'S2796: a note survives a re-run of the same status and is cleared by a change to any non-Block* status' {
+        $p = New-Project 'a-note' @('b')
+        Move-Ticket $p 'S0001' 'In Progress' 'working the second criterion'
+        Assert-That ((Get-Row $p 'S0001').statusNote -eq 'working the second criterion') 'the In Progress note was not kept'
+        $r = Invoke-Tool $p 'spec_catalog/update.ps1' @('-Id', 'S0001', '-Status', 'In Progress')
+        Assert-That ($r.code -eq 0) "a re-run of the same status was refused: $($r.output)"
+        Assert-That ((Get-Row $p 'S0001').statusNote -eq 'working the second criterion') 'a re-run of the same status dropped the note'
+        $r = Invoke-Tool $p 'spec_catalog/update.ps1' @('-Id', 'S0001', '-Status', 'Implemented')
+        Assert-That ($r.code -eq 0) "update refused In Progress to Implemented: $($r.output)"
+        $row = Get-Row $p 'S0001'
+        Assert-That (-not $row.PSObject.Properties.Name.Contains('statusNote') -or -not $row.statusNote) 'the In Progress note outlived the status it described'
+        Assert-That ((Get-SpecText $p 'S0001') -notmatch '(?m)^\*\*Status note:\*\*') 'the spec header kept the stale note'
+    }
+
+    Test-Case 'S3273: -SetCurrent says that the marker labels and does not rank' {
+        $p = New-Project 'a-marker' @('b')
+        $r = Assert-Tool $p 'spec_catalog/release-queue.ps1' @('-SetCurrent', '3')
+        Assert-That ($r.output -match 'current release -> 3') "the confirmation is gone: $($r.output)"
+        Assert-That ($r.output -match 'ranking is unaffected') "the output does not say the marker ranks nothing: $($r.output)"
+    }
+
+    Test-Case 'S2937: -FeatGate with no capability record to carry it is refused before anything is written' {
+        $p = New-Project 'a-gate' @('b')
+        $r = Invoke-Tool $p 'spec_catalog/close-and-log.ps1' @('-Id', 'S0001', '-Status', 'Implemented', '-FeatGate', 'SUPPORT_CAST')
+        Assert-That ($r.code -eq 2) "exit $($r.code), expected 2: $($r.output)"
+        Assert-That ($r.output -match '-FeatGate is written into the capability record') "the refusal does not name the gate: $($r.output)"
+        Assert-That ((Get-Row $p 'S0001').status -eq 'Draft') 'the refusal came after the status was already flipped'
+    }
+
     Test-Case 'rule 9: direction is read from literal tokens, never from prose' {
         $loader = Join-Path $scratch 'blockers.ps1'
         @"
