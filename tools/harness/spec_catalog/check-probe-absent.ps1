@@ -29,9 +29,13 @@ param(
 #     to instrument, so it has no probe to leave behind and the question does not arise; reading the
 #     allow-list here would only let an excused ticket keep a probe it should never have had.
 #   - archive.ps1 touches no probe while probes.removeOnExit is false. With it true, archive.ps1 runs
-#     the same remover and then this checker for each record it archives out of BlockNeedUserTest,
+#     the same remover and then this check for the records it archives out of BlockNeedUserTest,
 #     before its catalog critical section and before any Archived write. Other statuses are untouched.
 #     A hand-written update.ps1 -Status Archived reaches this gate like any other exit.
+#   - S0056: archive.ps1 (and bulk-update.ps1 for two or more tickets) clear many tickets in ONE
+#     Invoke-ProbeRemovalBatch - one lock, one scan - and judge absence with one scan afterwards. This
+#     script is then run only for a ticket that scan still finds probes of, so its FAIL text is the one
+#     printed; a ticket the scan finds clean would get PASS here by the same Test-TicketProbeInSource body.
 #
 # Exit codes: 0 = no probe of this ticket remains in source, or probes.enabled is false (S0036), or
 #                 probes.scanRoots is an explicitly empty array (no source root declared).

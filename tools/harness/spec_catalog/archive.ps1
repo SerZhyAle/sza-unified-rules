@@ -155,21 +155,31 @@ foreach ($oneId in $ids) {
 # taking it inside the catalog lock would order the two the other way round from every source edit.
 # A refused id is dropped from $plans, so nothing is moved or written for it. Records in any other
 # status are not touched. With the key false this block does not run and archive.ps1 touches no probe.
+#
+# S0056 - all such records go through ONE Invoke-ProbeRemovalBatch call: one scan of the tree, one
+# code lock over the union of the files that carry their probes, one absence check afterwards. The
+# per-record loop that stood here entered and released the lock and re-read the tree for every id -
+# 63 ids, 27 minutes. A refusal is still per id: the batch returns one verdict per record, and a
+# thrown error (nothing was judged) refuses every id of the batch rather than archiving any of them.
 if ([bool](Get-SzaProfileValue 'probes.removeOnExit')) {
-    $kept = [System.Collections.Generic.List[object]]::new()
-    foreach ($plan in $plans) {
-        if ([string]$plan.Record.status -ne 'BlockNeedUserTest') { $kept.Add($plan); continue }
+    $leavingIds = @($plans | Where-Object { [string]$_.Record.status -eq 'BlockNeedUserTest' } | ForEach-Object { $_.Id })
+    if ($leavingIds.Count -gt 0) {
+        $probeVerdict = @{}
         try {
-            Invoke-ProbeRemovalOnExit -Id $plan.Id
-            Invoke-SpecCheckers -Id $plan.Id -NewStatus 'Archived' -Checkers @('check-probe-absent.ps1')
-            $kept.Add($plan)
+            $probeVerdict = Invoke-ProbeRemovalBatch -Id $leavingIds -NewStatus 'Archived'
         }
         catch {
-            $failed.Add($plan.Id)
-            $lines.Add("$($plan.Id): $($_.Exception.Message)")
+            foreach ($leavingId in $leavingIds) { $probeVerdict[$leavingId] = $_.Exception.Message }
         }
+        $kept = [System.Collections.Generic.List[object]]::new()
+        foreach ($plan in $plans) {
+            $refusal = if ($leavingIds -contains $plan.Id) { $probeVerdict[$plan.Id] } else { $null }
+            if ($null -eq $refusal) { $kept.Add($plan); continue }
+            $failed.Add($plan.Id)
+            $lines.Add("$($plan.Id): $refusal")
+        }
+        $plans = $kept
     }
-    $plans = $kept
 }
 
 # Phase 2: one critical section for the whole list. S1437: read -> mutate -> write is one critical

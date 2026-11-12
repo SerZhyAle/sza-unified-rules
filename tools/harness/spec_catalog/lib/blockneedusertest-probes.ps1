@@ -110,6 +110,80 @@ function Get-ProbeSourceFile {
     }
 }
 
+function Get-ProbeHitAt {
+    # S0056 - the part of a hit that does not depend on WHICH ticket matched: given an opener match
+    # whose reconstructed call already matched a ticket's probe form, return the hit record
+    # (File, Line, LineText) or $null when the opener sits in a comment. Extracted from
+    # Test-TicketProbeInSource so the one-ticket scan and the many-ticket scan below cannot disagree
+    # about what a hit is - the S1621 rule, kept by having one body instead of two copies.
+    #
+    # LineText is the trimmed PHYSICAL opener line - not the reconstructed call span - because the
+    # sentence it feeds ("a probe owns its line, whole") is about what a line-wise bulk delete sees.
+    param(
+        [Parameter(Mandatory)][string] $Content,
+        [Parameter(Mandatory)] $Match,
+        [Parameter(Mandatory)][string] $FullName
+    )
+    # An opener sitting in a comment is not log text - the tree gate skips those too.
+    $lineStart = $Content.LastIndexOf("`n", $Match.Index) + 1
+    $lineText = $Content.Substring($lineStart, $Match.Index - $lineStart)
+    if ($lineText.Contains('//')) { return $null }
+    $trimmed = $lineText.TrimStart()
+    if ($trimmed.StartsWith('*') -or $trimmed.StartsWith('/*')) { return $null }
+    $lineNo = ($Content.Substring(0, $Match.Index) -split "`n").Count
+    $lineEnd = $Content.IndexOf("`n", $Match.Index)
+    if ($lineEnd -lt 0) { $lineEnd = $Content.Length }
+    $wholeLine = $Content.Substring($lineStart, $lineEnd - $lineStart).TrimEnd("`r").Trim()
+    return @{ File = $FullName; Line = $lineNo; LineText = $wholeLine }
+}
+
+function Find-TicketProbesInSource {
+    # S0056 - the probes of MANY tickets in ONE pass over the tree. Returns a hashtable keyed by id,
+    # each value the array of that ticket's hits (File, Line, LineText) exactly as
+    # Test-TicketProbeInSource -All would return them for that ticket alone - empty when it carries
+    # none. Every requested id is a key, so a caller never has to tell "clean" from "not asked".
+    #
+    # Why it exists: a release archives dozens of tickets in one call, and the per-ticket scan read
+    # every source file once per ticket - 63 tickets, 63 full reads of the tree, twice (before the
+    # removal and again in the checker). Here each file is read once, and only the ids it mentions
+    # are matched against its calls; each call is reconstructed once however many ids are asked for.
+    param(
+        [Parameter(Mandatory)][string[]] $Id,
+        [Parameter(Mandatory)][string[]] $SourceRoots
+    )
+    $ids = @($Id | Select-Object -Unique)
+    $result = @{}
+    $probeRxById = @{}
+    foreach ($oneId in $ids) {
+        $result[$oneId] = [System.Collections.Generic.List[object]]::new()
+        $probeRxById[$oneId] = Get-TimberProbeFormRegexForId -Id $oneId
+    }
+    $openerRx = Get-TimberOpenerRegex
+    foreach ($file in (Get-ProbeSourceFile -SourceRoots $SourceRoots)) {
+        $content = Get-Content -LiteralPath $file.FullName -Raw
+        if ([string]::IsNullOrEmpty($content)) { continue }
+        $mentioned = @($ids | Where-Object { $content.Contains($_) })
+        if ($mentioned.Count -eq 0) { continue }
+        foreach ($m in $openerRx.Matches($content)) {
+            $openParenIdx = $m.Index + $m.Length - 1
+            $span = (Get-SanitizedTimberCallSpan -Content $content -PrefixStart $m.Index -OpenParenIndex $openParenIdx).Span
+            $hit = $null
+            $hitComputed = $false
+            foreach ($oneId in $mentioned) {
+                if (-not $probeRxById[$oneId].IsMatch($span)) { continue }
+                if (-not $hitComputed) {
+                    $hit = Get-ProbeHitAt -Content $content -Match $m -FullName $file.FullName
+                    $hitComputed = $true
+                }
+                if ($null -ne $hit) { $result[$oneId].Add($hit) }
+            }
+        }
+    }
+    $out = @{}
+    foreach ($oneId in $ids) { $out[$oneId] = @($result[$oneId]) }
+    return $out
+}
+
 function Test-TicketProbeInSource {
     # Does exactly one ticket carry a probe? Returns the first hit as
     # @{ Found = $true; File = <path>; Line = <n>; LineText = <s>; Hits = @(..) },
@@ -141,19 +215,13 @@ function Test-TicketProbeInSource {
             $openParenIdx = $m.Index + $m.Length - 1
             $span = (Get-SanitizedTimberCallSpan -Content $content -PrefixStart $m.Index -OpenParenIndex $openParenIdx).Span
             if (-not $probeRx.IsMatch($span)) { continue }
-            # An opener sitting in a comment is not log text - the tree gate skips those too.
-            $lineStart = $content.LastIndexOf("`n", $m.Index) + 1
-            $lineText = $content.Substring($lineStart, $m.Index - $lineStart)
-            if ($lineText.Contains('//')) { continue }
-            $trimmed = $lineText.TrimStart()
-            if ($trimmed.StartsWith('*') -or $trimmed.StartsWith('/*')) { continue }
-            $lineNo = ($content.Substring(0, $m.Index) -split "`n").Count
-            $lineEnd = $content.IndexOf("`n", $m.Index)
-            if ($lineEnd -lt 0) { $lineEnd = $content.Length }
-            $wholeLine = $content.Substring($lineStart, $lineEnd - $lineStart).TrimEnd("`r").Trim()
-            $hits.Add(@{ File = $file.FullName; Line = $lineNo; LineText = $wholeLine })
+            # S0056: the comment test and the line facts are Get-ProbeHitAt's, shared with the
+            # many-ticket scan.
+            $hit = Get-ProbeHitAt -Content $content -Match $m -FullName $file.FullName
+            if ($null -eq $hit) { continue }
+            $hits.Add($hit)
             if (-not $All) {
-                return @{ Found = $true; File = $file.FullName; Line = $lineNo; LineText = $wholeLine; Hits = @($hits) }
+                return @{ Found = $true; File = $hit.File; Line = $hit.Line; LineText = $hit.LineText; Hits = @($hits) }
             }
         }
     }

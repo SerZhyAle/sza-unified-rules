@@ -63,6 +63,30 @@ if ($errors.Count -gt 0) {
     exit 1
 }
 
+# S0056 - tickets leaving BlockNeedUserTest in one call have their probes cleared in ONE batch: one
+# scan of the tree, one code lock over the union of the files that carry them, one absence check
+# afterwards. Assert-ClosingGates below used to do that per ticket - a lock round trip and a tree scan
+# each - which is what made a bulk transition of dozens of tickets take minutes per ticket. Only when
+# probes.removeOnExit is true (otherwise the gate refuses and prints the command, per ticket, as it
+# always did) and only for two or more tickets: a single ticket takes the unchanged per-ticket path.
+# $probeVerdict maps id -> $null (cleared, tell the gate) or the refusal text.
+$probeVerdict = @{}
+if ($PSBoundParameters.ContainsKey('Status') -and $Status -ne 'BlockNeedUserTest' -and
+    [bool](Get-SzaProfileValue 'probes.removeOnExit')) {
+    $leavingIds = @($Id | Select-Object -Unique | Where-Object {
+        $indexMap.ContainsKey($_) -and [string]$allRecords[$indexMap[$_]].status -eq 'BlockNeedUserTest'
+    })
+    if ($leavingIds.Count -gt 1) {
+        try {
+            $probeVerdict = Invoke-ProbeRemovalBatch -Id $leavingIds -NewStatus $Status
+        }
+        catch {
+            # Nothing was judged: refuse every ticket of the batch, as the per-ticket path would have.
+            foreach ($leavingId in $leavingIds) { $probeVerdict[$leavingId] = $_.Exception.Message }
+        }
+    }
+}
+
 # Phase 2: apply changes in memory and assert
 $now = Get-Now
 $results = New-Object System.Collections.Generic.List[string]
@@ -118,11 +142,20 @@ foreach ($ticketId in $Id) {
     # ticket around them. Collected as an error rather than thrown, matching the batch
     # contract: every ticket is judged, then the whole batch aborts if any failed.
     if ($PSBoundParameters.ContainsKey('Status')) {
-        try {
-            Assert-ClosingGates -Id $ticketId -OldStatus $oldStatus -NewStatus $updated.status `
-                -StatusNote ([string]$StatusNote) -NoteSupplied $noteSupplied
+        # S0056: a ticket the batch refused is refused here with the batch's text, and its other gates
+        # are not reached - the per-ticket path threw from the same point, before any of them.
+        $probeRefusal = if ($probeVerdict.ContainsKey($ticketId)) { $probeVerdict[$ticketId] } else { $null }
+        if ($null -ne $probeRefusal) {
+            $errors.Add("$ticketId : $probeRefusal")
         }
-        catch { $errors.Add("$ticketId : $($_.Exception.Message)") }
+        else {
+            try {
+                Assert-ClosingGates -Id $ticketId -OldStatus $oldStatus -NewStatus $updated.status `
+                    -StatusNote ([string]$StatusNote) -NoteSupplied $noteSupplied `
+                    -ProbesCleared:($probeVerdict.ContainsKey($ticketId))
+            }
+            catch { $errors.Add("$ticketId : $($_.Exception.Message)") }
+        }
     }
 
     $allRecords[$idx] = $updated
