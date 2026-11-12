@@ -325,6 +325,28 @@ try {
         Assert-That ((Get-Launches $p 'S0002') -eq 1) 'after the stale stop was cleared the queue did not run'
     }
 
+    Test-Case 'batch: S4464 a shared stop flag set after the last recorded run ended is kept, the start refuses and launches nothing' {
+        $p = New-Project 'b-stop-owner' @{ S0001 = 'idle' } 'a' @('one')
+        Set-BatchProfile $p
+        $flag = Join-Path $p 'temp/STOP-SPEC-QUEUE'
+        Set-Content $flag 'stop requested by the owner'
+        $held = Invoke-Proc $p @($batch, '-ClaimGraceSeconds', '3')
+        Assert-That ($held.code -eq 3) "expected exit 3 for a standing stop, got $($held.code): $($held.output)"
+        Assert-That ($held.output -match 'no finished run left behind') "the refusal does not say why: $($held.output)"
+        Assert-That (Test-Path $flag) 'the start deleted a stop that no run had left behind'
+        Assert-That ((Get-Launches $p 'S0001') -eq 0) 'a child was launched against the standing stop'
+        # The same flag, once a run is on record that ended after it, is a leftover again.
+        $runs = Join-Path $p 'temp/spec-queue'
+        New-Item -ItemType Directory -Path $runs -Force | Out-Null
+        Set-Content (Join-Path $runs 'last-run-end.json') '{}'
+        (Get-Item $flag).LastWriteTimeUtc = [datetime]::UtcNow.AddMinutes(-5)
+        $freed = Invoke-Proc $p @($batch, '-ClaimGraceSeconds', '3')
+        Assert-That ($freed.code -eq 0) "second start exit $($freed.code): $($freed.output)"
+        Assert-That ($freed.output -match 'clearing a stop flag left over') "a flag older than the last run end was not cleared: $($freed.output)"
+        Assert-That ((Get-Launches $p 'S0001') -eq 1) 'after the leftover was cleared the queue did not run'
+        Assert-That (Test-Path (Join-Path $runs 'last-run-end.json')) 'the run did not stamp its end'
+    }
+
     Test-Case 'batch: an instance stop file ends only that instance and is consumed' {
         $p = New-Project 'b-stop-mine' @{ S0001 = 'stop-mine'; S0002 = 'idle' } 'a' @('one', 'two')
         Set-BatchProfile $p
@@ -410,7 +432,13 @@ try {
             # Step 3: Draining check isolation - a project with a leftover STOP-SPEC-QUEUE but no children of its own is not blocked by another repository's child
             $pFresh = New-Project 'b-scope-fresh' @{ S0001 = 'idle' } 'a' @('only')
             Set-BatchProfile $pFresh
-            Set-Content (Join-Path $pFresh 'temp/STOP-SPEC-QUEUE') 'stop'
+            # S4464: a flag is a leftover only when a recorded run ended after it was written, so seed that run end.
+            $freshRuns = Join-Path $pFresh 'temp/spec-queue'
+            New-Item -ItemType Directory -Path $freshRuns -Force | Out-Null
+            $freshFlag = Join-Path $pFresh 'temp/STOP-SPEC-QUEUE'
+            Set-Content $freshFlag 'stop'
+            (Get-Item $freshFlag).LastWriteTimeUtc = [datetime]::UtcNow.AddMinutes(-5)
+            Set-Content (Join-Path $freshRuns 'last-run-end.json') '{}'
             $freshRun = Invoke-Proc $pFresh @($batch)
             Assert-That ($freshRun.code -eq 0) "fresh run exit $($freshRun.code): $($freshRun.output)"
             Assert-That ($freshRun.output -match 'clearing a stop flag left over') 'fresh run did not clear leftover stop when other repo child was running'

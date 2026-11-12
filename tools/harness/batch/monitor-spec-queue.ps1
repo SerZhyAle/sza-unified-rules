@@ -329,7 +329,8 @@ function Show-Snapshot {
             Write-Host '  waiting for the ticket(s) listed under "running" to end.' -ForegroundColor DarkGray
             Write-Host '  To stop without waiting:  .\a.ps1 rs -Kill' -ForegroundColor DarkGray
         } else {
-            Write-Host '  nothing is running - the next start clears the flag and proceeds.' -ForegroundColor DarkGray
+            Write-Host '  nothing is running - a start clears the flag only when it is a leftover of a finished run;' -ForegroundColor DarkGray
+            Write-Host '  one set after the last run ended stays and refuses the start until you delete it (S4464).' -ForegroundColor DarkGray
         }
     }
 

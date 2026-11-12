@@ -143,7 +143,11 @@
 
     Stopping: `.\a.ps1 rs`, or this script with -Stop, writes temp/STOP-SPEC-QUEUE and every instance
     finishes the ticket it is on, then stops cleanly; -Stop -Instance b stops one instance only, and
-    -Stop -Kill also terminates the headless children instead of letting them finish. Ctrl+C stops
+    -Stop -Kill also terminates the headless children instead of letting them finish. The flag outlives
+    the run it stopped, so the next start decides what it is by time (S4464): no newer than the end of
+    the last recorded run (<runs dir>/last-run-end.json, else the newest runs-*.jsonl) it is a leftover
+    and is cleared; newer, it was set after that run - by the owner, or by a release freeze - and the
+    start exits 3 naming it and starts nothing, until the file is deleted. Ctrl+C stops
     it immediately and leaves the child's own work durable - every /spec-all writes its status and
     dev-log rows as it goes.
 
@@ -153,7 +157,9 @@
                     could not be parsed,
                 3 = nothing ran - either nothing was eligible at the very first ranking, or a stop
                     is still draining (children from a previous run are alive and the shared stop
-                    flag is set), which is a "not now", not a failure.
+                    flag is set), or the shared stop flag was set after the last recorded run ended
+                    (S4464: the owner's stop, or a release freeze's, which a start does not cancel),
+                    which is a "not now", not a failure.
 
 .EXAMPLE
     pwsh -NoProfile -File scripts/utils/run-spec-queue.ps1
@@ -652,7 +658,7 @@ if ($Stop) {
     $targetInst = if ($PSBoundParameters.ContainsKey('Instance')) { $Instance } else { '' }
     $inFlight = @(Get-ActiveQueueChildren -TargetInstance $targetInst -CleanStale)
     if ($inFlight.Count -eq 0) {
-        Write-Host '  nothing is running - the next start clears this flag and proceeds.' -ForegroundColor DarkGray
+        Write-Host '  nothing is running - the flag stands, and a start refuses to run until you delete it (S4464).' -ForegroundColor DarkGray
     } else {
         Write-Host ''
         Write-Host ("  {0} ticket(s) still in flight - the stop takes effect when each one ENDS:" -f $inFlight.Count) -ForegroundColor Cyan
@@ -709,12 +715,74 @@ if (Test-Path $stopFileMine) {
 # freshly started instance cancel a stop that is still draining the other two.
 #
 # Live children of this repository are what tells the two apart: a stop still in progress has processes behind it (S0019).
+#
+# S4464: no live child is not yet proof that the flag is a leftover. A flag the owner (or a release freeze)
+# set BEFORE this start, with no run alive to read it, looks identical - and deleting it re-enabled the
+# unattended runner against the owner's stop. Get-StopFileVerdict tells them apart by time.
+function Get-StopFileVerdict {
+    <#
+        Is the shared stop flag left over from a run that already finished, or does it stand for its own
+        reasons, aimed at a start that has not happened yet?
+
+        A flag a run acted on is never newer than that run's end: the loop reads it and breaks, so it was
+        written before the break. A flag newer than the end of the last recorded run was written after it,
+        and no run has seen it. The end of a run is the LATER of two traces: last-run-end.json, which the
+        loop stamps once it leaves, and the newest runs-*.jsonl, appended to when each ticket finishes -
+        the second covers a runner killed before it could stamp the first, and a project whose last run
+        predates the stamp. With neither on record no run can have left anything over, so the flag is not
+        a leftover.
+
+        Returns Leftover, StopAt, RunEndAt ($null when no run is on record), RunEndSource and Text (the
+        first line of the flag itself, which `-Stop` fills with the time it was asked for).
+    #>
+    param(
+        [Parameter(Mandatory)][string]$StopFile,
+        [Parameter(Mandatory)][string]$RunDir
+    )
+    $stopAt = (Get-Item -LiteralPath $StopFile).LastWriteTimeUtc
+    $traces = [System.Collections.Generic.List[object]]::new()
+    $stamp = Join-Path $RunDir 'last-run-end.json'
+    if (Test-Path -LiteralPath $stamp) {
+        $traces.Add([pscustomobject]@{ At = (Get-Item -LiteralPath $stamp).LastWriteTimeUtc; Source = 'last-run-end.json' })
+    }
+    if (Test-Path -LiteralPath $RunDir) {
+        foreach ($j in @(Get-ChildItem -LiteralPath $RunDir -Filter 'runs-*.jsonl' -File -ErrorAction SilentlyContinue)) {
+            $traces.Add([pscustomobject]@{ At = $j.LastWriteTimeUtc; Source = $j.Name })
+        }
+    }
+    $last = $null
+    if ($traces.Count -gt 0) { $last = @($traces | Sort-Object At -Descending)[0] }
+    $text = ''
+    try { $text = [string](@(Get-Content -LiteralPath $StopFile -TotalCount 1 -ErrorAction Stop)[0]) } catch { $text = '' }
+    if ($text.Length -gt 120) { $text = $text.Substring(0, 120) }
+    return [pscustomobject]@{
+        Leftover      = ($null -ne $last -and $stopAt -le $last.At)
+        StopAt        = $stopAt.ToLocalTime()
+        RunEndAt      = $(if ($null -ne $last) { $last.At.ToLocalTime() } else { $null })
+        RunEndSource  = $(if ($null -ne $last) { $last.Source } else { '' })
+        Text          = $text.Trim()
+    }
+}
+
 $liveChildren = @(Get-ActiveQueueChildren -CleanStale)
 if (Test-Path $stopFileAll) {
     if ($liveChildren.Count -gt 0) {
         Write-Host "run-spec-queue: a stop is in progress - $($liveChildren.Count) child process(es) are still finishing." -ForegroundColor Red
         Write-Host "  Wait for them to exit (watch with: $(Get-SzaInvocation 'batch/monitor-spec-queue.ps1'))," -ForegroundColor Red
         Write-Host "  then start again. Starting now would cancel the stop for the instances still draining." -ForegroundColor Red
+        exit 3
+    }
+    $stopVerdict = Get-StopFileVerdict -StopFile $stopFileAll -RunDir $runDir
+    if (-not $stopVerdict.Leftover) {
+        $flagText = if ($stopVerdict.Text) { " ('$($stopVerdict.Text)')" } else { '' }
+        $lastRun = if ($null -ne $stopVerdict.RunEndAt) {
+            "the last recorded run ended {0} ({1})" -f $stopVerdict.RunEndAt.ToString('yyyy-MM-dd HH:mm:ss'), $stopVerdict.RunEndSource
+        } else { 'no finished run is recorded here' }
+        Write-Host 'run-spec-queue: a stop flag stands that no finished run left behind - nothing is started.' -ForegroundColor Red
+        Write-Host ("  flag     : {0}{1}, written {2}" -f $stopFileAll, $flagText, $stopVerdict.StopAt.ToString('yyyy-MM-dd HH:mm:ss')) -ForegroundColor Red
+        Write-Host ("  last run : {0}" -f $lastRun) -ForegroundColor Red
+        Write-Host '  A run only leaves behind a flag it already read, and that is never newer than the run. This one was set after it,' -ForegroundColor Red
+        Write-Host '  by the owner or a release freeze, so a start does not cancel it. Delete the file to let the queue run, then start again.' -ForegroundColor Red
         exit 3
     }
     Write-Host "run-spec-queue: clearing a stop flag left over from a finished run - $stopFileAll" -ForegroundColor Yellow
@@ -2092,6 +2160,18 @@ while ($true) {
                 $series.Count, $series.LastOutcome, (Get-SzaPath 'releaseQueue' -Relative)) -ForegroundColor DarkGray
     }
     if ($ExitOnLimit -and $outcome -eq 'limit-hit') { $endedOnLimit = $true; break }
+}
+
+# S4464: the end of this run, stamped for the next start. A shared stop flag this run read is older than
+# this moment; one set after it is not - that is how Get-StopFileVerdict tells a leftover from a stop
+# that stands. Every normal exit of the loop passes here; Ctrl+C and a kill do not, and the runs journal
+# stands in for the stamp then.
+try {
+    Confirm-RunDir
+    $endStamp = [ordered]@{ instance = $Instance; endedAt = (Get-Date).ToString('s'); pid = $PID }
+    Set-Content -LiteralPath (Join-Path $runDir 'last-run-end.json') -Value ($endStamp | ConvertTo-Json -Compress) -Encoding UTF8
+} catch {
+    Write-Host ("run-spec-queue: could not stamp the end of the run - {0}" -f $_.Exception.Message) -ForegroundColor DarkYellow
 }
 
 # ---------------------------------------------------------------------------------------------

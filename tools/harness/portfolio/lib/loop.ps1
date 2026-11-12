@@ -91,9 +91,11 @@ function Get-PqNextRank {
 }
 
 # Keys of enabled repositories whose shared queue stop file (rule 26, paths.queueStopFile) exists: the owner's `rs`, or
-# a release freeze that stopped the queue. It is read before a ticket is offered, because the runner a pass starts
-# treats a shared stop with no live child as left over from a finished run and deletes it - a portfolio pass would
-# cancel the owner's stop within one poll. Only the shared file counts: an instance's own stop file is that instance's.
+# a release freeze that stopped the queue. It is read before a ticket is offered, because a start has to be refused
+# on the owner's stop and not merely survive it: the runner a pass starts clears a shared stop only when a recorded run
+# ended after it was written (S4464), and refuses to start - exit 3, nothing launched - when the stop is newer than
+# the last run, so offering work there would only burn a launch. Only the shared file counts: an instance's own stop
+# file is that instance's.
 # A repository whose paths cannot be read is left to the picker, which reports it.
 function Get-PqStoppedRepos($Registry) {
     $stopped = [Collections.Generic.List[string]]::new()
