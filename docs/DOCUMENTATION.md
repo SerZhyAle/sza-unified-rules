@@ -24,6 +24,9 @@ statically; the gate makes no network requests and cannot prove remote availabil
 Executable code and command examples keep their own syntax. The canon's house-style/reference gate
 remains `pwsh -NoProfile -File tools/check-rules.ps1`; it does not certify prose outside its rule corpus.
 
-Negative fixtures: `python tools/tests/documentation.tests.py`. Registered generated documents currently
-consist of the two documentation maps; an additional render role without a generator fails. Other
-maintained documents are authored sources, including the harness's schema reference.
+Negative fixtures: `python tools/tests/documentation.tests.py`. The optional `generated` list in the corpus
+configuration declares entries with `pattern`, `generator` and `check` as non-empty strings; patterns match
+paths like `ignore` patterns. Matching documents are registered as `render`, as is the documentation map;
+an undeclared render or a generated document recorded as `source` fails. The generator and drift-check
+commands are named for the repository's own gates; this checker neither runs nor parses them. A generated
+document can instead be excluded with an ignore whose reason names its generator and check.

@@ -19,14 +19,16 @@
     bytes under the label cp1251.
 
     The stub site links its key pages beside their language copies and query variants, has hreflang targets on ?lang=
-    URLs (one with max-image-preview:none, one answering "X-Robots-Tag: googlebot: noindex"), a download whose HEAD
+    URLs (two whose canonical is the root, one with max-image-preview:none and one answering "X-Robots-Tag:
+    googlebot: noindex"; two that name themselves, one with text of its own and one that repeats the root's text), a download whose HEAD
     answers 404 and GET 200, a link into a redirect loop, a cookie set by the home page, a robots.txt, a sitemap.xml
     and an llms.txt that each redirect to an HTML page, and a 404 for the page the run declares with -Pages.
 
       1. Exit 0, one summary line, and exactly the documented keys in the documented order.
       2. The head: lang, dataLang, title, its length in text elements and its emoji, description, viewport,
          canonical, meta robots.
-      3. hreflang: three entries, x-default, the self entries read from the page, the ?lang= entry unmeasured.
+      3. hreflang: three entries, x-default, the self entries read from the page, the ?lang= entry unmeasured (so
+         isParam and sameText read null, not true).
       4. Open Graph and Twitter, the social image on raw.githubusercontent.com.
       5. JSON-LD: the @graph block with its nested SoftwareApplication, and the block that does not parse.
       6. Headings: two h1, the first read with every language, role=heading counted, the commented h1 ignored.
@@ -42,7 +44,9 @@
      14. The long h1 whole in h1NoJs and cut in h1[]; a "<!--" in an attribute and an unclosed <a name> hide nothing.
      15. Charsets: the byte order mark wins over the meta charset; cp1251 reads as windows-1251.
      16. The stub site: the pages chosen, one copy of each, no cookie sent back; a page that answers 404 reads null.
-     17. The stub site: hreflang targets and their noindex, the download whose HEAD fails, the redirect loop.
+     17. The stub site: hreflang targets and their noindex; a ?lang= view whose canonical is the root is a parameter
+         URL, one that names itself is not, and one that names itself while repeating the root's text is a stub
+         (sameText); the download whose HEAD fails, the redirect loop.
      18. The stub site: robots.txt, sitemap.xml and llms.txt report their 301; the HTML page is no sitemap.
 #>
 [CmdletBinding()]
@@ -198,23 +202,27 @@ $envName = 'robot-check-env-' + [guid]::NewGuid().ToString('N').Substring(0, 8) 
 $stubScript = {
     param($Listener, [string]$Site)
     $utf8 = [Text.UTF8Encoding]::new($false)
-    function Get-Home([string]$Extra) {
+    # $Canonical is what the view names as its canonical (the site root for a view that is a copy of it);
+    # $Lang and $Heading make a view a page with text of its own.
+    function Get-Home([string]$Extra, [string]$Canonical = $Site, [string]$Lang = 'en', [string]$Heading = 'Stub Tool') {
         return @"
 <!doctype html>
-<html lang="en">
+<html lang="$Lang">
 <head>
 <meta charset="utf-8">
 <title>Stub Tool - a loopback site</title>
 <meta name="description" content="The site robot-check.tests.ps1 crawls.">
-<link rel="canonical" href="$Site">
+<link rel="canonical" href="$Canonical">
 <link rel="alternate" hreflang="en" href="$Site">
 <link rel="alternate" hreflang="ru" href="$($Site)?lang=ru">
 <link rel="alternate" hreflang="uk" href="$($Site)?lang=uk">
+<link rel="alternate" hreflang="de" href="$($Site)?lang=de">
+<link rel="alternate" hreflang="fr" href="$($Site)?lang=fr">
 <link rel="alternate" hreflang="x-default" href="$Site">
 $Extra
 </head>
 <body>
-<h1>Stub Tool</h1>
+<h1>$Heading</h1>
 <a data-l="ru" href="ru/guide.html">Инструкции</a>
 <a data-l="en" href="guide.html">Guides</a>
 <a href="install.html?lang=ru">Установка</a>
@@ -245,6 +253,9 @@ $Extra
             if ($target -eq '/') { $body = Get-Home ''; $extra = "Set-Cookie: visit=1; Path=/`r`n" }
             elseif ($target -eq '/?lang=ru') { $body = Get-Home '<meta name="robots" content="index, follow, max-image-preview:none">' }
             elseif ($target -eq '/?lang=uk') { $body = Get-Home ''; $extra = "X-Robots-Tag: googlebot: noindex`r`n" }
+            # a query view that names itself: a page with text of its own, and a stub that repeats the home page
+            elseif ($target -eq '/?lang=de') { $body = Get-Home '' "$($Site)?lang=de" 'de' 'Stub-Werkzeug' }
+            elseif ($target -eq '/?lang=fr') { $body = Get-Home '' "$($Site)?lang=fr" }
             elseif ($path -in '/robots.txt', '/sitemap.xml', '/llms.txt') { $code = 301; $extra = "Location: /moved.html`r`n" }
             elseif ($path -eq '/loop') { $code = 302; $extra = "Location: /loop`r`n" }
             elseif ($path -eq '/files/app.zip') { if ($method -eq 'HEAD') { $code = 404 } else { $type = 'application/zip'; $body = 'PK stub' } }
@@ -332,7 +343,7 @@ try {
         Assert-Ran
         Assert-Equal (Get-Keys $j) 'tool,version,base,host,fetchedAt,userAgent,elapsedMs,errors,pages,site' 'top-level keys'
         Assert-Equal (Get-Keys $p) $pageKeys 'page keys'
-        Assert-Equal (Get-Keys @($p.hreflang)[0]) 'lang,href,status,canonical,selfCanonical,reciprocal,noindex,isParam' 'hreflang keys'
+        Assert-Equal (Get-Keys @($p.hreflang)[0]) 'lang,href,status,canonical,selfCanonical,reciprocal,noindex,isParam,sameText' 'hreflang keys'
         Assert-Equal (Get-Keys $p.ogImage) 'url,status,host,contentType,bytes,onSite,rawGithub' 'ogImage keys'
         Assert-Equal (Get-Keys @($p.jsonld)[0]) 'index,parseError,types,topLevelTypes,hasGraph,softwareApplication,raw' 'jsonld keys'
         Assert-Equal (Get-Keys @($p.jsonld)[0].softwareApplication) 'present,topLevel,nestedIn,has' 'softwareApplication keys'
@@ -393,10 +404,11 @@ try {
             Assert-Equal $self.reciprocal $true "$($self.lang) reciprocal"
             Assert-Equal $self.noindex $false "$($self.lang) noindex"
             Assert-Equal $self.isParam $false "$($self.lang) isParam"
+            Assert-That ($null -eq $self.sameText) "$($self.lang) sameText: a page is no view of itself"
         }
         Assert-Equal $h[1].href 'https://fixture.example.org/tool/?lang=ru' 'ru href'
-        Assert-Equal $h[1].isParam $true 'ru isParam'
         Assert-That ($null -eq $h[1].status -and $null -eq $h[1].canonical -and $null -eq $h[1].selfCanonical -and $null -eq $h[1].reciprocal -and $null -eq $h[1].noindex) 'ru was measured with no network'
+        Assert-That ($null -eq $h[1].isParam -and $null -eq $h[1].sameText) "ru isParam and sameText: a query view whose canonical was not read is unknown, not a parameter URL ($($h[1].isParam), $($h[1].sameText))"
     }
     Run-Case '4 Open Graph and Twitter' {
         Assert-Ran
@@ -572,11 +584,17 @@ try {
         Assert-That ($null -ne $lj) 'the live run wrote no JSON'
         $hp = @($lj.pages)[0]
         $h = @($hp.hreflang)
-        Assert-Equal (($h | ForEach-Object { "$($_.lang)=$($_.status)" }) -join ',') 'en=200,ru=200,uk=200,x-default=200' 'hreflang statuses'
-        Assert-That ($h[0].selfCanonical -eq $true -and $h[0].reciprocal -eq $true -and $h[0].noindex -eq $false -and $h[0].isParam -eq $false) "en: $($h[0] | ConvertTo-Json -Compress)"
-        Assert-That ($h[1].canonical -eq $site -and $h[1].selfCanonical -eq $false -and $h[1].reciprocal -eq $true -and $h[1].isParam -eq $true) "ru: $($h[1] | ConvertTo-Json -Compress)"
+        Assert-Equal (($h | ForEach-Object { "$($_.lang)=$($_.status)" }) -join ',') 'en=200,ru=200,uk=200,de=200,fr=200,x-default=200' 'hreflang statuses'
+        Assert-That ($h[0].selfCanonical -eq $true -and $h[0].reciprocal -eq $true -and $h[0].noindex -eq $false -and $h[0].isParam -eq $false -and $null -eq $h[0].sameText) "en: $($h[0] | ConvertTo-Json -Compress)"
+        Assert-That ($h[1].canonical -eq $site -and $h[1].selfCanonical -eq $false -and $h[1].reciprocal -eq $true -and $h[1].isParam -eq $true -and $null -eq $h[1].sameText) "ru: $($h[1] | ConvertTo-Json -Compress)"
         Assert-Equal $h[1].noindex $false 'ru noindex (max-image-preview:none)'
         Assert-Equal $h[2].noindex $true 'uk noindex (X-Robots-Tag: googlebot: noindex)'
+        Assert-That ($h[2].canonical -eq $site -and $h[2].isParam -eq $true) "uk: a query view that canonicalises to the root is a parameter URL: $($h[2] | ConvertTo-Json -Compress)"
+        # The other kind: a ?lang= view whose canonical names itself is an addressable page, so it is no parameter URL.
+        Assert-That ($h[3].canonical -eq "${site}?lang=de" -and $h[3].selfCanonical -eq $true -and $h[3].reciprocal -eq $true -and $h[3].noindex -eq $false -and $h[3].isParam -eq $false -and $h[3].sameText -eq $false) "de (self-canonical, text of its own): $($h[3] | ConvertTo-Json -Compress)"
+        # ... unless it repeats the home page's text: still a stub, whatever its head says.
+        Assert-That ($h[4].canonical -eq "${site}?lang=fr" -and $h[4].selfCanonical -eq $true -and $h[4].isParam -eq $false -and $h[4].sameText -eq $true) "fr (self-canonical, the home page's text): $($h[4] | ConvertTo-Json -Compress)"
+        Assert-That ($h[5].lang -eq 'x-default' -and $h[5].isParam -eq $false -and $null -eq $h[5].sameText) "x-default: $($h[5] | ConvertTo-Json -Compress)"
         $d = @($hp.links.downloads)
         Assert-Equal $d.Count 1 'downloads'
         Assert-That ($d[0].status -eq 200 -and $d[0].finalUrl -eq "${site}files/app.zip") "download (HEAD 404, GET 200): $($d[0] | ConvertTo-Json -Compress)"

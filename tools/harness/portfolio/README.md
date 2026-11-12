@@ -202,6 +202,9 @@ tickets of the current project, of a named one (`<key>:<id>`) or of all (`--all`
 the records do not settle, writes the answers into each ticket and restores it one level - after which `pq` offers it
 again, unless its project is on hold. `quiz-list.ps1 -Id S0021` is the lookup for an id that exists in several
 projects: it prints the id's status in the current project and every project where it waits. The script reads only.
+A pass that parks a ticket also writes its questions into the spec file as a `### Questions (v1, <date>)` block
+(TASK-FLOW 0.23, S0026): `quiz-list.ps1` prints each ticket's `block:` line - `current`, `stale`, `answered` or
+`none` - and the quiz asks from a current block without researching the ticket again.
 
 `pq inbox` is the one read-only list over all projects of everything that waits for you alone: one line per kind -
 questions (`BlockQuestions`), tests (`BlockNeedUserTest`), outside (`BlockExternal`), chain (`BlockByOtherTask`),
@@ -454,10 +457,11 @@ slug carries the effort, `agy models` lists the others, and each model has its o
 switch. ZCode's own CLI is not used: it needs the desktop app's runtime files.
 
 The z.ai pattern follows z.ai's error code list (1308, 1310, 1316-1321 `Usage limit reached` / `Limit Exhausted`, 1113
-`Insufficient balance`, 1302 `Rate limit reached`); the Gemini one matches agy's real message, `Individual quota reached.
-.. Resets in 57h10m24s.` (`RESOURCE_EXHAUSTED`, exit 3), whose reset time is read. Neither has run a whole pass yet, so
-`limitDetector.status` stays `unproven`. z.ai's `reset at` names no time this runner reads, so its hold polls every
-`limitPollMinutes`.
+`Insufficient balance`, 1302 `Rate limit reached`); its observed limit message and reset time are recognized with the
+shipped `+08:00` offset, and its detector is marked `proven`. A real z.ai pass that advances a ticket remains unverified.
+The Gemini pattern matches agy's observed `Individual quota reached. .. Resets in 57h10m24s.` message
+(`RESOURCE_EXHAUSTED`, exit 3), whose reset time is read. Gemini has advanced a ticket, but its shipped detector remains
+`unproven`. When no reset time can be read, the provider is retried after `limitPollMinutes`.
 
 ## Other agents
 

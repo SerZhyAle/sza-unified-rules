@@ -55,8 +55,10 @@ the defective one, else LOW; "stale deploy" only after the Pages source check of
    to be found: HIGH; both are right on a redirect stub or a byte-identical copy, and a stub canonicalises to its
    target (PROMOTION.md §3 "Sitemaps and page heads").
 4. **hreflang** (`hreflang`) - `hreflang[]`, `xDefault`. A target that answers other than 200, is not `selfCanonical`,
-   is `noindex` or is `isParam` (a `?lang=` copy of one URL): HIGH, that locale cannot be indexed. A pair that is not
-   `reciprocal`, a page that does not list itself, a relative `href`, a code that is not ISO 639-1 with an optional
+   is `noindex` or is `isParam` (a `?lang=` view whose canonical names another URL, so a copy of that URL): HIGH, that
+   locale cannot be indexed. A `?lang=` target whose canonical names itself is an addressable page and is judged like
+   any other target (`DOC-EXTERNAL-QUALITY` section 8 items S, T and U); `sameText` true marks it a stub, which the
+   i18n lens's check 5 grades. A pair that is not `reciprocal`, a page that does not list itself, a relative `href`, a code that is not ISO 639-1 with an optional
    ISO 15924 script and ISO 3166-1 region (`ua` for Ukrainian, `en-UK`; `zh-Hans` and `pt-BR` pass): MED, the
    annotation is ignored. No `x-default`: LOW (PROMOTION.md §3).
 5. **Social cards** (`og`, `twitter`) - `og`, `twitter`, `ogImage`. No `og:title`, `og:description`, `og:image`,

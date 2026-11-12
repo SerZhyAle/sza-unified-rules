@@ -62,9 +62,10 @@ pwsh -NoProfile -File "<root>/tools/harness/portfolio/quiz-list.ps1" [-Id <id>] 
 | `<key>:<id>`, a key | `-Project <key>` (plus `-Id <id>`) |
 | `--all` | `-All` |
 
-Each waiting ticket prints as `BQ <key>:<id> p<priority> <updated> <name>`, its spec file and the ledger's reason
-note; the last line is the count (or, with `-Id`, `here=<key>:<id>=<status>` and `blockquestions=<list>`). `-Json`
-gives the same records with the full note. `-All` lists the projects in registry rank order (the dispatcher's order,
+Each waiting ticket prints as `BQ <key>:<id> p<priority> <updated> <name>`, its spec file, the ledger's reason
+note and the state of its question block (`block: current ... | stale - ... | answered ... | none - ...`,
+TASK-FLOW rule 7); the last line is the count (or, with `-Id`, `here=<key>:<id>=<status>` and `blockquestions=<list>`). `-Json`
+gives the same records with the full note and the block's questions. `-All` lists the projects in registry rank order (the dispatcher's order,
 the panel's #), then priority; every other scope puts the current folder's project first.
 
 | Outcome | Do |
@@ -108,6 +109,14 @@ are in the project's own records and code.
 
 Follow Quiz mode steps 2-8. The parts a project-independent skill must pin down:
 
+- **Read the question block first.** A pass that parked the ticket wrote its researched questions into the spec
+  file as a `### Questions (v1, <date>)` block (TASK-FLOW rule 7, S0026); the `block:` line of Step 1 already
+  says what the list's reader found. **Current** - the newest block, not stamped ` - answered <date>`, dated no
+  earlier than the day the ticket entered the status and carrying every `Q:` of the note - asks from the block:
+  its questions, options, consequences and recommendations are the ticket's decision points as they stand, no
+  re-research, and a `DO:` line in the block is presented instead of composed. **Stale, answered, none or another
+  version**: research (next bullet) exactly as before 0.23 and leave the old block where it stands - neither it
+  nor any other part of the ticket is edited on the way in.
 - **Research first.** The decision points are the reason note (`Q: ..?` questions and `DO: <action>` pre-implementation owner actions), every open research item and every unfilled owner input (including `- **DO:** <action>` lines under `### 3.3 Owner inputs (Approval gate)`) the note points at. What the ticket's own spec, the code, a contract in the catalog or a recorded decision settles is **not asked**: fill it in and list it as *resolved without asking*, with what settled it.
 - **`--assumed` lists the unattended assumptions.** With the flag, each ticket in scope has its
   `### Assumed (unattended, <date>)` blocks read out of the spec file and printed: date, decision, what was taken,
@@ -143,7 +152,9 @@ Follow Quiz mode steps 2-8. The parts a project-independent skill must pin down:
   ### Quiz decisions (YYYY-MM-DD)
   - <question> -> <chosen answer> (<one-line reason>)
   ```
-  The owner's own typed text goes in verbatim, in its language, inside quotes. Section 0 (the owner's capture) and
+  The owner's own typed text goes in verbatim, in its language, inside quotes. A question block the sitting
+  asked from is stamped by appending ` - answered <date>` to its heading - never deleted, its lines untouched
+  (TASK-FLOW rule 7). Section 0 (the owner's capture) and
   every unrelated section stay untouched. Do not edit the ledger or the `**Status:**` line by hand.
 - **Restore one level** through the project's ticket tool, which also rewrites the spec's status line and clears the
   block's note:

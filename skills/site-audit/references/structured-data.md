@@ -116,8 +116,8 @@ explains: INFO naming that step.
      territory outside the map and exception is LOW, another language MED. A finding shared across products is asked
      once in the hub's portfolio promotion ticket and cited by each affected product ticket ([SKILL.md](../SKILL.md)
      Step 4). An `og:locale:alternate` with no `hreflang` target of that language that answers 200, is self-canonical
-     (`selfCanonical`) and is neither `noindex` nor a parameter URL (`hreflang[]`) claims a version that does not
-     exist: MED.
+     (`selfCanonical`) and is neither `noindex` nor `isParam`, a `?lang=` view that canonicalises elsewhere (`hreflang[]`),
+     claims a version that does not exist: MED.
 8. **One name** (product sites), on the landing and each language landing. Source: `title`, `og`, the parsed block,
    `desktop.probe.title` where a script rewrites the title, the hub GET. The name is the same in the `title`, the
    block's `name`, `og:title` and the hub's card for this base URL; the `h1` states the job (PROMOTION.md §2), so it

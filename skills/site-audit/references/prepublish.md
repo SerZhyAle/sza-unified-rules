@@ -134,9 +134,10 @@ pages; 6 `canonical`, `robots` for `noindex`; 7 `download`; 8 `version`; 9 `json
     `setAttribute('content'`, an i18n table's default locale). Number: lengths, duplicates, both strings. Fail: MED.
 13. **hreflang** (PROMOTION §3). Each `hreflang`, in `<link>` or the sitemap's `xhtml:link`, is absolute and ISO 639-1
     (an ISO 15924 script and an ISO 3166-1 region may follow: `zh-Hans`, `pt-BR`), and targets an indexable,
-    self-canonical page of the publish set that lists this page and itself; `x-default` exists; a `?lang=`, `#ru`
-    or same-file target is no page, and an `og:locale:alternate` needs a page too. Number: the target, its
-    canonical, the missing back-link. Fail: MED.
+    self-canonical page of the publish set that lists this page and itself; `x-default` exists; a `#ru` or same-file
+    target is no page, nor is a `?lang=` target of a static file (it serves the file's bytes, so its canonical is the
+    file's, another URL: `DOC-EXTERNAL-QUALITY` section 8 items S, T and U), and an `og:locale:alternate` needs a page
+    too. Number: the target, its canonical, the missing back-link. Fail: MED.
 14. **One language without JavaScript** (PROMOTION §3, DOCUMENTATION_CONCEPT §1). Where a script switches languages on
     one URL, `<html>` or `<body>` carries the default statically (`data-lang` or the switch's attribute) equal to
     `<html lang>`, and the static copy equals the script's default-locale strings; and the static text of each judged
@@ -223,7 +224,8 @@ Added to the conventions section 8 shape:
   fact); ad slots and their placement (UI_UX §3), analytics and `utm_` (PROMOTION §1 rule 2), remote help-page
   assets (UI_UX §7).
 - **Canonical, hreflang, language**: a stub or declared copy canonicalises to its target; hreflang is also absolute,
-  ISO 639-1, self-listing, may sit in the sitemap and never targets `?lang=`; a static `data-lang` only steadies the
+  ISO 639-1, self-listing, may sit in the sitemap and never targets the `?lang=` view of a static file, whose canonical
+  is another URL (`DOC-EXTERNAL-QUALITY` section 8 items S, T and U); a static `data-lang` only steadies the
   default - a script-switched language stays unfindable, the owner's decision, never reported as solved (PROMOTION §3).
 - **Release facts**: the asset link, checksum and date join the version, all static, never from `api.github.com`
   alone, a durable fallback beside a versioned link (DOCUMENTATION_CONCEPT §4, SITE_CONFIGURATION §2); a target

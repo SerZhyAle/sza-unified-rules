@@ -21,18 +21,27 @@
       -Status <name[,name]>
                      the ledger statuses to list (default BlockQuestions), comma-separated; any status name works
 
-    Reads the ledger journals directly and the registry; writes nothing, locks nothing, launches nothing.
+    Reads the ledger journals directly and the registry; reads each listed ticket's spec file to report its
+    question block (TASK-FLOW rule 7, S0026); writes nothing, locks nothing, launches nothing.
 
     Text output, one block per ticket (the prefix is BQ for BlockQuestions, else the ticket's status):
         BQ  <key>:<id>  p<priority>  <updated>  <name>
             file: <spec path, absolute>
             note: <the ledger's statusNote, one line>
+            block: see below
+    The `block:` line is the state of the ticket's newest question block - the `### Questions (v1, <date>)`
+    section a pass entering BlockQuestions writes into the spec file (TASK-FLOW rule 7):
+        block: current v1 <date>, <n> question(s)   the quiz asks from it, no re-research
+        block: stale - <why>                          the quiz researches again, the block stays as it is
+        block: answered <date>                        an answered block is never current (researches again)
+        block: none - <why>                           no block, another version, or one that does not parse
+    It is printed for every BlockQuestions ticket; for another listed status only when a block exists.
     then the result line:
         quiz-list: <n> in <statuses> across <m> project(s)
     With -Id the result line is instead:
         quiz-list: id <X> here=<key>:<id>=<status|absent> blockquestions=<key:id,..|none>
         (waiting=... instead of blockquestions= when -Status lists more than BlockQuestions)
-    -Json prints the same records as one JSON array (full notes) and no result line.
+    -Json prints the same records as one JSON array (full notes, the block's state) and no result line.
 
     Exit codes: 0 listed (an empty list is still 0 - a report, not a gate); 2 bad invocation, an unknown project, or
     no project at or above the current folder without -All.
@@ -75,6 +84,73 @@ function Test-IdMatch([string] $RowId, [string] $Wanted) {
         return $m.Success -and [int64]$m.Groups[1].Value -eq [int64]$Wanted
     }
     return $false
+}
+
+# ---- the question block (TASK-FLOW 0.23 rule 7, canon ticket S0026) ----
+# A pass entering BlockQuestions writes '### Questions (v1, <date>)' into the ticket's spec file; the quiz asks
+# from a current block instead of researching the ticket again. This reader decides current-ness exactly as
+# rule 7 states it: the newest block that does not carry ' - answered <date>' on its heading is current while
+# (a) its date is not earlier than the ticket's latest entry into BlockQuestions - compared against the ledger
+# row's `updated` day, the day the row last moved - and (b) every 'Q:' text of the statusNote appears in it as a
+# question line, compared after trimming and collapsing runs of white space. Everything else (no block, no spec
+# file, another version, a block that does not parse, only answered blocks) reads as "ask the pre-0.23 way":
+# research, then ask. The comparison never rewrites a line; the block is the writer's record to keep.
+function ConvertTo-QuizFlatText([string] $Text) {
+    return [regex]::Replace([string]$Text, '\s+', ' ').Trim()
+}
+
+function Get-QuizQuestionBlock([string] $SpecPath, [string] $Note, [string] $Updated) {
+    $res = [ordered]@{ state = 'none'; version = ''; date = ''; answered = $false; questions = @(); reason = 'no question block' }
+    if ([string]::IsNullOrWhiteSpace($SpecPath) -or -not (Test-Path -LiteralPath $SpecPath -PathType Leaf)) {
+        $res.reason = 'no spec file'; return [pscustomobject]$res
+    }
+    $lines = @()
+    try { $lines = [IO.File]::ReadAllLines($SpecPath) } catch { $res.reason = 'the spec file cannot be read'; return [pscustomobject]$res }
+    $heading = [regex]'^### Questions \((v\d+), (\d{4}-\d{2}-\d{2})\)(.*)$'   # '### Questions (v1, 2026-11-12)'
+    $edge = [regex]'^(#{1,3}(\s|$))'                                        # a heading of level 3 or above ends it
+    $qText = [regex]'^-\s+Q:\s*(.+?)\s*$'                                   # '- Q: <question>?'
+    $blocks = [Collections.Generic.List[object]]::new()
+    $open = $null
+    foreach ($line in $lines) {
+        $m = $heading.Match($line)
+        if ($m.Success) {
+            $open = [pscustomobject]@{ version = $m.Groups[1].Value; date = $m.Groups[2].Value; answered = [bool]($m.Groups[3].Value -match '-\s+answered\s+\d{4}-\d{2}-\d{2}'); questions = [Collections.Generic.List[string]]::new() }
+            $blocks.Add($open)
+            continue
+        }
+        if ($null -ne $open -and $edge.IsMatch($line)) { $open = $null; continue }
+        if ($null -eq $open) { continue }
+        $q = $qText.Match($line)
+        if ($q.Success) { $open.questions.Add($q.Groups[1].Value) }
+    }
+    if ($blocks.Count -eq 0) { return [pscustomobject]$res }
+    $freshest = @($blocks | Where-Object { -not $_.answered } | Sort-Object -Property date) | Select-Object -Last 1
+    if (-not $freshest) {
+        $last = @($blocks | Sort-Object -Property date) | Select-Object -Last 1
+        $res.state = 'answered'; $res.version = $last.version; $res.date = $last.date; $res.answered = $true
+        return [pscustomobject]$res
+    }
+    if ($freshest.version -cne 'v1') {
+        $res.reason = ("version {0} is not v1" -f $freshest.version); return [pscustomobject]$res
+    }
+    $day = [regex]::Match($Updated, '(\d{4}-\d{2}-\d{2})')
+    if ($day.Success -and [string]$freshest.date -lt $day.Groups[1].Value) {
+        $res.state = 'stale'; $res.version = $freshest.version; $res.date = $freshest.date
+        $res.reason = ("dated {0}, older than the block entry {1}" -f $freshest.date, $day.Groups[1].Value)
+        return [pscustomobject]$res
+    }
+    $flatQs = @($freshest.questions | ForEach-Object { ConvertTo-QuizFlatText $_ })
+    foreach ($m in [regex]::Matches($Note, '(?<![A-Za-z0-9])Q:\s*([^?]*\?)')) {
+        $wanted = ConvertTo-QuizFlatText $m.Groups[1].Value
+        if ($flatQs -cnotcontains $wanted) {
+            $res.state = 'stale'; $res.version = $freshest.version; $res.date = $freshest.date
+            $res.reason = ("missing the note's Q: '{0}'" -f $wanted)
+            return [pscustomobject]$res
+        }
+    }
+    $res.state = 'current'; $res.version = $freshest.version; $res.date = $freshest.date
+    $res.questions = @($freshest.questions)
+    return [pscustomobject]$res
 }
 
 # ---- the registry (it may be missing: the current project is still answerable) ----
@@ -146,9 +222,11 @@ foreach ($s in $scope) {
     foreach ($row in $rows) {
         if ($statusList -notcontains $row.Status) { continue }
         if ($Id -and -not (Test-IdMatch $row.Id $Id)) { continue }
+        $specFile = Join-Path $row.Root $row.File
         $found.Add([pscustomobject][ordered]@{
             repo = $s.key; rank = $(if ($rankOf.ContainsKey($s.key)) { $rankOf[$s.key] } else { $rankOf.Count }); id = $row.Id; status = $row.Status; priority = $row.Priority; updated = $row.Updated
-            name = $row.Name; file = (Join-Path $row.Root $row.File); note = $row.Note; here = [bool]$isHere
+            name = $row.Name; file = $specFile; note = $row.Note; here = [bool]$isHere
+            block = (Get-QuizQuestionBlock $specFile $row.Note $row.Updated)
         })
         $null = $projectsWith.Add($s.key)
     }
@@ -161,7 +239,8 @@ else { @(@{ Expression = { -not $_.here } }, @{ Expression = 'priority'; Descend
 $sorted = @($found | Sort-Object -Property $sortKeys)
 
 if ($Json) {
-    if ($sorted.Count -eq 0) { Write-Output '[]' } else { ConvertTo-Json -InputObject $sorted -Depth 4 }
+    # Depth 6: the records hold the block object with its questions array inside.
+    if ($sorted.Count -eq 0) { Write-Output '[]' } else { ConvertTo-Json -InputObject $sorted -Depth 6 }
     exit 0
 }
 
@@ -170,6 +249,16 @@ foreach ($t in $sorted) {
     Write-Host ("{0}  {1}:{2}  p{3}  {4}  {5}" -f $prefix, $t.repo, $t.id, $t.priority, $t.updated, $t.name)
     Write-Host ("    file: {0}" -f $t.file)
     if ($t.note) { Write-Host ("    note: {0}" -f $t.note) }
+    $blk = $t.block
+    if ($t.status -ceq 'BlockQuestions' -or $blk.state -cne 'none') {
+        $line = switch ($blk.state) {
+            'current' { "current {0} {1}, {2} question(s)" -f $blk.version, $blk.date, $blk.questions.Count }
+            'stale'   { "stale - {0}" -f $blk.reason }
+            'answered' { "answered {0}" -f $blk.date }
+            default  { "none - {0}" -f $blk.reason }
+        }
+        Write-Host ("    block: {0}" -f $line)
+    }
 }
 if ($Id) {
     $hereText = if ($hereKey) { '{0}:{1}={2}' -f $hereKey, $(if ($hereTicket) { $hereTicket.Id } else { $Id }), $hereState } else { 'no-current-project' }

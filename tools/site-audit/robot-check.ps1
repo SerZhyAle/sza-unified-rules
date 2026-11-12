@@ -98,7 +98,14 @@
         noindex          noindex or none among the directives of the target's meta robots or X-Robots-Tag header,
                          one scoped to a crawler ("googlebot: noindex") included; a value such as
                          max-image-preview:none is not one
-        isParam          the href carries a query, such as ?lang=
+        isParam          the href carries a query, such as ?lang=, and the canonical that view names is another URL
+                         (DOC-EXTERNAL-QUALITY items S, T, U: such a view is no alternate). A query view whose
+                         canonical names itself is an addressable page of its own, so false; false as well for an
+                         href with no query or a view with no canonical (selfCanonical shows that one); null for a
+                         query href that was not measured
+        sameText         null unless the href carries a query, the view was measured, names itself as its canonical
+                         and is not this page; then whether the view's visible text equals this page's. True is a
+                         stub: the head says the view is a page of its own and the body repeats the default page
       xDefault           an x-default entry exists
       og                 each meta property=og:* as {property: content}, the first of each
       ogLocale           og:locale
@@ -1109,15 +1116,27 @@ function Format-Page($Ctx) {
             $tDoc = $null
             if ($tRes) { $tDoc = Get-HeadDoc $tUrl $tRes }
             elseif ($tUrl -and (Get-UrlKey $tUrl) -cin $pageKeys -and $Ctx.ok) { $tRes = $res; $tDoc = $doc }   # the page itself, read from the page
+            $hasQuery = [bool]($h.uri -and $h.uri.Query)
+            $selfCanonical = if ($tDoc) { [bool]($tDoc.canonicalUri -and (Get-UrlKey (Get-Bare $tDoc.canonicalUri)) -ceq (Get-UrlKey $tUrl)) } else { $null }
+            # A query view is no page of its own only when the canonical it names is another URL; one that names
+            # itself is addressable (DOC-EXTERNAL-QUALITY items S, T, U). Unmeasured, a query href stays unknown.
+            $isParam = if (-not $hasQuery) { $false } elseif ($tDoc) { [bool]($tDoc.canonicalUri -and -not $selfCanonical) } else { $null }
+            # A self-canonical view that repeats this page's text is a stub: the canonical alone proves no language.
+            $sameText = $null
+            if ($hasQuery -and $selfCanonical -and $tRes -and -not [object]::ReferenceEquals($tRes, $res)) {
+                $viewText = (Read-Html (Get-ResText $tRes) $tRes.finalUrl).text
+                $sameText = [bool]($viewText -ceq [string]$doc.text)
+            }
             [ordered]@{
                 lang          = $h.lang
                 href          = $h.href
                 status        = Get-FirstStatus $tRes
                 canonical     = if ($tDoc) { $tDoc.canonical } else { $null }
-                selfCanonical = if ($tDoc) { [bool]($tDoc.canonicalUri -and (Get-UrlKey (Get-Bare $tDoc.canonicalUri)) -ceq (Get-UrlKey $tUrl)) } else { $null }
+                selfCanonical = $selfCanonical
                 reciprocal    = if ($tDoc) { [bool]@($tDoc.hreflang | Where-Object { $_.uri -and (Get-UrlKey (Get-Bare $_.uri)) -cin $pageKeys }).Count } else { $null }
                 noindex       = if ($tDoc) { Test-NoIndex "$($tDoc.robots),$(Get-ResField $tRes 'robotsTag')" } else { $null }
-                isParam       = [bool]($h.uri -and $h.uri.Query)
+                isParam       = $isParam
+                sameText      = $sameText
             }
         })
 

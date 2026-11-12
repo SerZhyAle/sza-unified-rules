@@ -1,6 +1,6 @@
 """Validate independent documentation corpora. Codes: 0 pass, 1 violations, 2 unavailable.
 
---register inventories sources; --render regenerates only declared documentation maps.
+--register inventories documents; --render regenerates only declared documentation maps.
 Normal validation never writes a registry, derivative or document.
 """
 
@@ -91,6 +91,19 @@ def render_map(records):
 
 def check_corpus(root, config_path, register=False, render=False):
     config = json.loads(config_path.read_text(encoding="utf-8-sig"))
+    generated = config.get("generated", [])
+    if not isinstance(generated, list):
+        raise ValueError("Generated entries must be a list")
+    for entry in generated:
+        if not isinstance(entry, dict) or any(
+            not isinstance(entry.get(key), str) or not entry[key].strip()
+            for key in ("pattern", "generator", "check")
+        ):
+            raise ValueError("Generated entry needs a pattern, generator and check as non-empty strings")
+
+    def is_generated(name):
+        return any(Path(name).match(entry["pattern"]) for entry in generated)
+
     registry = root / config["registry"]
     files = inventory(root, config)
     local = config["visibility"] == "local"
@@ -104,7 +117,7 @@ def check_corpus(root, config_path, register=False, render=False):
             records.append({"path": name, "topic": record.get("topic", topic),
                             "area": record.get("area", name.split("/")[0] if "/" in name else "repository"),
                             "update_triggers": record.get("update_triggers", ["Changes to the documented interface or workflow"]),
-                            "role": "render" if name == config["map"] else "source"})
+                            "role": "render" if name == config["map"] or is_generated(name) else "source"})
         registry.parent.mkdir(parents=True, exist_ok=True)
         registry.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in records), encoding="utf-8")
     records = read_records(registry)
@@ -131,8 +144,10 @@ def check_corpus(root, config_path, register=False, render=False):
             errors.append(f"{name}: published registry exposes an ignored document")
         if local and name not in ignored:
             errors.append(f"{name}: local document must remain ignored")
-        if record["role"] == "render" and name != config["map"]:
+        if record["role"] == "render" and name != config["map"] and not is_generated(name):
             errors.append(f"{name}: no registered generator")
+        if record["role"] == "source" and is_generated(name):
+            errors.append(f"{name}: generated file recorded as source")
     errors.extend(f"{name}: missing registry entry" for name in sorted(files - declared))
     expected_map = render_map(records)
     map_path = root / config["map"]

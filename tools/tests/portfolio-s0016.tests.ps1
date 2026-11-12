@@ -373,6 +373,26 @@ try {
         Check ($null -eq $noteReleased) 'statusNote qualified blocker releases when sibling ticket is Verified'
     }
 
+    Case 'depth and breadth distribute slots while respecting repository caps and busy workers' {
+        $registry = @{ maxWorkers = 4; repos = @(
+            @{ key = 'big'; enabled = $true; rank = 1; concurrent = $true; maxWorkers = 3 },
+            @{ key = 'small'; enabled = $true; rank = 2; concurrent = $false; maxWorkers = 1 }
+        ) }
+        $provider = {
+            param($Repo, $Exclude, $ForceId)
+            $ids = if ($Repo.key -ceq 'big') { @('S0001', 'S0002', 'S0003') } else { @('S0004') }
+            $id = @($ids | Where-Object { $_ -cnotin @($Exclude) } | Select-Object -First 1)
+            $head = if ($id.Count) { @{ id = $id[0]; name = $id[0]; status = 'Draft'; priority = 50 } } else { $null }
+            return @{ ok = $true; head = $head; payload = $null; why = $null }
+        }
+        $depth = Get-PqRank -Registry $registry -HeadProvider $provider -Slots 4 -Fill depth
+        $breadth = Get-PqRank -Registry $registry -HeadProvider $provider -Slots 4 -Fill breadth
+        $busy = Get-PqRank -Registry $registry -HeadProvider $provider -Slots 4 -Fill depth -Busy @{ big = 2 }
+        Check ((@($depth.plan | ForEach-Object { $_.repo }) -join ',') -ceq 'big,big,big,small') 'depth fills the first repository to its cap'
+        Check ((@($breadth.plan | ForEach-Object { $_.repo }) -join ',') -ceq 'big,small,big,big') 'breadth offers each repository a slot first'
+        Check ((@($busy.plan | ForEach-Object { $_.repo }) -join ',') -ceq 'big,small') 'busy workers count against the repository cap'
+    }
+
     Write-Host "`nportfolio-s0016-tests: PASS ($case cases)" -ForegroundColor Green
     exit 0
 }

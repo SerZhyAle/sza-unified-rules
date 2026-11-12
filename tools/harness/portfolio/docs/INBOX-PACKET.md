@@ -5,9 +5,11 @@
 (`lib/inbox-packet.ps1` here, the S0046 listener/ingest), the conformance vector
 (`tools/tests/data/inbox-ticket-vector/`).
 **Contract line:** the envelope is the DEVICE-EXCHANGE section 24 Drive packet (item CN,
-`schemaVersion` 2) with the `TICKET` `payloadKind` proposed to its owner in
-`PROPOSAL-2026-11-11-ticket-packet-kind.md`. Until the owner folds the proposal, this document
-is the only normative text; nothing in the shipped contract was edited for it.
+`schemaVersion` 2) with the `TICKET` `payloadKind`, folded into DEVICE-EXCHANGE 1.12 as items FC
+and FD (accepted 2026-11-12; the catalog adopted the conformance vector byte for byte). This
+document stays the implementation detail of the first deployment - the visible shared Drive
+folder, the spool layout and the reader's refusal names; where it and items FC and FD differ, the
+contract wins.
 
 ## 1. The channel and the inbox root
 
@@ -172,7 +174,7 @@ The marking is owner choice 5(a): a move, not a message.
   the owner's own words asked for, additively: `publishIntent` ("ms-store"|"github"|"winget", absent when
   the text names no channel) and `buildIntent` (true when the text asks for a build). The original fields
   and packet payload remain intact.
-- A refused packet moves to `failed\<packetId>\` with `reason.json`: `{ "error", "detail }` -
+- A refused packet moves to `failed\<packetId>\` with `reason.json`: `{ "error", "detail" }` -
   the `error` is a reason name of section 4.
 - The phone reads `done/` on its next Drive sync and shows `processed: <key>:<id>`; deletion after
   receipt (item CR) stays the owner's manual call on the phone - the PC keeps the spool as the

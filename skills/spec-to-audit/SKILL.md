@@ -170,7 +170,15 @@ the plan and rewritten its `**Complexity:**` line where the plan disagrees (see
    token), and pre-implementation owner actions on a device, at the desk, or in an outside console account
    (recorded as `- **DO:** <action>` in `### 3.3 Owner inputs (Approval gate)` and a literal `DO: <action>`
    token in `statusNote`, S0042). The block-note gate refuses a `BlockQuestions` note that carries neither
-   `Q: ..?` nor `DO: <action>`. A slow run is never asked about: it is recorded as a release item (Stage 4),
+   `Q: ..?` nor `DO: <action>`. Whichever pass enters `BlockQuestions` also writes the fixed **question block**
+   the quiz asks from, into the ticket's spec file (TASK-FLOW rule 7, S0026): a heading
+   `### Questions (v1, <yyyy-MM-dd>)` - the day it is written - holding one `- Q: <question>?` line per question,
+   each followed by two to four option lines indented two spaces, `  - <option> - <one-line consequence>`, the
+   first option suffixed ` (recommended)`, and one `- DO: <action>` line per owner action, with no option lines.
+   The options are the researched ones - the same lines the quiz would present - written while the finding is in
+   front of the pass, so the quiz asks from the block instead of researching the ticket again. A newer block is
+   appended, never replacing an older one, and a line the pass does not recognise inside an existing block stays
+   untouched. A slow run is never asked about: it is recorded as a release item (Stage 4),
    not a question.
 4. Pre-edit guards: read-only zones; back up an oversized file into `temp/<ticket>/`; refuse an edit projected
    past the file-size ceiling; paired-file guard.
@@ -379,7 +387,14 @@ any project and carries the mechanics; the procedure below is its authority.
    the owner's value is written into the owner input or research item the assumption settled, and where a
    pass already built on the assumption the rework is captured as a fresh `Draft` and reported as parked.
    Unoverruled entries stay as they are.
-3. **Research each one before asking.** Whatever the architecture, the code, a contract or a decision
+3. **Research each one before asking - unless the ticket asks from a current question block.** A pass that
+   parked the ticket wrote its researched questions into the spec file as a `### Questions (v1, <date>)` block
+   (Stage 3, TASK-FLOW rule 7): the newest block that is not stamped `- answered <date>` on its heading is
+   current while its date is not earlier than the day the ticket entered `BlockQuestions` and every `Q:` text
+   of the note appears in it. **A current block replaces the research of this step**: its questions, options,
+   consequences and recommendations are what gets asked, as they stand - the sitting does not re-research the
+   ticket. A block that is missing, stale, of another version, malformed or already answered is not read:
+   research exactly as below and leave the old block where it stands. Whatever the architecture, the code, a contract or a decision
    already recorded settles is **not asked**: fill it in and list it in the report as *resolved without
    asking*, with what settled it ([AI_USAGE.md](../../rules/AI_USAGE.md) §1). Only a genuine owner call -
    scope, product intent, priority, wording, platform reach, build versus buy - or a pre-implementation
@@ -403,7 +418,8 @@ any project and carries the mechanics; the procedure below is its authority.
    collision once, with both outcomes, and let the owner pick - the menu was at fault, not the answer.
 5. **Write back before any status move.** Each answer goes into the ticket's own record - the input
    filled, the research item resolved - plus a dated decisions block: question, chosen answer, one-line
-   reason. The order is the point: an interrupted sitting then leaves answered tickets still blocked,
+   reason. A block that was asked from is stamped by appending ` - answered <yyyy-MM-dd>` to its heading,
+   never deleted (TASK-FLOW rule 7). The order is the point: an interrupted sitting then leaves answered tickets still blocked,
    never moved tickets whose answers exist nowhere.
 6. **Restore one level.** The ticket returns to the status it would have had without the block, inferred
    from what exists: a plan with progress -> `In Progress`; a plan without progress -> `Tactical`; settled
@@ -450,7 +466,7 @@ An unattended pass runs without human interaction in a headless queue session.
   foreground, before setting `Implemented` or `BlockNeedUserTest`. An empty or absent key means the
   repo declares none: write "no compile command" in the note and do not invent a run. Fix a compile
   failure inside the pass or write it into the ticket; no other run above 5 s is authorized.
-- **Assume the reversible, ask the rest**: a choice that is reversible inside the ticket and has a researched recommendation is taken, not asked - record it under `### Assumed (unattended, <date>)` with the alternative and "owner may overrule", and the pass goes on (S0039). `BlockQuestions` is for one-way and outward steps (publish, release, store submit), contract changes, scope, money, facts only the owner knows (whose note carries a literal `Q: ..?` token), and pre-implementation owner actions on a device, at the desk, or in an outside console account (recorded as `- **DO:** <action>` in `### 3.3 Owner inputs (Approval gate)` and a literal `DO: <action>` token in `statusNote`, S0042). Post-implementation device verification goes to `BlockNeedUserTest`; a wait on another registered repository in the portfolio is filed there with `spec-draft.ps1 -Project <key>`, written as `Blocker: <key>:<id>`, and parked in `BlockByOtherTask` (`BlockExternal` is only for parties outside the portfolio); a deferred idea becomes its own Draft. A slow run is never asked about: it is recorded as a release item.
+- **Assume the reversible, ask the rest**: a choice that is reversible inside the ticket and has a researched recommendation is taken, not asked - record it under `### Assumed (unattended, <date>)` with the alternative and "owner may overrule", and the pass goes on (S0039). `BlockQuestions` is for one-way and outward steps (publish, release, store submit), contract changes, scope, money, facts only the owner knows (whose note carries a literal `Q: ..?` token), and pre-implementation owner actions on a device, at the desk, or in an outside console account (recorded as `- **DO:** <action>` in `### 3.3 Owner inputs (Approval gate)` and a literal `DO: <action>` token in `statusNote`, S0042). Post-implementation device verification goes to `BlockNeedUserTest`; a wait on another registered repository in the portfolio is filed there with `spec-draft.ps1 -Project <key>`, written as `Blocker: <key>:<id>`, and parked in `BlockByOtherTask` (`BlockExternal` is only for parties outside the portfolio); a deferred idea becomes its own Draft. A slow run is never asked about: it is recorded as a release item. Parking a ticket in `BlockQuestions` also writes its question block into the spec file, in the pass's own hand, at the moment of the transition (Stage 3; TASK-FLOW rule 7, S0026).
 - **Autonomous stopping**: take this one ticket as far as it goes and do not start another. When it cannot move, set the matching `Block*` status with a `statusNote` naming what is missing.
 - **Claim**: a lease on the ticket whose reason is `run-spec-queue` followed by an instance name is the claim the runner made for you: it is yours.
 - **Context handoff for in-progress work**: when a pass leaves a multi-step ticket `In Progress` with work done and must stop before completion (or upon approaching turn or context limits), it writes `<tempDir>/<id>/context-handoff.json` (specifying `id`, `tokens`, `boundary`) before ending. The runner checks this marker and relaunches up to `handoffCap` with a fresh context instead of recording an idle or no-progress drop.

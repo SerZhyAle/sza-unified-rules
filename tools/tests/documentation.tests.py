@@ -64,6 +64,51 @@ class Documents(unittest.TestCase):
         (self.root / "docs/map.md").write_text("# Changed")
         self.assertFailure("generated derivative drift")
 
+    def test_generated_render_registration_and_roles(self):
+        registry = self.root / "docs/registry.jsonl"
+        records = DOCS.read_records(registry)
+        page = next(record for record in records if record["path"] == "docs/page.md")
+        page.update(topic="Custom topic", area="Custom area", update_triggers=["Custom trigger"], role="render")
+        registry.write_text("".join(json.dumps(record) + "\n" for record in records))
+        self.assertFailure("no registered generator")
+
+        config = json.loads(self.config.read_text())
+        config["generated"] = [{"pattern": "docs/*.md", "generator": "nonexistent generator",
+                                "check": "nonexistent check"}]
+        self.config.write_text(json.dumps(config))
+        (self.root / "docs/map.md").write_text(DOCS.render_map(records))
+        self.assertEqual(self.check()[0], [])
+        page["role"] = "source"
+        registry.write_text("".join(json.dumps(record) + "\n" for record in records))
+        self.assertFailure("generated file recorded as source")
+        self.assertEqual(self.check(register=True, render=True)[0], [])
+        page = next(record for record in DOCS.read_records(registry) if record["path"] == "docs/page.md")
+        self.assertEqual((page["role"], page["topic"], page["area"], page["update_triggers"]),
+                         ("render", "Custom topic", "Custom area", ["Custom trigger"]))
+
+    def test_invalid_generated_configuration(self):
+        config = json.loads(self.config.read_text())
+        valid = {"pattern": "docs/*.md", "generator": "build", "check": "check"}
+        invalid = [None, {}, {"pattern": "docs/*.md", "generator": "build"},
+                   {**valid, "generator": "  "}, {**valid, "check": 42}, {**valid, "pattern": ""}]
+        for entry in invalid:
+            with self.subTest(entry=entry):
+                config["generated"] = [entry]
+                self.config.write_text(json.dumps(config))
+                with self.assertRaises(ValueError):
+                    self.check(register=True)
+        config["generated"] = {}
+        self.config.write_text(json.dumps(config))
+        with self.assertRaises(ValueError):
+            self.check()
+        config["generated"] = [{"pattern": "docs/*.md", "generator": "build"}]
+        self.config.write_text(json.dumps(config))
+        result = subprocess.run([sys.executable, str(ROOT / "tools/docs/check-documents.py"),
+                                 "--root", str(self.root), "--config", "docs/corpus.json"],
+                                capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 2, result.stdout)
+        self.assertIn("documents: COULD NOT VERIFY", result.stdout)
+
     def test_house_style_prose_and_literal_code(self):
         self.page.write_text("# Page\nText\u2014text...\n", encoding="utf-8")
         self.assertFailure("house style")

@@ -2,10 +2,10 @@
 
 Reference for `store-publish` and `release`. The Store Developer CLI and submission API can read an existing
 product through an Entra application. The default Store submission flow remains manual in Partner Center.
-The proposed submission-channel rules in `PROPOSAL-2026-11-11-store-submission-interface`, domain
-`windows-store/`, are pending and **UNVERIFIED**: no submission has gone through the machine path. They are
-not contract requirements until the contract owner accepts them. A first publication and age rating use
-Partner Center.
+The submission-channel rules 19-26 of `WINDOWS-STORE` 0.4 (accepted 2026-11-12, section D of its amendment of that
+date) bind the channel. Each rule marks what was **Measured** (read-only, 2026-11-11) and what stays **UNVERIFIED**:
+no submission has gone through the machine path, and an unverified mark is not a promise. A first publication and
+age rating use Partner Center.
 
 ## Owner setup and rotation
 
@@ -23,7 +23,7 @@ Partner Center.
    remain in shell history: clear the session and persistent shell history after configuration, using that
    shell's own history controls. Avoid exposing the command in a transcript or log.
 4. Record the credential's expiry date and role in the owner's expiry list, and set a reminder in advance
-   (30 days is the proposal). Rotate before expiry: create the replacement, configure and verify it with a
+   (the lead is the owner's choice, `WINDOWS-STORE` rule 21; 30 days is its example). Rotate before expiry: create the replacement, configure and verify it with a
    read-only call, then remove the old credential. A key pasted into an agent chat is exposed: rotate it and
    remove the old key, even if no agent used it. Never record its value.
 
@@ -57,8 +57,8 @@ channel failure and continue the other release channels.
 Prepare the unsigned package and listing, verify both, and use the manual Partner Center flow by default.
 Preparing a machine draft, if later implemented, changes the live Store state; it is not a dry run. Never
 modify a console-created submission through the machine path. The owner handles that submission in Partner
-Center. The proposal also says a machine-created submission stays on that path until the owner commits or
-deletes it; this remains pending and unverified, and this preflight never modifies a submission.
+Center. `WINDOWS-STORE` also says a machine-created submission stays on that path until the owner commits or
+deletes it; that part is marked UNVERIFIED in the contract, and this preflight never modifies a submission.
 
 Publish means committing a submission to certification. It is a separate owner act, requiring the owner's
 explicit typed confirmation naming the Store ID and package version. The shared preflight implements no draft,
@@ -70,5 +70,5 @@ product and version and belongs to a real release, not this preflight.
 The preflight's `-Json` output is a sanitized check result: mode, time, a published/non-published
 classification and, when available, pricing and refusal category. It does not print identifiers, arbitrary
 response fields or caller-supplied paths. It is not a submission audit log. A future write channel's evidence
-format remains part of the pending proposal. Rotation of an exposed or expired credential is recorded by date
+format is rule 26 of `WINDOWS-STORE` 0.4 (an upload address is never recorded). Rotation of an exposed or expired credential is recorded by date
 only - never the value.
