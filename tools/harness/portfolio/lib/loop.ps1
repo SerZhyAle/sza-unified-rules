@@ -552,6 +552,7 @@ function Read-PqPassOutcome {
         $outcome = 'child-failed'
     }
     elseif (-not $outcome -or $outcome -ceq 'ok') { $outcome = if ($moved) { 'ok' } else { 'no-progress' } }
+    $fold = Merge-PqPassUsage -Rows $rows
     return [ordered]@{
         model = [string](Get-PqValue $journalRow 'model' '')
         complexity = [string](Get-PqValue $journalRow 'complexity' '')
@@ -561,7 +562,50 @@ function Read-PqPassOutcome {
         exitCode = $agentExit
         launches = $rows.Count
         limits = $limits
+        built = $fold.built
+        usage = $fold.usage
+        costUsd = $fold.costUsd
+        priceAsOf = $fold.priceAsOf
     }
+}
+
+# TASK-FLOW 0.20 rule 46 (S0037): rule 23's optional built / usage / costUsd / priceAsOf folded over every launch of a
+# pass. built=false when any launch disclosed it; usage summed, a launch whose usage.session repeats counted once,
+# complete=false when any launch has none; costUsd only when every launch has one, priceAsOf the oldest. $null = absent.
+function Merge-PqPassUsage($Rows) {
+    $built = $null
+    $sum = [ordered]@{ model = ''; input = [int64]0; output = [int64]0; cacheRead = [int64]0; cacheWrite = [int64]0; requests = 0; complete = $true }
+    $models = [Collections.Generic.List[string]]::new()
+    $sessions = [Collections.Generic.HashSet[string]]::new()
+    $any = $false
+    $cost = 0.0
+    $costKnown = $true
+    $priceAsOf = $null
+    foreach ($row in @($Rows)) {
+        if ($null -eq $row) { continue }
+        $b = Get-PqValue $row 'built' $null
+        if ($b -is [bool] -and -not $b) { $built = $false }
+        $u = Get-PqValue $row 'usage' $null
+        if ($null -eq $u) { $sum.complete = $false; $costKnown = $false; continue }
+        $session = [string](Get-PqValue $u 'session' '')
+        if ($session -and -not $sessions.Add($session)) { continue }
+        $any = $true
+        foreach ($k in @('input', 'output', 'cacheRead', 'cacheWrite')) { $sum[$k] += [int64](Get-PqValue $u $k 0) }
+        $sum.requests += [int](Get-PqValue $u 'requests' 0)
+        if (-not [bool](Get-PqValue $u 'complete' $false)) { $sum.complete = $false }
+        foreach ($m in @(([string](Get-PqValue $u 'model' '')) -split '\+')) { if ($m -and -not $models.Contains($m)) { $models.Add($m) } }
+        $c = Get-PqValue $row 'costUsd' $null
+        $asOf = [string](Get-PqValue $row 'priceAsOf' '')
+        if ($null -eq $c) { $costKnown = $false }
+        else {
+            $cost += [double]$c
+            if ($asOf -and (-not $priceAsOf -or [string]::CompareOrdinal($asOf, $priceAsOf) -lt 0)) { $priceAsOf = $asOf }
+        }
+    }
+    if (-not $any) { return [ordered]@{ built = $built; usage = $null; costUsd = $null; priceAsOf = $null } }
+    $sum.model = $models -join '+'
+    if (-not $costKnown) { $priceAsOf = $null }
+    return [ordered]@{ built = $built; usage = $sum; costUsd = $(if ($costKnown) { [Math]::Round($cost, 4) } else { $null }); priceAsOf = $priceAsOf }
 }
 
 # The drop of rule 43 (S0016 R31): a ticket that came back unmoved stays out of the rank until its status, its `updated`
@@ -1416,6 +1460,9 @@ function Start-PqLoop {
                     registryHash = $current.hash
                     profileHash = $profileHash
                 }
+                if ($outcomeRes.built -is [bool]) { $runRow.built = $outcomeRes.built }
+                if ($null -ne $outcomeRes.usage) { $runRow.usage = $outcomeRes.usage }
+                if ($null -ne $outcomeRes.costUsd) { $runRow.costUsd = $outcomeRes.costUsd; $runRow.priceAsOf = $outcomeRes.priceAsOf }
                 $runsJsonl = Join-Path $root 'runs.jsonl'
                 Invoke-PqStateLock {
                     [IO.File]::AppendAllText($runsJsonl, (($runRow | ConvertTo-Json -Compress) + "`n"), [Text.Encoding]::UTF8)

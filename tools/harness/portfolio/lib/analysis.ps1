@@ -15,6 +15,10 @@
 #                                       events from Since on.
 #   Get-PqPercentile -Values -P         the p-th percentile (nearest rank) of numbers, or $null.
 #   Get-PqRunStats -Runs                n, moved, ok, minutes p50 and p90 for a group of run rows.
+#   Get-PqBuildFigures -Runs            per repository: closing passes (Implemented / Verified / BlockNeedUserTest) and how many
+#                                       of them said built=false (closed unbuilt); a row without built is unknown (S0037).
+#   Get-PqUsageFigures -Runs            tokens and list-price estimate (TASK-FLOW 0.20) summed by repository, model and outcome;
+#                                       passes without usage, incomplete usage and unpriced passes are counted, never zero.
 #   Get-PqReport -Root -Days [-Standalone <Sources>]
 #                                       the report object: headline, outcome mix, ending statuses, the outsidePq block, splits by agent / model / complexity /
 #                                       repository (a split prints only where n >= minSample, METRICS.md), waiting, occupancy,
@@ -160,6 +164,52 @@ function Get-PqStatusFigures($Runs) {
     return [ordered]@{ ended = $ended; byAgent = $byAgent; gates = $gates }
 }
 
+function Get-PqBuildFigures($Runs) {
+    $byRepo = [ordered]@{}
+    foreach ($row in @($Runs)) {
+        $after = [string](Get-PqValue $row 'statusAfter' '')
+        if ($after -cnotin @('Implemented', 'Verified', 'BlockNeedUserTest')) { continue }
+        $repo = [string](Get-PqValue $row 'repo' '')
+        if (-not $repo) { $repo = '(unknown)' }
+        if (-not $byRepo.Contains($repo)) { $byRepo[$repo] = [ordered]@{ closing = 0; unbuilt = 0; unknown = 0 } }
+        $byRepo[$repo].closing++
+        $b = Get-PqValue $row 'built' $null
+        if ($b -is [bool] -and -not $b) { $byRepo[$repo].unbuilt++ } else { $byRepo[$repo].unknown++ }
+    }
+    return $byRepo
+}
+
+function Get-PqUsageFigures($Runs) {
+    $new = { [ordered]@{ passes = 0; withUsage = 0; incomplete = 0; input = [int64]0; output = [int64]0; cacheRead = [int64]0; cacheWrite = [int64]0; costUsd = 0.0; priced = 0; unpriced = 0 } }
+    $out = [ordered]@{ total = (& $new); byRepo = [ordered]@{}; byModel = [ordered]@{}; byOutcome = [ordered]@{} }
+    foreach ($row in @($Runs)) {
+        $u = Get-PqValue $row 'usage' $null
+        $model = [string](Get-PqValue $u 'model' '')
+        if (-not $model) { $model = [string](Get-PqValue $row 'model' '') }
+        $keys = @(
+            @($out.byRepo, [string](Get-PqValue $row 'repo' '')),
+            @($out.byModel, $model),
+            @($out.byOutcome, [string](Get-PqValue $row 'outcome' '')))
+        $targets = @($out.total)
+        foreach ($pair in $keys) {
+            $k = if ($pair[1]) { $pair[1] } else { '(unknown)' }
+            if (-not $pair[0].Contains($k)) { $pair[0][$k] = & $new }
+            $targets += $pair[0][$k]
+        }
+        $c = Get-PqValue $row 'costUsd' $null
+        foreach ($t in $targets) {
+            $t.passes++
+            if ($null -eq $u) { continue }
+            $t.withUsage++
+            if (-not [bool](Get-PqValue $u 'complete' $false)) { $t.incomplete++ }
+            foreach ($f in @('input', 'output', 'cacheRead', 'cacheWrite')) { $t[$f] += [int64](Get-PqValue $u $f 0) }
+            if ($null -eq $c) { $t.unpriced++ } else { $t.priced++; $t.costUsd += [double]$c }
+        }
+    }
+    foreach ($t in @(@($out.total) + @($out.byRepo.Values) + @($out.byModel.Values) + @($out.byOutcome.Values))) { $t.costUsd = [Math]::Round($t.costUsd, 2) }
+    return $out
+}
+
 function Group-PqRunsBy($Runs, [string]$Field) {
     $groups = [ordered]@{}
     foreach ($r in @($Runs)) {
@@ -278,6 +328,8 @@ function Get-PqReport {
     foreach ($g in @($runs | Group-Object { [string](Get-PqValue $_ 'outcome' 'unknown') } | Sort-Object Count -Descending)) { $outcomes[$g.Name] = $g.Count }
     $report.outcomes = $outcomes
     $report.statuses = Get-PqStatusFigures $runs
+    $report.built = Get-PqBuildFigures $runs
+    $report.usage = Get-PqUsageFigures $runs
     # S0037: a repository's own R0 runs, outside pq - kept apart so the pq figures above stay pq's alone.
     $monoRows = @($mono.rows)
     $monoGroups = Group-PqRunsBy $monoRows 'repo'

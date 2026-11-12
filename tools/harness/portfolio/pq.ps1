@@ -560,8 +560,18 @@ function Test-PqDoctorRepo($Repo, $Out) {
         }
     }
     catch { & $add 'WARN' 'complexity' "ledger unreadable - $($_.Exception.Message)" }
-    if ([IO.File]::Exists((Join-Path $p 'r0.ps1'))) { & $add 'PASS' 'launcher' 'r0.ps1' }
-    else { & $add 'WARN' 'launcher' 'no r0.ps1 (the uniform launcher names arrive in S0015 Phase 03)' }
+    # The same three shapes check-compliance.ps1 accepts as a launcher (SZA-FLOW03): the rendered r0.ps1, an
+    # r0.cmd, or a root a.ps1 that declares an r0 target - the text is matched, never run. A repository whose
+    # launcher is the third shape was reported as having none.
+    $launcher = ''
+    if ([IO.File]::Exists((Join-Path $p 'r0.ps1'))) { $launcher = 'r0.ps1' }
+    elseif ([IO.File]::Exists((Join-Path $p 'r0.cmd'))) { $launcher = 'r0.cmd' }
+    elseif ([IO.File]::Exists((Join-Path $p 'a.ps1'))) {
+        try { if ([IO.File]::ReadAllText((Join-Path $p 'a.ps1')) -match "'r0'\s*=\s*@\{") { $launcher = 'a.ps1 (r0 target)' } }
+        catch { $launcher = '' }
+    }
+    if ($launcher) { & $add 'PASS' 'launcher' $launcher }
+    else { & $add 'WARN' 'launcher' 'no launcher: no r0.ps1 or r0.cmd, and no a.ps1 with an r0 target (init-task-flow.ps1 renders them; the migration of existing repositories is S0016 Phase 09)' }
 }
 
 function Invoke-PqDoctor {
@@ -1101,6 +1111,23 @@ function Invoke-PqReport {
     foreach ($status in $r.statuses.gates.Keys) {
         $counts = $r.statuses.gates[$status]
         "  ${status}: $($counts.entered) / $($counts.left)"
+    }
+    if ($r.built.Count -gt 0) {
+        'closed unbuilt (self-reported "not built, not tested until the release"; unknown = no disclosure, not a build):'
+        foreach ($k in $r.built.Keys) { $b = $r.built[$k]; "  {0,-18} closing {1}  unbuilt {2}  unknown {3}" -f $k, $b.closing, $b.unbuilt, $b.unknown }
+    }
+    $ut = $r.usage.total
+    if ($ut.passes -gt 0) {
+        # Nothing recorded and nothing priced print as unknown, never as a zero.
+        $fmtUsage = { param($t)
+            if ($t.withUsage -eq 0) { return "usage unknown (no usage recorded)" }
+            $cost = if ($t.priced -gt 0) { "list-price estimate `${0} over {1} priced pass(es)" -f $t.costUsd, $t.priced } else { 'list-price estimate unknown' }
+            "tokens in {0} out {1} cache read {2} write {3}  {4}; no usage {5}, incomplete {6}, unpriced {7}" -f $t.input, $t.output, $t.cacheRead, $t.cacheWrite, $cost, ($t.passes - $t.withUsage), $t.incomplete, $t.unpriced }
+        'usage (an estimate at list price, not an invoice): ' + (& $fmtUsage $ut)
+        foreach ($split in @(@('repository', $r.usage.byRepo), @('model', $r.usage.byModel), @('outcome', $r.usage.byOutcome))) {
+            "  by $($split[0]):"
+            foreach ($k in $split[1].Keys) { "    {0,-18} passes {1}  {2}" -f $k, $split[1][$k].passes, (& $fmtUsage $split[1][$k]) }
+        }
     }
     $o = $r.outsidePq
     if ($o.headline.n -gt 0 -or @($o.unreadable).Count -gt 0) {

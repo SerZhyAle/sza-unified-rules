@@ -84,6 +84,9 @@ in the one-ticket skills: `/spec-all <key>:<id>` and `/sa <key>:<id>` work one n
   in that repository counts, this chat included: the robot cannot work in a repository while you work in it.
 - `pq problems` lists findings with stable ids (`PQ-RACE01`, `PQ-SAFE02`, `PQ-THRASH01`, `PQ-LIMIT01`, `PQ-DATA01` and others);
   a figure is printed with its n and a split only where n is at least 5. Say "no evidence" where the report does.
+  `closed unbuilt` is what the passes said about themselves, and `unknown` there is no disclosure, not a build;
+  token and dollar figures are a list-price estimate from a dated local snapshot, not a bill, and a pass with no
+  usage or no price is unknown, never zero.
 - A provider out of limit is held machine-wide until its reset time (`pq agents` shows it); the ticket goes to the next
   provider of the order and the robot comes back by itself.
 - A fix to `pq` itself under `tools/` reaches the owner's sessions only after the plugin version moves (the canon's

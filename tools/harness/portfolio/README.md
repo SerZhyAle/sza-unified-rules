@@ -556,7 +556,7 @@ nothing to follow for a Codex or Gemini pass.
 | Command | Shows |
 | --- | --- |
 | `pq inbox [-Json]` | what waits for the owner across all projects: one line per kind (count, oldest age, the command that clears it), then the tickets with id, age and note; `BlockByOtherTask` as chain roots |
-| `pq report [-Days n]` | the last n days (7): passes, moved and ok shares, outcomes, ending statuses overall and by agent, entries and exits for owner-waiting statuses, the passes each registered repository's own R0 made outside pq (its `runs-mono.jsonl`, in the same window, counted apart from the pq figures, with any journal that could not be read named), the splits by agent, model, complexity and repository (only where n is at least 5), waiting, occupancy, resources, stops, robot-filed tickets, limits, log health and the open findings; `-Json` for the object |
+| `pq report [-Days n]` | the last n days (7): passes, moved and ok shares, outcomes, ending statuses overall and by agent, entries and exits for owner-waiting statuses, closed unbuilt per repository, tokens and a list-price estimate by repository, model and outcome, the passes each registered repository's own R0 made outside pq (its `runs-mono.jsonl`, in the same window, counted apart from the pq figures, with any journal that could not be read named), the splits by agent, model, complexity and repository (only where n is at least 5), waiting, occupancy, resources, stops, robot-filed tickets, limits, log health and the open findings; `-Json` for the object |
 | `pq problems [-Days n]` | the open findings only, severity first, each with the events behind it: `PQ-RACE01` (a lost claim), `PQ-SAFE01` (a tripwire), `PQ-SAFE02` (the robot-filed cap), `PQ-LIMIT01` (a limit with no reset time), `PQ-THRASH01`, `PQ-RES03` (a token waited on for 30 minutes), `PQ-STALL01`, `PQ-XREPO01` (a blocker cycle), `PQ-DATA01` (a log gap or error), `PQ-COST02` (`light` that needed three passes), `PQ-ADOPT01` (a repository far below the median) |
 | `pq trace <key:id>` | every event of one ticket in time order, grouped by pass |
 | `pq export [-What runs|events] [-Format jsonl|csv] [-Days n]` | the run rows (default) or the events, to stdout |
@@ -568,6 +568,22 @@ They only read `runs.jsonl` and the event files and compute each time; nothing i
 Ending statuses count passes, not unique tickets. An unchanged status is neither an entry nor an exit;
 where either endpoint is missing, no transition is counted. Missing ending statuses and agents are shown as
 `(unknown)`. `Implemented` appears with the owner-waiting statuses because it waits for an audit.
+
+**Closed unbuilt** counts, per repository, the passes that ended in `Implemented`, `Verified` or `BlockNeedUserTest`
+and whose final answer said `not built, not tested until the release` (the run row's `built=false`, TASK-FLOW rule 23).
+`unknown` is a closing pass with no such sentence: no disclosure, which is not evidence that anything was built. The
+runner reads the sentence from the last main-thread answer of the Claude transcript, or from the last 4 000 characters
+of the `-Quiet` log for another CLI.
+
+**Usage** is read once per launch from the Claude transcript the runner chose by session id, with every file under
+`<session>/subagents/`, each request counted once by its `requestId`; a pass sums its launches (context handoffs too)
+and counts a repeated session once. The list-price estimate uses the dated local snapshot
+`tools/harness/batch/claude-prices.json` (`priceAsOf`), copied from the official Claude API pricing page; nothing is
+fetched at run or report time. It is an estimate, never an invoice: subscription use is not billed at these prices.
+A pass without a transcript (Codex, Gemini, or a CLI without `--session-id`) shows as no usage; a record without a
+`requestId` or a line that does not parse marks the usage incomplete; a model missing from the snapshot, fast mode, a
+cache write without its 5-minute / 1-hour split or an unknown inference region leaves the pass unpriced. Each of these is
+counted and printed as unknown, never as zero. Rows written before 2026-11-12 carry none of these fields.
 
 A repository's own queue stop works on the portfolio too. While its shared stop file (`temp/STOP-SPEC-QUEUE`, written by
 its `rs` or by a release freeze) exists, `pq` takes no ticket there and `PQ Dry-run` prints `skip <key> - stopped`; it

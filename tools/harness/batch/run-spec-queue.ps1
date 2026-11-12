@@ -266,6 +266,7 @@ param(
 . (Join-Path $PSScriptRoot '..\_profile.ps1')
 . (Join-Path $PSScriptRoot '_idle-runs.ps1')
 . (Join-Path $PSScriptRoot '_limit-hold.ps1')
+. (Join-Path $PSScriptRoot '_pass-usage.ps1')
 if ([string]::IsNullOrWhiteSpace($RepoRoot)) { $RepoRoot = Get-SzaProjectRoot }
 # The portfolio dispatcher sets this in the pass's environment rather than passing the switch, so a runner stand-in
 # with a fixed parameter list keeps working.
@@ -1068,7 +1069,9 @@ function Add-RunRecord {
         [string] $Outcome,
         $ExitCode,
         [int] $Minutes,
-        [string] $Complexity = ''
+        [string] $Complexity = '',
+        $Built = $null,
+        $Usage = $null
     )
     $record = [pscustomobject][ordered]@{
         id           = $Id
@@ -1089,6 +1092,16 @@ function Add-RunRecord {
         exitCode     = $ExitCode
         minutes      = $Minutes
         finishedAt   = (Get-Date).ToString('s')
+    }
+    # TASK-FLOW 0.20 rule 23 (S0037): optional, and absent when not known - an absent field is unknown,
+    # never a build, a zero or a free pass.
+    if ($Built -is [bool]) { Add-Member -InputObject $record -NotePropertyName 'built' -NotePropertyValue $Built }
+    if ($null -ne $Usage) {
+        Add-Member -InputObject $record -NotePropertyName 'usage' -NotePropertyValue ([pscustomobject]$Usage.usage)
+        if ($null -ne $Usage.costUsd) {
+            Add-Member -InputObject $record -NotePropertyName 'costUsd' -NotePropertyValue $Usage.costUsd
+            Add-Member -InputObject $record -NotePropertyName 'priceAsOf' -NotePropertyValue $Usage.priceAsOf
+        }
     }
     $results.Add($record)
     # A row that cannot be written must not end the loop. This runs after the child is gone, so the
@@ -2030,9 +2043,24 @@ while ($true) {
         if (-not $moved) { $processed.Add($id) }
     }
 
+    # What the child said about its build and what its session used (S0037). Read once, after the child is
+    # gone; a failure to read is no answer, never a failed runner.
+    $passBuilt = $null
+    $passUsage = $null
+    if ($outcome -notin @('launch-failed', 'claim-lost-before-launch')) {
+        try {
+            $passTranscript = if ($sessionId) { Find-ChildTranscript -SessionId $sessionId } else { $null }
+            $passBuilt = Get-PassBuiltFlag -Text (Get-PassFinalText -TranscriptPath $passTranscript -LogBody $logBody)
+            $passUsage = Get-PassUsage -TranscriptPath $passTranscript -SessionId $sessionId
+        } catch {
+            $passBuilt = $null
+            $passUsage = $null
+        }
+    }
+
     $runRecord = Add-RunRecord -Id $id -ChildModel $childModel -StatusBefore $statusBefore `
             -StatusAfter $statusAfter -Moved $moved -Outcome $outcome -ExitCode $exitCode `
-            -Minutes $elapsed -Complexity $childComplexity
+            -Minutes $elapsed -Complexity $childComplexity -Built $passBuilt -Usage $passUsage
 
     # Read AFTER the row is written, and forced fresh, so the series includes the run that just
     # ended. The count is attached to the in-memory record only - the journal is the input to this
