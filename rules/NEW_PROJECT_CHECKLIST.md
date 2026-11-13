@@ -71,6 +71,9 @@ apply (a CLI tool has no site, a single-locale app skips localization).
 
 - Set the git conventions ([GITHUB_INTERACTION.md](GITHUB_INTERACTION.md)): working-tree-is-truth,
   commit/PR shape, co-author/generator trailers, auth hygiene.
+- The first commit of an imported tree turns the gates that compare with HEAD from COULD NOT VERIFY into real checks:
+  run the product's fast gates again after that commit, not only before it (the Android order is in the
+  [Google Play reference](../skills/store-publish/references/google-play.md) section 1).
 - Write the release runbook ([RELEASE_AND_DISTRIBUTION.md](RELEASE_AND_DISTRIBUTION.md)): the
   build/release boundary, the coverage-regression gate, the per-channel distribute list, post-release
   checks.
@@ -101,7 +104,9 @@ apply (a CLI tool has no site, a single-locale app skips localization).
   factors, then the notices to the family and the records. The steps, the five one-way points (the package name binds at
   the create-app form) and the traps are in the
   [Google Play reference](../skills/store-publish/references/google-play.md) of the `store-publish` skill; run it
-  with the owner's yes in chat at each one-way point.
+  with the owner's yes in chat at each one-way point. Before the first push, read the product's publication tickets and
+  ask their open owner inputs in one batch, and count the Play apps: a second package id (a watch face, a companion app)
+  is a second app with its own declarations.
 - **Support path**: wire the issue tracker + contact email and the diagnostic-log intake
   ([SUPPORT_AND_FEEDBACK.md](SUPPORT_AND_FEEDBACK.md)).
 - **Public product?** Open its promotion ticket before the first public release - positioning worksheet,

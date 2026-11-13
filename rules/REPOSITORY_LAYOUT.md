@@ -119,6 +119,16 @@ says a word. After adding one, check the candidates with `git check-ignore -v <p
 pre-flight list the files that are on disk, ignored and of a build-input kind. A build that passes only
 because an ignored file exists locally proves nothing about the tagged checkout.
 
+**`*token*` and `*secret*` do this to product source** - a design-token file, a secret store of the product itself
+(`RoomSecretStore.kt`, `UiSizeTokens.kt`), seen in three repositories before the check below existed. The globs stay in
+the list, because the leak they pre-empt is the expensive one; a product that owns a source file with either word in
+its name adds a **narrow negation for that one file with a why-comment** (`!app/src/RoomSecretStore.kt`) under the
+glob, never a wider glob or a dropped one. `check-compliance.ps1` names the file: `SZA-SEC05` (advisory) lists every
+ignored file of a code kind that one of the two words hides, offline; a secret store kept ignored on purpose is a dated
+`SZA-SEC05` exemption naming its path. The same listing is the fresh-clone check of the first public push:
+`git ls-files --others --ignored --exclude-standard --directory`, read for source and test fixtures before the push
+([google-play.md](../skills/store-publish/references/google-play.md) section 1).
+
 ## Built binaries & artifacts - retention policy (universal)
 
 Binaries are **build output, not source** - the repo never stores a compiled release.

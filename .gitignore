@@ -9,6 +9,8 @@
 .env
 *token*
 *secret*
+# The two name globs above also hide product source whose name holds the word (RoomSecretStore.kt): keep them, and
+# add a narrow per-file negation with a why-comment for that file - SZA-SEC05 of check-compliance names it.
 
 # Scratch
 temp/

@@ -60,7 +60,10 @@ The reusable one-command publish (hub reference: `deploy.bat`):
 4. Pages rebuilds on push; the custom domain updates within a minute.
 
 **Live means built by the Pages workflow.** Content committed to a branch that the workflow does not build is
-not live: verify the live URL after the trunk merge, never before. And a `paths-ignore` that spares docs from
+not live: verify the live URL after the trunk merge, never before. Verify the URLs the consumers link to, not only the root: a site
+with no landing answers 404 at its root while its privacy pages answer 200 (the
+[Google Play reference](../skills/store-publish/references/google-play.md) section 2); the root answers 200 only once the
+landing exists. And a `paths-ignore` that spares docs from
 CI also spares them from the only gate before Pages publishes - make the deploy job wait for the CI run of
 the same SHA and require it green, or say plainly in the rules file that it does not, and run the doc and
 site checks in the local build and the release pre-flight.

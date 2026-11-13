@@ -7,6 +7,13 @@ It covers what exists **before any bundle is uploaded**: the GitHub repository, 
 every App content declaration, the store settings, the listing, the form factors, and the notices to the family.
 Uploading a bundle, a track release and any "Send for review" are the release, not this page.
 
+First re-run: `streamsplayer_mob`, 2026-11-13. Three corrections from it are folded in below (S0060): what `.gitignore`
+hides, the tracked `PLAN/` and `docs/` prose, and a Pages site that answers before its landing exists.
+
+Second re-run, the same product (S0061): the second Play app, the sign-in declaration, the content-rating branches for
+third-party content, the target audience rule, the Data safety form, the deep links that work, the owner's decision per
+app and the gates after the first commit are folded in below.
+
 ## The one-way steps
 
 Each binds a frozen anchor, accepts terms or publishes something. **Each needs the owner's explicit yes in chat at that
@@ -20,24 +27,38 @@ declaration.
 | The Developer Program Policies and US export laws declarations | Legal declarations |
 | The IARC terms of use in the content rating questionnaire | Accepted terms |
 | The Wear OS review policy opt-in | A policy agreement |
-| A public GitHub repository and a Pages deploy | Outward-facing: the order must name them ("create the repository on GitHub on my behalf") |
+| A public GitHub repository and a Pages deploy | Outward-facing: the order must name them ("create the repository on GitHub on my behalf"). What becomes public is everything tracked - a tracked `PLAN/` and the prose of `docs/` included |
 
 ## Order, and why
 
 1. **Decide in the repository first** (a ticket on the day, the S0008 shape in `deviceinfo_mob`): application id,
-   license, remote name, channel, site pages. The id is the one that cannot be revised after step 4.
+   license, remote name, channel, site pages, whether `PLAN/` is public. The id is the one that cannot be revised after
+   step 4.
 2. GitHub repository. 3. Pages site. 4. Play Console app. 5. Notices to the family. 6. Records.
 
-Pages comes before the console because the console wants the privacy policy URL answering 200 and the store contact
-website; the family notices come last because a notice names URLs that must already answer.
+Pages comes before the console because the console wants the privacy policy URL answering 200; the store contact website
+and the repository homepage wait for the landing (section 2), so Pages may go live with the privacy pages alone. The
+family notices come last because a notice names URLs that must already answer.
 
 ## 0. Preconditions in the repository
 
-- Owner decisions recorded: application id, license, remote name, channel, site pages.
+- Owner decisions recorded: application id, license, remote name, channel, site pages - and **whether `PLAN/` stays
+  public or is ignored**. The canon default is ignored ([REPOSITORY_LAYOUT.md](../../../rules/REPOSITORY_LAYOUT.md) role
+  map); a repository that tracked it while it had no remote (`streamsplayer_mob` had 192 files under `PLAN/` on
+  2026-11-13) publishes every ticket with the first push. Ask the owner in the same batch as the other open inputs; the
+  answer is not assumed from the tree.
+- **The product's own publication tickets come first.** Read them before the first push. A product that already has
+  publication tickets (GitHub, Play, family links) carries open owner inputs in them: what is public, the history shape,
+  the support route, the AI line, the app access, the watch face, the audience, the graphics. Ask all of them in one
+  batch, then push.
+- **Count the Play apps.** A product with a second package id (a watch face, a companion app) is a second Play app: its
+  own create-app form (the package name binds there), its own declarations, IARC questionnaire and Data safety form. Ask
+  for the second app explicitly, as FastMediaSorter does; do not infer it from the tree.
 - `.gitignore` carries the signing leak globs (`*.jks`, `*.keystore`, `keystore.properties`, and the like),
-  `local.properties`, `build/` and `temp/`.
-- `site/` holds the privacy pages in every shipped locale and the rendered landing; the renderer has a byte-exact
-  `-Check`.
+  `local.properties`, `build/` and `temp/`. The canon's `*token*` and `*secret*` globs stay, with a narrow per-file
+  negation for any product source they hide (step 1.2).
+- `site/` holds the privacy pages in every shipped locale, and the rendered landing once it exists; the renderer has a
+  byte-exact `-Check`. A product with no landing yet goes ahead with the privacy pages alone (section 2, step 5).
 - `docs/play/PLAY_LISTING.md` (the texts per locale and the console fields) and `docs/play/PLAY_DATA_SAFETY.md` (Data
   safety, App content and IARC answers) are the single sources; the 512 icon and the 1024x500 feature graphic are render
   targets of the product's store-asset renderer.
@@ -51,14 +72,37 @@ website; the family notices come last because a notice names URLs that must alre
    of that machine; another machine shows the same symptoms in the same places.
 2. Scan what `git add -n .` would stage: no file over 300 KB, no private key, token or password pattern (a test fixture is
    the only expected hit), no `*.jks`, `*.keystore`, `*.p12`, `*.pem`, `*.apk` or `*.aab`; `gradle-wrapper.jar` is expected.
+   Three more scans, each a finding when it hits:
+   - **What `.gitignore` hides.** `git add -n .` cannot show an ignored file, so the clone that will exist after the push
+     is checked from the other side: `git ls-files --others --ignored --exclude-standard --directory` lists the ignored
+     files on disk (fully ignored directories collapse to one line). Read it for source, tests and fixtures. The leak
+     globs `*token*` and `*secret*` hid `RoomSecretStore.kt`, `UiSizeTokens.kt` and its test on 2026-11-13, and the `*.p12`
+     glob hid the self-signed test identity of a TLS test: a fresh clone would not have compiled. `check-compliance.ps1`
+     names the first kind as `SZA-SEC05`; the fix is a narrow per-file negation with a why-comment, the glob stays
+     ([REPOSITORY_LAYOUT.md](../../../rules/REPOSITORY_LAYOUT.md) "Secrets"). A test identity that is tracked on purpose
+     raises `SZA-SEC01` until a dated exemption in `.sza-canon.json` says why.
+   - **Prose that becomes public.** The scan covers the text of `PLAN/` (when it is tracked) and `docs/`, not only code: a
+     private address can sit inside an owner quote in a ticket (one was found in a ticket of `streamsplayer_mob` and
+     redacted before the push). `git grep --no-index --exclude-standard -I -n -o -E
+     "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}" -- PLAN docs` lists every address in the push set, before the
+     first commit and after it (drop `--no-index --exclude-standard` once tracked); then grep for the owner's own
+     phone, street and machine paths, which only the owner can name. The commit author address is the owner's own git
+     setting, the same in every public repository, and is not a finding.
+   - **`PLAN/`.** If it is tracked, the owner's answer from step 0 decides: ignore it (`git rm -r --cached PLAN`, add it
+     to `.gitignore`) or push it after the scan above.
 3. Fast gates green before the first commit: the landing `-Check`, the spec-catalog validator, the release-queue
    validator, and `check-compliance.ps1` (its parameter is `-RepoRoot`, not `-Root`).
 4. Write the commit message to a file and run `git commit -F <file>`: a PowerShell here-string piped to `git commit -F -`
    arrives as a pathspec argument and fails. The co-author trailer goes in the message.
-5. `gh repo create <owner>/<Name> --public --description "<category-first description>" --homepage
-   "https://<owner>.github.io/<Name>/" --source . --remote origin`, then `git push -u origin main`.
+5. `gh repo create <owner>/<Name> --public --description "<category-first description>" --source . --remote origin`, then
+   `git push -u origin main`. **`--homepage "https://<owner>.github.io/<Name>/"` only when the landing already answers
+   200** (the Pages site root answers 404 until a landing exists, section 2); otherwise leave the homepage empty and set it
+   later with `gh repo edit --homepage <url>`.
 6. `gh repo edit --enable-wiki=false --enable-projects=false --add-topic <up to 20 topics>` ([PROMOTION.md](../../../rules/PROMOTION.md)
    on repository metadata). License detection (`gh api repos/<owner>/<repo>/license`) answers within a minute.
+7. Run the step 3 gates again after the first commit. Until a commit exists, a gate that compares with HEAD reports
+   COULD NOT VERIFY; the first commit turns it into a real check ([NEW_PROJECT_CHECKLIST.md](../../../rules/NEW_PROJECT_CHECKLIST.md)
+   section 6).
 
 ## 2. GitHub Pages from `site/` (about 5 minutes)
 
@@ -76,13 +120,23 @@ website; the family notices come last because a notice names URLs that must alre
 5. Verify every page and asset with `curl -s -o /dev/null -w "%{http_code} %{url_effective}\n" -L <url>`, then every external
    link the pages carry (extract each `href` and `src` from the live HTML). The one expected non-200 is the Play button,
    until the listing is published.
+   **A site with no landing yet.** The root `https://<owner>.github.io/<Name>/` answers 404 while the pages beside it
+   (`privacy.html` and its locales, `sitemap.xml`, `robots.txt`) answer 200 - measured for `streamsplayer_mob` on
+   2026-11-13. That is a valid state: Pages goes live with the privacy pages alone, which is all the console needs. The
+   repository homepage and the Play "website" field (step 3.4) stay **empty** until the root answers 200; the
+   product's landing ticket sets both, and the hub card and the notices of section 5 wait for the same 200.
 
 ## 3. Play Console app (about 40 minutes in the owner's browser)
 
 A personal developer account with the owner signed in; Claude in Chrome tools did the clicking on 2026-11-13. App pages
 live under `/console/u/0/developers/<accountId>/app/<appId>/`. **Guessed paths redirect to Home** (`main-store-listing`,
 `advanced-settings`, `app-content/finance-declaration`): navigate through the dashboard and the App content overview
-(`app-content/overview`) and click "Start declaration" instead.
+(`app-content/overview`) and click "Start declaration" instead. These paths open their page when typed directly (the
+2026-11-13 run): `app-content/privacy-policy`, `app-content/ads-declaration`, `app-content/testing-credentials`,
+`app-content/target-audience-content`, `app-content/data-privacy-security`, `app-content/ad-id-declaration`,
+`app-content/government-apps`, `app-content/finance`, `app-content/health`, `app-content/content-rating-overview`; and
+`store-settings` and `advanced-distribution?tab=releaseTypes` (the form factors). The redirect note holds for every other
+slug.
 
 1. Search the account's app list for the name first, so there is no duplicate app.
 2. **Create app.** App name (30 characters); the package name - the form asks for it at creation and has "Check
@@ -93,27 +147,43 @@ live under `/console/u/0/developers/<accountId>/app/<appId>/`. **Guessed paths r
    `PLAY_DATA_SAFETY.md`. Verify each claim against the product before declaring it - the manifests and dependencies, not
    memory.
    - Privacy policy URL: the hosted page, which must answer 200 first.
-   - Sign in details (formerly App access): "No" when no part is restricted.
+   - Sign in details (formerly App access): "No" when no part is restricted. An app with a server-side feature has a
+     restricted part: the console requires the "full access" checkbox, and the review login is entered by the owner.
+     Target audience and the Data safety submit stay locked until Sign in details is saved. The agent never types the
+     review login or password, so this is an owner step that blocks three items at once: say so up front and do the
+     other declarations first. The "Any other information" field takes 500 characters; leave room in it for the owner's
+     server address.
    - Ads: No.
-   - Target audience: 18 and over only (a summary step, then Save).
+   - Target audience: the owner's choice for this app, asked per app and never carried over from another app's answer.
+     A choice that differs from the owner's latest stated decision was refused by the auto-mode safety classifier until
+     the owner answered it explicitly. Answer it after the content rating: when the ESRB rating is Teen or higher, the
+     console disables the groups under 13. Then a summary step, then Save.
    - Advertising ID: No - after checking that no `AD_ID`, ads, Firebase or analytics is in the manifests or dependencies.
    - Government apps: No.
    - Financial features: "My app doesn't provide any financial features" (bottom of the list), Next, Save.
    - Health apps: "My app does not have any health features" - after checking there is no `BODY_SENSORS` or health
      permission - Next, Save.
    - Data safety: Overview Next, then "Does your app collect or share any of the required user data types?" No, Next; the
-     preview reads "No data collection declared / No data shared with third parties"; Save.
+     preview reads "No data collection declared / No data shared with third parties"; Save. The Data safety form is one form per app, with no form-factor choice: the phone and Wear OS share it, so a source that says to fill each form
+     factor separately is wrong. When data is declared, the per-type questions (collected or shared, ephemeral, optional,
+     purposes) open from "Open <type> questions"; the Data types step is an accordion that shows only the open section's
+     checkboxes. "My app does not allow users to create an account" then asks whether users log in with outside accounts
+     and how accounts are created.
    - Content rating: Start questionnaire; the product contact email; category "All Other App Types"; the IARC terms of use
      checkbox (ONE-WAY: ask); downloaded content No, user content sharing No, online content No, age-restricted products
      No; then Miscellaneous - location sharing No, digital purchases No, cash rewards or NFT No, web browser or search
      engine No, news or educational No; Save (Next stays disabled until Save), Next, Summary (Everyone, L for all ages on a
      device-information utility), Save. **A fresh questionnaire per app, never a copied rating id**
-     ([SECURITY_AND_PRIVACY.md](../../../rules/SECURITY_AND_PRIVACY.md) section 5). An app that opens third-party or
-     uncurated content answers differently; answer honestly.
+     ([SECURITY_AND_PRIVACY.md](../../../rules/SECURITY_AND_PRIVACY.md) section 5). An app that plays
+     third-party content does not get the utility answers. "Online content: Yes" opens the violence, sexuality, language
+     and controlled-substance branches, and each has follow-ups that appear as you answer: click each question, because
+     answering by radio index misfires. Check the catalog for adult content before answering: "pornographic: Yes" puts
+     the app outside Play policy. Measured on 2026-11-13 for an app with 37 audio stations in an adult rubric and no
+     pornographic video, the result for the "can provide access" answers was ESRB Teen with "Diverse Content: Discretion Advised", PEGI Parental guidance, USK 16, ClassInd 16 and IARC 12+, not Mature. Answer honestly.
    - The overview then reads "You're all caught up".
 4. **Store settings.** App category (a dropdown, the option is near the end - Tools for a utility), Save; the store listing
-   contact details: the product email and the **website - the product landing, not the repository**, Save. External
-   marketing is left on.
+   contact details: the product email and the **website - the product landing, not the repository**, Save; with no landing
+   yet (section 2) the website field stays empty. External marketing is left on.
 5. **Default store listing** (`store-listings/default/edit`, reached from the dashboard "Set up your store listing"):
    - Set the short and full description with `form_input` on the field refs; the counters confirm the value registered.
    - App icon: "Add assets" opens a side panel whose single hidden `input[type=file]` is not multiple - **upload one file

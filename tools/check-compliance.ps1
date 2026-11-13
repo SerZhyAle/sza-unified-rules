@@ -16,7 +16,7 @@ Groups:
   FLOW   the task flow stands: profile, ledger, launcher (FLOW01-FLOW03, advisory, off unless -CheckTaskFlow;
          Phase 09 of S0015 turns it on)
   CTR    shared contracts: pointers not copies, and the catalog named in exactly one file
-  SEC    secrets and committed artifacts
+  SEC    secrets and committed artifacts (SEC05, advisory: a source file hidden by a name glob)
   VER    version shape and channel manifests
   SURF   product surfaces: privacy page, SEO block, sitemap/robots, promotion traps (rating, keywords)
   STYLE  house text style in prose and user-visible UI text
@@ -962,6 +962,35 @@ try {
         }
         else {
             Add-Finding -Id 'SZA-SEC02' -Severity 'warn' -Path '.gitignore' -Message 'no .gitignore' -Fix 'Add one with the leak globs.'
+        }
+
+        # SZA-SEC05 (S0060) - a source file that a name glob hides. The canon's leak globs (*token*, *secret*)
+        # also swallow product source whose name holds the word (RoomSecretStore.kt, UiSizeTokens.kt): neither
+        # `git add -A` nor a clean tree says a word, and a fresh clone lacks the file. Judged on the working
+        # tree, offline: an ignored file of a code kind, ignored by a .gitignore rule that holds one of the two
+        # words. Fully ignored directories (build/, bin/) are collapsed by --directory and never listed, so a
+        # build-output rule cannot fire it; a hit is cleared by a narrow negation, or - for a real secret store
+        # kept ignored on purpose - by a dated SZA-SEC05 exemption naming the path.
+        $codeRe = '\.(kt|kts|java|cs|vb|go|ts|tsx|js|jsx|py|ps1|psm1|swift|rs|c|cc|cpp|h|hpp)$'
+        $ignoredOnDisk = @(& git -c core.quotepath=false -C $RepoRoot ls-files --others --ignored --exclude-standard --directory 2>$null)
+        if ($LASTEXITCODE -ne 0) { $ignoredOnDisk = @() }
+        $ignoredCode = @($ignoredOnDisk | Where-Object { $_ -notmatch '/$' -and $_ -match $codeRe })
+        if ($ignoredCode.Count -gt 0) {
+            # Paths go as arguments in batches, never through --stdin: a PowerShell pipe ends each line with CR LF
+            # and git then reads the CR as part of the name.
+            $whyIgnored = New-Object System.Collections.Generic.List[string]
+            for ($i = 0; $i -lt $ignoredCode.Count; $i += 40) {
+                $batch = @($ignoredCode[$i..([Math]::Min($i + 39, $ignoredCode.Count - 1))])
+                foreach ($out in @(& git -c core.quotepath=false -C $RepoRoot check-ignore -v -- @batch 2>$null)) { $whyIgnored.Add([string]$out) }
+            }
+            foreach ($line in $whyIgnored) {
+                if ($line -notmatch '^(?<src>[^:]*):(?<n>\d+):(?<pat>[^\t]*)\t(?<path>.*)$') { continue }
+                $ruleSrc = $Matches.src; $ruleLine = $Matches.n; $rulePat = $Matches.pat; $hidden = $Matches.path
+                if ($ruleSrc -notmatch '(^|[\\/])\.gitignore$' -or $rulePat -notmatch '(?i)token|secret') { continue }
+                Add-Finding -Id 'SZA-SEC05' -Severity 'warn' -Path $hidden `
+                    -Message "source file hidden by the name glob '$rulePat' ($($ruleSrc):$ruleLine) - a fresh clone lacks it" `
+                    -Fix 'Product source: add a narrow negation ("!path/File.kt") with a why-comment under the glob; keep the glob. A real secret store kept ignored on purpose: a dated SZA-SEC05 exemption naming the path.'
+            }
         }
 
         # SZA-SEC03 - a committed binary needs a narrow negation AND a why-comment.
