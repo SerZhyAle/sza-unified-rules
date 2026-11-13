@@ -90,6 +90,7 @@ if ($PSBoundParameters.ContainsKey('Status') -and $Status -ne 'BlockNeedUserTest
 # Phase 2: apply changes in memory and assert
 $now = Get-Now
 $results = New-Object System.Collections.Generic.List[string]
+$hookMoves = [System.Collections.Generic.List[hashtable]]::new()
 
 foreach ($ticketId in $Id) {
     $idx = $indexMap[$ticketId]
@@ -159,6 +160,7 @@ foreach ($ticketId in $Id) {
     }
 
     $allRecords[$idx] = $updated
+    $hookMoves.Add(@{ Id = $ticketId; Old = [string]$oldStatus; New = [string]$updated.status })
     $results.Add(("{0} {1} -> {2} (priority: {3})" -f $ticketId, $oldStatus, $updated.status, $updated.priority))
 }
 
@@ -196,4 +198,12 @@ if ($PSBoundParameters.ContainsKey('Status')) {
 Exit-CatalogLock
 
 foreach ($line in $results) { Write-Output $line }
+
+# TASK-FLOW rule 69, per ticket, after the lock: back-links on entry into BlockByOtherTask, releases after a move.
+if ($PSBoundParameters.ContainsKey('Status')) {
+    . (Join-Path $PSScriptRoot '_block-links-hook.ps1')
+    foreach ($move in $hookMoves) {
+        Invoke-BlockLinksHook -Id $move.Id -OldStatus $move.Old -NewStatus $move.New -NoteChanged:$noteSupplied
+    }
+}
 exit 0

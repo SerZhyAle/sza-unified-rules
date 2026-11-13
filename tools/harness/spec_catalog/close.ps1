@@ -96,4 +96,8 @@ if ((Sync-SpecHeaderStatus -PathRef $updated.file -Status $Status -Wrote ([ref]$
 Exit-CatalogLock
 
 Write-Output ("{0} {1} -> {2} [closed {3}]" -f $Id, $oldStatus, $Status, $today)
+
+# TASK-FLOW rule 69: a closed ticket releases the tickets it held.
+. (Join-Path $PSScriptRoot '_block-links-hook.ps1')
+Invoke-BlockLinksHook -Id $Id -OldStatus $oldStatus -NewStatus $Status
 exit 0

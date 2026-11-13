@@ -233,6 +233,13 @@ Exit-CatalogLock
 
 Write-Output ("{0} {1} -> {2}" -f $Id, $oldStatus, $updated.status)
 
+# TASK-FLOW rule 69: the back-link on entry into BlockByOtherTask, and the release of the tickets this one holds
+# after any status move. After the lock, best effort, never changes the exit code.
+if ($PSBoundParameters.ContainsKey('Status')) {
+    . (Join-Path $PSScriptRoot '_block-links-hook.ps1')
+    Invoke-BlockLinksHook -Id $Id -OldStatus $oldStatus -NewStatus $updated.status -NoteChanged:$noteExplicit
+}
+
 # S2372: a status transition is a moment sibling sessions want to see. Posted from a child process
 # so the catalog mutator stays decoupled from the lock library, and best effort so a chat failure
 # cannot change the transition that already happened.

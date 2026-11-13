@@ -50,7 +50,7 @@ pwsh -File deploy.ps1 -DryRun                             # the gates + what wou
   `check-rules.ps1` 0.8 s, `check-contracts.ps1` 2.4 s, `check-documents.py` 0.6 s, `assert-portable.ps1` 1.1 s;
   release tier - `layout-gate.tests.ps1` 26.5 s, `portfolio-events.tests.ps1` 20.4 s, `ticket-id-grammar.tests.ps1`
   about 18 s, and from 2026-10-28 `ledger-rules.tests.ps1` 313 s, `portfolio-queue.tests.ps1` about 200-330 s,
-  `smoke-portfolio-runner.ps1` 120-300 s, `batch-runner.tests.ps1` 163 s. What stays is the fast list and a direct call of
+  `smoke-portfolio-runner.ps1` 120-300 s, `batch-runner.tests.ps1` 163 s, and from 2026-11-13 `block-links.tests.ps1` 19 s. What stays is the fast list and a direct call of
   the function or script that was changed. A release-tier suite runs only when the owner asks for it by name. When a change
   is not covered by a fast check, say so in the report instead of running a slow one.
 - **The deploy names all four fast checks** (from 2026-11-11): after `check-rules.ps1`, which blocks, it runs

@@ -14,6 +14,29 @@
 #
 # Compatible with PowerShell 5.1 and 7+, and safe to load under Set-StrictMode Latest.
 
+function Get-DependsOnValue {
+    # The text of the spec's `**Depends on:**` line, or $null when the spec has none (TASK-FLOW rule 9:
+    # "a line"). The line runs on through wrapped continuation lines and stops at a blank line, a heading,
+    # another bold field, a list item, a table row or a quote. When the label line itself is empty, the
+    # list directly under it (blank lines allowed between) is the value - the one multi-line shape found on
+    # disk (FastMediaSorter S0296).
+    #
+    # Until 2026-11-13 the capture ran to the next line STARTING with `**` or the next `## ` heading, so it
+    # swallowed a `### 3.3` block's `Related tickets` bullet (OneClickRunner T0031 read T0025 and T0028 as
+    # blockers and the picker skipped it as blocker-not-verified), a `- **Blocks/Enables:**` line and
+    # "no longer a blocker" neighbour bullets - the S1482 inversion again. Measured over every registered
+    # repository: 6260 files carry the label, 21 read differently, and every spec among them reads right now.
+    param([string] $Text)
+    if (-not $Text) { return $null }
+    $line = [regex]::Match($Text, '(?m)\*\*Depends on:\*\*[ \t]*(?<v>[^\r\n]*(?:\r?\n(?![ \t]*(?:\r?$|#|\*\*|[-*+][ \t]|\||>))[^\r\n]*)*)')
+    if (-not $line.Success) { return $null }
+    $value = $line.Groups['v'].Value
+    if ($value.Trim()) { return $value }
+    $list = [regex]::Match($Text, '(?m)\*\*Depends on:\*\*[ \t]*\r?\n(?:[ \t]*\r?\n)*(?<v>(?:[ \t]*[-*+][ \t][^\r\n]*(?:\r?\n|$))+)')
+    if ($list.Success) { return $list.Groups['v'].Value }
+    return ''
+}
+
 function Get-BlockerLinks {
     # Resolve the ids this spec is BLOCKED BY. Only sources whose FORM states the direction,
     # because "related to" is not "blocked by" (S1482). Two of them: a `**Depends on:**` line,
@@ -50,9 +73,9 @@ function Get-BlockerLinks {
     $note = if ($null -ne $StatusNote) { [string]$StatusNote } else { '' }
 
     $ids = @()
-    $depMatch = [regex]::Match($text, '(?ms)\*\*Depends on:\*\*\s*(.+?)(?:^\*\*|\r?\n##\s|\z)')
-    if ($depMatch.Success) {
-        $ids = @([regex]::Matches($depMatch.Groups[1].Value, ('\b' + (Get-SzaTicketIdFragment) + '\b')) | ForEach-Object { $_.Value })
+    $depValue = Get-DependsOnValue -Text $text
+    if ($null -ne $depValue) {
+        $ids = @([regex]::Matches($depValue, ('\b' + (Get-SzaTicketIdFragment) + '\b')) | ForEach-Object { $_.Value })
     }
     else {
         $tokenText = $note

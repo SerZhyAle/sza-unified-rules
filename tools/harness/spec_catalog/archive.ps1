@@ -278,6 +278,14 @@ if ($plans.Count -gt 0) {
 }
 
 foreach ($line in $lines) { Write-Output $line }
+# TASK-FLOW rule 69: an archived ticket releases the tickets it held (Archived releases unconditionally).
+$archivedVar = Get-Variable -Name archivedIds -Scope Script -ErrorAction Ignore
+if ($null -ne $archivedVar -and $null -ne $archivedVar.Value) {
+    . (Join-Path $PSScriptRoot '_block-links-hook.ps1')
+    foreach ($archivedId in @($archivedVar.Value)) {
+        Invoke-BlockLinksHook -Id ([string]$archivedId) -OldStatus '' -NewStatus 'Archived'
+    }
+}
 if ($ids.Count -gt 1) {
     $tail = ''
     if ($noArtefact.Count -gt 0) { $tail += ' | NO ARTEFACT: ' + ($noArtefact -join ', ') }

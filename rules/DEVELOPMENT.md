@@ -98,6 +98,14 @@ compile-only -> targeted tests -> minified release variant -> device) lives in
   against the sibling ledger and releases the waiting ticket when the blocker reaches a release-ready status.
   `BlockExternal` is reserved for parties outside the portfolio (vendors, upstream maintainers, store reviews,
   hardware shipment).
+- **A blocker carries a back-link to every ticket it holds, and the work that moves it frees them** (TASK-FLOW
+  rule 69). Entering `BlockByOtherTask` writes `- Blocks: <ref> | was: <status> | since: <date>` under
+  `## Blocked tickets` in each blocker's spec, in this repository or another registered one. Every status move
+  of the blocker checks those lines and returns each waiting ticket whose blockers are all released to its
+  `was` status, so the runners pick it up again without anyone remembering it. The status tools do this; a
+  session never edits the lines or unblocks by hand. When a dependency ends for a reason no status shows, the
+  session that knows it removes the `Blocker:` token from the waiting ticket and runs `block-links.ps1 -Check`
+  for it.
 - **Where a machine must know direction, require a literal token - never infer it from prose.** A ticket's
   "related tickets" prose names blockers, successors, consumers and neighbours in the same breath, and it
   is equally happy to *deny* a relationship: measured on the reference corpus, **98 spec files yield a

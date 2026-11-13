@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Contract | `TASK-FLOW` |
-| Version | 0.25, draft |
+| Version | 0.26, draft |
 | Home | the shared contracts catalog, domain `task-flow/` (the path is in [CLAUDE.md](../../CLAUDE.md)) |
 | Role | **shared implementation, partial**: `tools/harness/` supplies the ticket tools, repository runner and day-0 scaffold; `tools/harness/portfolio/` supplies the S0015 dispatcher, registry, queue, rank and event log. Remaining portfolio features belong to S0016. The owner is `shared`, so this repository edits the contract only through the canon session |
 
@@ -94,3 +94,9 @@
   `Sync-PqRegisteredQueues` right after the rule 65 registration, rewrites `file` through `update.ps1 -File` only when
   exactly one file of the same name exists in the other directory, and records `ticket.relinked` or `queue.row` kind
   `unrelinked` (EVENTS 3.5 and 3.3). Checked by a direct call on a scratch project; no fast fixture yet.
+- 0.26 (2026-11-13): a blocker carries a back-link to every ticket it holds and its status moves release them
+  (rule 69). `spec_catalog/block-links.ps1` (`-Link`, `-Release`, `-Check`, `-Sweep [-AllRepos]`, `-DryRun`) is
+  called after the write by `update.ps1`, `bulk-update.ps1`, `close.ps1` and `archive.ps1` through
+  `_block-links-hook.ps1` (`SZA_BLOCK_LINKS=0` switches the call off); a cross-repository release runs `-Check` in
+  the other repository, whose own `update.ps1` moves the ticket. The same edit makes `_blocker-links.ps1` read
+  `**Depends on:**` as its line (rule 9). Covered by `tools/tests/block-links.tests.ps1` (6 cases, release tier).

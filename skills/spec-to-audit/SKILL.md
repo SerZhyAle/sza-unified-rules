@@ -133,6 +133,26 @@ carrying a qualified `<repoKey>:<id>` blocker; the portfolio dispatcher resolves
 repositories and releases the dependent when the blocker reaches a release-ready status). Both are legitimate -
 claiming every token is enforced at closure is not.
 
+**A blocker knows whom it holds, and the pass that moves it lets them go** (TASK-FLOW rule 69). Entering
+`BlockByOtherTask` through the status tool writes `- Blocks: <ref> | was: <status> | since: <date>` under
+`## Blocked tickets` in every blocker's spec - local, or in another registered repository with `<ref>` as
+`<key>:<id>` - and every later status move of that blocker (update, bulk update, close, archive) checks the lines:
+a waiting ticket whose blockers are all released goes back to its `was` status (to `Draft` when a gate refuses
+it), and its line is closed with `released: <date> -> <status>`. So:
+
+- **Read the section when you take a ticket.** It names who waits on this work; say in the report which of them
+  the pass freed (the tool prints `block-links: ... released`) and which stay held and why.
+- **Never write or close a `Blocks:` line by hand** and never move a waiting ticket out of its block by hand
+  because its blocker moved - the tool does both, with the gates of the target status.
+- **A dependency that ends without a status** - a decision dropped it, or the piece the waiting ticket needed
+  was built elsewhere, so a `Partial` or `Approved` blocker no longer holds it in substance - is ended by the
+  pass that knows it: remove the `Blocker:` token (or the id from `**Depends on:**`) in the waiting ticket's spec
+  and `statusNote`, keeping a dated plain-text line of why, then run
+  `spec_catalog/block-links.ps1 -Check -Id <id>` in that ticket's repository (`SZA_PROJECT_ROOT`), which releases
+  it once nothing else holds it.
+- `block-links.ps1 -Sweep [-AllRepos]` writes the missing back-links of tickets blocked before the rule and
+  releases those already free.
+
 ## Stage 2 - Plan: the tactical how
 
 Three passes, then a mandatory self-review:

@@ -75,7 +75,7 @@ the panel's #), then priority; every other scope puts the current folder's proje
 | `-Id` and `here=` is any other status or `absent`, and `blockquestions=` lists others | do not guess. Say in one line that the id here is `<status>` and not waiting, list the waiting ones with their names, and ask which, with `AskUserQuestion` (`multiSelect` - a sitting over several is allowed) |
 | nothing here, but other projects have waiting tickets | `-All`, report the count per project, and sit over them as `--all` does - no "which project" question |
 | nothing waiting anywhere | say so, with the status the asked-for id actually has |
-| a ticket in another status | Quiz mode step 1 decides: `BlockNeedUserTest` needs a run (Sweep mode), `BlockExternal` needs the outside party, `BlockByOtherTask` clears on its blocker. Report it and mutate nothing |
+| a ticket in another status | Quiz mode step 1 decides: `BlockNeedUserTest` needs a run (Sweep mode), `BlockExternal` needs the outside party, `BlockByOtherTask` clears on its blocker (the blocker's status move frees it, TASK-FLOW rule 69; when the owner's answer drops the dependency, remove the `Blocker:` token and run `block-links.ps1 -Check -Id <id>`). Report it and mutate nothing else |
 
 There is no ticket cap: the sitting takes every listed ticket in the list's order, and an owner who stops early
 leaves the rest waiting, untouched (Quiz mode step 7). Tickets that name each other as prerequisites in their notes
