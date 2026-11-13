@@ -14,6 +14,12 @@ Second re-run, the same product (S0061): the second Play app, the sign-in declar
 third-party content, the target audience rule, the Data safety form, the deep links that work, the owner's decision per
 app and the gates after the first commit are folded in below.
 
+Third re-run, `tourist_mob`, 2026-11-13 (S0063): the history of a repository that already had commits, the images of the push set, a site with no privacy page, the ephemeral-processing answer, the activity category, the target audience before any rating, the queue robot during the push, the gates that run without the plugin, the plugin path, and the console details of the Wear OS step, the asset panel and the screenshots are folded in below.
+
+Fourth re-run, `filler_mob`, 2026-11-13 (S0065): an earlier removed app of the same product on the account, an unborn branch, a product whose code is not ported yet, a console id bound before its build, the read-back of typed console values, a transient git lock, and the price words that the listing check flags are folded in below.
+
+This file is read from the plugin cache, whose version folder changes with every deploy. Resolve the plugin root from `~/.claude/plugins/installed_plugins.json` (the `sza@sza-unified-rules` entry), never from a hard-coded version; the `spec-draft` skill's Step 0 does the same.
+
 ## The one-way steps
 
 Each binds a frozen anchor, accepts terms or publishes something. **Each needs the owner's explicit yes in chat at that
@@ -33,7 +39,7 @@ declaration.
 
 1. **Decide in the repository first** (a ticket on the day, the S0008 shape in `deviceinfo_mob`): application id,
    license, remote name, channel, site pages, whether `PLAN/` is public. The id is the one that cannot be revised after
-   step 4.
+   step 4. The console may bind the decided id before the build carries it (section 0).
 2. GitHub repository. 3. Pages site. 4. Play Console app. 5. Notices to the family. 6. Records.
 
 Pages comes before the console because the console wants the privacy policy URL answering 200; the store contact website
@@ -47,6 +53,11 @@ family notices come last because a notice names URLs that must already answer.
   map); a repository that tracked it while it had no remote (`streamsplayer_mob` had 192 files under `PLAN/` on
   2026-11-13) publishes every ticket with the first push. Ask the owner in the same batch as the other open inputs; the
   answer is not assumed from the tree.
+- **The console may bind the decided id before the build carries it.** On the filler_mob run the build still carried a
+  provisional id (`com.sza.filler.provisional`) under a release guard that refuses release packaging while the id ends
+  in `.provisional`, and the console app was created with the decided id, which binds it. The build switch stays with the
+  release ticket, because it lifts the guard and needs a build. The record names that ticket, and no bundle goes to the
+  console under the provisional id.
 - **The product's own publication tickets come first.** Read them before the first push. A product that already has
   publication tickets (GitHub, Play, family links) carries open owner inputs in them: what is public, the history shape,
   the support route, the AI line, the app access, the watch face, the audience, the graphics. Ask all of them in one
@@ -54,14 +65,30 @@ family notices come last because a notice names URLs that must already answer.
 - **Count the Play apps.** A product with a second package id (a watch face, a companion app) is a second Play app: its
   own create-app form (the package name binds there), its own declarations, IARC questionnaire and Data safety form. Ask
   for the second app explicitly, as FastMediaSorter does; do not infer it from the tree.
+- **A product whose code is not ported yet.** Its source manifest is the first input of the privacy page, the Data safety
+  answers and the listing, but the order describes the finished product (invariant 17), while invariant 14 needs the page
+  and the form to match what ships. On the filler_mob run the one empty activity had no permission and no INTERNET, while
+  the upstream code the port carries uses a system folder picker with a persistable grant, an app-specific external files
+  directory and StatFs, and has no service and no network. So audit the upstream source the port carries as well, and write
+  into `docs/play/PLAY_DATA_SAFETY.md` the clause that a port adding a permission, a library, a service or a network call
+  changes the page and the form in the same edit.
 - `.gitignore` carries the signing leak globs (`*.jks`, `*.keystore`, `keystore.properties`, and the like),
   `local.properties`, `build/` and `temp/`. The canon's `*token*` and `*secret*` globs stay, with a narrow per-file
   negation for any product source they hide (step 1.2).
 - `site/` holds the privacy pages in every shipped locale, and the rendered landing once it exists; the renderer has a
-  byte-exact `-Check`. A product with no landing yet goes ahead with the privacy pages alone (section 2, step 5).
+  byte-exact `-Check`. A product with no landing yet goes ahead with the privacy pages alone (section 2, step 5). A product
+  with no privacy page at all needs the minimum of [SITE_CONFIGURATION.md](../../../rules/SITE_CONFIGURATION.md) section 6.
+  The page text comes from a permission and network audit of the source manifest of every source set (variant removals
+  with `tools:node="remove"` included) and of the network code. A merged manifest left in `build/` by an earlier build is
+  stale - it lacks permissions added since - and is not the audit's source.
 - `docs/play/PLAY_LISTING.md` (the texts per locale and the console fields) and `docs/play/PLAY_DATA_SAFETY.md` (Data
   safety, App content and IARC answers) are the single sources; the 512 icon and the 1024x500 feature graphic are render
   targets of the product's store-asset renderer.
+- **Hold the queue before the first push.** A portfolio-queue robot may still write into the tree while the import is
+  prepared: on the Tourist_mob run it created eight tickets during the run, and one of them failed the docs style gate
+  minutes before the import commit. Check `pq` for the project and hold it (`pq hold <key>`, see the
+  [portfolio-queue](../../portfolio-queue/SKILL.md) skill), or state in chat that the import takes whatever is on disk.
+  Rerun the product's gates immediately before `git add -A`.
 
 ## 1. GitHub repository (about 5 minutes)
 
@@ -90,10 +117,30 @@ family notices come last because a notice names URLs that must already answer.
      setting, the same in every public repository, and is not a finding.
    - **`PLAN/`.** If it is tracked, the owner's answer from step 0 decides: ignore it (`git rm -r --cached PLAN`, add it
      to `.gitignore`) or push it after the scan above.
+   - **Images.** Look at every image in the push set, montaged to save turns: a capture can show what no text scan finds.
+     On the Tourist_mob run an emulator's notification shade showed the emulator's signed-in Google account name, and a
+     location capture was safe only because its ticket recorded a fixed `geo fix`. Record a disposition for each image.
+   - **The history.** A push carries every commit, not only the tree: an address removed from a ticket stays in each
+     commit that carried it. Before the first public push, list the commits with `git rev-list --all`, and the commits
+     whose diff adds or removes a match with `git log --all --oneline -G "<pattern>"` (the pattern of the prose scan
+     above). Where the history holds a match, redact it without touching the working tree, which may hold other sessions'
+     edits and makes `git filter-branch` refuse: first `git bundle create <file outside the repository> --all`; then for
+     each commit in order, `git read-tree` into a temporary `GIT_INDEX_FILE`, `git update-index --cacheinfo` with the
+     redacted blob, `git write-tree`, and `git commit-tree` with the already rewritten parent (`-p`) and the original
+     author and committer names, emails and dates (`GIT_AUTHOR_*` and `GIT_COMMITTER_*` from `git show -s --date=raw`);
+     finally `git update-ref` with the old value. The gates of step 3 run again after the rewrite, as in step 7.
 3. Fast gates green before the first commit: the landing `-Check`, the spec-catalog validator, the release-queue
    validator, and `check-compliance.ps1` (its parameter is `-RepoRoot`, not `-Root`).
 4. Write the commit message to a file and run `git commit -F <file>`: a PowerShell here-string piped to `git commit -F -`
    arrives as a pathspec argument and fails. The co-author trailer goes in the message.
+   - **Unborn branch.** A repository that `git init` created may have no commit yet and an unborn branch named `master`,
+     while this runbook pushes `main`. Before the first commit, run `git branch --show-current`; if it names `master`, run
+     `git symbolic-ref HEAD refs/heads/main` first. A rename after the push would have to move the remote's default branch
+     as well. (filler_mob, 2026-11-13: the `.git` folder had no commit.)
+   - **Transient index lock.** Right after `git add -A` on a Windows checkout, `git commit` can fail once with
+     `Unable to create .git/index.lock: File exists`; a second later the lock was gone and the same commit succeeded
+     (filler_mob, 2026-11-13). Look at the lock first: its age, and whether a git process is alive (`Get-Process git` in the
+     PowerShell tool). Retry once. Never delete the lock blindly, because a live process may own it.
 5. `gh repo create <owner>/<Name> --public --description "<category-first description>" --source . --remote origin`, then
    `git push -u origin main`. **`--homepage "https://<owner>.github.io/<Name>/"` only when the landing already answers
    200** (the Pages site root answers 404 until a landing exists, section 2); otherwise leave the homepage empty and set it
@@ -111,6 +158,9 @@ family notices come last because a notice names URLs that must already answer.
    job runs the renderer's `-Check`, and the `deploy` job (`needs: check`) runs `configure-pages@v5`,
    `upload-pages-artifact@v3` (`path: site`) and `deploy-pages@v4`
    ([SITE_CONFIGURATION.md](../../../rules/SITE_CONFIGURATION.md) section 4).
+   Any gate that the `check` job calls must run without the plugin, because the runner has none: the Tourist_mob docs
+   gate is called with its `-NoHarness` switch. A gate that needs the installed plugin cannot run there, so give it a
+   no-plugin switch and call that.
 2. **Trap: `core.autocrlf` on the Windows runner.** It checks out with `core.autocrlf=true`, so LF render targets become
    CRLF and a byte-exact `-Check` fails in CI while it passes locally. The template's first step of the check job is
    `git config --global core.autocrlf false`, before `actions/checkout`.
@@ -138,11 +188,24 @@ live under `/console/u/0/developers/<accountId>/app/<appId>/`. **Guessed paths r
 `store-settings` and `advanced-distribution?tab=releaseTypes` (the form factors). The redirect note holds for every other
 slug.
 
-1. Search the account's app list for the name first, so there is no duplicate app.
+**Read every typed value back.** After typing into a console field, read the field's value before saving, not only the
+character counters of a listing field. On the filler_mob run, select-all and typing over the contact email in the IARC
+questionnaire left a stray character in it; only a triple-click, Delete and a retype fixed it. Read the value, not the count.
+
+1. Search the account's app list for the name first, so there is no duplicate app. **An earlier app of the same product is
+   a finding, not a duplicate to skip.** When the search finds an app with another package id that is removed or
+   unpublished, open its Policy status before the create-app form and tell the owner what it says. The owner's earlier yes
+   for the package name did not know it, so the one-way yes of step 2 is asked again with that fact in hand. A corrected new
+   version is allowed; re-publishing the violation is not. The console shows only the generic policy line, so the original
+   notice - in the owner's mailbox - is read before the first "Send for review" (section 4). Creating the draft app sends
+   nothing for review. (filler_mob, 2026-11-13: an app of the same name from 2018, "Removed by Google", Policy status "Not
+   adhering to Google Play Developer Program policies", rejected on 2018-06-07.)
 2. **Create app.** App name (30 characters); the package name - the form asks for it at creation and has "Check
    availability" (ONE-WAY: the application id is bound to the account from this click); default language `en-US`; type
    App; Free (ONE-WAY); the declarations - Developer Program Policies and US export laws (ONE-WAY: ask). Google adds an
-   automatic installer check, on by default; leave it.
+   automatic installer check, on by default; leave it. **Before this form**, read the planned title and short
+   description for price and promotion words - "free", "best", "#1", "new" and the like - even when the word names a
+   technical thing; step 5 has the flags that follow.
 3. **App content**, each item saved separately ("Change saved. Send for review in Publishing overview"), from
    `PLAY_DATA_SAFETY.md`. Verify each claim against the product before declaring it - the manifests and dependencies, not
    memory.
@@ -157,18 +220,28 @@ slug.
    - Target audience: the owner's choice for this app, asked per app and never carried over from another app's answer.
      A choice that differs from the owner's latest stated decision was refused by the auto-mode safety classifier until
      the owner answered it explicitly. Answer it after the content rating: when the ESRB rating is Teen or higher, the
-     console disables the groups under 13. Then a summary step, then Save.
+     console disables the groups under 13. On a brand-new app, before any questionnaire, the page already disables those
+     groups: the unrated default is Teen or higher. When the app wants them, file the content rating questionnaire first.
+     Then a summary step, then Save.
    - Advertising ID: No - after checking that no `AD_ID`, ads, Firebase or analytics is in the manifests or dependencies.
    - Government apps: No.
    - Financial features: "My app doesn't provide any financial features" (bottom of the list), Next, Save.
-   - Health apps: "My app does not have any health features" - after checking there is no `BODY_SENSORS` or health
-     permission - Next, Save.
+   - Health apps: "My app does not have any health features" - after checking there is no `BODY_SENSORS` permission, no
+     `ACTIVITY_RECOGNITION` permission and no step-counter sensor in the manifests and dependencies - Next, Save. Health is
+     not only body sensors: a phone step counter (steps and cadence tiles) is "Activity and fitness". A ticked feature
+     opens a second step, "Regional requirements" (nothing was required on the 2026-11-13 account), then Save.
    - Data safety: Overview Next, then "Does your app collect or share any of the required user data types?" No, Next; the
      preview reads "No data collection declared / No data shared with third parties"; Save. The Data safety form is one form per app, with no form-factor choice: the phone and Wear OS share it, so a source that says to fill each form
      factor separately is wrong. When data is declared, the per-type questions (collected or shared, ephemeral, optional,
      purposes) open from "Open <type> questions"; the Data types step is an accordion that shows only the open section's
      checkboxes. "My app does not allow users to create an account" then asks whether users log in with outside accounts
-     and how accounts are created.
+     and how accounts are created. Ephemeral processing does not change the store preview: declaring precise location and
+     in-app search history as collected, not shared, processed ephemerally still shows "No data collection declared / No
+     data shared with third parties", because Play does not show ephemerally processed data on the listing. The deletion
+     question is optional, and its third answer is "No, but user data is automatically deleted within 90 days". A "not
+     collected" answer must hold by construction: the FastMediaSorter answer rests on a tile-quantized coordinate, and a
+     full-precision fix sent to a third-party API is declared as collected - the owner's rule is to declare strictly by
+     the facts.
    - Content rating: Start questionnaire; the product contact email; category "All Other App Types"; the IARC terms of use
      checkbox (ONE-WAY: ask); downloaded content No, user content sharing No, online content No, age-restricted products
      No; then Miscellaneous - location sharing No, digital purchases No, cash rewards or NFT No, web browser or search
@@ -183,26 +256,43 @@ slug.
    - The overview then reads "You're all caught up".
 4. **Store settings.** App category (a dropdown, the option is near the end - Tools for a utility), Save; the store listing
    contact details: the product email and the **website - the product landing, not the repository**, Save; with no landing
-   yet (section 2) the website field stays empty. External marketing is left on.
+   yet (section 2) the website field stays empty; its `https://` placeholder is not a value, so leave it as it is. External marketing is left on.
 5. **Default store listing** (`store-listings/default/edit`, reached from the dashboard "Set up your store listing"):
    - Set the short and full description with `form_input` on the field refs; the counters confirm the value registered.
    - App icon: "Add assets" opens a side panel whose single hidden `input[type=file]` is not multiple - **upload one file
-     per call**: the icon first, then click the feature graphic's "Add assets" and upload the 1024x500 file.
+     per call**: the icon first, then click the feature graphic's "Add assets" and upload the 1024x500 file. The side panel stays open over the form until its own close is clicked.
+   - **Price words.** The console's automated check does not read "Free space" as a technical term: on the filler_mob run the
+     title "Filler: Fill Free Space" and the short description "Fill a storage's free space .." were flagged under App quality guidance
+     ("app name: Should not use keywords that indicate price or promotion"; the short description guideline). The
+     flags show only in the listing editor, not at create-app. After the first listing save, read the editor for "App quality
+     guidance" lines; a save of a clean text makes them disappear, and the replacement wording is the owner's to choose, so
+     ask it with the other open inputs.
    - "Save as draft" (Next belongs to the review step).
    - Languages: the language chip, Manage languages, search and tick each shipped locale (`ru-RU`, `uk` on the reference
      product), Apply; fill each language's name, short and full description, "Next language", Save as draft. Graphics fall
-     back to the default language.
+     back to the default language. One "Save as draft" saves every language at once. A translated listing inherits the default
+     language's screenshots, and the first edit copies them into that language (on the Tourist_mob run, 10 / 8 in `ru-RU`
+     and `uk`, which blocked every save). Removing them returns the language to inheritance; uploading the language's own
+     files then replaces the inherited set. Give localized captures distinct file names (`ru_01_<name>.png`,
+     `uk_01_<name>.png`), because the panel identifies thumbnails by file name.
    - Phone screenshots (2 to 8, 16:9 or 9:16, 320 to 3840 px) are required to finish the listing and come from a real
-     device check; the dashboard stays at 10 of 11 setup tasks until then.
+     device check; the dashboard stays at 10 of 11 setup tasks until then. The screenshot panel's file input accepts several files, but they
+     land in upload-completion order, not in the order given: drag the thumbnails in the section to reorder (a left-click
+     drag works), or upload one file per call.
 6. **Wear OS.** Test and release, the form factor chip, Manage form factors (Advanced settings, the Form factors tab), "Add
    form factor", Wear OS. The console then lists three steps: Wear OS screenshots for every listing, a Wear bundle on a
-   testing track, and the opt-in to the Wear OS review policy (ONE-WAY: ask). Android XR shows as Active by Google's default;
-   leave it - never shrink reach ([PLATFORM_OVERLAYS.md](../../../rules/PLATFORM_OVERLAYS.md) Overlay B).
+   testing track, and the opt-in to the Wear OS review policy (ONE-WAY: ask). The third step stays locked until the first two are done, so a
+   pre-upload run never reaches it. Android XR shows as Active by Google's default;
+   leave it - never shrink reach ([PLATFORM_OVERLAYS.md](../../../rules/PLATFORM_OVERLAYS.md) Overlay B). The asset side panel stays bound
+   to the section it was opened for: a click on a collapsed section's hidden "Add assets" does not rebind it. Expand the
+   section and click its visible "Add assets" first, or the Wear OS screenshots land in Phone screenshots ("10 / 8, Too many images", and the save fails).
 
 ## 4. Not part of this run
 
 The upload keystore, the release bundles, the app signing key import at the first upload, any track release and any "Send
-for review" - the release, with its pre-flight and its update-over-a-prior-install proof. The account-level "Declare your
+for review" - the release, with its pre-flight and its update-over-a-prior-install proof. Where section 3, step 1 found an earlier removed
+app of the same product, the release reads that app's original notice first and checks the new listing against it before the
+first "Send for review": a corrected new version is allowed, re-publishing the violation is not. The account-level "Declare your
 trader status" banner (due February 2027 on the reference account) belongs to the owner, not to a product. The console
 shows setup finished only after the screenshots exist.
 

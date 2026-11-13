@@ -6,8 +6,12 @@ their exclusion is deliberate, rather than a claim that their old links and typo
 
 Local engineering records have an independent ignored registry under `dev/`. Initialize it in a new
 checkout with `python tools/docs/check-documents.py --init-local --register --render`. The local corpus
-configuration declares the existing engineering roots and excludes frozen completed tickets. Neither
-the published registry nor its generated map lists local records. A clone without a local corpus checks
+configuration declares the existing engineering roots and excludes frozen completed tickets and every
+ticket file (`PLAN/S<nnnn>_*.md`): the ledger records a ticket, so a capture needs no registry row and
+no step is owed after one. Other documents under `PLAN/` - queue files, phase notes, attachments - are
+registered like any document. A checkout whose local corpus was written before this exclusion adds the
+second ignore entry from `LOCAL_IGNORE` in `tools/docs/check-documents.py` and runs `--register --render`
+once; the tickets' rows drop out. Neither the published registry nor its generated map lists local records. A clone without a local corpus checks
 the published corpus only; the verdict reports how many corpora it inspected.
 
 Each record declares its path, topic, product area, update triggers and source/render role. When adding

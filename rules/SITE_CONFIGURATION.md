@@ -103,6 +103,13 @@ release flow instead - see [GITHUB_INTERACTION.md](GITHUB_INTERACTION.md) §4.
 4. Add the SEO block + mandatory pages (DOCUMENTATION_CONCEPT §3-4) and build from the style-guide
    components.
 5. Run the [site-audit](../skills/site-audit/SKILL.md) skill against the live URL after the first publish (§7).
+6. **Privacy pages only, no landing yet?** The minimum that passed the Play console for a product with no site (the
+   Tourist_mob run, 2026-11-13) is three hand-written pages on the vendored kit - `sza-kit.css` copied byte for byte, its
+   hash in `PROVENANCE.txt`, and `-text` for it in `.gitattributes` - plus `sitemap.xml`, `robots.txt`, and a small check
+   for the Pages check job. The check asserts one `h1`, a canonical link, `og:url`, reciprocal `hreflang`, that every
+   relative `href` resolves, that the sitemap lists every page, the kit hash, and no leftover `...` placeholder. Its gate
+   is section 2 of the [Google Play reference](../skills/store-publish/references/google-play.md); the page text comes from
+   the permission and network audit described in its section 0.
 
 ## 7. Auditing a live site
 

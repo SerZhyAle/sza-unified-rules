@@ -66,6 +66,9 @@ apply (a CLI tool has no site, a single-locale app skips localization).
 - Adopt the flagship "no claim without evidence" rule + the evidence ladder
   ([TESTING_AND_QA.md](TESTING_AND_QA.md)).
 - Script the pre-release sweep with a written verdict; write the persona happy-path check.
+- A gate that a CI runner calls must run without the harness plugin, because the runner has none: give the gate a
+  no-plugin switch and call that. The Pages check job of the [Google Play reference](../skills/store-publish/references/google-play.md)
+  (section 2) calls the product's docs gate with `-NoHarness`.
 
 ## 6. Git & release
 
@@ -74,6 +77,14 @@ apply (a CLI tool has no site, a single-locale app skips localization).
 - The first commit of an imported tree turns the gates that compare with HEAD from COULD NOT VERIFY into real checks:
   run the product's fast gates again after that commit, not only before it (the Android order is in the
   [Google Play reference](../skills/store-publish/references/google-play.md) section 1).
+- Before the first commit of a repository that `git init` created, check that HEAD names `main`: an unborn branch is named
+  `master` by default, and the Google Play reference pushes `main` (section 1, step 4 there has the check and the lock retry).
+- Before a repository's first public push, scan its history and its images, not only the working tree: an address
+  removed from a ticket stays in every earlier commit, and a screenshot can show an account name. The procedure is in
+  section 1 of the Google Play reference.
+- Before that push, hold the project in the portfolio queue (`pq hold <key>`) or state that the import takes whatever is
+  on disk: a robot writing into the tree during the import changes what gets published. Rerun the gates immediately
+  before `git add -A`.
 - Write the release runbook ([RELEASE_AND_DISTRIBUTION.md](RELEASE_AND_DISTRIBUTION.md)): the
   build/release boundary, the coverage-regression gate, the per-channel distribute list, post-release
   checks.
@@ -94,7 +105,9 @@ apply (a CLI tool has no site, a single-locale app skips localization).
   surfaces localize, the parity-enforced string tool, the shipped locales.
 - **Store submission?** Fill the privacy/permissions posture
   ([SECURITY_AND_PRIVACY.md](SECURITY_AND_PRIVACY.md)): privacy page, data-safety declaration,
-  permission justifications.
+  permission justifications. A product whose code is not ported yet is audited against the upstream source its port carries
+  as well, and a port that adds a permission, a library, a service or a network call changes the page and the form in the
+  same edit.
 - **Has a web property?** Configure hosting/domain/deploy
   ([SITE_CONFIGURATION.md](SITE_CONFIGURATION.md)) and build pages from the web style kit + the SEO
   block. A site built from sources by a script gets the Pages workflow template
@@ -106,7 +119,10 @@ apply (a CLI tool has no site, a single-locale app skips localization).
   [Google Play reference](../skills/store-publish/references/google-play.md) of the `store-publish` skill; run it
   with the owner's yes in chat at each one-way point. Before the first push, read the product's publication tickets and
   ask their open owner inputs in one batch, and count the Play apps: a second package id (a watch face, a companion app)
-  is a second app with its own declarations.
+  is a second app with its own declarations. Search the account for an earlier app of the same product before the create-app
+  form: an app the store removed is read first (its Policy status and the original notice), and the one-way yes is asked again
+  with that fact in hand. Check the planned title and short description for price words the console flags, even when the
+  word is technical.
 - **Support path**: wire the issue tracker + contact email and the diagnostic-log intake
   ([SUPPORT_AND_FEEDBACK.md](SUPPORT_AND_FEEDBACK.md)).
 - **Public product?** Open its promotion ticket before the first public release - positioning worksheet,
@@ -117,7 +133,8 @@ apply (a CLI tool has no site, a single-locale app skips localization).
 - Reserve the overlay's **frozen anchors** (package id / identity / signing key / module path) - unique
   per product, never changed after first ship. Everything else can be reorganized later; these cannot. **On Google
   Play the `applicationId` is bound when the console app is created**, so reserve it there - before the first upload and
-  before the create-app form is opened ([PLATFORM_OVERLAYS.md](PLATFORM_OVERLAYS.md) Overlay B).
+  before the create-app form is opened ([PLATFORM_OVERLAYS.md](PLATFORM_OVERLAYS.md) Overlay B). The console may bind the
+  decided id before the build carries it; the build switch then belongs to the release ticket that lifts the guard.
 
 ## 9. First release dry-run
 

@@ -13,6 +13,16 @@ from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
 
+# What --init-local writes into a new local corpus as its ignore list. Ticket files are recorded by the ledger, so a
+# registry row for one would repeat it and be missing from the first capture to the next --register.
+LOCAL_IGNORE = [
+    {"pattern": "PLAN/DONE/*.md", "reason": "Frozen completed ticket records; no archive rewrite."},
+    {"pattern": "PLAN/S[0-9][0-9][0-9][0-9]_*.md",
+     "reason": "Ticket records belong to the ledger (PLAN/spec-catalog.jsonl), written by every capture and status "
+               "move; a registry row would repeat it and go stale the day a ticket is captured."},
+]
+
+
 def prose(text):
     lines = []
     fence = None
@@ -215,7 +225,7 @@ def main():
             roots = ["dev"] + (["PLAN"] if (root / "PLAN").exists() else [])
             local_config.write_text(json.dumps({
                 "visibility": "local", "registry": "dev/DOCUMENT_REGISTRY.jsonl", "map": "dev/DOCS_MAP.md",
-                "roots": roots, "ignore": [{"pattern": "PLAN/DONE/*.md", "reason": "Frozen completed ticket records; no archive rewrite."}]
+                "roots": roots, "ignore": LOCAL_IGNORE
             }, indent=2) + "\n", encoding="utf-8")
             (root / "dev/DOCS_MAP.md").touch(exist_ok=True)
         configs = args.config or [Path("docs/document-corpus.json")]

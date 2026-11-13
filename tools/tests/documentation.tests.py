@@ -160,6 +160,34 @@ class Documents(unittest.TestCase):
         (self.root / "docs/image.svg").write_text("<svg/>")
         self.assertFailure("asset outside local corpus")
 
+    def test_init_local_leaves_ticket_files_to_the_ledger(self):
+        (self.root / ".gitignore").write_text("dev/\nPLAN/\n")
+        plan = self.root / "PLAN"
+        (plan / "S0001_first-ticket").mkdir(parents=True)
+        (plan / "S0001_first-ticket.md").write_text("# S0001_first-ticket\n")
+        (plan / "S0001_first-ticket/attachment.md").write_text("# Attachment\n")
+        (plan / "NOTES.md").write_text("# Notes\n")
+
+        def run(*extra):
+            return subprocess.run([sys.executable, str(ROOT / "tools/docs/check-documents.py"), "--root", str(self.root),
+                                   "--config", "docs/corpus.json", "--config", "dev/document-corpus.json", *extra],
+                                  capture_output=True, text=True, check=False)
+
+        first = run("--init-local", "--register", "--render")
+        self.assertEqual(first.returncode, 0, first.stdout)
+        registered = {r["path"] for r in DOCS.read_records(self.root / "dev/DOCUMENT_REGISTRY.jsonl")}
+        self.assertIn("PLAN/NOTES.md", registered)
+        self.assertIn("PLAN/S0001_first-ticket/attachment.md", registered)
+        self.assertNotIn("PLAN/S0001_first-ticket.md", registered)
+        # A ticket captured after the registry was written owes no row; any other document under PLAN does.
+        (plan / "S0002_second-ticket.md").write_text("# S0002_second-ticket\n")
+        self.assertEqual(run().returncode, 0, run().stdout)
+        (plan / "LATER.md").write_text("# Later\n")
+        later = run()
+        self.assertEqual(later.returncode, 1, later.stdout)
+        self.assertIn("PLAN/LATER.md: missing registry entry", later.stdout)
+        self.assertNotIn("S0002", later.stdout)
+
 
 if __name__ == "__main__":
     suite = unittest.defaultTestLoader.loadTestsFromTestCase(Documents)
