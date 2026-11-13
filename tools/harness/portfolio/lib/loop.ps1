@@ -34,7 +34,9 @@ function Get-PqNextRank {
         [string]$NamedTicket = '',
         [string]$OnlyRepo = '',
         [switch]$FirstHead,
-        [switch]$CheckXrepo
+        [switch]$CheckXrepo,
+        # Passed to Get-PqRank: refuse a head inside the walk (the loop's rule 52 check), see there.
+        [scriptblock]$HeadFilter = $null
     )
     if (-not $HarnessRoot) { $HarnessRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..')) }
     if (@($Occupied).Count -eq 0) {
@@ -79,6 +81,7 @@ function Get-PqNextRank {
     if ($NamedTicket) { $rankArgs.NamedTicket = $NamedTicket }
     if ($OnlyRepo) { $rankArgs.OnlyRepo = $OnlyRepo }
     if ($FirstHead) { $rankArgs.FirstHead = $true }
+    if ($null -ne $HeadFilter) { $rankArgs.HeadFilter = $HeadFilter }
     if ($CheckXrepo) {
         $ranker = {
             param($blockedIds)
@@ -1096,11 +1099,26 @@ function Start-PqLoop {
                     }
                 }
                 else {
+                    # Rule 52 inside the walk: a head held by a blocker in another project is refused there and the walk
+                    # goes on, instead of one whole rank per such head (step 6 below keeps its check as the backstop).
+                    $regForFilter = $Registry
+                    $xrepoFilter = { param($k, $i) Get-PqXrepoBlock -Registry $regForFilter -RepoKey $k -TicketId $i }.GetNewClosure()
                     if ((Get-PqValue $Registry 'fill' 'depth') -ceq 'breadth' -and $busyRepos.Count -gt 0) {
-                        $rank = Get-PqNextRank -Registry $Registry -HarnessRoot $harness -Exclude $rankExclude -Occupied (@($rankOccupied) + @($busyRepos)) -Slots 1 -StopAfter 1 @repoOnly
+                        $rank = Get-PqNextRank -Registry $Registry -HarnessRoot $harness -Exclude $rankExclude -Occupied (@($rankOccupied) + @($busyRepos)) -Slots 1 -StopAfter 1 -HeadFilter $xrepoFilter @repoOnly
                         if (@($rank.candidates).Count -eq 0) { $rank = $null }
                     }
-                    if ($null -eq $rank) { $rank = Get-PqNextRank -Registry $Registry -HarnessRoot $harness -Exclude $rankExclude -Occupied $rankOccupied -Slots 1 -StopAfter 1 @repoOnly }
+                    if ($null -eq $rank) { $rank = Get-PqNextRank -Registry $Registry -HarnessRoot $harness -Exclude $rankExclude -Occupied $rankOccupied -Slots 1 -StopAfter 1 -HeadFilter $xrepoFilter @repoOnly }
+                    foreach ($hr in @(Get-PqValue $rank 'headRefused' @())) {
+                        $xb = $hr.refusal
+                        $xbKey = "$($hr.repo):$($hr.id)"
+                        if ($xblocked.ContainsKey($xbKey)) { continue }
+                        $exclude.Add($xbKey)
+                        $xblocked[$xbKey] = @{ repo = [string]$hr.repo; id = [string]$hr.id; blocker = $xb.blocker }
+                        $null = Write-PqEvent -Log $log -Ev 'xrepo.resolve' -Run $runId -Repo $hr.repo -Id $hr.id -Worker $slot -D ([ordered]@{ blocked = $xbKey; blocker = $xb.blocker; state = $xb.state; blockerStatus = $xb.status })
+                        if ($xb.state -ceq 'cycle') { $null = Write-PqEvent -Log $log -Ev 'xrepo.cycle' -Run $runId -Worker $slot -D ([ordered]@{ members = @($xbKey, $xb.blocker) }) }
+                        $null = Write-PqEvent -Log $log -Ev 'ticket.blocked' -Run $runId -Repo $hr.repo -Id $hr.id -Worker $slot -D ([ordered]@{ status = [string]$hr.status; why = (ConvertTo-PqCut $xb.why 80); blocker = $xb.blocker })
+                        Write-Host "ticket $xbKey waits on $($xb.blocker) ($($xb.state): $($xb.why))"
+                    }
                 }
                 foreach ($e in @($rank.events)) {
                     if ($e.ev -ceq 'queue.row') {

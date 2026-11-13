@@ -873,7 +873,9 @@ function Invoke-PqStatus {
     if ($Next -and $null -ne $reg) {
         try {
             $harness = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-            $rank = Get-PqNextRank -Registry $reg -HarnessRoot $harness -Slots 1 -StopAfter 1 -CheckXrepo
+            # Rule 52 inside the one walk (Get-PqRank -HeadFilter), as the loop does: not one walk per blocked head.
+            $regNext = $reg
+            $rank = Get-PqNextRank -Registry $reg -HarnessRoot $harness -Slots 1 -StopAfter 1 -HeadFilter ({ param($k, $i) Get-PqXrepoBlock -Registry $regNext -RepoKey $k -TicketId $i }.GetNewClosure())
             if (@($rank.candidates).Count -gt 0) {
                 $nextCandidate = [ordered]@{
                     repo = [string]$rank.candidates[0].repo

@@ -140,8 +140,13 @@ function Get-PqRank {
         [ValidateRange(0, [int]::MaxValue)][int]$StopAfter = 0,
         [string]$NamedTicket = '',
         [string]$OnlyRepo = '',
-        [switch]$FirstHead
+        [switch]$FirstHead,
+        # Asked of every head the walk of step 3 finds: param($RepoKey, $Id) -> $null when the head may be offered, else
+        # an object saying why not (the loop passes Get-PqXrepoBlock, rule 52). A refused head is excluded and the SAME
+        # entry is asked again, so one walk goes past every blocked head instead of the caller ranking once per head.
+        [scriptblock]$HeadFilter = $null
     )
+    $headRefused = [Collections.Generic.List[object]]::new()
     $namedMode = $false
     $namedRepo = ''
     $namedId = ''
@@ -334,6 +339,22 @@ function Get-PqRank {
         if ($StopAfter -gt 0 -and $found -ge $StopAfter) { break }
         if ($FirstHead -and $reposWithHead.Contains($e.repo)) { continue }
         $p = & $pickOne $e $false
+        # Measured 2026-11-13: three hub tickets waiting on other projects cost a full walk each (about a minute per walk,
+        # the higher-ranked repositories asked again every time) before the robot reached work. Refuse them here, inside
+        # the walk; the next ask of the entry carries the grown exclusion, so only this repository's picker runs again.
+        if ($null -ne $HeadFilter -and -not $namedMode) {
+            $guard = 0
+            while ($null -ne $p.head -and $guard -lt 50) {
+                $guard++
+                $hid = [string](Get-PqRankValue $p.head 'id')
+                $refusal = & $HeadFilter $e.repo $hid
+                if ($null -eq $refusal) { break }
+                $repoExclude[$e.repo].Add($hid)
+                $excluded.xrepo++
+                $headRefused.Add([ordered]@{ repo = $e.repo; id = $hid; status = [string](Get-PqRankValue $p.head 'status'); refusal = $refusal })
+                $p = & $pickOne $e $false
+            }
+        }
         if ($namedMode) { $namedOffered = ($null -ne $p.head); $namedWhy = if ($namedOffered) { $null } else { [string]$p.why } }
         if ($null -eq $p.head) {
             if ($e.kind -eq 'ticket') { $walk.Add(@{ entry = $e; head = $null; why = "notOffered:$($p.why)"; id = $e.id }) }
@@ -437,6 +458,7 @@ function Get-PqRank {
         candidates = $candidates.ToArray(); plan = $plan.ToArray(); skipped = $skipped.ToArray(); excluded = $excluded
         autoSkipReasons = $autoSkip; fill = $Fill; heads = $heads; ms = [int]$sw.ElapsedMilliseconds
         queueRows = $queueRows.Count; queueBad = $queueBad; events = $events.ToArray()
+        headRefused = $headRefused.ToArray()
     }
     if ($namedMode) {
         $result.named = @{ repo = $namedRepo; id = $namedId; offered = $namedOffered; why = $namedWhy; heldBypassed = $heldBypassed }
