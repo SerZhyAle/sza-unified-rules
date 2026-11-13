@@ -1102,7 +1102,8 @@ function Start-PqLoop {
                     # Rule 52 inside the walk: a head held by a blocker in another project is refused there and the walk
                     # goes on, instead of one whole rank per such head (step 6 below keeps its check as the backstop).
                     $regForFilter = $Registry
-                    $xrepoFilter = { param($k, $i) Get-PqXrepoBlock -Registry $regForFilter -RepoKey $k -TicketId $i }.GetNewClosure()
+                    $xrepoSnaps = @{}
+                    $xrepoFilter = { param($k, $i) Get-PqXrepoBlock -Registry $regForFilter -RepoKey $k -TicketId $i -Snapshots $xrepoSnaps }.GetNewClosure()
                     if ((Get-PqValue $Registry 'fill' 'depth') -ceq 'breadth' -and $busyRepos.Count -gt 0) {
                         $rank = Get-PqNextRank -Registry $Registry -HarnessRoot $harness -Exclude $rankExclude -Occupied (@($rankOccupied) + @($busyRepos)) -Slots 1 -StopAfter 1 -HeadFilter $xrepoFilter @repoOnly
                         if (@($rank.candidates).Count -eq 0) { $rank = $null }

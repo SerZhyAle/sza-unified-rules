@@ -76,11 +76,14 @@ function Read-PqSpecText([string]$File) {
 }
 
 function Get-PqXrepoBlock {
-    param([Parameter(Mandatory)]$Registry, [Parameter(Mandatory)][string]$RepoKey, [Parameter(Mandatory)][string]$TicketId)
+    param([Parameter(Mandatory)]$Registry, [Parameter(Mandatory)][string]$RepoKey, [Parameter(Mandatory)][string]$TicketId,
+        # Ledger snapshots shared across calls of ONE rank walk (the head filter asks once per queue row); omitted, each
+        # call reads the ledgers afresh, as before.
+        [hashtable]$Snapshots = $null)
     $byKey = @{}
     foreach ($r in @($Registry.repos)) { $byKey[[string]$r.key] = $r }
     if (-not $byKey.ContainsKey($RepoKey)) { return $null }
-    $snaps = @{}
+    $snaps = if ($null -ne $Snapshots) { $Snapshots } else { @{} }
     $self = Get-PqXrepoTicket $byKey[$RepoKey] $TicketId $snaps
     if ($null -eq $self) { return $null }
     foreach ($pair in @(Get-PqXrepoBlockers (Read-PqSpecText $self.file) $self.statusNote)) {

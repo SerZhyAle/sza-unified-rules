@@ -320,6 +320,18 @@ function Get-PqRank {
         if ($Entry.kind -eq 'ticket') {
             if (@($repoExclude[$Entry.repo]) -ccontains $Entry.id) { return @{ head = $null; why = 'excluded' } }
             if ($WithPlanned -and @($st.planned) -ccontains $Entry.id) { return @{ head = $null; why = 'planned' } }
+            # A queue row names its ticket, so the head filter can refuse it BEFORE the picker runs: the filter reads
+            # ledgers in-process in milliseconds, a picker is a child process of one to five seconds. Measured
+            # 2026-11-13: 190 picker runs and 168 s for one rank, 23 of the rows held by another project's blocker.
+            if ($null -ne $HeadFilter -and -not $namedMode) {
+                $refusal = & $HeadFilter $Entry.repo ([string]$Entry.id)
+                if ($null -ne $refusal) {
+                    $repoExclude[$Entry.repo].Add([string]$Entry.id)
+                    $excluded.xrepo++
+                    $headRefused.Add([ordered]@{ repo = $Entry.repo; id = [string]$Entry.id; status = ''; refusal = $refusal })
+                    return @{ head = $null; why = 'xrepo' }
+                }
+            }
             $r = & $ask $Entry.repo $extra $Entry.id
             if (-not $r.ok) { return @{ head = $null; why = 'pickerFailed' } }
             return @{ head = $r.head; why = $(if ($null -eq $r.head) { [string]$r.why } else { $null }) }

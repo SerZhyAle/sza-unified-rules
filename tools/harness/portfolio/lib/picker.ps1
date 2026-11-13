@@ -138,10 +138,26 @@ function Get-PqPickerHead {
     # same first question, and a queue whose blocked rows pile up above the head paid one child per row (a night of
     # 2026-10-29 spent 15 minutes a pass ranking 58 such rows).
     $ck = "$RepoPath|$(@($Exclude) -join ',')"
+    # A forced row asks whether ONE ticket is offerable. Whether it is ranked at all, auto-skipped (idle hold, unreleased
+    # blocker, owner gate), leased or malformed does not depend on what else is excluded, so any earlier run of this
+    # repository in the same rank answers a "no" without a new child. Measured 2026-11-13: every refused head grew the
+    # exclusion, and each growth re-ran the picker for every later row of that repository (2-5 s a row).
+    $anyKey = "$RepoPath|<any>"
+    if ($ForceId -and $null -ne $Cache -and -not $Cache.ContainsKey($ck) -and $Cache.ContainsKey($anyKey)) {
+        $known = $Cache[$anyKey].payload
+        if ($null -ne $known) {
+            $kRanked = @(Get-PqPayloadIds $known.ranked)
+            $kWhy = $null
+            if ((Get-PqPayloadIds $known.leased_ids) -ccontains $ForceId) { $kWhy = 'leased' }
+            elseif ($kRanked -cnotcontains $ForceId) { $kWhy = if ((Get-PqPayloadIds $known.malformed) -ccontains $ForceId) { 'malformed' } else { 'notRanked' } }
+            else { $kWhy = Get-PqAutoSkipReason $known $ForceId }
+            if ($kWhy) { return @{ ok = $true; head = $null; payload = $known; why = $kWhy; error = $null; ms = 0 } }
+        }
+    }
     if ($null -ne $Cache -and $Cache.ContainsKey($ck)) { $first = $Cache[$ck] }
     else {
         $first = Invoke-PqPicker -RepoPath $RepoPath -Exclude $Exclude -HarnessRoot $HarnessRoot -TimeoutSeconds $TimeoutSeconds
-        if ($null -ne $Cache -and $first.ok) { $Cache[$ck] = $first }
+        if ($null -ne $Cache -and $first.ok) { $Cache[$ck] = $first; $Cache[$anyKey] = $first }
     }
     if (-not $first.ok) { return @{ ok = $false; head = $null; payload = $null; why = 'pickerFailed'; error = $first.error; ms = $first.ms } }
     $payload = $first.payload
