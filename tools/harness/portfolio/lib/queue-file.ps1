@@ -45,6 +45,11 @@
 #       repository's insert.ps1. @{ repo; id; file; status; ok; err } per file tried; -List only names them (ok
 #       $null) and writes nothing. State: the files the tool
 #       refused, not offered again by this process until they change.
+#   Repair-PqTicketFileRefs -Repo <registry record> [-HarnessRoot] [-List]
+#       ledger -> moved file (rule 68): a row of the active journal whose 'file' is missing gets the one file of the
+#       same name in the other of paths.specsDir and paths.specArchiveDir, through the repository's update.ps1 -File.
+#       @{ repo; id; from; to; ok; err } per row tried; -List only names them. State: the rows the tool refused, not
+#       offered again by this process until the journal changes.
 #   Read-PqTicketQueueRows -Path <file>
 #       that file's ticket rows in file order, each @{ id; token; tail; unscheduled } (token: the id with its slug;
 #       tail: changed, status and any note, as written; unscheduled: under its '--'); $null when the file is absent or
@@ -53,8 +58,9 @@
 #       [ordered] key -> Read-PqTicketQueueRows of every registered repository, in registry order.
 #   Sync-PqRegisteredQueues -Path -Registry [-Key] [-Log]
 #       Register-PqTicketFiles for the enabled repositories (or -Key), each result recorded as ticket.created
-#       (source import) or queue.row (kind unregistered), then Sync-PqQueueFile from Get-PqQueueSources under the
-#       machine-wide sync lock; the result carries registered.
+#       (source import) or queue.row (kind unregistered), then Repair-PqTicketFileRefs for the same repositories, each
+#       rewrite recorded as ticket.relinked or queue.row (kind unrelinked), then Sync-PqQueueFile from
+#       Get-PqQueueSources under the machine-wide sync lock; the result carries registered and relinked.
 #   Sync-PqQueueFile -Path -Sources <IDictionary> [-Log] [-BeforeRename <sb>]
 #       keeps the file the way a repository's plan tool keeps its RELEASE_QUEUE.md: a <repo>:<id> row whose ticket is
 #       still in its repository's queue gets that ticket's slug, changed time ('yy-MM-dd HH:mm' whatever shape the source
@@ -811,7 +817,7 @@ function Register-PqTicketFiles {
         $err = $null
         try {
             $r = Invoke-PqRepoChild -RepoPath $repoPath -Script (Join-Path (Get-PqHarnessRoot $HarnessRoot) 'spec_catalog\insert.ps1') `
-                -Arguments @('-Id', $id, '-File', $rel, '-Name', $name, '-Status', $status) -TimeoutSeconds 120
+                -Arguments @('-Id', $id, '-File', $rel, '-Name', $name, '-Status', $status) -TimeoutSeconds 120 -ExtraEnv @{ SZA_PQ_IN_SYNC = '1' }
         }
         catch { $err = $_.Exception.Message }
         $ok = ($null -ne $r -and -not $r.timedOut -and $r.code -eq 0)
@@ -821,6 +827,63 @@ function Register-PqTicketFiles {
         }
         else { $null = $known.Add($id) }
         $row = [ordered]@{ repo = [string]$Repo.key; id = $id; file = $rel; status = $status; ok = $ok }
+        if (-not $ok) { $row.err = ConvertTo-PqCut ([string]$err) 300 }
+        $out.Add($row)
+    }
+    return $out.ToArray()
+}
+
+# Ledger rows whose ticket file was moved by hand between the specs and the archive directory (TASK-FLOW rule 68): a
+# row of the active journal whose 'file' does not exist gets the one file of the same name found at the top level of
+# the other directory, through the repository's own update tool (-File changes 'file' and 'updated', nothing else).
+# No candidate or two: the row is left for a person. A row the tool refused is not offered again by this process
+# until the journal changes. @{ repo; id; from; to; ok; err } per row tried; -List only names them.
+$script:PqRelinkRefused = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+
+function Repair-PqTicketFileRefs {
+    param([Parameter(Mandatory)]$Repo, [string]$HarnessRoot, [switch]$List)
+    $out = [Collections.Generic.List[object]]::new()
+    $repoPath = [string]$Repo.path
+    $prof = Read-PqRepoProfile $repoPath
+    if ($null -eq $prof) { return $out.ToArray() }
+    $journal = Get-PqRepoProfilePath -RepoPath $repoPath -Key 'journal' -Profile $prof
+    if (-not [IO.File]::Exists($journal)) { return $out.ToArray() }
+    $dirs = @(foreach ($k in 'specsDir', 'specArchiveDir') {
+            $v = [string](Get-PqRepoProfileValue -RepoPath $repoPath -Section 'paths' -Key $k -Profile $prof)
+            if ($v) { $v.Replace('\', '/').TrimEnd('/') }
+        }) | Select-Object -Unique
+    if (@($dirs).Count -lt 2) { return $out.ToArray() }
+    $journalStamp = [IO.File]::GetLastWriteTimeUtc($journal).Ticks
+    foreach ($line in [IO.File]::ReadAllLines($journal)) {
+        if ([string]::IsNullOrWhiteSpace($line)) { continue }
+        try { $rec = ConvertFrom-Json -InputObject $line -DateKind String } catch { continue }
+        $id = [string]$rec.id
+        $from = ([string]$rec.file).Replace('\', '/')
+        if (-not $id -or -not $from -or [IO.Path]::IsPathFullyQualified($from)) { continue }
+        if ([IO.File]::Exists((Join-Path $repoPath $from))) { continue }
+        $leaf = [IO.Path]::GetFileName($from)
+        $found = @(foreach ($d in $dirs) {
+                $c = "$d/$leaf"
+                if ($c -cne $from -and [IO.File]::Exists((Join-Path $repoPath $c))) { $c }
+            })
+        if ($found.Count -ne 1) { continue }
+        $to = $found[0]
+        $refusedKey = "$journal|$id|$to|$journalStamp"
+        if ($script:PqRelinkRefused.Contains($refusedKey)) { continue }
+        if ($List) { $out.Add([ordered]@{ repo = [string]$Repo.key; id = $id; from = $from; to = $to; ok = $null }); continue }
+        $r = $null
+        $err = $null
+        try {
+            $r = Invoke-PqRepoChild -RepoPath $repoPath -Script (Join-Path (Get-PqHarnessRoot $HarnessRoot) 'spec_catalog\update.ps1') `
+                -Arguments @('-Id', $id, '-File', $to) -TimeoutSeconds 120 -ExtraEnv @{ SZA_PQ_IN_SYNC = '1' }
+        }
+        catch { $err = $_.Exception.Message }
+        $ok = ($null -ne $r -and -not $r.timedOut -and $r.code -eq 0)
+        if (-not $ok) {
+            if (-not $err -and $null -ne $r) { $err = (([string]$r.stdout).Trim() + ' ' + ([string]$r.stderr).Trim()).Trim() }
+            $null = $script:PqRelinkRefused.Add($refusedKey)
+        }
+        $row = [ordered]@{ repo = [string]$Repo.key; id = $id; from = $from; to = $to; ok = $ok }
         if (-not $ok) { $row.err = ConvertTo-PqCut ([string]$err) 300 }
         $out.Add($row)
     }
@@ -840,6 +903,7 @@ function Sync-PqRegisteredQueues {
     # File -> ledger first (rule 65), outside the lock: a ticket registered now is in this sync's sources. Every
     # registration is recorded, logged or not, because it writes a repository's ledger.
     $registered = [Collections.Generic.List[object]]::new()
+    $relinked = [Collections.Generic.List[object]]::new()
     $targets = if ($Key) { @($Registry.repos | Where-Object { [string]$_.key -ceq $Key }) } else { @($Registry.repos | Where-Object { $_.enabled -eq $true }) }
     foreach ($t in $targets) {
         foreach ($reg in @(Register-PqTicketFiles -Repo $t)) {
@@ -847,6 +911,13 @@ function Sync-PqRegisteredQueues {
             if ($null -eq $script:PqDefaultLog) { $null = Open-PqLog -Writer cli }
             if ($reg.ok) { $null = Write-PqEvent -Ev 'ticket.created' -Repo $reg.repo -Id $reg.id -D ([ordered]@{ source = 'import'; status = $reg.status; priority = 50; file = $reg.file }) }
             else { $null = Write-PqEvent -Ev 'queue.row' -Repo $reg.repo -Id $reg.id -D ([ordered]@{ kind = 'unregistered'; line = 0; text = (ConvertTo-PqCut "$($reg.file): $($reg.err)" 80) }) }
+        }
+        # Ledger row -> moved file (rule 68), same scope and the same reason to record every rewrite.
+        foreach ($rel in @(Repair-PqTicketFileRefs -Repo $t)) {
+            $relinked.Add($rel)
+            if ($null -eq $script:PqDefaultLog) { $null = Open-PqLog -Writer cli }
+            if ($rel.ok) { $null = Write-PqEvent -Ev 'ticket.relinked' -Repo $rel.repo -Id $rel.id -D ([ordered]@{ from = $rel.from; to = $rel.to }) }
+            else { $null = Write-PqEvent -Ev 'queue.row' -Repo $rel.repo -Id $rel.id -D ([ordered]@{ kind = 'unrelinked'; line = 0; text = (ConvertTo-PqCut "$($rel.to): $($rel.err)" 80) }) }
         }
     }
     $bytes = [Text.Encoding]::UTF8.GetBytes([IO.Path]::GetFullPath($Path).ToLowerInvariant())
@@ -869,6 +940,7 @@ function Sync-PqRegisteredQueues {
             $result = Sync-PqQueueFile -Path $Path -Sources $sources -Log:$Log
             $result.unreadable = $unreadable
             $result.registered = $registered.ToArray()
+            $result.relinked = $relinked.ToArray()
             if ($result.ok -or $result.error -cne 'QueueChangedOnDisk') { return $result }
         }
         return $result

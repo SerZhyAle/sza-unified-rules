@@ -694,6 +694,9 @@ function Get-CurrentRelease {
 
 function Sync-PortfolioProjection {
     # The catalog remains authoritative. A failed portfolio projection must not undo a status write.
+    # A child of the queue sync itself (rule 65 insert, rule 68 relink) carries SZA_PQ_IN_SYNC: that sync refreshes
+    # the projection after its children, and a nested one would start the next child again, one level deeper each row.
+    if ($env:SZA_PQ_IN_SYNC -eq '1') { return }
     $pqSync = Join-Path $libDir '../portfolio/sync-project.ps1'
     if (Test-Path -LiteralPath $pqSync) {
         $syncOutput = & (Get-Process -Id $PID).Path -NoProfile -File $pqSync -ProjectRoot $script:RepoRoot 2>&1

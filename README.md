@@ -98,6 +98,7 @@ went unprotected. Now [`hooks/`](hooks/README.md) carries them:
 | --- | --- | --- | --- |
 | `session-start` | `SessionStart` | injects | the hard invariants (adopting repos only) |
 | `guard-bash` | `PreToolUse` Bash | refuses | five things Bash on Windows cannot run - a `find` with no depth bound, a `.ps1` or a `Verb-Noun` cmdlet in command-head position, an interpreter that resolves nowhere, the `& { .. }` idiom - plus the slash argument MSYS corrupts silently |
+| `guard-fire-and-forget` | `PreToolUse` Bash | refuses | backgrounding a gate, a closure facade or a catalog mutator - a verdict nobody waits for |
 | `guard-uncapped-read` | `PreToolUse` Read | rewrites | an uncapped read of a file over 500 lines: windowed, with a notice saying so |
 | `on-user-prompt` | `UserPromptSubmit` | warns, nudges | context past 250k/400k; a micro-task reaching for the full pipeline |
 
@@ -150,11 +151,11 @@ before committing anything under `rules/`.
 
 ```
 .claude-plugin/     plugin.json + marketplace.json - this repo is both
-rules/              the canon: INVARIANTS.md + 18 reference docs + contrib/ per-project records
-skills/             the nine skills, each with its own references/ where it needs one
-tools/              check-rules.ps1 (the canon) + check-compliance.ps1 (a project)
+rules/              the canon: INVARIANTS.md + the reference docs indexed in rules/README.md + contrib/ per-project records
+skills/             one folder per skill in the table above (and per short alias), each with its own references/ where it needs one
+tools/              check-rules.ps1 (the canon) + check-compliance.ps1 (a project) + harness/, the shipped process layer
 hooks/              the enforcement layer, enumerated in its own inventory table - not counted here
-templates/          .sza-canon.json - what a project copies when it adopts
+templates/          .sza-canon.json and .sza-profile.json - what a project copies when it adopts
 CANON_VERSION       the monotonic version the stamp records
 ```
 

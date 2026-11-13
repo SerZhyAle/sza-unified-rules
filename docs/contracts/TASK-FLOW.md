@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Contract | `TASK-FLOW` |
-| Version | 0.20, draft |
+| Version | 0.25, draft |
 | Home | the shared contracts catalog, domain `task-flow/` (the path is in [CLAUDE.md](../../CLAUDE.md)) |
 | Role | **shared implementation, partial**: `tools/harness/` supplies the ticket tools, repository runner and day-0 scaffold; `tools/harness/portfolio/` supplies the S0015 dispatcher, registry, queue, rank and event log. Remaining portfolio features belong to S0016. The owner is `shared`, so this repository edits the contract only through the canon session |
 
@@ -89,3 +89,8 @@
   literal `DO:` token in `statusNote` (paired with a `- **DO:** <action>` bullet in `### 3.3 Owner inputs (Approval gate)`)
   for an owner action that precedes implementation (device, desk, or an account in an outside console), while
   `BlockNeedUserTest` (rule 8) stays strictly for post-implementation verification of completed, audited work.
+- 0.25 (2026-11-13): the queue sync heals a ledger row whose spec file was moved by hand between `paths.specsDir`
+  and `paths.specArchiveDir` (rule 68): `Repair-PqTicketFileRefs` in `portfolio/lib/queue-file.ps1`, called by
+  `Sync-PqRegisteredQueues` right after the rule 65 registration, rewrites `file` through `update.ps1 -File` only when
+  exactly one file of the same name exists in the other directory, and records `ticket.relinked` or `queue.row` kind
+  `unrelinked` (EVENTS 3.5 and 3.3). Checked by a direct call on a scratch project; no fast fixture yet.

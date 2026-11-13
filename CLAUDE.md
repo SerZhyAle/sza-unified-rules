@@ -13,6 +13,33 @@ as auto-discovered skills in every session instead of as documents at a local pa
 project picks between ([rules/README.md](rules/README.md)). "Never edit the canon from a project session"
 does not apply here; this is where fixes land. It applies everywhere else.
 
+## Commands
+
+Nothing is built. Everything is PowerShell 7 plus one Python checker, run from the repo root:
+
+```powershell
+pwsh -NoProfile -File tools/check-rules.ps1               # the canon's own text; the one gate that blocks a deploy
+pwsh -NoProfile -File tools/check-contracts.ps1           # the contracts catalog (SZA_CONTRACTS_ROOT or the default)
+python tools/docs/check-documents.py                      # both documentation corpora; writes nothing
+pwsh -NoProfile -File tools/harness/assert-portable.ps1   # no project value inside a shipped harness script
+pwsh -NoProfile -File tools/tests/<name>.tests.ps1        # one suite
+python tools/tests/documentation.tests.py                 # negative fixtures of check-documents
+pwsh -NoProfile -File hooks/tests/smoke-hooks.ps1         # hook verdicts - after a hook change
+pwsh -NoProfile -File hooks/tests/smoke-prefilters.ps1    # the hooks.json pre-filters, under Git Bash
+pwsh -File deploy.ps1 -DryRun                             # the gates + what would be committed and bumped
+```
+
+- **The first four are the fast list**; which of the rest may run after an ordinary edit is decided by the 5 s
+  line under "Working here". A suite that is not in the measured list there is release tier until it is measured.
+- **There is no test runner and no case filter - "one test" is one file.** Each `tools/tests/*.tests.ps1` is a
+  standalone script that prints a PASS or FAIL line per case and exits 1 on any failure; its header comment lists
+  the cases and says what it touches (most build throwaway repositories and a throwaway portfolio root, and
+  take `-KeepScratch` to leave them for inspection).
+- **`tools/check-compliance.ps1` judges an adopting repository, not this one** - it is run from that repo
+  (`-Strict`, `-Json`). Here the stamp's `role: canon-home` switches the surface and overlay checks off.
+- **`deploy.ps1` without `-DryRun` is the owner's tool.** It stages everything (`git add .`), commits and pushes
+  the current branch; an agent runs it only when asked for that deploy.
+
 ## Working here
 
 - **Gate before committing anything under `rules/`:** `pwsh -File tools/check-rules.ps1` (exit 0 required).
@@ -39,11 +66,13 @@ does not apply here; this is where fixes land. It applies everywhere else.
   clones a repo has no `P:` drive; `check-compliance.ps1` enforces that in every repo whose stamp role is
   not `canon-home`. The catalog's own law is its `_meta/RULES.md`; the canon side is the rule doc above,
   and the per-repo alignment run is the skill.
-- **This repo owns four contracts, and they are the only ones it has.** `REPO-STAMP`, `HARNESS-PROFILE`,
+- **This repo owns four contracts.** `REPO-STAMP`, `HARNESS-PROFILE`,
   `REPO-LAYOUT` and `RULE-DELIVERY`, in the catalog's `rule-adoption/` domain, bind the machine-readable
   interface between the canon and a repository - the stamp, the harness profile, the names tools address,
   the version pair that decides whether a rule change arrives. The rules' own text is **not** a contract
-  and never becomes one. Pointers are in [docs/contracts/](docs/contracts/); changing `.sza-canon.json`,
+  and never becomes one. Pointers are in [docs/contracts/](docs/contracts/), beside the pointers for four
+  contracts outside that domain - `TASK-FLOW` (owner `shared`, implemented by the harness), `CHECK-VERDICT`,
+  `DOC-INTERNAL-QUALITY` and `DOC-EXTERNAL-QUALITY` - whose roles are in that folder's README. Changing `.sza-canon.json`,
   `.sza-profile.json`, the three agent-rules filenames or the digest's coverage is a contract change, so
   the catalog moves first and the code follows.
 - **Touching the catalog?** `pwsh -File tools/check-contracts.ps1` (exit 0 required) validates it: the
@@ -86,6 +115,40 @@ does not apply here; this is where fixes land. It applies everywhere else.
 - **`rules/contrib/<project>.md`** is the per-project record. A project session may append its own record
   here and nothing else.
 
+## How the pieces fit
+
+- **One payload, four layers.** `rules/` (the reference), `skills/` (the procedures), `hooks/` (enforcement at
+  the tool call, registered in `hooks/hooks.json`) and `tools/` (the gates and the harness) all ship in the
+  plugin. A consumer runs them from its plugin cache (`~/.claude/plugins/cache/sza-unified-rules/sza/<version>/`),
+  never from this checkout - which is why nothing here exists for a consumer until the version moves.
+- **Two root files are the whole interface to a repository**, both contract-bound, both templated in
+  [templates/](templates/README.md). `.sza-canon.json` is the stamp: what was adopted (canon version + the
+  digest of `rules/*.md`), the role, overlay, channels and exemptions; `check-compliance.ps1` and the
+  session-start hook read it. `.sza-profile.json` is the harness profile: paths, ticket and spec-file grammars,
+  the status vocabulary, lock domains; it is read through `tools/harness/_profile.ps1`, and a key it omits
+  keeps the canon default.
+- **[tools/harness/](tools/harness/README.md) is the shipped process layer**, one folder per mechanism:
+  `spec_catalog/` (the ticket ledger and its closing gates), `locks/` (ticket leases, domain locks), `batch/`
+  (the repository runner: one fresh agent process per ticket), `scaffold/` (day 0), `portfolio/`, and the
+  smaller `document_registry/`, `all_features/`, `chat/`, `devlog/`, `aliases/`. A script body never carries a
+  project's path, prefix or vocabulary - that is what `assert-portable.ps1` refuses. Each script finds the
+  project root itself: `SZA_PROJECT_ROOT`, the first profile above the working directory, the first above the
+  harness, then the first `.git`.
+- **`portfolio/pq.ps1` is the dispatcher over every registered repository** ([operator's
+  guide](tools/harness/portfolio/README.md)): `lib/` ranks the projects, picks one ticket and calls that
+  repository's own `batch/run-spec-queue.ps1` for it. Its registry, queue file, logs and `runs.jsonl` live
+  outside every repo, in `SZA_PORTFOLIO_ROOT` or `%USERPROFILE%\.sza\portfolio`; it never writes ticket status
+  itself. `portfolio/gui/` is PQShell, the VB.NET panel over the same commands.
+- **This repo is also a consumer of its own harness**, with its own profile, a `PLAN/` ledger and the
+  `.claude/commands/` forwarders. `tools/harness.ps1` - and the `r1`-`r3`, `rs`, `rw`, `rm` launchers that go
+  through it - resolves the **newest installed plugin cache, not `tools/harness/` in this tree**. To exercise
+  an edit, call the script under `tools/harness/` directly or set `SZA_HARNESS_ROOT` to that folder; a green
+  run through the forwarder proves the previous deploy.
+- **Two documentation corpora, one checker** ([docs/DOCUMENTATION.md](docs/DOCUMENTATION.md)). The published
+  one is declared by `docs/document-corpus.json` and `docs/DOCUMENT_REGISTRY.jsonl` and includes this file,
+  so a link or a style slip here turns `check-documents.py` red; the local one under `dev/` is ignored by git.
+  `docs/DOCS_MAP.md` is a render target: after adding a document run the checker with `--register --render`.
+
 ## Layout facts
 
 - `.claude-plugin/` holds **both** `marketplace.json` and `plugin.json` - the repo is its own marketplace,
@@ -94,6 +157,12 @@ does not apply here; this is where fixes land. It applies everywhere else.
   (`../../rules/...`) when read as files. Keep both working: a skill is read as a document *and* executed.
 - `rules/` was moved here from the `sza.od.ua` site repo with its history intact (`git subtree split`). The
   site repo keeps a pointer, not a copy.
+- **`.gitignore` is the only thing between a local file and the payload**, because the deploy stages
+  everything. Local by design: `PLAN/` (this repo's tickets and ledger), `temp/`, the `dev/` registry files,
+  the `PQ *.lnk` launchers and `/.sza-profile.json` - the harness looks for a profile above its own root, so a
+  shipped one would become the project root of every consumer that has none.
+- [AGENTS.md](AGENTS.md) is the Codex entry point: it defers to this file and repeats only the command list,
+  so a command that changes here changes there too. `memory/` holds that agent's notes.
 
 ## Language
 

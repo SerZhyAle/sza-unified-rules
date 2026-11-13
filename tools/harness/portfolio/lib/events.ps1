@@ -184,7 +184,7 @@ function Get-PqEventNames {
         'resource.acquire', 'resource.release', 'resource.wait',
         'run.codeChanged', 'run.end', 'run.error', 'run.heartbeat', 'run.pause', 'run.resume', 'run.start', 'run.stop',
         'ticket.blocked', 'ticket.complexity', 'ticket.created', 'ticket.dropLifted', 'ticket.dropped',
-        'ticket.thrash', 'ticket.transition', 'ticket.unblocked',
+        'ticket.relinked', 'ticket.thrash', 'ticket.transition', 'ticket.unblocked',
         'tripwire.check', 'tripwire.trip',
         'wait.enter', 'wait.exit',
         'xrepo.cycle', 'xrepo.resolve'
