@@ -40,13 +40,19 @@ function Get-PqXrepoBlockers([string]$SpecText, [string]$StatusNote = '') {
     return [string[]]@($pairs)
 }
 
-function Get-PqXrepoStatusNote([string]$Root, [string]$Id) {
+function Get-PqXrepoStatusNote([string]$Root, [string]$Id, [hashtable]$Cache = $null) {
     if (-not $Root -or -not $Id) { return '' }
     try {
         $ledger = [string](Get-PqRepoPaths -RepoPath $Root).Ledger
         if (-not $ledger -or -not [IO.File]::Exists($ledger)) { return '' }
+        # ReadAllLines, never a foreach over [IO.File]::ReadLines left by return or break: PowerShell does not dispose
+        # that enumerator, and the handle left open in this long-lived process refused the robot's status write into
+        # this very ledger. The lines are kept in the walk's snapshot cache, so one walk reads each ledger once.
+        $ck = "lines|$ledger"
+        $lines = if ($null -ne $Cache -and $Cache.ContainsKey($ck)) { $Cache[$ck] } else { [IO.File]::ReadAllLines($ledger) }
+        if ($null -ne $Cache) { $Cache[$ck] = $lines }
         $needle = '"id":"' + $Id + '"'
-        foreach ($line in [IO.File]::ReadLines($ledger)) {
+        foreach ($line in $lines) {
             if ($line.IndexOf($needle, [StringComparison]::Ordinal) -lt 0) { continue }
             if ($line.IndexOf('"statusNote"', [StringComparison]::Ordinal) -lt 0) { return '' }
             $row = ConvertFrom-Json -InputObject $line -DateKind String -NoEnumerate
@@ -66,7 +72,7 @@ function Get-PqXrepoTicket($Repo, [string]$Id, [hashtable]$Snapshots) {
     if ($null -eq $snap -or -not $snap.complete -or -not $snap.tickets.Contains($Id)) { return $null }
     $t = $snap.tickets[$Id]
     $file = if ($t.file) { Resolve-PqRepoPathValue $snap.root ([string]$t.file) } else { $null }
-    $note = Get-PqXrepoStatusNote $snap.root $Id
+    $note = Get-PqXrepoStatusNote $snap.root $Id $Snapshots
     return @{ status = [string]$t.status; file = $file; statusNote = $note }
 }
 

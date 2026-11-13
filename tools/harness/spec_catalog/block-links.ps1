@@ -151,7 +151,9 @@ function Read-BlForeignRecord([string] $Root, [string] $TicketId) {
     foreach ($rel in @($journal, $archive)) {
         $file = if ([IO.Path]::IsPathRooted($rel)) { $rel } else { Join-Path $Root $rel }
         if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { continue }
-        foreach ($line in [IO.File]::ReadLines($file)) {
+        # ReadAllLines: a foreach over ReadLines left by return keeps the foreign ledger open, and the child update.ps1
+        # this process starts in that repository is then refused its write.
+        foreach ($line in [IO.File]::ReadAllLines($file)) {
             if ($line.IndexOf($needle, [StringComparison]::Ordinal) -lt 0) { continue }
             try { $row = $line | ConvertFrom-Json } catch { continue }
             if ([string](Get-BlProp $row 'id') -cne $TicketId) { continue }
@@ -228,7 +230,7 @@ function Write-BlFile([string] $Path, $Doc, [string] $Text) {
     $tmp = "$Path.blocklinks.tmp"
     $bytes = [Text.UTF8Encoding]::new($Doc.bom).GetPreamble() + [Text.UTF8Encoding]::new($false).GetBytes($Text)
     [IO.File]::WriteAllBytes($tmp, [byte[]]$bytes)
-    Move-Item -LiteralPath $tmp -Destination $Path -Force
+    Move-ReplaceFile -Source $tmp -Destination $Path
 }
 
 # The section's line range in a list of lines: @{ start (heading index); end (exclusive) } or $null.

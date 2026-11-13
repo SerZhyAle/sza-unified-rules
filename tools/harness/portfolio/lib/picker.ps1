@@ -14,14 +14,17 @@
 #   Get-PqPickerHead -RepoPath [-Exclude] [-ForceId <id>] [-HarnessRoot] [-TimeoutSeconds] [-Cache <hashtable>]
 #       @{ ok; head; payload; why; error; ms }. Without -ForceId head is payload.selected. With it, head is that
 #       ticket when the picker would offer it once the ids ranked above it are excluded, else $null and why is
-#       leased, excluded, notRanked, malformed or the picker's auto-skip reason.
+#       leased, excluded, notRanked, malformed or the picker's auto-skip reason. From a complete-scan payload
+#       (scan_complete, Resolve-PqHeadFromPayload) a head that is not the picker's own selected ticket is its ranked
+#       entry - id, name, status, priority, updated - not the full preview payload.
 #   Get-PqTicketRecord -RepoPath -Id [-HarnessRoot]
 #       the ledger record (archive included) through select.ps1, or $null.
 #   Get-PqLedgerStatuses -RepoPath [-HarnessRoot] [-TimeoutSeconds]
 #       @{ id = status } for the whole ledger (archive included) from one select.ps1 run, or $null when it cannot be read.
 #
 # Cost: one child process per call, two for a -ForceId that is not the head (S0015 Phase 02 evidence,
-# picker-latency.json).
+# picker-latency.json) - unless the picker's payload is a complete scan (SZA_PQ_PICKER=1 asks for one): then -ForceId
+# costs no second child, and with -Cache every later question about the same repository in the rank costs none.
 
 function Get-PqHarnessRoot([string]$HarnessRoot) {
     if ($HarnessRoot) { return $HarnessRoot }
@@ -125,6 +128,95 @@ function Get-PqAutoSkipReason($Payload, [string]$Id) {
     return $null
 }
 
+function Get-PqPayloadList($Payload, [string]$Name) {
+    if ($null -eq $Payload) { return @() }
+    $p = $Payload.PSObject.Properties[$Name]
+    if ($null -eq $p -or $null -eq $p.Value) { return @() }
+    return @($p.Value)
+}
+
+# True when the picker judged every ranked candidate (spec-next-preflight.ps1 scan_complete, which SZA_PQ_PICKER=1 turns
+# on), not only those above its selected ticket. Absent in a payload of an older harness: such a payload answers only
+# for the walk down to its head.
+function Test-PqPayloadScanComplete($Payload) {
+    if ($null -eq $Payload) { return $false }
+    $p = $Payload.PSObject.Properties['scan_complete']
+    return ($null -ne $p -and $p.Value -eq $true)
+}
+
+# The exclusion of a request as the picker normalises it: comma-joined elements split, blanks dropped, ids compared
+# without case (the picker's exclude set is a hashtable).
+function Get-PqExcludeSet([string[]]$Exclude) {
+    $set = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach ($e in @($Exclude)) { foreach ($id in ([string]$e -split ',')) { if ($id.Trim()) { $null = $set.Add($id.Trim()) } } }
+    return , $set
+}
+
+# Answers a head question from a payload already in hand, without a picker run, when that payload can answer it exactly:
+# it must be a complete scan, and it must not have hidden what the question asks about. Returns the Get-PqPickerHead
+# shape with ms 0, or $null when the payload cannot answer (the caller then runs the picker).
+#
+#   -ForceId X: the payload must not have excluded X itself (it then holds X's verdict, which no exclusion changes - an
+#   idle hold, an unreleased blocker, an owner gate, a lease are all about X alone). X ranked and in none of auto_skipped,
+#   malformed and claim_lost is offered: the picker run with every id above X excluded - what this used to cost - would
+#   select it. head is then X's ranked entry (id, name, status, priority: what the rank reads of a head).
+#   No -ForceId: the payload's exclusion must be a subset of the question's (an id it excluded has no verdict in it).
+#   The head is the first ranked id the question does not exclude and the payload did not refuse - the walk the picker
+#   would make - and the payload's own selected ticket when that is the one.
+function Resolve-PqHeadFromPayload {
+    param($Payload, [string[]]$Exclude, [string]$ForceId)
+    if (-not (Test-PqPayloadScanComplete $Payload)) { return $null }
+    $want = Get-PqExcludeSet $Exclude
+    $had = Get-PqExcludeSet ([string[]]@(Get-PqPayloadIds (Get-PqPayloadList $Payload 'excluded_ids')))
+    $refused = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($id in @(Get-PqPayloadIds (Get-PqPayloadList $Payload 'auto_skipped')) + @(Get-PqPayloadIds (Get-PqPayloadList $Payload 'malformed')) +
+        @(Get-PqPayloadIds (Get-PqPayloadList $Payload 'claim_lost'))) { $null = $refused.Add([string]$id) }
+    $ranked = @(Get-PqPayloadList $Payload 'ranked' | Where-Object { $null -ne $_ })
+    $selected = $Payload.selected
+    $selectedId = if ($null -ne $selected) { [string]$selected.id } else { '' }
+
+    if ($ForceId) {
+        if ($had.Contains($ForceId)) { return $null }
+        $answer = { param($head, $why) @{ ok = $true; head = $head; payload = $Payload; why = $why; error = $null; ms = 0 } }
+        if ($want.Contains($ForceId)) { return (& $answer $null 'excluded') }
+        if ($selectedId -ceq $ForceId) { return (& $answer $selected $null) }
+        if (@(Get-PqPayloadIds (Get-PqPayloadList $Payload 'leased_ids')) -ccontains $ForceId) { return (& $answer $null 'leased') }
+        $entry = $null
+        foreach ($r in $ranked) { if ([string](Get-PqPayloadIds @($r)) -ceq $ForceId) { $entry = $r; break } }
+        if ($null -eq $entry) {
+            $why = if (@(Get-PqPayloadIds (Get-PqPayloadList $Payload 'malformed')) -ccontains $ForceId) { 'malformed' } else { 'notRanked' }
+            return (& $answer $null $why)
+        }
+        $why = Get-PqAutoSkipReason $Payload $ForceId
+        if ($why) { return (& $answer $null $why) }
+        if (@(Get-PqPayloadIds (Get-PqPayloadList $Payload 'malformed')) -ccontains $ForceId) { return (& $answer $null 'malformed') }
+        if (@(Get-PqPayloadIds (Get-PqPayloadList $Payload 'claim_lost')) -ccontains $ForceId) { return (& $answer $null 'leased') }
+        return (& $answer $entry $null)
+    }
+
+    foreach ($id in $had) { if (-not $want.Contains($id)) { return $null } }
+    $head = $null
+    $live = 0
+    foreach ($r in $ranked) {
+        $id = [string](Get-PqPayloadIds @($r))
+        if ($want.Contains($id)) { continue }
+        $live++
+        if ($null -ne $head -or $refused.Contains($id)) { continue }
+        $head = if ($id -ceq $selectedId) { $selected } else { $r }
+    }
+    $copy = $Payload.PSObject.Copy()
+    $copy.selected = $head
+    if ($null -ne $copy.PSObject.Properties['selected_none_reason']) {
+        $leasedLeft = @(Get-PqPayloadIds (Get-PqPayloadList $Payload 'leased_ids') | Where-Object { -not $want.Contains([string]$_) }).Count
+        $lostLeft = @(Get-PqPayloadIds (Get-PqPayloadList $Payload 'claim_lost') | Where-Object { -not $want.Contains([string]$_) }).Count
+        $copy.selected_none_reason = if ($null -ne $head) { $null }
+        elseif ([int]$Payload.eligible_count -eq 0) { 'queue-exhausted' }
+        elseif ($live -eq $lostLeft -and ($leasedLeft + $lostLeft) -gt 0) { 'all-leased' }
+        else { 'no-candidate' }
+    }
+    return @{ ok = $true; head = $head; payload = $copy; why = $null; error = $null; ms = 0 }
+}
+
 function Get-PqPickerHead {
     param(
         [Parameter(Mandatory)][string]$RepoPath,
@@ -138,10 +230,22 @@ function Get-PqPickerHead {
     # same first question, and a queue whose blocked rows pile up above the head paid one child per row (a night of
     # 2026-10-29 spent 15 minutes a pass ranking 58 such rows).
     $ck = "$RepoPath|$(@($Exclude) -join ',')"
+    # A complete-scan payload (Resolve-PqHeadFromPayload) judged every ranked ticket of the repository, so any earlier one
+    # of this rank answers a later question - another row's ticket, or the head under a grown exclusion - without a new
+    # child. One picker run per repository per rank is then the whole cost; before 2026-11-13 a rank of the portfolio
+    # queue made 167-190 of them (100-170 s), most of them a second run per row with every id above the row excluded.
+    $completeKey = "$RepoPath|<complete>"
+    if ($null -ne $Cache -and -not $Cache.ContainsKey($ck) -and $Cache.ContainsKey($completeKey)) {
+        foreach ($known in @($Cache[$completeKey])) {
+            $answer = Resolve-PqHeadFromPayload -Payload $known -Exclude $Exclude -ForceId $ForceId
+            if ($null -ne $answer) { return $answer }
+        }
+    }
     # A forced row asks whether ONE ticket is offerable. Whether it is ranked at all, auto-skipped (idle hold, unreleased
     # blocker, owner gate), leased or malformed does not depend on what else is excluded, so any earlier run of this
     # repository in the same rank answers a "no" without a new child. Measured 2026-11-13: every refused head grew the
-    # exclusion, and each growth re-ran the picker for every later row of that repository (2-5 s a row).
+    # exclusion, and each growth re-ran the picker for every later row of that repository (2-5 s a row). This is the
+    # path of a payload that is not a complete scan; a complete one has answered above.
     $anyKey = "$RepoPath|<any>"
     if ($ForceId -and $null -ne $Cache -and -not $Cache.ContainsKey($ck) -and $Cache.ContainsKey($anyKey)) {
         $known = $Cache[$anyKey].payload
@@ -157,7 +261,13 @@ function Get-PqPickerHead {
     if ($null -ne $Cache -and $Cache.ContainsKey($ck)) { $first = $Cache[$ck] }
     else {
         $first = Invoke-PqPicker -RepoPath $RepoPath -Exclude $Exclude -HarnessRoot $HarnessRoot -TimeoutSeconds $TimeoutSeconds
-        if ($null -ne $Cache -and $first.ok) { $Cache[$ck] = $first; $Cache[$anyKey] = $first }
+        if ($null -ne $Cache -and $first.ok) {
+            $Cache[$ck] = $first
+            $Cache[$anyKey] = $first
+            if (Test-PqPayloadScanComplete $first.payload) {
+                $Cache[$completeKey] = @(@($Cache[$completeKey]) + @($first.payload) | Where-Object { $null -ne $_ })
+            }
+        }
     }
     if (-not $first.ok) { return @{ ok = $false; head = $null; payload = $null; why = 'pickerFailed'; error = $first.error; ms = $first.ms } }
     $payload = $first.payload
@@ -178,6 +288,9 @@ function Get-PqPickerHead {
     if ($why) {
         return @{ ok = $true; head = $null; payload = $payload; why = $why; error = $null; ms = $ms }
     }
+    # A complete scan already holds this ticket's verdict: the second run below would only repeat it.
+    $answer = Resolve-PqHeadFromPayload -Payload $payload -Exclude $Exclude -ForceId $ForceId
+    if ($null -ne $answer) { $answer.ms = $ms; return $answer }
     $above = if ($at -gt 0) { $ranked[0..($at - 1)] } else { @() }
     $second = Invoke-PqPicker -RepoPath $RepoPath -Exclude (@($Exclude) + @($above)) -HarnessRoot $HarnessRoot -TimeoutSeconds $TimeoutSeconds
     $ms += $second.ms
@@ -192,11 +305,27 @@ function Get-PqPickerHead {
     return @{ ok = $true; head = $null; payload = $payload; why = $why; error = $null; ms = $ms }
 }
 
-# Every ticket of one repository's ledger, archive included, from a single child process: @{ id = status }, ids compared
-# ordinally. $null when the ledger cannot be read in bulk (timeout, non-zero exit, unparsable output) - the caller then
-# asks ticket by ticket through Get-PqTicketRecord. One child per queue row costs minutes on a queue of a hundred rows.
+# Every ticket of one repository's ledger, archive included: @{ id = status }, ids compared ordinally - read in process
+# when ledger-watch.ps1 is loaded, else from a single child process. $null when the ledger cannot be read in bulk
+# (timeout, non-zero exit, unparsable output) - the caller then asks ticket by ticket through Get-PqTicketRecord. One
+# child per queue row costs minutes on a queue of a hundred rows.
 function Get-PqLedgerStatuses {
     param([Parameter(Mandatory)][string]$RepoPath, [string]$HarnessRoot, [int]$TimeoutSeconds = 120)
+    # In process first: the ledger snapshot of ledger-watch.ps1 reads the same two files the profile names, in
+    # milliseconds, where the child below costs a pwsh start per repository (about 8 s of every rank over 19 of them).
+    # Archive rows read as Archived, which is what the queue reader asks (exists, closed). A snapshot that could not
+    # read a file, or a process without ledger-watch.ps1, falls back to the child.
+    if (Get-Command Get-PqLedgerSnapshot -ErrorAction SilentlyContinue) {
+        try {
+            $snap = Get-PqLedgerSnapshot -RepoPath $RepoPath
+            if ($snap.complete -and $snap.ledgerRead) {
+                $map = [hashtable]::new([StringComparer]::Ordinal)
+                foreach ($id in @($snap.tickets.Keys)) { $map[[string]$id] = [string]$snap.tickets[$id].status }
+                return $map
+            }
+        }
+        catch { }
+    }
     $HarnessRoot = Get-PqHarnessRoot $HarnessRoot
     $script = Join-Path $HarnessRoot 'spec_catalog\select.ps1'
     try { $r = Invoke-PqRepoChild -RepoPath $RepoPath -Script $script -Arguments @('-IncludeArchived', '-Format', 'json') -TimeoutSeconds $TimeoutSeconds }

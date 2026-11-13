@@ -204,7 +204,7 @@ function Get-DevMonitorTicketTitle {
         if ($journalRel) {
             $jp = Join-Path $RepoRoot $journalRel
             if (Test-Path -LiteralPath $jp) {
-                foreach ($line in [IO.File]::ReadLines($jp)) {
+                foreach ($line in [IO.File]::ReadAllLines($jp)) {
                     if ($line -match '"id"\s*:\s*"' + [regex]::Escape($Id) + '"') {
                         $rec = $line | ConvertFrom-Json
                         if ($rec.name) { return [string]$rec.name }
@@ -220,7 +220,7 @@ function Get-DevMonitorTicketTitle {
             if (Test-Path -LiteralPath $specsDir) {
                 $file = Get-ChildItem -LiteralPath $specsDir -Filter "$Id*.md" -File -ErrorAction SilentlyContinue | Select-Object -First 1
                 if ($file) {
-                    foreach ($line in [IO.File]::ReadLines($file.FullName)) {
+                    foreach ($line in [IO.File]::ReadAllLines($file.FullName)) {
                         if ($line -match '^#\s+(?:' + [regex]::Escape($Id) + '\s*[-:]\s*)?(?<title>.+)$') {
                             return $Matches['title'].Trim()
                         }
@@ -234,7 +234,7 @@ function Get-DevMonitorTicketTitle {
         if ($qRel) {
             $qp = Join-Path $RepoRoot $qRel
             if (Test-Path -LiteralPath $qp) {
-                foreach ($line in [IO.File]::ReadLines($qp)) {
+                foreach ($line in [IO.File]::ReadAllLines($qp)) {
                     if ($line -match [regex]::Escape($Id) + '_([a-z0-9][a-z0-9-]*)') {
                         return $Matches[1]
                     }

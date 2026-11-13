@@ -1299,7 +1299,9 @@ function Start-PqLoop {
                         if ([IO.Directory]::Exists($planDir)) {
                             $files = [IO.Directory]::GetFiles($planDir, "$ticketId*.md")
                             if ($files.Length -gt 0) {
-                                foreach ($line in [IO.File]::ReadLines($files[0])) {
+                                # ReadAllLines: a foreach over ReadLines left by break keeps the spec open in this
+                                # process, and the robot's own write of this ticket's spec is then refused.
+                                foreach ($line in [IO.File]::ReadAllLines($files[0])) {
                                     if (-not $ticketTitle -and $line -match '^#\s+(?:' + [regex]::Escape($ticketId) + '\s*[-:]\s*)?(?<title>.+)$') {
                                         $ticketTitle = $Matches['title'].Trim()
                                     }

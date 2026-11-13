@@ -12,7 +12,7 @@
 #
 # Exit codes (S1070):
 #   0 - preview emitted.
-#   2 - cannot run: malformed -Id, spec absent from the catalog, or its file missing
+#   2 - cannot run: malformed -Id, spec absent from the catalog (or the catalog unreadable), or its file missing
 #       on disk. There is no code 1: this is an extractor, not a gate - it either
 #       produces the payload or cannot.
 #
@@ -30,7 +30,7 @@
 #     "last_audit_present": false,
 #     "timber_tags_kt": 0,
 #     "auto_skip": null,                  # or "tier-5-epic" / "owner-gate" / "blocker-not-verified"
-#                                         # / "blocker-unresolvable" (never research-heavy).
+#                                         # / "blocker-unresolvable" / "blocker-cross-repo" (never research-heavy).
 #                                         # "blocker-not-verified" covers TWO shapes since S2834:
 #                                         # a blocker below the release-ready set, and a
 #                                         # release-ready blocker parked mid-plan - the reason
@@ -45,6 +45,10 @@
 #     "research_uncarried_count": 5   # of those, the ones naming no `Carrier: Sxxxx`;
 #                                    # exactly what check-open-items-carried.ps1 refuses
 #   }
+#
+# The payload is built by Get-SpecPreview (`_spec-preview.ps1`) and the auto-skip verdict inside it by
+# Get-SpecAutoSkip (`_auto-skip.ps1`) - the same two functions spec-next-preflight.ps1 calls in-process, so the
+# verdict this command prints and the one the picker walks on cannot disagree (S1621, S2581).
 
 [CmdletBinding()]
 param(
@@ -63,284 +67,48 @@ if (-not (Test-SzaTicketId $Id)) {
 }
 
 $root = (Get-SzaProjectRoot)
-$pwshExe = if (Test-Path "$env:ProgramFiles\PowerShell\7\pwsh.exe") {
-    "$env:ProgramFiles\PowerShell\7\pwsh.exe"
-} else {
-    'pwsh'
+
+# The payload builder and the shared leaf files it stands on (`_research-items.ps1` S1621, `_status-sets.ps1` S1864,
+# `_blocker-links.ps1` S2581, `_owner-gate.ps1` S2921). Deliberately NOT `_lib.ps1` in this scope: that library sets
+# Set-StrictMode -Version Latest for the scope it is loaded into.
+. (Join-Path $PSScriptRoot '_spec-preview.ps1')
+
+# 1. Resolve the catalog record, from one in-memory read of the catalog that also serves every blocker lookup of the
+# verdict. The journals are read through `_lib.ps1` - the same reader and the same paths (SPEC_CATALOG_DIR included)
+# select.ps1 used when this step spawned it - loaded inside a script block, so its strict mode ends with the block.
+try {
+    $journalReader = & {
+        . (Join-Path $PSScriptRoot '_lib.ps1')
+        $active = Read-JsonlFile -Path (Get-CatalogPath)
+        # The archive is read only if a lookup misses the active journal (New-AutoSkipCatalog), after this block
+        # has returned - so the loader carries the reader and the path with it rather than naming them.
+        $readJsonl = ${function:Read-JsonlFile}
+        $archivePath = Get-ArchivePath
+        [PSCustomObject]@{
+            Active        = $active
+            ArchiveLoader = { $archived = & $readJsonl -Path $archivePath; $archived }.GetNewClosure()
+        }
+    }
+    $catalog = New-AutoSkipCatalog -Active $journalReader.Active -ArchiveLoader $journalReader.ArchiveLoader
+    $rec = Find-AutoSkipRecord -Catalog $catalog -Id $Id
 }
-
-# S1621: the research-section parse is shared with the closing gate
-# (check-open-items-carried.ps1) through this leaf file, so the number printed here is
-# the number that gate will enforce. Deliberately NOT `_lib.ps1`: that library sets
-# Set-StrictMode -Version Latest, under which the `$rec.statusNote` read below throws
-# on every record without a note - on the /spec-next hot path, for every candidate.
-. (Join-Path $PSScriptRoot '_research-items.ps1')
-
-# S1864: same arrangement for the lifecycle-status sets, so the statuses that release a
-# blocked ticket here are the ones `_lib.ps1` uses to route a ticket between the two
-# release files - one definition instead of two that drifted apart.
-. (Join-Path $PSScriptRoot '_status-sets.ps1')
-
-# S2581: and again for the directional blocker channels, shared with the closing gate that
-# refuses a BlockByOtherTask recording none - so the refusal at write time and the skip at
-# selection time cannot disagree about what counts as a blocker.
-. (Join-Path $PSScriptRoot '_blocker-links.ps1')
-
-# S2921: and again for the owner-gate marker, shared with the release-queue writer in `_lib.ps1`,
-# so the row this command refuses to hand out automatically is the row nothing is appended below.
-. (Join-Path $PSScriptRoot '_owner-gate.ps1')
-
-# 1. Resolve catalog record
-$selectPath = Join-Path $PSScriptRoot 'select.ps1'
-$catJson = & $pwshExe -File $selectPath -Id $Id -Format json 2>$null
-if (-not $catJson -or $catJson -eq '[]') {
+catch {
+    Write-Error "Spec catalog unreadable: $($_.Exception.Message)" -ErrorAction Continue
+    exit 2
+}
+if (-not $rec) {
     Write-Error "Spec $Id not found in catalog" -ErrorAction Continue
     exit 2
 }
-$rec = $catJson | ConvertFrom-Json
-if ($rec -is [array]) { $rec = $rec[0] }
 
 $specPath = Join-Path $root $rec.file
-if (-not (Test-Path $specPath)) {
+if (-not (Test-Path -LiteralPath $specPath)) {
     Write-Error "Spec file not found on disk: $($rec.file)" -ErrorAction Continue
     exit 2
 }
 
-# 2. Read spec body
-$specText = Get-Content -Path $specPath -Raw
-
-# 3. Parse frontmatter and key fields (both YAML-block and "**Status:** X" forms supported).
-$frontmatter = [ordered]@{}
-$yamlMatch = [regex]::Match($specText, '(?s)^---\s*\n(.*?)\n---\s*\n')
-if ($yamlMatch.Success) {
-    foreach ($line in ($yamlMatch.Groups[1].Value -split "`n")) {
-        if ($line -match '^\s*([A-Za-z_][A-Za-z0-9_-]*)\s*:\s*(.+?)\s*$') {
-            $frontmatter[$matches[1]] = $matches[2].Trim()
-        }
-    }
-}
-# Also pick up "**Status:** Draft" / "**Tier:** 5" header style.
-foreach ($key in 'Status', 'Priority', 'Tier', 'Date') {
-    $pattern = "^\*\*$key`:\*\*\s*([^\r\n]+?)\s*$"
-    $m = [regex]::Match($specText, $pattern, 'Multiline')
-    if ($m.Success -and -not $frontmatter.Contains($key)) {
-        $frontmatter[$key] = $m.Groups[1].Value.Trim()
-    }
-}
-
-# 4. Section list
-$sections = @()
-foreach ($line in ($specText -split "`n")) {
-    if ($line -match '^##\s+(.+?)\s*$') {
-        $sections += $line.Trim()
-    }
-}
-
-# 5. Tactical folder
-$tacticalFolder = $false
-$folderCandidate = $specPath -replace '\.md$', ''
-if (Test-Path $folderCandidate -PathType Container) {
-    $tacticalFolder = $true
-}
-
-# 6. Last Audit block present?
-# Read through the pattern the closing gate uses (S2298), not a literal '## Last Audit':
-# live specs number their headings, and `## 6. Last Audit` is a real spelling on disk that
-# the literal test reported as absent. The flag travels through spec-next-preflight.ps1 into
-# /spec-all step 0a-drift, where "block absent" switches an already-closed ticket into
-# review mode - so a false negative here costs a re-audit of finished work.
-$lastAuditPresent = @(Get-SpecSectionLines -Path $specPath -HeadingPattern (Get-AuditSectionHeadingPattern)).Count -gt 0
-
-# 7. Timber tag count across .kt
-$timberCount = 0
-Push-Location $root
-try {
-    # S2402: roots, file types and the probe shape come from the profile (probes.*).
-    $probeRx = (Get-SzaProbeFormRegexForId -Id $Id).ToString() -replace '^\^', ''
-    $probeRoots = @((Get-SzaProfileValue 'probes.sourceRoots') | ForEach-Object { [string]$_ } | Where-Object { Test-Path -LiteralPath (Join-Path $root $_) })
-    $probeExts = @((Get-SzaProfileValue 'probes.sourceExtensions') | ForEach-Object { [string]$_ })
-    $rgExe = Get-Command rg -ErrorAction SilentlyContinue
-    if ($rgExe -and $probeRoots.Count -gt 0) {
-        $rgGlobs = @($probeExts | ForEach-Object { @('-g', "*$_") })
-        $tags = & rg --no-heading --count-matches @rgGlobs $probeRx @probeRoots 2>$null
-        if ($tags) {
-            $timberCount = (($tags | ForEach-Object { ($_ -split ':')[-1] }) | Measure-Object -Sum).Sum
-        }
-    }
-    elseif ($probeRoots.Count -gt 0) {
-        $pathspecs = @(foreach ($r in $probeRoots) { foreach ($e in $probeExts) { "$r/**/*$e" } })
-        $tagFiles = git grep -l -E $probeRx -- @pathspecs 2>$null
-        if ($tagFiles) {
-            foreach ($f in $tagFiles) {
-                $hits = git grep -c -E $probeRx -- $f 2>$null
-                if ($hits -match ':(\d+)$') {
-                    $timberCount += [int]$matches[1]
-                }
-            }
-        }
-    }
-}
-finally {
-    Pop-Location
-}
-
-# 8. Depends-on resolution. Only sources whose FORM states the direction, because "related to" is not
-# "blocked by" (S1482) - the rules, the measurements behind them and the two accepted channels all live
-# in `_blocker-links.ps1` now.
-#
-# S2581 moved the resolution out of this file rather than copying it: the closing gate that refuses a
-# BlockByOtherTask carrying no directional blocker has to answer the same question this auto-skip does,
-# and two counters of one thing is the divergence `_research-items.ps1` was extracted to end (S1621).
-$dependsOn = @()
-$depIds = @(Get-BlockerLinks -SpecText $specText -StatusNote ([string]$rec.statusNote) -SelfId $Id)
-$qualifiedBlockers = @(Get-QualifiedBlockerLinks -SpecText $specText -StatusNote ([string]$rec.statusNote))
-# One catalog read for every blocker instead of one child process each. A campaign parent listing
-# 137 slices cost 70 s here per ranking (measured 2026-09-26, 0.5 s per spawn), and the queue runner
-# ranks before every ticket, so the parent at the head of the queue taxed every run.
-$depIndex = @{}
-if ($depIds.Count -gt 1) {
-    $allJson = & $pwshExe -NoProfile -File $selectPath -IncludeArchived -Format json 2>$null
-    if ($allJson) {
-        try {
-            foreach ($r in @($allJson | ConvertFrom-Json)) { $depIndex[[string]$r.id] = $r }
-        } catch {
-            # An unreadable listing falls back to the per-blocker lookup below, which is slower but exact.
-            $depIndex = @{}
-        }
-    }
-}
-foreach ($dep in $depIds) {
-    $depRec = $depIndex[$dep]
-    if (-not $depRec) {
-        $depJson = & $pwshExe -NoProfile -File $selectPath -Id $dep -Format json 2>$null
-        if ($depJson -and $depJson -ne '[]') {
-            $depRec = $depJson | ConvertFrom-Json
-            if ($depRec -is [array]) { $depRec = $depRec[0] }
-        }
-    }
-    if ($depRec) {
-        # `file` is carried because the release test reads the blocker's own tactical plan, not
-        # only its status (S2834). A record without the property leaves it $null, which the test
-        # reads as "nothing to contradict the status" - the same fail-open as an absent folder.
-        $dependsOn += [PSCustomObject]@{
-            id     = $dep
-            status = $depRec.status
-            file   = $depRec.file
-        }
-    }
-    else {
-        $dependsOn += [PSCustomObject]@{ id = $dep; status = '?'; file = $null }
-    }
-}
-
-# 9. Research item counts, by the closing gate's definition (S1621).
-#
-# An item counts as open iff its status line says so - heading found by text, never by
-# the number 6. The old private counter also had a fallback that called any item holding
-# a question mark unresolved: it answered a different question, and it disagreed with the
-# gate on 160 of 1601 spec files. Dropped rather than kept beside the real count, because
-# two similarly named numbers with different definitions are the divergence, not a cure.
-$researchItems = @(Get-ResearchItems -Path $specPath)
-$openItems = @($researchItems | Where-Object { $_.IsOpen })
-$researchOpenCount = $openItems.Count
-# The subset that would REFUSE a close: open, and naming no carrier ticket (S1607).
-$researchUncarriedCount = @($openItems | Where-Object { -not $_.Carrier }).Count
-
-# 10. Owner-gate detection (S2921: the pattern set lives in _owner-gate.ps1, read here and by the
-# release-queue writer, so one spec cannot be owner-gated for the picker and ordinary for the plan).
-$ownerGate = Test-OwnerGateText -Text $specText
-
-# 11. Auto-skip verdict
-$autoSkip = $null
-$autoSkipReason = $null
-$tierVal = if ($frontmatter['Tier']) { $frontmatter['Tier'] } else { '' }
-$unverifiedBlockers = @($dependsOn | Where-Object {
-        -not (Test-BlockerReleased -Status ([string]$_.status) -Id ([string]$_.id) -File ([string]$_.file))
-    })
-if ($tierVal -match '^\s*5') {
-    $autoSkip = 'tier-5-epic'
-    $autoSkipReason = 'Tier 5 epic-container, no code under its id'
-}
-elseif ($ownerGate) {
-    $autoSkip = 'owner-gate'
-    $autoSkipReason = 'Spec explicitly forbids automatic handoff (§12 owner directive)'
-}
-elseif ($unverifiedBlockers.Count -gt 0) {
-    # S1775: directed spec link is truth. A blocker that has not been released excludes the
-    # ticket from automatic selection regardless of the DEPENDENT's lifecycle status; that
-    # status remains descriptive.
-    # S1864 refines only which blocker statuses release: Implemented, Verified,
-    # BlockNeedUserTest, Archived - the release-ready set plus the archive, shared through
-    # _status-sets.ps1. S1775 itself named this predicate an extension point, having measured
-    # a ticket waiting on five blockers that were all merely awaiting a device pass. The
-    # reason string keeps its name so operators and the skip cache read the same token.
-    #
-    # S2834 widened what this ONE code covers rather than adding a second: a release-ready
-    # blocker parked in the middle of its own tactical plan is also unreleased, and the phase
-    # counter goes into the detail string. A new code would have had to be added to this
-    # enumeration, to its consumers, and to /spec-next step 2's list of skips that must NOT be
-    # persisted - the exception that exists because `blocker-not-verified` depends on another
-    # ticket's state and has to be re-derived every run. The plan test depends on exactly the
-    # same thing, so reusing the code keeps that property true for free; a new one would have
-    # been cached and gone stale the moment the blocker finished a phase.
-    $autoSkip = 'blocker-not-verified'
-    $autoSkipReason = 'Depends on ' + (($unverifiedBlockers | ForEach-Object {
-                $detail = "$($_.id)($($_.status)"
-                if ((Test-ReleaseReadyStatus -Status ([string]$_.status)) -and
-                    -not (Test-BlockerPlanComplete -Id ([string]$_.id) -File ([string]$_.file))) {
-                    $phases = Get-TacticalPhaseCounter -File ([string]$_.file)
-                    $detail += if ($phases) { ", phases $phases" } else { ', mid-plan' }
-                }
-                $detail + ')'
-            }) -join ', ')
-}
-elseif ($rec.status -eq 'BlockByOtherTask') {
-    # S1073 / S0042: fail-closed when no directional blocker was parsed; hold locally when
-    # the only unverified blocker is a cross-repository Blocker: <repoKey>:<id> token so a
-    # repository-local picker never releases it early, while delegating to the portfolio
-    # dispatcher when SZA_PQ_PICKER=1 (TASK-FLOW rule 52).
-    if ($dependsOn.Count -eq 0 -and $qualifiedBlockers.Count -eq 0) {
-        $autoSkip = 'blocker-unresolvable'
-        $autoSkipReason = 'Status is BlockByOtherTask but no blocker is recorded in a directional ' +
-        'channel: a `**Depends on:**` line, or a `Blocker: Sxxxx` / `Blocker: <repoKey>:<id>` token in section 10 or in the ' +
-        'statusNote. Naming the ticket in section 10 prose is not enough - that section records ' +
-        'neighbours and consumers too, so it cannot state which way the dependency points'
-    }
-    elseif ($qualifiedBlockers.Count -gt 0 -and $env:SZA_PQ_PICKER -cne '1') {
-        $autoSkip = 'blocker-cross-repo'
-        $autoSkipReason = 'Depends on cross-repo ' + ($qualifiedBlockers -join ', ')
-    }
-}
-# NB: no 'research-heavy' auto-skip. /spec-next drives every Draft/Approved forward
-# until it reaches readiness or hits a REAL human blocker (BlockQuestions/BlockExternal
-# set by /spec-all). Both research counts stay informational for auto-skip - a heavy
-# research section is not a reason to pre-emptively skip; /spec-all resolves what it can
-# from the codebase and blocks only on genuinely human-gated questions. They are not
-# merely advisory to a human reader, though: since S1621 they are the closing gate's own
-# numbers, so research_uncarried_count > 0 predicts a refused Implemented/Verified flip.
-
-# 12. Compose result
-$result = [PSCustomObject]@{
-    id                  = $rec.id
-    name                = $rec.name
-    status              = $rec.status
-    priority            = $rec.priority
-    tier                = $tierVal
-    file                = $rec.file
-    created             = $rec.created
-    updated             = $rec.updated
-    frontmatter         = $frontmatter
-    sections            = $sections
-    tactical_folder     = $tacticalFolder
-    last_audit_present  = [bool]$lastAuditPresent
-    timber_tags_kt      = $timberCount
-    depends_on          = $dependsOn
-    research_open_count = $researchOpenCount
-    research_uncarried_count = $researchUncarriedCount
-    owner_gate          = $ownerGate
-    auto_skip           = $autoSkip
-    auto_skip_reason    = $autoSkipReason
-}
+# 2-12. The payload.
+$result = Get-SpecPreview -Record $rec -Id $Id -Root $root -SpecPath $specPath -Catalog $catalog
 
 if ($Format -eq 'json') {
     $result | ConvertTo-Json -Depth 6 -Compress

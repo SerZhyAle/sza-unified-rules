@@ -558,7 +558,9 @@ function Get-TicketTitle {
             if (Test-Path -LiteralPath $planDir) {
                 $file = Get-ChildItem -LiteralPath $planDir -Filter "$Id*.md" -File -ErrorAction SilentlyContinue | Select-Object -First 1
                 if ($file) {
-                    foreach ($line in [IO.File]::ReadLines($file.FullName)) {
+                    # ReadAllLines: leaving a foreach over ReadLines by return keeps the spec open in this
+                    # long-lived runner, and the agent's write of the same spec is then refused.
+                    foreach ($line in [IO.File]::ReadAllLines($file.FullName)) {
                         if ($line -match '^#\s+(?:' + [regex]::Escape($Id) + '\s*[-:]\s*)?(?<title>.+)$') {
                             return $Matches['title'].Trim()
                         }

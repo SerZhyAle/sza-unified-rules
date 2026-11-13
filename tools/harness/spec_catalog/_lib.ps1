@@ -256,8 +256,31 @@ function Format-CatalogLines {
     return $lines
 }
 
+function Move-ReplaceFile {
+    # Atomic replace of $Destination by $Source (MoveFileEx REPLACE_EXISTING), retried while a reader holds the
+    # destination open. Every reader of a ledger or a spec (the pq rank reads all ledgers, the pickers read specs)
+    # opens it without FileShare.Delete for a few milliseconds, and a replace that lands inside that window fails with
+    # "Access denied" (File.Move) or "Cannot create a file when that file already exists" (Move-Item -Force). One
+    # failed try used to lose the status write. The wait is bounded; after it the error is the caller's.
+    param(
+        [Parameter(Mandatory)][string] $Source,
+        [Parameter(Mandatory)][string] $Destination,
+        [int] $TimeoutMs = 3000
+    )
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    $delay = 10
+    while ($true) {
+        try { [System.IO.File]::Move($Source, $Destination, $true); return }
+        catch [System.IO.IOException], [System.UnauthorizedAccessException] {
+            if ($sw.ElapsedMilliseconds -ge $TimeoutMs) { throw }
+            Start-Sleep -Milliseconds $delay
+            if ($delay -lt 100) { $delay *= 2 }
+        }
+    }
+}
+
 function Write-JsonlFile {
-    # Atomic write of pre-formatted JSONL lines: temp file + Move-Item -Force, UTF-8 no BOM.
+    # Atomic write of pre-formatted JSONL lines: temp file + Move-ReplaceFile, UTF-8 no BOM.
     param(
         [Parameter(Mandatory)][string] $Path,
         [Parameter(Mandatory)][AllowEmptyCollection()] $Lines
@@ -271,7 +294,7 @@ function Write-JsonlFile {
     $tmp = "$Path.tmp"
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
     [System.IO.File]::WriteAllText($tmp, $payload, $utf8NoBom)
-    Move-Item -LiteralPath $tmp -Destination $Path -Force
+    Move-ReplaceFile -Source $tmp -Destination $Path
 }
 
 # ── Cross-process serialization (S1437) ──────────────────────────────────────────────────────
@@ -669,7 +692,7 @@ function Write-ReleaseFile {
     $tmp = "$Path.tmp"
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
     [System.IO.File]::WriteAllText($tmp, $payload, $utf8NoBom)
-    Move-Item -LiteralPath $tmp -Destination $Path -Force
+    Move-ReplaceFile -Source $tmp -Destination $Path
 }
 
 function Get-CurrentRelease {
@@ -1564,7 +1587,7 @@ function Sync-SpecHeaderStatus {
             $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
             $tmp = "$abs.tmp"
             [System.IO.File]::WriteAllText($tmp, $patched, $utf8NoBom)
-            Move-Item -LiteralPath $tmp -Destination $abs -Force
+            Move-ReplaceFile -Source $tmp -Destination $abs
             if ($null -ne $Wrote) { $Wrote.Value = $true }
         }
         return $true

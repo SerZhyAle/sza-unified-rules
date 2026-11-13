@@ -46,6 +46,22 @@
 # The payload's current_release field echoes the release-queue marker for display only: the ranking
 # above reads package headings and line order, never that marker (S3273).
 #
+# The auto-skip verdict of every candidate is computed in-process by Get-SpecAutoSkip (`_auto-skip.ps1`), the
+# function preview.ps1 prints its own verdict from, and the selected ticket's payload is built in-process by
+# Get-SpecPreview (`_spec-preview.ps1`), the function preview.ps1 prints. Until 2026-11-13 both came from a preview.ps1
+# child process per candidate, and the portfolio rank - which asks every repository this question, often many times
+# - spent 100-170 s starting them.
+#
+# -ScanAll (implied by SZA_PQ_PICKER=1, the portfolio dispatcher's picker) does not stop at the selected ticket: every
+# ranked candidate gets its verdict, so auto_skipped and malformed name every candidate that would not be offered, and
+# the payload says scan_complete = true. A ranked id in neither list is then offerable once the ids above it are
+# excluded - the question the dispatcher used to answer with a second picker run. Nothing past the selected ticket is
+# claimed or previewed in full; only its verdict is computed.
+#
+# -MaxScan bounds how many ranked candidates the selection walks before it gives up (0, the default, is no bound). The
+# bound of 25 existed because each step cost a child process; a step now costs milliseconds, and a cap only turned "the
+# 26th ticket is the first offerable one" into "no candidate". A complete scan still gives every candidate its verdict.
+#
 # Exit codes: 0 always (no candidate is a valid state, reported as selected=null; under -Claim a
 #   claim that neither won nor lost is reported as selected.lease.outcome = 'claim-error').
 #   2 - usage error only: a dash-led token that is not a declared option (S4397), or -ClaimAs
@@ -57,7 +73,8 @@ param(
     [switch]$NoDrift,
     [ValidateSet('json', 'table')]
     [string]$Format = 'json',
-    [int]$MaxScan = 25,
+    [int]$MaxScan = 0,
+    [switch]$ScanAll,
     [switch]$Claim,
     [string]$ClaimAs = '',
     [string]$Reason = 'spec-next-preflight',
@@ -76,7 +93,7 @@ param(
 $unknownOptions = @($AdditionalExclude | Where-Object { "$_" -match '^-' })
 if ($unknownOptions.Count -gt 0) {
     Write-Error ("spec-next-preflight: unknown option(s): $($unknownOptions -join ', '). Declared: " +
-        '-Exclude, -NoDrift, -Format, -MaxScan, -Claim, -ClaimAs, -Reason. Nothing was ranked or claimed.') -ErrorAction Continue
+        '-Exclude, -NoDrift, -Format, -MaxScan, -ScanAll, -Claim, -ClaimAs, -Reason. Nothing was ranked or claimed.') -ErrorAction Continue
     exit 2
 }
 
@@ -90,6 +107,10 @@ if (-not [string]::IsNullOrWhiteSpace($ClaimAs)) {
 }
 
 . (Join-Path $PSScriptRoot '_lib.ps1')
+
+# The auto-skip verdict and the preview payload, shared with preview.ps1 (see the header). Both are written to run
+# under the strict mode `_lib.ps1` just switched on.
+. (Join-Path $PSScriptRoot '_spec-preview.ps1')
 
 # S2695: the idle-run series, so a ticket that has come back unmoved twice in a row is passed over
 # instead of being offered again for ever. It belongs here rather than in the skip cache because
@@ -106,7 +127,6 @@ $pwshExe = if (Test-Path "$env:ProgramFiles\PowerShell\7\pwsh.exe") {
 } else {
     'pwsh'
 }
-$previewPath = Join-Path $PSScriptRoot 'preview.ps1'
 $driftPath = Join-Path $PSScriptRoot 'drift-check.ps1'
 $skipCachePath = Join-Path $PSScriptRoot 'skip-cache.ps1'
 
@@ -130,6 +150,11 @@ foreach ($id in $excludeSet.Keys | Sort-Object) {
 # be captured by direct assignment - @(Read-Catalog) would collapse to 1 element.
 $all = Read-Catalog
 $eligible = @($all | Where-Object { $eligibleStatuses -contains $_.status })
+
+# The catalog the blocker lookups of step 5 read: this same active journal, and the archive only when a blocker is
+# not in it - the order select.ps1 -Id resolves in, without a child process per blocker.
+$autoSkipCatalog = New-AutoSkipCatalog -Active $all -ArchiveLoader { $archived = Read-JsonlFile -Path (Get-ArchivePath); $archived }
+$projectRoot = Get-SzaProjectRoot
 
 # 2. Rank by the owner's release plan first. The catalog knows priority but not intent:
 # PLAN/RELEASE_QUEUE.md says which package a ticket ships in and in what order inside it,
@@ -180,8 +205,23 @@ $ranked = @($eligible | Sort-Object `
     @{ Expression = { [string]$_.id }; Descending = $false })
 
 # 3. Load active persistent skip-cache (read-only consume)
+#
+# A cache file that is absent, empty or `{}` lists nothing, and skip-cache.ps1 -Action list writes nothing for it
+# either, so that answer is taken here without its child process (0.4-0.5 s, paid once per repository per portfolio
+# rank; measured 2026-11-13, 18 of 19 registered repositories hold `{}` or no file). Any other content, or a file that
+# cannot be read, goes to the script as before - it alone prunes expired entries.
 $skipCache = [ordered]@{}
-$skipRaw = & $pwshExe -NoProfile -File $skipCachePath -Action list 2>$null
+$skipRaw = $null
+$skipCacheText = $null
+try {
+    $skipCacheFile = Get-SzaPath 'skipCache'
+    $skipCacheText = if (Test-Path -LiteralPath $skipCacheFile -PathType Leaf) { [string](Get-Content -LiteralPath $skipCacheFile -Raw) } else { '' }
+} catch {
+    $skipCacheText = $null
+}
+if ($null -eq $skipCacheText -or $skipCacheText.Trim() -notin @('', '{}')) {
+    $skipRaw = & $pwshExe -NoProfile -File $skipCachePath -Action list 2>$null
+}
 if ($skipRaw -and $skipRaw.Trim() -ne '{}') {
     try {
         $parsed = $skipRaw | ConvertFrom-Json
@@ -200,7 +240,20 @@ if ($skipRaw -and $skipRaw.Trim() -ne '{}') {
 $leaseSet = @{}
 $leasedDetail = @()
 $leasePath = (Get-SzaHarnessScript 'locks/ticket-lease.ps1')
-if (Test-Path -LiteralPath $leasePath) {
+# No lease file means `ticket-lease.ps1 -Verb Status -Json` has nothing to sweep and prints `[]`, so that answer is taken
+# here without its child process (0.4-0.6 s, once per repository per portfolio rank; measured 2026-11-13, 17 of 19
+# registered repositories hold none). The directory is resolved as that script resolves it, its test seam included.
+# Lease files present, or a directory that cannot be resolved: the script reads and sweeps them as before.
+$leaseFilesPresent = $true
+try {
+    $leaseRoot = Get-SzaEnv 'TICKET_LEASE_ROOT'
+    if ([string]::IsNullOrWhiteSpace($leaseRoot)) { $leaseRoot = Get-SzaProjectRoot }
+    $leaseDirOnDisk = Join-Path $leaseRoot (Get-SzaPath 'leasesDir' -Relative)
+    $leaseFilesPresent = @(Get-ChildItem -LiteralPath $leaseDirOnDisk -Filter '*.json' -ErrorAction SilentlyContinue).Count -gt 0
+} catch {
+    $leaseFilesPresent = $true
+}
+if ($leaseFilesPresent -and (Test-Path -LiteralPath $leasePath)) {
     $leaseRaw = & $pwshExe -NoProfile -File $leasePath -Verb Status -Json 2>$null
     if ($leaseRaw) {
         try {
@@ -246,7 +299,7 @@ try {
 # touches the cached ticket - the blocker ships and its dependent stays hidden for the rest
 # of the 7-day TTL. Measured: S1714 sat cached as "Depends on S1704(BlockNeedUserTest)" while
 # S1704's code was already in the tree. Caching it bought nothing either way, since step 5
-# re-derives the same verdict from preview.ps1 on every run. Every other reason is a judgement
+# re-derives the same verdict (Get-SpecAutoSkip) on every run. Every other reason is a judgement
 # about the ticket itself (tier-5 epic, owner gate, drift needing review) and still holds.
 $skipCachedIds = @()
 $skipCacheOverriddenIds = @()
@@ -308,19 +361,43 @@ function Invoke-CandidateClaim {
     }
 }
 
-# 5. Walk down the live ranked list; preview each until one has auto_skip == null
+function Get-CandidateVerdict {
+    <#
+        preview.ps1's verdict for one ranked candidate, in-process: @{ malformed; reason; detail; specPath }.
+        malformed stands for every way preview.ps1 could not produce a payload - an id outside the grammar, no spec
+        file on disk, an empty one, or a throw while judging it - which the walk has always listed as malformed.
+    #>
+    param([Parameter(Mandatory)] $Candidate)
+    try {
+        $id = [string]$Candidate.id
+        if (-not (Test-SzaTicketId $id)) { return @{ malformed = $true; reason = $null; detail = $null; specPath = $null } }
+        $specPath = Join-Path $projectRoot $Candidate.file
+        if (-not (Test-Path -LiteralPath $specPath)) { return @{ malformed = $true; reason = $null; detail = $null; specPath = $null } }
+        $specText = Read-AutoSkipSpecText -Path $specPath
+        if ($null -eq $specText) { return @{ malformed = $true; reason = $null; detail = $null; specPath = $null } }
+        $v = Get-SpecAutoSkip -Record $Candidate -SpecText $specText -SelfId $id -Catalog $autoSkipCatalog
+        return @{ malformed = $false; reason = $v.AutoSkip; detail = $v.AutoSkipReason; specPath = $specPath }
+    }
+    catch {
+        return @{ malformed = $true; reason = $null; detail = $null; specPath = $null }
+    }
+}
+
+# 5. Walk down the live ranked list; the first candidate with no auto-skip verdict is selected. Under a complete
+# scan (see the header) the walk goes on past it, giving every remaining candidate its verdict and nothing more.
+$completeScan = $ScanAll.IsPresent -or ($env:SZA_PQ_PICKER -ceq '1')
 $autoSkipped = @()
 $malformed = @()
 $claimLost = @()
 $selected = $null
 $scan = 0
 foreach ($cand in $rankedLive) {
-    if ($scan -ge $MaxScan) { break }
+    $selecting = ($null -eq $selected) -and ($MaxScan -le 0 -or $scan -lt $MaxScan)
+    if (-not $selecting -and -not $completeScan) { break }
     $scan++
 
-    # Tested BEFORE the preview spawns: a held ticket is already decided, and previewing it would
-    # spend a child process to learn nothing. The series is read from the run journals, so it costs
-    # one cached file walk for the whole loop.
+    # Tested BEFORE the verdict: a held ticket is already decided. The series is read from the run
+    # journals, so it costs one cached file walk for the whole loop.
     $idleSeries = Get-IdleRunSeries -Id $cand.id
     if ($idleSeries.Count -ge (Get-IdleRunPolicy).Threshold) {
         $autoSkipped += [PSCustomObject]@{
@@ -333,7 +410,7 @@ foreach ($cand in $rankedLive) {
     }
 
     # Rule 67. Tested after the idle hold (a ticket in both states keeps the older, plainer reason) and
-    # before the preview for the same cost reason. Only a ticket whose newest journal row stamped a tree
+    # before the verdict, as it always was. Only a ticket whose newest journal row stamped a tree
     # pays for a stamp of the tree now; every other candidate costs one string test. A throw here must not
     # stall the ranking: no answer reads as "not withheld".
     $awaitsRelease = $false
@@ -353,14 +430,29 @@ foreach ($cand in $rankedLive) {
         continue
     }
 
-    $pvRaw = & $pwshExe -NoProfile -File $previewPath -Id $cand.id -Format json 2>$null
-    if (-not $pvRaw) { $malformed += $cand.id; continue }
+    $verdict = Get-CandidateVerdict -Candidate $cand
+    if ($verdict.malformed) { $malformed += $cand.id; continue }
+    if ($verdict.reason) {
+        $autoSkipped += [PSCustomObject]@{
+            id     = $cand.id
+            reason = $verdict.reason
+            detail = $verdict.detail
+        }
+        continue
+    }
+    # Past the selected ticket (or past -MaxScan) on a complete scan: the verdict is all that is asked.
+    if (-not $selecting) { continue }
+
+    # The selected ticket's payload, through the JSON round trip it always made out of the preview.ps1 child, so
+    # its shape (frontmatter as an object, depends_on as an array) is the one every consumer parses.
     try {
-        $pv = $pvRaw | ConvertFrom-Json
+        $pv = Get-SpecPreview -Record $cand -Id ([string]$cand.id) -Root $projectRoot -SpecPath $verdict.specPath -Catalog $autoSkipCatalog |
+            ConvertTo-Json -Depth 6 -Compress | ConvertFrom-Json
     } catch {
         $malformed += $cand.id; continue
     }
     if ($pv.auto_skip) {
+        # The spec changed between the two reads; the payload's own verdict is the newer one.
         $autoSkipped += [PSCustomObject]@{
             id     = $cand.id
             reason = $pv.auto_skip
@@ -381,7 +473,7 @@ foreach ($cand in $rankedLive) {
         Add-Member -InputObject $pv -NotePropertyName 'lease' -NotePropertyValue $lease -Force
     }
     $selected = $pv
-    break
+    if (-not $completeScan) { break }
 }
 
 # 6. For the selected candidate: drift-check verdict + file/catalog status mismatch
@@ -501,6 +593,10 @@ $result = [PSCustomObject]@{
     leased_ids     = @($leasedDetail)
     auto_skipped   = @($autoSkipped)
     malformed      = @($malformed)
+    # -ScanAll / SZA_PQ_PICKER=1: every ranked candidate was judged, not only those above the selected one, so a ranked
+    # id absent from auto_skipped, malformed and claim_lost would be offered once the ids above it are excluded.
+    # Absent (an older harness) or false: the lists cover only the walk down to the selected ticket.
+    scan_complete  = $completeScan
     # -Claim only: candidates a sibling claimed between this run's lease read and its own claim.
     claim_lost     = @($claimLost)
     claimed        = [bool]$Claim
@@ -524,6 +620,9 @@ if ($Format -eq 'json') {
     Write-Host "spec-next preflight" -ForegroundColor Cyan
     Write-Host "  eligible: $($eligible.Count) / total: $($all.Count) | live ranked: $($rankedOut.Count)" -ForegroundColor DarkGray
     Write-Host "  order: $(Get-SzaPath 'releaseQueue' -Relative) (package, then line order) | current release: $(Get-CurrentRelease)" -ForegroundColor DarkGray
+    if ($completeScan) {
+        Write-Host "  scan: complete - every ranked candidate judged, not only those above the selected one" -ForegroundColor DarkGray
+    }
     if ($skipCachedIds.Count -gt 0) {
         Write-Host "  skip-cached out: $($skipCachedIds -join ', ')" -ForegroundColor DarkGray
     }
