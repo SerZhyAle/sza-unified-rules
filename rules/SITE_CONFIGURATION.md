@@ -65,6 +65,20 @@ CI also spares them from the only gate before Pages publishes - make the deploy 
 the same SHA and require it green, or say plainly in the rules file that it does not, and run the doc and
 site checks in the local build and the release pre-flight.
 
+**A byte-exact render check on a Windows runner needs `core.autocrlf` off.** A `windows-latest` runner defaults to
+`core.autocrlf=true` and rewrites LF-committed render targets to CRLF on checkout, so a `-Check` that compares the
+committed bytes fails in CI while it passes locally. Run `git config --global core.autocrlf false` as a step **before**
+`actions/checkout` in the check job (reference: `deviceinfo_mob`'s `pages.yml`, [its record](contrib/deviceinfo_mob.md)).
+
+**The Pages workflow has a template.** [templates/github-pages.yml](../templates/github-pages.yml) is the workflow of a
+repository whose `site/` Pages serves: it triggers on a push to `main` touching `site/**`, the site tooling or itself, a
+`check` job on `windows-latest` runs the byte-exact render check (with the `core.autocrlf` step first), and a `deploy`
+job on `ubuntu-latest` waits for it (`needs: check`) and publishes `site/` through `configure-pages`,
+`upload-pages-artifact` and `deploy-pages`. Enable Pages once with the workflow build type
+(`gh api -X POST repos/<owner>/<repo>/pages -f build_type=workflow`); the first push run may start before Pages exists, so
+re-run it. The order of a new Android product's repository, site and console app is in the
+[Google Play reference](../skills/store-publish/references/google-play.md).
+
 Keep this script per-repo and identical in shape across properties, so "how do I publish?" has one
 answer everywhere. For a *release* (versioned artifact) rather than a *site update*, use the project's
 release flow instead - see [GITHUB_INTERACTION.md](GITHUB_INTERACTION.md) §4.
@@ -80,7 +94,8 @@ release flow instead - see [GITHUB_INTERACTION.md](GITHUB_INTERACTION.md) §4.
 ## 6. Applying to a new site
 
 1. New repo, root `index.html`, `assets/sza-kit.css` from the kit, `.nojekyll`.
-2. Add `CNAME` (or wire the redirect repo if it shares the apex), enable Pages from root.
+2. Add `CNAME` (or wire the redirect repo if it shares the apex), enable Pages from root - or, for a `site/` folder
+   built by a check, copy the workflow template (§4) and enable the workflow build type.
 3. Copy the `deploy.bat` shape; point `origin` at the new repo.
 4. Add the SEO block + mandatory pages (DOCUMENTATION_CONCEPT §3-4) and build from the style-guide
    components.

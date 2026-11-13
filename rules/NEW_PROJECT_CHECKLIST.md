@@ -94,7 +94,14 @@ apply (a CLI tool has no site, a single-locale app skips localization).
   permission justifications.
 - **Has a web property?** Configure hosting/domain/deploy
   ([SITE_CONFIGURATION.md](SITE_CONFIGURATION.md)) and build pages from the web style kit + the SEO
-  block.
+  block. A site built from sources by a script gets the Pages workflow template
+  ([templates/github-pages.yml](../templates/github-pages.yml)), whose check job keeps `core.autocrlf` off.
+- **Android store product (overlay B)?** Stand up its public presence in order, before any bundle: the GitHub
+  repository, the Pages site, the Play Console app with every App content declaration, the listing and the form
+  factors, then the notices to the family and the records. The steps, the five one-way points (the package name binds at
+  the create-app form) and the traps are in the
+  [Google Play reference](../skills/store-publish/references/google-play.md) of the `store-publish` skill; run it
+  with the owner's yes in chat at each one-way point.
 - **Support path**: wire the issue tracker + contact email and the diagnostic-log intake
   ([SUPPORT_AND_FEEDBACK.md](SUPPORT_AND_FEEDBACK.md)).
 - **Public product?** Open its promotion ticket before the first public release - positioning worksheet,
@@ -103,7 +110,9 @@ apply (a CLI tool has no site, a single-locale app skips localization).
 ## 8. Reserve the frozen anchors
 
 - Reserve the overlay's **frozen anchors** (package id / identity / signing key / module path) - unique
-  per product, never changed after first ship. Everything else can be reorganized later; these cannot.
+  per product, never changed after first ship. Everything else can be reorganized later; these cannot. **On Google
+  Play the `applicationId` is bound when the console app is created**, so reserve it there - before the first upload and
+  before the create-app form is opened ([PLATFORM_OVERLAYS.md](PLATFORM_OVERLAYS.md) Overlay B).
 
 ## 9. First release dry-run
 

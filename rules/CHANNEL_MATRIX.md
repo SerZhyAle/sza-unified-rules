@@ -168,7 +168,10 @@ changing publisher or name orphans installs. Reference: `CyrFlip`'s `SerZhyAle.c
 appropriate. Play has no keyword field, so the description carries the functional phrasing. Foreground-service
 and permission declarations must match runtime use or Play rejects. `versionCode` must strictly increase. A secondary form-factor artifact (Wear, TV, Auto, XR) has its own store
 guidelines and its own rejections, and its criteria are proven on the store flavor, not by unit tests (see
-[PLATFORM_OVERLAYS.md](PLATFORM_OVERLAYS.md) Overlay B).
+[PLATFORM_OVERLAYS.md](PLATFORM_OVERLAYS.md) Overlay B). **The console app comes first and binds the `applicationId`
+the day it is created**, long before an AAB exists; its App content declarations, store settings and listing (the content
+rating is a fresh IARC questionnaire per app) are the first public presence, whose steps, one-way points and traps are in
+the [store-publish skill's Google Play reference](../skills/store-publish/references/google-play.md).
 
 **Sideload / direct APK** - the escape hatch for a flavor carrying capabilities a store would reject (broad
 overlay / accessibility / capture permissions): self-hosted APK off the site or GitHub, self-signed, its own

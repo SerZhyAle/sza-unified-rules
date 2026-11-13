@@ -72,6 +72,7 @@
 {"path": "skills/spec-to-audit/references/ticket-lifecycle-traps.md", "topic": "Ticket lifecycle traps", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "skills/sq/SKILL.md", "topic": "---", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "skills/store-publish/SKILL.md", "topic": "---", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "skills/store-publish/references/google-play.md", "topic": "Google Play - the first public presence of an Android product", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "skills/store-publish/references/msix-store.md", "topic": "MSIX and the Microsoft Store - the full payload", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "skills/store-publish/references/store-machine-channel.md", "topic": "Microsoft Store machine channel", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "skills/store-publish/references/winget.md", "topic": "winget - the full payload", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}

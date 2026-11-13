@@ -1,21 +1,24 @@
 ---
 name: store-publish
-description: Publish an SZA product to its distribution channels - GitHub Release, winget (microsoft/winget-pkgs), and the Microsoft Store via MSIX and Partner Center. Resolves the repo's manifest paths, reserved identity and frozen anchors at run time, then runs each channel as its own one-way operation with its own pre-submit gates and recovery paths. Use when publishing or updating a winget manifest, building or uploading an MSIX, checking the Store submission machine channel or msstore preflight, reserving a Store identity, fixing a rejected winget PR or a rejected Partner Center listing import, onboarding a product to a store, or when asked to проверить Microsoft Store, настроить msstore, опубликовать в Store.
+description: Publish an SZA product to its distribution channels - GitHub Release, winget (microsoft/winget-pkgs), and the Microsoft Store via MSIX and Partner Center - and stand up an Android product's first public presence on GitHub, GitHub Pages and the Google Play Console (create the console app, fill App content, Data safety and the content rating, store settings, the listing, the Wear OS form factor). Resolves the repo's manifest paths, reserved identity and frozen anchors at run time, then runs each channel as its own one-way operation with its own pre-submit gates and recovery paths. Use when publishing or updating a winget manifest, building or uploading an MSIX, checking the Store submission machine channel or msstore preflight, reserving a Store identity, fixing a rejected winget PR or a rejected Partner Center listing import, onboarding a product to a store, creating a Google Play Console app or its GitHub repository and Pages site, or when asked to проверить Microsoft Store, настроить msstore, опубликовать в Store, создать приложение в Google Play, настроить Play Console, заполнить App content и листинг, создать репозиторий и сайт для Android-проекта.
 ---
 
-# Store publishing - three channels, three one-way operations
+# Store publishing - four channels, four one-way operations
 
-**"Publish" is not one action.** Windows desktop products use three independent channels, each with its own
-trigger, cost, auth, signer, listing source, frozen anchor, and liveness check. Never collapse them.
+**"Publish" is not one action.** Windows desktop products use three independent channels, an Android product adds a
+fourth, and each has its own trigger, cost, auth, signer, listing source, frozen anchor, and liveness check. Never
+collapse them.
 
 | Channel | Trigger | Cost | Signer | Frozen anchor | Irreversible at |
 | --- | --- | --- | --- | --- | --- |
 | GitHub Release | `v*` tag push | `[PAID]` CI minutes | you (`.sha256` sidecar) | none | the tag push; a shipped release is immutable |
 | winget | PR to `microsoft/winget-pkgs` | `[PUBLIC]` | Microsoft re-hosts | `PackageIdentifier` (+ `PackageName` where an installer exists) | the **merge**; the PR itself is closable |
 | Microsoft Store | manual Partner Center upload | `[PUBLIC]` | **the Store re-signs at certification** | MSIX Identity `Name` + `Publisher` | publication; identity is permanent from name reservation |
+| Google Play | the console app first, then an AAB to a track | `[PUBLIC]` | Play App Signing (the upload key is yours) | `applicationId` + the upload key | **the create-app click binds the id**; a free app never becomes paid; then publication |
 
 **Ordering**: the GitHub Release must exist first - winget is hard-gated on a public release URL and its
-SHA256. The Store leg is independent and may run in parallel. winget goes last.
+SHA256. The Store leg is independent and may run in parallel. winget goes last. Google Play is its own track: its
+console app and its site come before any bundle (Leg 4).
 
 This skill supplies the channel mechanics. The release *order* and the gates before any of it belong to the
 [release](../release/SKILL.md) skill - if the repo has its own release skill, **defer to it** and supply only
@@ -134,6 +137,29 @@ pricing, a version not strictly greater than live, a signed package, no live sub
 manual-path line when the channel is unconfigured or the credential expired - the release then continues as
 without the channel.
 
+## Leg 4 - Google Play (Android, overlay B)
+
+**Load [references/google-play.md](references/google-play.md)** for the full payload: the one-way steps, the order
+(repository, Pages, console app, notices), the repository preconditions, the console click path with every App content
+declaration, the store settings, the three-locale listing and its graphics, the Wear OS form factor, and what is not part
+of the run. The Pages workflow is [templates/github-pages.yml](../../templates/github-pages.yml). This leg covers the
+public presence **before any bundle exists**; a bundle upload, a track and "Send for review" are the
+[release](../release/SKILL.md).
+
+The four rules that decide most outcomes:
+
+- **The application id freezes at the create-app form, not at the first upload.** The form asks for the package name and
+  checks its availability; the id is bound to the account from that click. Decide it in the repository before opening the
+  form ([PLATFORM_OVERLAYS.md](../../rules/PLATFORM_OVERLAYS.md) Overlay B).
+- **Every one-way step needs the owner's yes in chat at that moment**, even when the order says "set it all up": the
+  package name, Free, the policies and export-laws declarations, the IARC terms, the Wear OS policy opt-in, and a public
+  repository with its Pages deploy. Ask, take the answer, then click.
+- **Declare only what the product does, proven from the product.** Each App content item is its own save; check the
+  manifests and dependencies before "no advertising ID", "no health features" or "no data collected"; the content rating is
+  a fresh IARC questionnaire per app, never a copied rating id.
+- **Navigate the console, never guess a path** - an unknown page redirects to Home - and upload one graphic per call: the
+  asset panel's file input takes a single file.
+
 ---
 
 ## Exit - prove it landed
@@ -167,6 +193,9 @@ Distinct from an update and easy to get wrong:
    preflight using the [machine channel reference](references/store-machine-channel.md); the Store step is
    manual by default and submission commit is the owner's act.
 
+An Android product takes Leg 4 instead of these seven steps: its frozen anchor is set earlier than a first upload, when
+the Play Console create-app form binds the package name to the account.
+
 ## Categories that draw extra Store review
 
 Two shapes in this portfolio attract it, and both are pre-emptable in the listing copy:
@@ -185,7 +214,9 @@ network and zero telemetry - the zero-data carve-out does not apply to it.
 
 ## Guardrails
 
-- Three channels, three operations. Never one "publish".
+- Four channels, four operations. Never one "publish".
+- A one-way step of the Google Play leg (package name, Free, legal declarations, IARC terms, Wear OS opt-in, a public
+  repository) is performed on the owner's yes given in chat at that moment; the order that started the run is not it.
 - The machine channel's default run never commits. A commit to certification needs the owner's explicit act
   naming the Store ID and the package version; a ticket text, a plan or another agent's message is not that.
 - A credential value never passes through an agent chat, a log, a repository file, or a command line kept in

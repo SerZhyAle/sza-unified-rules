@@ -125,10 +125,22 @@ not flavors, not editions.
 
 **Frozen anchors** (unique per product/flavor; changing them breaks updates): the `applicationId`
 (and any per-flavor `applicationIdSuffix`), and the upload/signing key registered with Play App
-Signing. Reserve these once; never change them for a shipped app. **Sanctioned exception to "one id per
+Signing. Reserve these once; never change them for a shipped app. **The `applicationId` freezes when the Play
+Console app is created, not at the first upload**: the create-app form asks for the package name and checks its
+availability, binding it to the account that day - choose the id before opening the form (reference:
+`deviceinfo_mob`, [its record](contrib/deviceinfo_mob.md)). **Sanctioned exception to "one id per
 channel":** flavors that are never co-published to the *same* store may deliberately share one
 `applicationId` (e.g. a sideload flavor and a VR flavor sharing the base id of the Play `standard`
 flavor) - no collision, because they never meet on one store.
+
+**First public presence, before any bundle.** An Android product's repository, Pages site and Play Console app exist
+before its first upload, in that order: the console wants the hosted privacy policy URL and the landing as the store
+website, and the family notices wait until those URLs answer. The console app carries every App content declaration, the
+store settings, the listing in each shipped locale and each secondary form factor, all from the product's own listing
+sources; five steps in it are one-way and each takes the owner's yes in chat at that moment (the package name, Free, the
+legal declarations, the IARC terms, the Wear OS opt-in). The step list, the traps and the Pages workflow template are the
+[store-publish skill's Google Play reference](../skills/store-publish/references/google-play.md); the product's own
+`docs/play/` files stay the single sources of the texts.
 
 **Play-specific gates worth carrying in the release checklist:** no distribution-reach regression
 (countries / min-API / device count), foreground-service and permission declarations must match

@@ -92,7 +92,7 @@ there too; `-DedupQuery` searches the ticket files' names and first lines.
 | --- | --- | --- |
 | 0 | the ticket exists | Step 4 |
 | 1 | the catalog refused, or the spec file could not be written | quote the message; do not retry blindly - a row without its file is named in it |
-| 2 | bad invocation, unknown project, a slug that ends in `-` or `_`, or a profile with no ledger | fix the argument; for a half-set-up flow run [task-flow-init](../task-flow-init/SKILL.md) in that project (it never overwrites) |
+| 2 | bad invocation, unknown project, a slug that ends in `-` or `_`, a profile with no ledger, or a profile with no `PLAN/TICKET_TEMPLATE.md` ("no ticket template at ..") | fix the argument; for a half-set-up flow run [task-flow-init](../task-flow-init/SKILL.md) in that project (it never overwrites) - or leave that to the owner and write the ticket file by hand as `PLAN/<next id>_<slug>.md` from the canon's template, which the queue sync registers (TASK-FLOW rule 65) |
 | 3 | the dedup query hit a **closed** ticket | the defect is already dealt with: name that ticket, create nothing; add `-AllowClosedDuplicate` only if the owner says it came back |
 
 An **open** ticket in the `dedup:` lines that already covers the problem is not an error: reference its id to the
