@@ -51,6 +51,14 @@ try {
     Set-Content -LiteralPath (Join-Path $scratch 'docs/cli-commands.helper.json') -Value '{}' -Encoding utf8
     Set-Content -LiteralPath (Join-Path $scratch 'CLAUDE.md') -Value '# Agent rules' -Encoding utf8
     Assert-Gate 'companion-only manifest warns, strict upgrades it' $true -Strict
+
+    & git -C $scratch init -q
+    if ($LASTEXITCODE -ne 0) { throw 'could not initialize the Git fixture' }
+    Set-Content -LiteralPath (Join-Path $scratch '.gitignore') -Value 'docs/cli-commands.helper.json' -Encoding utf8
+    Assert-Gate 'ignored manifest in a new Git repository does not warn' $false
+
+    Set-Content -LiteralPath (Join-Path $scratch 'docs/cli-commands.other.json') -Value '{}' -Encoding utf8
+    Assert-Gate 'untracked manifest in a new Git repository warns' $true
 }
 finally {
     $resolved = [IO.Path]::GetFullPath($scratch)

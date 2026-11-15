@@ -15,7 +15,8 @@ From any directory, resolve the installed `sza` plugin root and list the registe
 
 ```powershell
 $sza = if ($env:CLAUDE_PLUGIN_ROOT) { $env:CLAUDE_PLUGIN_ROOT } else {
-    $record = Join-Path $env:USERPROFILE '.claude/plugins/installed_plugins.json'
+    $configDir = if ($env:CLAUDE_CONFIG_DIR) { $env:CLAUDE_CONFIG_DIR } else { Join-Path $HOME '.claude' }
+    $record = Join-Path $configDir 'plugins/installed_plugins.json'
     if (Test-Path -LiteralPath $record) {
         ((Get-Content -LiteralPath $record -Raw | ConvertFrom-Json).plugins.'sza@sza-unified-rules' |
             Sort-Object lastUpdated -Descending | Select-Object -First 1).installPath
