@@ -39,6 +39,8 @@
 #   Add-PqPollStat -Stats <s> -Log <h> [-Change] [-Rerank] [-HeartbeatRerank] [-SkippedUnchanged] [-PickerMs <double[]>]
 #                                   counts one poll (each -PickerMs element is one picker call); a sample of another
 #                                   UTC hour first flushes the counted hour. Returns nothing.
+#   Add-PqPickerStat -Stats <s> -Log <h> -Ms <double>
+#                                   counts one rank of the loop as one picker call, without a poll (S0082).
 #   Write-PqPollSummary -Stats <s> -Log <h>
 #                                   poll.summary for the counted hour (d: hour, polls, changes, reranks,
 #                                   heartbeatReranks, pickerCalls, pickerMsAvg over the calls to one decimal,
@@ -154,7 +156,7 @@ function Get-PqUtcDate([DateTimeOffset]$Now) {
     return $Now.UtcDateTime.ToString('yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture)
 }
 
-# ---- the event-name registry: every name of the catalog EVENTS.md (TASK-FLOW rule 57), 78 on 2026-11-11 ----
+# ---- the event-name registry: every name of the catalog EVENTS.md (TASK-FLOW rule 57), 83 on 2026-11-15 ----
 
 function Get-PqEventNames {
     $names = [string[]]@(
@@ -561,6 +563,8 @@ function Open-PqLog {
         RotateSeq    = $null
         Owned        = $false
         Errors       = 0
+        # The lines this handle wrote, every file it rotated through included (run.end eventsWritten, S0082).
+        Written      = [long]0
     }
     $null = Open-PqStream $handle
     $script:PqLogs[$Writer] = $handle
@@ -690,6 +694,7 @@ function Write-PqEvent {
         return $false
     }
     $h.Seq = $seq
+    $h.Written += $records.Count
     $h.Dropped = 0
     $h.PendingError = $null
     $h.PendingRotate = $null
@@ -749,7 +754,7 @@ function Reset-PqPollStats($Stats) {
 function Add-PqPollStat {
     param($Stats, $Log, [switch]$Change, [switch]$Rerank, [switch]$HeartbeatRerank, [switch]$SkippedUnchanged, [double[]]$PickerMs)
     $hour = (Get-PqNow).UtcDateTime.ToString("yyyy-MM-dd'T'HH", [Globalization.CultureInfo]::InvariantCulture)
-    if ($null -ne $Stats.Hour -and $Stats.Hour -cne $hour -and $Stats.Polls -gt 0) {
+    if ($null -ne $Stats.Hour -and $Stats.Hour -cne $hour -and ($Stats.Polls -gt 0 -or $Stats.PickerCalls -gt 0)) {
         $null = Write-PqPollSummary -Stats $Stats -Log $Log
     }
     $Stats.Hour = $hour
@@ -767,11 +772,27 @@ function Add-PqPollStat {
     }
 }
 
-# Emits poll.summary for the counted hour and resets the counters; nothing when no poll was counted. Returns
-# $true when a summary was written, $false otherwise (the run's end calls it for the partial hour).
+# One rank of the loop (rule 58, S0082): its ms counted into the hour's pickerCalls, pickerMsAvg and pickerMsMax. A
+# rank runs on every turn and a poll only while waiting, so a busy hour has rank samples and no polls; a sample of
+# another UTC hour flushes the counted one first, as a poll does. Returns nothing.
+function Add-PqPickerStat {
+    param($Stats, $Log, [double]$Ms)
+    if ($null -eq $Stats) { return }
+    $hour = (Get-PqNow).UtcDateTime.ToString("yyyy-MM-dd'T'HH", [Globalization.CultureInfo]::InvariantCulture)
+    if ($null -ne $Stats.Hour -and $Stats.Hour -cne $hour -and ($Stats.Polls -gt 0 -or $Stats.PickerCalls -gt 0)) {
+        $null = Write-PqPollSummary -Stats $Stats -Log $Log
+    }
+    $Stats.Hour = $hour
+    $Stats.PickerCalls++
+    $Stats.PickerMsSum += $Ms
+    if ($Ms -gt $Stats.PickerMsMax) { $Stats.PickerMsMax = $Ms }
+}
+
+# Emits poll.summary for the counted hour and resets the counters; nothing when neither a poll nor a rank was
+# counted. Returns $true when a summary was written, $false otherwise (the run's end calls it for the partial hour).
 function Write-PqPollSummary {
     param($Stats, $Log)
-    if ($null -eq $Stats -or $Stats.Polls -le 0) { return $false }
+    if ($null -eq $Stats -or ($Stats.Polls -le 0 -and $Stats.PickerCalls -le 0)) { return $false }
     $calls = $Stats.PickerCalls
     $d = [ordered]@{
         hour             = $Stats.Hour

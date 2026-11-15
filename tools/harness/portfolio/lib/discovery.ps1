@@ -9,7 +9,8 @@
 #   Get-PqGitCommonDir -Path <dir>
 #       the full path of the git common directory (a worktree's main .git included), or $null.
 #   Find-PqDaughters -Registry <registry>
-#       the stamped directories under the roots that are not registered, minus the worktrees of registered ones.
+#       the stamped directories under the roots that are not registered, minus the worktrees of registered ones
+#       (-Skipped collects those, written once each as repo.skipped by Invoke-PqDiscovery).
 #   Test-PqRepoReady -Path <dir> [-HarnessRoot <dir>]
 #       @{ ready; checks = [ordered]@{ stamp; profile; ledger; launcher }; why }: the stamp reads, the profile exists,
 #       spec_catalog/validate.ps1 exits 0 and the pass runner's -DryRun exits 0 against the repository.
@@ -55,15 +56,17 @@ function Get-PqGitCommonDir([string]$Path) {
     catch { return $null }
 }
 
-function Find-PqDaughters($Registry) {
+# -Skipped, when given a list, receives @{ path; why = 'worktree'; of = <registered key> } for each stamped directory
+# left out because it shares a registered repository's git common directory (rule 49 repo.skipped, S0082).
+function Find-PqDaughters($Registry, [Collections.Generic.List[object]]$Skipped = $null) {
     $known = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
-    $commons = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    $commons = [Collections.Generic.Dictionary[string, string]]::new([StringComparer]::OrdinalIgnoreCase)
     foreach ($r in @($Registry.repos)) {
         $p = [string](Get-PqValue $r 'path' '')
         if (-not $p) { continue }
         $null = $known.Add((ConvertTo-PqPathKey (ConvertTo-PqFullPath $p)))
         $c = Get-PqGitCommonDir $p
-        if ($c) { $null = $commons.Add($c) }
+        if ($c -and -not $commons.ContainsKey($c)) { $commons[$c] = [string](Get-PqValue $r 'key' '') }
     }
     $found = [Collections.Generic.List[string]]::new()
     foreach ($root in @(Get-PqDiscoveryRoots $Registry)) {
@@ -74,7 +77,10 @@ function Find-PqDaughters($Registry) {
             $full = ConvertTo-PqFullPath $d
             if ($known.Contains((ConvertTo-PqPathKey $full))) { continue }
             $c = Get-PqGitCommonDir $full
-            if ($c -and $commons.Contains($c)) { continue }
+            if ($c -and $commons.ContainsKey($c)) {
+                if ($null -ne $Skipped) { $Skipped.Add(@{ path = $full; why = 'worktree'; of = $commons[$c] }) }
+                continue
+            }
             $found.Add($full)
         }
     }
@@ -103,7 +109,17 @@ function Test-PqRepoReady {
 function Invoke-PqDiscovery {
     param([Parameter(Mandatory)]$Registry, [Parameter(Mandatory)][hashtable]$Seen, [string]$HarnessRoot, $Log, [string]$Run, $Worker)
     $joined = 0
-    foreach ($path in @(Find-PqDaughters $Registry)) {
+    $skipped = [Collections.Generic.List[object]]::new()
+    $daughters = @(Find-PqDaughters $Registry $skipped)
+    foreach ($sk in $skipped) {
+        $sKey = 'skipped|' + (ConvertTo-PqPathKey $sk.path)
+        if ($Seen.ContainsKey($sKey)) { continue }
+        $Seen[$sKey] = $sk.why
+        $skD = [ordered]@{ why = $sk.why }
+        if ($sk.of) { $skD.of = $sk.of }
+        $null = Write-PqEvent -Log $Log -Ev 'repo.skipped' -Run $Run -Worker $Worker -D $skD
+    }
+    foreach ($path in $daughters) {
         $pk = ConvertTo-PqPathKey $path
         $first = -not $Seen.ContainsKey($pk)
         if ($first) {

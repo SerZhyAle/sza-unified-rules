@@ -515,8 +515,8 @@ quiet poll (you who just captured a Draft may still be editing it), so a ticket 
 change. With no change a rank still runs every tenth poll, because some eligibility is a matter of time (a provider's limit,
 your occupancy window), and every poll while the worker itself holds something back for a moment. The worker says why it
 waits, once per change: `waiting for tickets (poll 60s) - nothing offerable: occupied 1, dropped 2`. `wait.enter` carries
-the same counts, `poll.change` names what changed, and one `poll.summary` per hour counts the polls, the changes and the
-ranks skipped as unchanged.
+the same counts, `poll.change` names what changed, and one `poll.summary` per hour counts the polls, the changes, the
+ranks skipped as unchanged and every rank of the hour with its time (`pickerCalls`, `pickerMsAvg`, `pickerMsMax`).
 
 ## Stopping
 
@@ -561,7 +561,7 @@ nothing to follow for a Codex or Gemini pass.
 | --- | --- |
 | `pq inbox [-Json]` | what waits for the owner across all projects: one line per kind (count, oldest age, the command that clears it), then the tickets with id, age and note; `BlockByOtherTask` as chain roots |
 | `pq report [-Days n]` | the last n days (7): passes, moved and ok shares, outcomes, ending statuses overall and by agent, entries and exits for owner-waiting statuses, closed unbuilt per repository, tokens and a list-price estimate by repository, model and outcome, the passes each registered repository's own R0 made outside pq (its `runs-mono.jsonl`, in the same window, counted apart from the pq figures, with any journal that could not be read named), the splits by agent, model, complexity and repository (only where n is at least 5), waiting, occupancy, resources, stops, robot-filed tickets, limits, log health and the open findings; `-Json` for the object |
-| `pq problems [-Days n]` | the open findings only, severity first, each with the events behind it: `PQ-RACE01` (a lost claim), `PQ-SAFE01` (a tripwire), `PQ-SAFE02` (the robot-filed cap), `PQ-LIMIT01` (a limit with no reset time), `PQ-THRASH01`, `PQ-RES03` (a token waited on for 30 minutes), `PQ-STALL01`, `PQ-XREPO01` (a blocker cycle), `PQ-DATA01` (a log gap or error), `PQ-COST02` (`light` that needed three passes), `PQ-ADOPT01` (a repository far below the median); and a `stale hold:` line for a whole-project hold row whose comment says the project has no ticket queue while it now has one |
+| `pq problems [-Days n]` | the open findings only, severity first, each with the events behind it: `PQ-RACE01` (a lost claim), `PQ-SAFE01` (a tripwire), `PQ-SAFE02` (the robot-filed cap), `PQ-LIMIT01` (a limit with no reset time), `PQ-THRASH01`, `PQ-RES03` (a token waited on for 30 minutes), `PQ-STALL01`, `PQ-XREPO01` (a blocker cycle), `PQ-DATA01` (a log gap or error), `PQ-COST02` (`light` that needed three passes), `PQ-ADOPT01` (a repository far below the median); and a `stale hold:` line for a whole-project hold row whose comment says the project has no ticket queue while it now has one. The registry's `analysis.thresholds`, named by finding id, moves the threshold of `PQ-THRASH01` (passes, 4), `PQ-RES03` (minutes, 30), `PQ-COST02` (percent, 30) and `PQ-ADOPT01` (points, 25); a value that is not a number is ignored |
 | `pq trace <key:id>` | every event of one ticket in time order, grouped by pass |
 | `pq export [-What runs|events] [-Format jsonl|csv] [-Days n]` | the run rows (default) or the events, to stdout |
 | `pq compare [-By canon|plugin|registryHash|profileHash|agent|model|complexity|repo] [-Days n]` | the run rows split by that field in the order its values first appear, with n, ok share, and a verdict between the last two values: `better` or `worse` at 15 points and n of at least 5 each, else `no evidence` |
@@ -618,11 +618,13 @@ instance `pq<k>` (`runs-pq<k>.jsonl`), so they show up in the repository's monit
 
 `PQ Status` is the first look. `PQ Log` shows events in timestamp order; narrow it in a console with `pq log -Repo <key>`,
 `-Ev <name>` and `-Json`. The events a loop writes: `run.start`, `run.end`, `rank.result`, `pass.launch`, `pass.end`,
-`pass.limit`, `wait.enter`, `wait.exit`, `run.stop`, `owner.action`, `ticket.dropped`, `ticket.dropLifted`,
-`ticket.blocked`, `ticket.unblocked`, `xrepo.resolve`, `xrepo.cycle`, `agent.fallback`, `agent.hold`, `agent.unproven`,
-`agent.resume`, `dispatch.skip`, `repo.discovered`, `repo.notready`, `repo.ready`, `repo.enabled`, `repo.occupied`,
+`pass.limit`, `dispatch.pick` (the pick, the three alternatives passed over and why the agent), `ticket.complexity`
+(a pass rewrote the level), `wait.enter`, `wait.exit`, `run.stop`, `owner.action`, `ticket.dropped`, `ticket.dropLifted`,
+`ticket.blocked`, `ticket.unblocked`, `xrepo.resolve`, `xrepo.cycle`, `agent.fallback`, `agent.hold`,
+`agent.resume`, `dispatch.skip`, `repo.discovered`, `repo.notready`, `repo.skipped` (a worktree of a registered repository), `repo.ready`, `repo.enabled`, `repo.occupied`,
 `repo.free`, `resource.acquire`, `resource.release`, `resource.wait`, `poll.change`, `poll.summary`, `ticket.thrash`,
-`intake.robotDraft`, `run.pause`, `run.resume`, `pass.halt`, `pass.kill`. No line carries prompt text,
+`intake.robotDraft`, `run.pause`, `run.resume`, `pass.halt`, `pass.kill`. `pass.launch` and `pass.end` carry the model and the level in the envelope (`model`, `cx`),
+with `cxSource` on the launch. No line carries prompt text,
 environment values or keys.
 
 ## When it does not do what you expect

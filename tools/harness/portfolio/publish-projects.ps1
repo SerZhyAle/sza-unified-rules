@@ -14,7 +14,7 @@
         the registry path;
       - the shape is frozen in docs/INBOX-PACKET.md section 3:
           { "schemaVersion": 1, "generatedAt": "<RFC 3339 UTC>", "projects": [ { "key", "name" } ] }
-        in the registry's project order (rule 44);
+        in the registry's project order - its rank, equal ranks keeping array order (rule 44);
       - the file lands in the inbox root beside the spool folders (new/, processing/, done/,
         failed/), which are created here when missing - idempotent, safe to re-run;
       - a missing registry is a named error (exit 2); an empty registry publishes an empty list -
@@ -68,10 +68,14 @@ if (-not $read.ok) {
     Stop-Publish 2 $first.name $first.message
 }
 
-$projects = @(foreach ($repo in @($read.document.repos)) {
-    $path = [string]$repo.path
+# The registry's project order is its rank, equal ranks keeping array order (TASK-FLOW rule 44; DEVICE-EXCHANGE item
+# FD: "in the registry's order") - the same Get-PqRepoOrder the dispatcher and the lister walk, never the array order.
+$registryRepos = @($read.registry.repos)
+$projects = @(foreach ($o in @(Get-PqRepoOrder $read.registry)) {
+    $repo = $registryRepos[$o.index]
+    $path = [string](Get-PqValue $repo 'path' '')
     $leaf = if ($path) { [IO.Path]::GetFullPath($path) } else { '' }
-    [ordered]@{ key = [string]$repo.key; name = if ($leaf) { Split-Path -Leaf $leaf } else { [string]$repo.key } }
+    [ordered]@{ key = [string]$o.key; name = if ($leaf) { Split-Path -Leaf $leaf } else { [string]$o.key } }
 })
 
 $doc = [ordered]@{

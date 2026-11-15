@@ -12,9 +12,11 @@
 #   Get-PqResourceHeld -Token <build|emulator> [-ClearStale]
 #       the live token files (and, with -ClearStale, the dead owners' files removed first, returned in .stale).
 #   Request-PqResources -Registry -RepoKey -TicketId -Verify -PassId
-#       @{ ok; held = @(tokens taken); why; resource; heldCount; cap; stale } - all tokens or none: a token is a file
+#       @{ ok; held = @(tokens taken); why; resource; heldCount; cap; stale; counts } - all tokens or none: a token is a file
 #       <root>\resources\<token>\<repo>__<id>.json with token, repo, id, pid, procStart, pass, at; the count of files is
 #       the number held; the check and the writes are one state transaction, so two workers cannot both take the last one.
+#       counts is @{ <token> = @{ held; cap } } for every token looked at - after the take on success - so an event of one
+#       token reports that token's own count (rule 62).
 #   Remove-PqResources -RepoKey -TicketId
 #       release every token that ticket holds (also the dispatcher's own, whenever it ends).
 
@@ -92,15 +94,15 @@ function Request-PqResources {
                 $cap = [int](Get-PqValue $res $t $(if ($t -ceq 'build') { 3 } else { 1 }))
                 $h = Get-PqResourceHeld -Token $t -ClearStale
                 foreach ($s in @($h.stale)) { $stale.Add("$t/$s") }
+                $counts[$t] = @{ held = @($h.live).Count; cap = $cap }
                 $sameTicket = @($h.live | Where-Object { (Get-PqValue $_ 'repo') -ceq $resourceRepo -and (Get-PqValue $_ 'id') -ceq $resourceId })
                 $mine = @($sameTicket | Where-Object { [int](Get-PqValue $_ 'pid' 0) -eq $PID -and (Get-PqValue $_ 'pass') -ceq $resourcePass }).Count
                 if ($sameTicket.Count -gt $mine) {
-                    return @{ ok = $false; held = @(); why = 'resource'; resource = $t; heldCount = @($h.live).Count; cap = $cap; stale = @($stale) }
+                    return @{ ok = $false; held = @(); why = 'resource'; resource = $t; heldCount = @($h.live).Count; cap = $cap; stale = @($stale); counts = $counts }
                 }
                 if ($mine -eq 0 -and @($h.live).Count -ge $cap) {
-                    return @{ ok = $false; held = @(); why = 'resource'; resource = $t; heldCount = @($h.live).Count; cap = $cap; stale = @($stale) }
+                    return @{ ok = $false; held = @(); why = 'resource'; resource = $t; heldCount = @($h.live).Count; cap = $cap; stale = @($stale); counts = $counts }
                 }
-                $counts[$t] = @{ held = @($h.live).Count; cap = $cap }
             }
             foreach ($t in $tokens) {
                 $file = Get-PqPath -Kind resourceToken -Token $t -Repo $resourceRepo -Id $resourceId
@@ -114,9 +116,21 @@ function Request-PqResources {
                 [IO.File]::WriteAllText($tmp, ($obj | ConvertTo-Json -Compress), [Text.UTF8Encoding]::new($false))
                 [IO.File]::Move($tmp, $file, $true)
             }
+            foreach ($t in $tokens) { $counts[$t].held = @((Get-PqResourceHeld -Token $t).live).Count }
             $first = $tokens[-1]
-            return @{ ok = $true; held = $tokens; why = $null; resource = $first; heldCount = (@((Get-PqResourceHeld -Token $first).live).Count); cap = $counts[$first].cap; stale = @($stale) }
+            return @{ ok = $true; held = $tokens; why = $null; resource = $first; heldCount = $counts[$first].held; cap = $counts[$first].cap; stale = @($stale); counts = $counts }
         })
+}
+
+# The `d` of a resource event for one token (EVENTS.md): resource, verify, and that token's own held and cap from a
+# Request-PqResources result; a stale clear adds `stale` (the dead owner's file name).
+function Get-PqResourceEventData($Request, [string]$Token, [string]$Verify, [string]$Stale = '') {
+    $c = $null
+    $counts = Get-PqValue $Request 'counts'
+    if ($null -ne $counts -and $counts.Contains($Token)) { $c = $counts[$Token] }
+    $d = [ordered]@{ resource = $Token; verify = $Verify; held = $(if ($c) { [int]$c.held } else { 0 }); cap = $(if ($c) { [int]$c.cap } else { 0 }) }
+    if ($Stale) { $d.stale = $Stale }
+    return $d
 }
 
 function Remove-PqResources {

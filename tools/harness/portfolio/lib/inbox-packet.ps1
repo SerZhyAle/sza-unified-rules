@@ -33,9 +33,10 @@
 # full of arrays must be checked as it was parsed.
 
 $script:InboxManifestName = 'manifest.json'
-$script:InboxPacketIdPattern = '^[A-Za-z0-9_-]{1,64}$'
-$script:InboxProjectKeyPattern = '^[a-z][a-z0-9-]*$'
-$script:InboxSha256Pattern = '^[0-9a-f]{64}$'
+# \z, never $: in .NET a bare $ also matches before a final line feed, so 'fms-a' + LF would pass as a project key.
+$script:InboxPacketIdPattern = '^[A-Za-z0-9_-]{1,64}\z'
+$script:InboxProjectKeyPattern = '^[a-z][a-z0-9-]*\z'
+$script:InboxSha256Pattern = '^[0-9a-f]{64}\z'
 $script:InboxRoles = @('text', 'voice', 'screenshot', 'log', 'other')
 $script:InboxStatuses = @('PENDING', 'CLAIMED', 'EXPIRED')
 
@@ -323,8 +324,22 @@ function Test-InboxPacketFolder {
     }
 
     $fileEntries = @(Get-InboxArrayValue $read.document 'files')
-    $files = @()
-    $total = [long]0
+
+    # The limits first, from the declared sizes (the manifest check above made totalSizeBytes the sum of them): FC
+    # refuses an over-limit packet whole, and nothing is read or hashed for it - a file past 2 GiB would otherwise
+    # throw out of the hash below instead of being refused by name.
+    $declaredTotal = [long](Get-InboxMember $read.document 'totalSizeBytes').value
+    if (@($fileEntries).Count -gt $MaxFiles) {
+        $errors.Add((New-InboxProblem 'TooManyFiles' 'files' "the packet has $(@($fileEntries).Count) files, the cap is $MaxFiles"))
+    }
+    if ($declaredTotal -gt $MaxPacketBytes) {
+        $errors.Add((New-InboxProblem 'PacketTooLarge' 'files' "the payload is $declaredTotal bytes, the cap is $MaxPacketBytes"))
+    }
+    if ($errors.Count -gt 0) {
+        $result.errors = @($errors)
+        return $result
+    }
+
     $names = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
     foreach ($entry in $fileEntries) {
         $entryName = (Get-InboxMember $entry 'name').value
@@ -349,14 +364,6 @@ function Test-InboxPacketFolder {
             $errors.Add((New-InboxProblem 'FileHashMismatch' "files[$entryName]" "sha256 mismatch: the manifest claims $($hashNode.value), the bytes hash to $hash"))
             continue
         }
-        $total += $length
-    }
-
-    if (@($fileEntries).Count -gt $MaxFiles) {
-        $errors.Add((New-InboxProblem 'TooManyFiles' 'files' "the packet has $(@($fileEntries).Count) files, the cap is $MaxFiles"))
-    }
-    if ($total -gt $MaxPacketBytes) {
-        $errors.Add((New-InboxProblem 'PacketTooLarge' 'files' "the payload is $total bytes, the cap is $MaxPacketBytes"))
     }
 
     foreach ($found in ([IO.Directory]::EnumerateFiles($Path) | ForEach-Object { Split-Path -Leaf $_ })) {

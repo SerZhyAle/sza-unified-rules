@@ -24,6 +24,11 @@
          `0 command(s) in 0 product(s)`.
       6. It reads the manifest and nothing else, writes nothing: a repository whose profile, ledger and stamp are
          garbage still lists, and every file hashes the same after all the runs.
+      7. One manifest per program (APP-COMMANDS 0.2 item R.1): docs/cli-commands.<program>.json is listed beside
+         docs/cli-commands.json as <key>/<program>, the main one first and the others by name; a broken second
+         manifest is INVALID alone and the main one still lists; a repository with only a second manifest lists it
+         and has no NONE line; a file whose middle part is not a short lower-case name is not a manifest; -Json
+         carries `program` ('' for the main one) and the result line counts every manifest that parses.
 #>
 [CmdletBinding()]
 param([switch] $KeepScratch)
@@ -96,6 +101,26 @@ $repos = foreach ($p in $entries) {
 }
 [IO.File]::WriteAllText((Join-Path $portfolio 'repos.json'), (ConvertTo-Json -InputObject ([ordered]@{ schemaVersion = '1.0'; repos = @($repos) }) -Depth 5), $utf8)
 
+# A second registry for case 7: a product with several programs, and one that has only a second manifest.
+$multi = New-Repo 'multi' (ConvertTo-ManifestText ([ordered]@{ schemaVersion = 1; product = 'Main Prog'; exe = 'Main.exe'; cliVersion = '1.0'; commands = @(
+            [ordered]@{ name = 'commands'; summary = 'Prints the manifest.'; risk = 'safe'; coldStart = 'oneshot' }
+            [ordered]@{ name = 'show'; summary = 'Brings the window forward.'; risk = 'safe'; coldStart = 'start' }) }))
+[IO.File]::WriteAllText((Join-Path $multi 'docs\cli-commands.share-manager.json'), (ConvertTo-ManifestText ([ordered]@{ schemaVersion = 1; product = 'Share Manager'; exe = 'Companion.exe'; cliVersion = '1.1'; commands = @(
+            [ordered]@{ name = 'clipboard send'; summary = 'Sends the clipboard.'; risk = 'leaves-machine'; coldStart = 'oneshot' }) })), $utf8)
+[IO.File]::WriteAllText((Join-Path $multi 'docs\cli-commands.broken-one.json'), '{ "schemaVersion": 1, ', $utf8)
+# Not manifests by the name rule: an upper-case or underscored program name, a numeric first character, a third dot.
+foreach ($ignored in @('cli-commands.Bad_Name.json', 'cli-commands.2fast.json', 'cli-commands.a.b.json', 'cli-commands.json.bak')) {
+    [IO.File]::WriteAllText((Join-Path $multi "docs\$ignored"), (ConvertTo-ManifestText ([ordered]@{ schemaVersion = 1; product = 'Ignored'; commands = @([ordered]@{ name = 'x' }) })), $utf8)
+}
+$onlySecond = New-Repo 'onlysecond'
+[IO.File]::WriteAllText((Join-Path $onlySecond 'docs\cli-commands.extra.json'), (ConvertTo-ManifestText ([ordered]@{ schemaVersion = 1; product = 'Extra'; cliVersion = '0.3'; commands = @([ordered]@{ name = 'status'; summary = 'Asks the first instance.'; risk = 'safe'; coldStart = 'refuse' }) })), $utf8)
+$multiRoot = Join-Path $scratch 'multi-registry'
+New-Item -ItemType Directory -Path $multiRoot | Out-Null
+$multiRepos = foreach ($p in @(@('onlysecond', $onlySecond, 20), @('multi', $multi, 10))) {
+    [ordered]@{ key = $p[0]; path = $p[1]; enabled = $true; maxWorkers = 1; concurrent = $false; role = 'product'; permissionMode = 'bypassPermissions'; rank = $p[2] }
+}
+[IO.File]::WriteAllText((Join-Path $multiRoot 'repos.json'), (ConvertTo-Json -InputObject ([ordered]@{ schemaVersion = '1.0'; repos = @($multiRepos) }) -Depth 5), $utf8)
+
 $noRegistryRoot = Join-Path $scratch 'no-registry'
 New-Item -ItemType Directory -Path $noRegistryRoot | Out-Null
 $emptyRoot = Join-Path $scratch 'empty-registry'
@@ -118,6 +143,9 @@ $calls = [ordered]@{
     noReg    = @{ a = @();         root = $noRegistryRoot }
     noRegJson = @{ a = @('-Json'); root = $noRegistryRoot }
     emptyReg = @{ a = @();         root = $emptyRoot }
+    multi    = @{ a = @();         root = $multiRoot }
+    multiJson = @{ a = @('-Json'); root = $multiRoot }
+    multiOne = @{ a = @('-Project', 'multi'); root = $multiRoot }
 }
 $results = @{}
 $calls.GetEnumerator() | ForEach-Object -ThrottleLimit 8 -Parallel {
@@ -202,6 +230,30 @@ try {
         $watchedAfter = @(Get-ChildItem -LiteralPath $scratch -Recurse -File | Where-Object { $_.FullName -notlike "$noRegistryRoot*" -and $_.FullName -notlike "$emptyRoot*" -and $_.Name -ne 'run-lister.ps1' } | Sort-Object FullName)
         $hashesAfter = @($watchedAfter | ForEach-Object { '{0}={1}' -f $_.FullName, (Get-FileHash -LiteralPath $_.FullName).Hash })
         Assert-That (($hashesBefore -join "`n") -ceq ($hashesAfter -join "`n")) 'a file under the scratch tree changed, appeared or vanished'
+    }
+    Run-Case '7 one manifest per program' {
+        $r = $results['multi']
+        Assert-That ($r.code -eq 0) "exit $($r.code): $($r.text)"
+        $heads = @($r.lines | Where-Object { $_ -match '^(OK|NONE|INVALID|MISSING) ' } | ForEach-Object { ($_ -split '\s+')[0, 1] -join ' ' })
+        Assert-That (($heads -join ',') -eq 'OK multi,INVALID multi/broken-one,OK multi/share-manager,OK onlysecond/extra') "labels and order (main first, then by name, rank across repositories): $($heads -join ',')"
+        Assert-That ($r.lines -contains 'OK       multi  Main Prog  cliVersion=1.0  2 command(s)') "main manifest line: $($r.text)"
+        Assert-That ($r.lines -contains 'OK       multi/share-manager  Share Manager  cliVersion=1.1  1 command(s)') 'second program line'
+        Assert-That ($r.lines -contains '    clipboard send  risk=leaves-machine  coldStart=oneshot  Sends the clipboard.') 'a verb of the second program'
+        Assert-That ($r.lines -contains 'INVALID  multi/broken-one  not JSON') 'a broken second manifest is INVALID alone'
+        Assert-That ($r.lines -contains '    show  risk=safe  coldStart=start  Brings the window forward.') 'the main manifest still lists beside a broken one'
+        Assert-That (-not ($r.text -match 'Ignored|Bad_Name|2fast|a\.b')) "a file that is not a manifest by the name rule was read: $($r.text)"
+        Assert-That ($r.lines -contains 'OK       onlysecond/extra  Extra  cliVersion=0.3  1 command(s)') 'a repository with only a second manifest lists it'
+        Assert-That (-not ($r.text -match '(?m)^NONE ')) 'a repository with a second manifest is not NONE'
+        Assert-That ($r.last -eq 'app-commands: 4 command(s) in 3 product(s); none 0, invalid 1, missing 0') "result line counts every manifest that parses: $($r.last)"
+        $o = $results['multiOne']
+        Assert-That ($o.code -eq 0 -and $o.last -eq 'app-commands: 3 command(s) in 2 product(s); none 0, invalid 1, missing 0') "-Project narrows to one repository, every program of it: $($o.last)"
+        $doc = ConvertFrom-Json -InputObject $results['multiJson'].text -NoEnumerate
+        Assert-That ($doc.Count -eq 4) "json holds $($doc.Count) record(s)"
+        $programs = @($doc | ForEach-Object { '{0}|{1}|{2}' -f $_.repo, $_.program, $_.state })
+        Assert-That (($programs -join ',') -eq 'multi||ok,multi|broken-one|invalid,multi|share-manager|ok,onlysecond|extra|ok') "json repo, program, state: $($programs -join ',')"
+        $plain = ConvertFrom-Json -InputObject $results['json'].text -NoEnumerate
+        $alphaJson = @($plain | Where-Object { $_.repo -eq 'alpha' })[0]
+        Assert-That ($null -ne $alphaJson.PSObject.Properties['program'] -and $alphaJson.program -ceq '') 'the main record carries program as an empty string'
     }
 }
 finally {

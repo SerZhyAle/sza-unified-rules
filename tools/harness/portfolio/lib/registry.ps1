@@ -268,7 +268,22 @@ function Test-PqRegistry {
                         $st = $d.status
                         if ($st -isnot [string] -or $st -cnotin @('proven', 'unproven')) { & $add 'LimitDetectorInvalid' "$w.limitDetector.status" "limitDetector.status '$st' is not proven or unproven" }
                     }
+                    if (Test-PqHasKey $d 'pattern') {
+                        $p = $d.pattern
+                        $valid = ($p -is [string]) -and -not [string]::IsNullOrWhiteSpace($p)
+                        if ($valid) { try { $null = [regex]::new($p) } catch { $valid = $false } }
+                        if (-not $valid) { & $add 'LimitDetectorInvalid' "$w.limitDetector.pattern" 'limitDetector.pattern is not a valid regular expression' }
+                    }
+                    elseif ($kind -cin @('log', 'exitText')) { & $add 'LimitDetectorInvalid' "$w.limitDetector.pattern" "limitDetector.kind '$kind' needs a pattern" }
                 }
+            }
+            if (Test-PqHasKey $a 'halt') {
+                $v = $a.halt
+                if ($v -isnot [string] -or $v -cnotin @('ctrlBreak', 'closeMain', 'none')) { & $add 'AgentHaltInvalid' "$w.halt" "halt '$v' is not ctrlBreak, closeMain or none" }
+            }
+            if (Test-PqHasKey $a 'limitPollMinutes') {
+                $v = $a.limitPollMinutes
+                if (-not (Test-PqIntValue $v) -or $v -lt 1) { & $add 'AgentLimitPollRange' "$w.limitPollMinutes" "limitPollMinutes '$v' is not an integer of at least 1" }
             }
         }
     }

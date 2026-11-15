@@ -25,7 +25,9 @@ $script:PqStatusSets = New-Module -ArgumentList (Join-Path $PSScriptRoot '..\..\
     Export-ModuleMember -Function Test-BlockerReleased
 }
 
-$script:PqXrepoTokenPattern = '(?i)(?:Blocker|Блокер)\s*:\s*\**\s*([a-z](?:[a-z-][a-z0-9-]*)?):([A-Za-z][A-Za-z0-9_-]*\d[A-Za-z0-9_-]*)'
+# The lookbehind is the closing gate's (spec_catalog/_blocker-links.ps1): a token right after a backtick or an angle
+# bracket is an example in prose, not a claim, so the dispatcher and the gate read the same tokens (rule 52, S0082).
+$script:PqXrepoTokenPattern = '(?i)(?<![`<])(?:Blocker|Блокер)\s*:\s*\**\s*([a-z](?:[a-z-][a-z0-9-]*)?):([A-Za-z][A-Za-z0-9_-]*\d[A-Za-z0-9_-]*)'
 
 function Get-PqXrepoBlockers([string]$SpecText, [string]$StatusNote = '') {
     $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)

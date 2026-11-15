@@ -1139,7 +1139,7 @@ function Invoke-PqReport {
             catch { $sources.Add(@{ repo = [string]$repo.key; why = $_.Exception.Message }) }
         }
     }
-    $r = Get-PqReport -Root (Get-PqRoot) -Days $d -Standalone @($sources)
+    $r = Get-PqReport -Root (Get-PqRoot) -Days $d -Standalone @($sources) -Thresholds (Get-PqValue (Get-PqValue $reg 'analysis') 'thresholds')
     if ($Json) { ConvertTo-Json -InputObject $r -Depth 12; return 0 }
     "pq report - last $($r.window.days) day(s), since $($r.window.since)"
     $h = $r.headline
@@ -1207,7 +1207,7 @@ function Invoke-PqProblems {
     $root = Get-PqRoot
     $runs = @(Read-PqRuns -Root $root -Since $w.since)
     $ev = Read-PqWindowEvents -Root $root -Since $w.since
-    $f = @(Get-PqFindings -Runs $runs -Events @($ev.events) -Gaps $ev.gaps -Bad $ev.bad)
+    $f = @(Get-PqFindings -Runs $runs -Events @($ev.events) -Gaps $ev.gaps -Bad $ev.bad -Thresholds (Get-PqValue (Get-PqValue (Read-PqRegistryIfAny) 'analysis') 'thresholds'))
     # The phone inbox spool (S0046): an unprocessed packet past the threshold is a finding the engine cannot see
     # (the spool is not the ledger), printed the way S0025 surfaced the waiting statuses - only when the inbox
     # root exists, so a machine without the Drive channel reports nothing.

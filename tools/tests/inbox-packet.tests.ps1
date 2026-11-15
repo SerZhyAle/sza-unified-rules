@@ -136,6 +136,18 @@ Refused 'refuse-total-size-off-by-one' 'TotalSizeMismatch' { param($m) $m.totalS
 Refused 'refuse-unknown-role' 'RoleInvalid' { param($m) $m.files[0].role = 'video' }
 Refused 'refuse-bad-project-key' 'ProjectKeyInvalid' { param($m) $m.project = 'FMS A' }
 Refused 'refuse-bad-projects-entry' 'ProjectKeyInvalid' { param($m) $m.projects = @('fms-a', 'SHOUTING') }
+# FC: a key matches ^[a-z][a-z0-9-]*$. In .NET a bare $ also matches before a final line feed, so the grammar
+# uses \z and a key (or a packet id, or a hash) with a trailing line feed is no key.
+Refused 'refuse-project-key-trailing-lf' 'ProjectKeyInvalid' { param($m) $m.project = "fms-a`n" }
+Refused 'refuse-projects-entry-trailing-lf' 'ProjectKeyInvalid' { param($m) $m.projects = @("canon`n") }
+Run-Case 'refuse-packet-id-trailing-lf' {   # a folder cannot carry a line feed in its name, so this one is judged on the manifest alone
+    $m = New-BaseManifest
+    $m.packetId = ([string]$m.packetId) + "`n"
+    $r = Test-InboxPacketManifest -Manifest $m
+    Assert-That (-not $r.ok) 'expected a refusal, accepted instead'
+    Assert-Reason $r 'PacketIdInvalid'
+}
+Refused 'refuse-hash-trailing-lf' 'FileEntryInvalid' { param($m) $m.files[0].sha256 = ([string]$m.files[0].sha256) + "`n" }
 Refused 'refuse-whitespace-text' 'TextInvalid' { param($m) $m.text = '   ' }
 Refused 'refuse-malformed-auth' 'AuthInvalid' { param($m) $m.auth = 'nope' }
 
@@ -200,6 +212,33 @@ Run-Case 'refuse-packet-over-cap' {
     $r = Test-InboxPacketFolder -Path $dir -MaxPacketBytes 3
     Assert-That (-not $r.ok) 'expected a refusal, accepted instead'
     Assert-Reason $r 'PacketTooLarge'
+}
+Run-Case 'refuse-too-many-files' {
+    $dir = Publish-Packet (New-BaseManifest)
+    $r = Test-InboxPacketFolder -Path $dir -MaxFiles 0
+    Assert-That (-not $r.ok) 'expected a refusal, accepted instead'
+    Assert-Reason $r 'TooManyFiles'
+}
+# FC: an over-limit packet is refused whole and nothing is read for it. The limits are judged on the declared sizes
+# before any file is opened, so a manifest that declares more than the cap is refused by name even when its payload
+# is not in the folder at all (a file read or hashed first would report FileMissing, or throw on a file past 2 GiB).
+Run-Case 'over-cap-is-refused-before-any-file-is-read' {
+    $m = New-BaseManifest
+    $m.files[0].size = [long]209715201
+    $m.totalSizeBytes = [long]209715201
+    $dir = Publish-Packet $m
+    [IO.File]::Delete((Join-Path $dir 'text.md'))
+    $r = Test-InboxPacketFolder -Path $dir
+    Assert-That (-not $r.ok) 'expected a refusal, accepted instead'
+    $names = @(@($r.errors) | ForEach-Object { $_.name })
+    Assert-That ($names -contains 'PacketTooLarge') "expected PacketTooLarge, found: $($names -join ', ')"
+    Assert-That (-not ($names -contains 'FileMissing')) 'a file was looked at before the limit was judged'
+    Assert-That ($null -eq $r.packet) 'a refused packet must not carry a document'
+}
+Run-Case 'the-cap-itself-is-accepted' {
+    $dir = Publish-Packet (New-BaseManifest)
+    $length = [long]([IO.FileInfo](Join-Path $dir 'text.md')).Length
+    Assert-Ok (Test-InboxPacketFolder -Path $dir -MaxPacketBytes $length -MaxFiles 1)
 }
 
 Write-Host 'accepts that must hold'
@@ -313,6 +352,30 @@ Run-Case 'publish-round-trip' {
         Assert-That ([IO.Directory]::Exists((Join-Path $inbox $d))) "the $d spool folder was not created"
     }
     Assert-That ([string]$doc.generatedAt -cmatch '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$') 'generatedAt is not RFC 3339 UTC'
+}
+# DEVICE-EXCHANGE item FD says "in the registry's order", INBOX-PACKET 3 and TASK-FLOW rule 44 say that order is the
+# registry's rank (equal ranks keep array order), whatever the array order of the file is.
+Run-Case 'publish-keeps-the-rank-order' {
+    $inbox = Join-Path $scratch 'inbox-rank'
+    $registry = Join-Path $scratch 'repos-rank.json'
+    [IO.File]::WriteAllText($registry, (@'
+{
+  "schemaVersion": "1.0",
+  "repos": [
+    { "key": "slow", "path": "p:\\x\\Slow", "enabled": true, "rank": 90 },
+    { "key": "tie-b", "path": "p:\\x\\TieB", "enabled": true, "rank": 40 },
+    { "key": "first", "path": "p:\\x\\First", "enabled": true, "rank": 10 },
+    { "key": "tie-a", "path": "p:\\x\\TieA", "enabled": true, "rank": 40 },
+    { "key": "unranked", "path": "p:\\x\\Unranked", "enabled": true }
+  ]
+}
+'@ -replace "`r`n", "`n"), [Text.UTF8Encoding]::new($false))
+    $out = & $pwshExe -NoProfile -File $publish -InboxRoot $inbox -RegistryPath $registry
+    Assert-That ($LASTEXITCODE -eq 0) "publish failed: $out"
+    $doc = ConvertFrom-Json -InputObject ([IO.File]::ReadAllText((Join-Path $inbox 'projects.json'))) -DateKind String
+    $keys = @($doc.projects | ForEach-Object { [string]$_.key })
+    Assert-That (($keys -join ',') -ceq 'first,tie-b,tie-a,slow,unranked') "projects.json is not in rank order: $($keys -join ',')"
+    Assert-That ([string]$doc.projects[0].name -ceq 'First') 'the display name drifted with the reorder'
 }
 Run-Case 'publish-refuses-missing-registry' {
     $out = & $pwshExe -NoProfile -File $publish -InboxRoot (Join-Path $scratch 'inbox-x') -RegistryPath (Join-Path $scratch 'no-registry.json') 2>&1

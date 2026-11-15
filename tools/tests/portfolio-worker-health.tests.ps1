@@ -151,7 +151,65 @@ exit ([int]$env:STUB_FINAL)
     if ($loopText -notmatch '\$null -eq \$named -and \$MaxTickets -le 0') { throw "loop.ps1: a run with a ceiling must not end for a code change" }
     Write-Host " PASS" -ForegroundColor Green
 
-    Write-Host "`nAll 7 worker health test cases PASSED cleanly." -ForegroundColor Green
+    # Case 8 (S0080): the stopped-repository notice keeps the repository's stop file under its own name. The block is taken from
+    # loop.ps1 by its syntax tree and dot-sourced in this scope, so a rebinding of the portfolio name shows here. After the block
+    # the portfolio name still reads the portfolio STOP, a clean repository is not reported, and the guard reads the portfolio
+    # file as absent while the stopped repository's own file stands.
+    Write-Host "Case 8: stopped-repository notice leaves the portfolio stop name alone..." -NoNewline
+    $loopText8 = [IO.File]::ReadAllText((Join-Path $lib 'loop.ps1'))
+    $parseErrors8 = $null
+    $loopAst8 = [Management.Automation.Language.Parser]::ParseInput($loopText8, [ref]$null, [ref]$parseErrors8)
+    if (@($parseErrors8).Count -ne 0) { throw ('loop.ps1 does not parse: ' + (@($parseErrors8 | ForEach-Object { $_.Message }) -join '; ')) }
+    $startFn8 = @($loopAst8.FindAll({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Start-PqLoop' }, $true))
+    if ($startFn8.Count -ne 1) { throw "loop.ps1: Start-PqLoop is defined $($startFn8.Count) times, expected 1" }
+    $stopAssigns8 = @($startFn8[0].FindAll({ param($n) $n -is [Management.Automation.Language.AssignmentStatementAst] -and $n.Left -is [Management.Automation.Language.VariableExpressionAst] -and $n.Left.VariablePath.UserPath -eq 'stopPath' }, $true))
+    if ($stopAssigns8.Count -ne 1) { throw ('loop.ps1: $stopPath is assigned ' + $stopAssigns8.Count + ' times in Start-PqLoop, expected 1 (the portfolio STOP at its definition)') }
+    $stoppedAssign8 = @($startFn8[0].FindAll({ param($n) $n -is [Management.Automation.Language.AssignmentStatementAst] -and $n.Left -is [Management.Automation.Language.VariableExpressionAst] -and $n.Left.VariablePath.UserPath -eq 'stoppedNow' }, $true))
+    if ($stoppedAssign8.Count -ne 1) { throw "loop.ps1: `$stoppedNow is assigned $($stoppedAssign8.Count) times, expected 1" }
+    $siblings8 = @($stoppedAssign8[0].Parent.Statements)
+    $iFrom8 = -1; $iTo8 = -1
+    for ($k = 0; $k -lt $siblings8.Count; $k++) {
+        if ([object]::ReferenceEquals($siblings8[$k], $stoppedAssign8[0])) { $iFrom8 = $k }
+        if ($siblings8[$k] -is [Management.Automation.Language.ForEachStatementAst] -and $siblings8[$k].Condition.Extent.Text -match 'stopNoticeState\.Keys') { $iTo8 = $k }
+    }
+    if ($iFrom8 -lt 0 -or $iTo8 -lt $iFrom8) { throw 'loop.ps1: the stopped-repository notice block is not where this case looks for it' }
+    for ($k = $iFrom8; $k -le $iTo8; $k++) {
+        $touch8 = @($siblings8[$k].FindAll({ param($n) $n -is [Management.Automation.Language.VariableExpressionAst] -and $n.VariablePath.UserPath -eq 'stopPath' }, $true))
+        if ($touch8.Count -ne 0) { throw 'loop.ps1: the stopped-repository notice block names $stopPath (line of the portfolio STOP)' }
+    }
+    $block8 = $loopText8.Substring($siblings8[$iFrom8].Extent.StartOffset, $siblings8[$iTo8].Extent.EndOffset - $siblings8[$iFrom8].Extent.StartOffset)
+
+    # The notice reads each repository's stop file through Get-PqRepoPaths, which lives in ledger-watch.ps1; pq.ps1 loads it,
+    # this suite does not, so the case loads it here.
+    . (Join-Path $lib 'ledger-watch.ps1')
+    $case8 = Join-Path $scratch 'case8'
+    $repoA8 = Join-Path $case8 'repo-a'
+    $repoB8 = Join-Path $case8 'repo-b'
+    $null = [IO.Directory]::CreateDirectory($repoA8)
+    $null = [IO.Directory]::CreateDirectory($repoB8)
+    $stopA8 = [string](Get-PqRepoPaths -RepoPath $repoA8).StopFile
+    $null = [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($stopA8))
+    [IO.File]::WriteAllText($stopA8, 'freeze')
+    $portfolioStop8 = Join-Path $scratch 'STOP'
+    if ([IO.File]::Exists($portfolioStop8)) { Remove-Item -LiteralPath $portfolioStop8 -Force }
+    # The loop state the block reads, as Start-PqLoop holds it at that point (the names are the loop's own).
+    $stopPath = $portfolioStop8
+    $byKey = @{ 'repo-a' = [pscustomobject]@{ path = $repoA8 }; 'repo-b' = [pscustomobject]@{ path = $repoB8 } }
+    $rank = [pscustomobject]@{ candidates = @(); skipped = @([pscustomobject]@{ repo = 'repo-a'; why = 'stopped' }) }
+    $stopNoticeState = @{}
+    # Dot-sourced through the pipeline: it runs in this scope (so a rebinding would show) and its console output is captured.
+    $noticeText8 = (. ([scriptblock]::Create($block8)) 6>&1 | Out-String)
+    if ($stopPath -cne $portfolioStop8) { throw "the notice block rebound the portfolio stop name to '$stopPath'" }
+    if ($noticeText8 -notmatch [regex]::Escape("repository repo-a is stopped - its own stop file $stopA8")) { throw "the notice does not name the stopped repository's own stop file: $noticeText8" }
+    if ($noticeText8 -match 'repository repo-b') { throw 'the clean repository was reported as stopped' }
+    if (-not [IO.File]::Exists($stopA8)) { throw 'the stopped repository file is missing - the case did not stand the stop it needs' }
+    if ([IO.File]::Exists($stopPath)) { throw 'the launch guard would drop every launch: the portfolio name reads a file that is not the portfolio STOP' }
+    # Said once per change: a second pass over the same state prints nothing.
+    $again8 = (. ([scriptblock]::Create($block8)) 6>&1 | Out-String)
+    if ($again8 -match 'is stopped') { throw 'the notice was printed again for an unchanged stopped repository' }
+    Write-Host " PASS" -ForegroundColor Green
+
+    Write-Host "`nAll 8 worker health test cases PASSED cleanly." -ForegroundColor Green
     exit 0
 }
 finally {

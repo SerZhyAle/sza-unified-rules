@@ -9,7 +9,9 @@
 {"path": "docs/PROGRESS_CONTRACT-SYNC-S0008.md", "topic": "S0008 - Contract synchronization evidence", "area": "docs", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "docs/PROGRESS_CONTRACT-TASKFLOW-S0013.md", "topic": "S0013 - TASK-FLOW harness gaps and the first real agent child", "area": "docs", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "docs/README.md", "topic": "docs", "area": "docs", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "docs/contracts/APP-COMMANDS.md", "topic": "APP-COMMANDS - pointer", "area": "docs", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "docs/contracts/CHECK-VERDICT.md", "topic": "CHECK-VERDICT - pointer", "area": "docs", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "docs/contracts/DEVICE-EXCHANGE.md", "topic": "DEVICE-EXCHANGE - pointer", "area": "docs", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "docs/contracts/DOC-EXTERNAL-QUALITY.md", "topic": "DOC-EXTERNAL-QUALITY - pointer", "area": "docs", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "docs/contracts/DOC-INTERNAL-QUALITY.md", "topic": "DOC-INTERNAL-QUALITY - pointer", "area": "docs", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "docs/contracts/HARNESS-PROFILE.md", "topic": "HARNESS-PROFILE - pointer", "area": "docs", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}

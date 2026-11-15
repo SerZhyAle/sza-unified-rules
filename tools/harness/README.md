@@ -112,12 +112,14 @@ section 0, in every project; `spec_catalog/attachment-capture.ps1` holds the cop
 `pwsh -NoProfile -File tools/tests/spec-draft.tests.ps1` checks it over throwaway repositories.
 
 `portfolio/app-commands-list.ps1` is the discovery half of the APP-COMMANDS contract (rule 20): it walks the registered
-repositories and prints the commands of each one's `docs/cli-commands.json` - product, verb, summary, risk class, cold
-start - telling a repository with no manifest (`NONE`), a manifest that does not parse (`INVALID`, with the reason, and
-none of its commands) and a registered folder that is gone (`MISSING`) from one that parses (`OK`). It reads that one
-file per repository and nothing else, writes nothing, and an empty registry is an empty report with exit 0; `-Project
-<key|folder>` narrows it and `-Json` prints the records. `pwsh -NoProfile -File tools/tests/app-commands-list.tests.ps1`
-checks it over throwaway repositories in about a second.
+repositories and prints the commands of each one's manifests - `docs/cli-commands.json` for the main program and
+`docs/cli-commands.<program>.json` for every other program that stays running (item R.1 of 0.2), listed as
+`<key>/<program>` - with product, verb, summary, risk class and cold start, telling a repository with no manifest
+(`NONE`), a manifest that does not parse (`INVALID`, with the reason, and none of its commands) and a registered folder
+that is gone (`MISSING`) from one that parses (`OK`). It reads those files per repository and nothing else, writes
+nothing, and an empty registry is an empty report with exit 0; `-Project <key|folder>` narrows it and `-Json` prints the
+records. `pwsh -NoProfile -File tools/tests/app-commands-list.tests.ps1` checks it over throwaway repositories in about
+two seconds.
 
 `portfolio/quiz-list.ps1` is the mechanical half of the `spec-quiz` skill (`/spec-quiz`, `/sq`): it reads the ledgers
 of the current project, a named one or every registered one and lists the tickets in `BlockQuestions` with their

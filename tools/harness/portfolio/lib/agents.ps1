@@ -200,6 +200,22 @@ function Get-PqAgentLiveCount([Parameter(Mandatory)][string]$Name) {
     return $n
 }
 
+# The `why` vocabulary of `agent.fallback` (EVENTS.md). Select-PqAgent also records an agent the owner's
+# `STOP-agent__<name>` keeps out (why `stopped`) for the console summary; that is the owner's stop, recorded by the
+# stop itself, not a fallback test, so the loop writes no `agent.fallback` for it.
+$script:PqFallbackWhys = @('limit', 'maxParallel', 'levelNotAllowed', 'noPipelineForm', 'launchFailed')
+function Test-PqFallbackWhy([string]$Why) { return $script:PqFallbackWhys -ccontains $Why }
+
+# `agent.resume` data for a hold that just ended (rule 48): heldFor is the whole seconds since the hold was last
+# written (0 when its time is unreadable); by is `reset` when the hold carried a reset time that has passed, else
+# `probe` - the pass that ended without a limit was the probe of a poll hold.
+function Get-PqHoldResume($Hold, [DateTimeOffset]$Now = [DateTimeOffset]::UtcNow) {
+    $heldFor = 0
+    try { $heldFor = [int][Math]::Max(0, [Math]::Floor(($Now - [DateTimeOffset]::Parse([string](Get-PqValue $Hold 'writtenAt'))).TotalSeconds)) } catch { }
+    $by = if (Get-PqValue $Hold 'until') { 'reset' } else { 'probe' }
+    return [ordered]@{ heldFor = $heldFor; by = $by }
+}
+
 function Select-PqAgent {
     # -Skip names agents the owner's `STOP-agent__<name>` keeps out of new work while a pass of it is still running (rule 47).
     param([Parameter(Mandatory)]$Registry, [Parameter(Mandatory)][string]$RepoPath, [Parameter(Mandatory)][string]$Level, [string[]]$Skip = @())

@@ -19,11 +19,11 @@
 #                                       of them said built=false (closed unbuilt); a row without built is unknown (S0037).
 #   Get-PqUsageFigures -Runs            tokens and list-price estimate (TASK-FLOW 0.20) summed by repository, model and outcome;
 #                                       passes without usage, incomplete usage and unpriced passes are counted, never zero.
-#   Get-PqReport -Root -Days [-Standalone <Sources>]
+#   Get-PqReport -Root -Days [-Standalone <Sources>] [-Thresholds <registry analysis.thresholds>]
 #                                       the report object: headline, outcome mix, ending statuses, the outsidePq block, splits by agent / model / complexity /
 #                                       repository (a split prints only where n >= minSample, METRICS.md), waiting, occupancy,
 #                                       resources, stops, intake, telemetry health, findings.
-#   Get-PqFindings -Runs -Events -Gaps -Bad
+#   Get-PqFindings -Runs -Events -Gaps -Bad [-Thresholds]  (a threshold is named by its finding id, rule 41)
 #                                       the open findings of the window, METRICS.md ids, severity first. Each: fid, severity,
 #                                       target, text, value, threshold, evidence (event refs, up to 10).
 #   Get-PqTrace -Root -Repo -Id         one ticket's events in time order.
@@ -223,8 +223,16 @@ function Group-PqRunsBy($Runs, [string]$Field) {
 
 function Get-PqEventRef($E) { return ('{0}#{1}' -f $E.ev, $E.seq) + $(if ($E.wr) { "@$($E.wr)" } else { '' }) }
 
+# A finding threshold (rule 41 analysis.thresholds, S0082): the registry value named by the finding id when it is a
+# number, else the METRICS.md default. A name the analysis does not use is ignored.
+function Get-PqThreshold($Thresholds, [string]$Name, [double]$Default) {
+    $v = Get-PqValue $Thresholds $Name
+    if ($null -ne $v -and ($v -is [int] -or $v -is [long] -or $v -is [double] -or $v -is [decimal])) { return [double]$v }
+    return $Default
+}
+
 function Get-PqFindings {
-    param($Runs, $Events, $Gaps, [int]$Bad = 0)
+    param($Runs, $Events, $Gaps, [int]$Bad = 0, $Thresholds = $null)
     $runs = @($Runs)
     $events = @($Events)
     $out = [Collections.Generic.List[object]]::new()
@@ -254,18 +262,20 @@ function Get-PqFindings {
     $thr = @(& $of 'ticket.thrash')
     $byTicket = @{}
     foreach ($r in $runs) { $k = "$(Get-PqValue $r 'repo' ''):$(Get-PqValue $r 'id' '')"; if (-not $byTicket.ContainsKey($k)) { $byTicket[$k] = [Collections.Generic.List[object]]::new() }; $byTicket[$k].Add($r) }
-    $stuck = @($byTicket.Keys | Where-Object { $byTicket[$_].Count -ge 4 -and (Get-PqValue $byTicket[$_][0] 'statusBefore' '') -ceq (Get-PqValue $byTicket[$_][$byTicket[$_].Count - 1] 'statusAfter' '') })
+    $thrashMin = Get-PqThreshold $Thresholds 'PQ-THRASH01' 4
+    $stuck = @($byTicket.Keys | Where-Object { $byTicket[$_].Count -ge $thrashMin -and (Get-PqValue $byTicket[$_][0] 'statusBefore' '') -ceq (Get-PqValue $byTicket[$_][$byTicket[$_].Count - 1] 'statusAfter' '') })
     if ($thr.Count -gt 0 -or $stuck.Count -gt 0) {
-        & $add 'PQ-THRASH01' 'medium' 'skill' "$($stuck.Count) ticket(s) offered 4+ times with no net advance ($($stuck -join ', ')); $($thr.Count) held back by the loop" ($stuck.Count + $thr.Count) 4 @($thr | ForEach-Object { Get-PqEventRef $_ })
+        & $add 'PQ-THRASH01' 'medium' 'skill' "$($stuck.Count) ticket(s) offered 4+ times with no net advance ($($stuck -join ', ')); $($thr.Count) held back by the loop" ($stuck.Count + $thr.Count) $thrashMin @($thr | ForEach-Object { Get-PqEventRef $_ })
     }
 
     # PQ-RES03: a ticket that waited for a resource token for half an hour or more.
     $waits = @(& $of 'resource.wait')
+    $resMin = Get-PqThreshold $Thresholds 'PQ-RES03' 30
     $longWait = @($waits | Group-Object { "$($_.repo):$($_.id)" } | Where-Object {
             $ts = @($_.Group | ForEach-Object { [datetime]::Parse([string]$_.ts, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::AdjustToUniversal) })
-            ($ts | Measure-Object -Maximum).Maximum - ($ts | Measure-Object -Minimum).Minimum -ge [timespan]::FromMinutes(30)
+            ($ts | Measure-Object -Maximum).Maximum - ($ts | Measure-Object -Minimum).Minimum -ge [timespan]::FromMinutes($resMin)
         })
-    if ($longWait.Count -gt 0) { & $add 'PQ-RES03' 'medium' 'runner' "$($longWait.Count) ticket(s) waited 30+ minutes for a build or emulator token ($(@($longWait | ForEach-Object Name) -join ', '))" $longWait.Count 30 @($waits | ForEach-Object { Get-PqEventRef $_ }) }
+    if ($longWait.Count -gt 0) { & $add 'PQ-RES03' 'medium' 'runner' "$($longWait.Count) ticket(s) waited 30+ minutes for a build or emulator token ($(@($longWait | ForEach-Object Name) -join ', '))" $longWait.Count $resMin @($waits | ForEach-Object { Get-PqEventRef $_ }) }
 
     # PQ-STALL01: a pass with no signal for too long.
     $stall = @(& $of 'pass.stall')
@@ -294,7 +304,8 @@ function Get-PqFindings {
     if ($light.Count -ge $script:PqMinSample) {
         $many = @($light | Where-Object { $_.Count -ge 3 }).Count
         $share = [Math]::Round(100.0 * $many / $light.Count, 1)
-        if ($share -gt 30) { & $add 'PQ-COST02' 'medium' 'canon' "$share % of light tickets needed 3+ passes ($many of $($light.Count)): the level is set too low" $share 30 @() }
+        $costMax = Get-PqThreshold $Thresholds 'PQ-COST02' 30
+        if ($share -gt $costMax) { & $add 'PQ-COST02' 'medium' 'canon' "$share % of light tickets needed 3+ passes ($many of $($light.Count)): the level is set too low" $share $costMax @() }
     }
 
     # PQ-ADOPT01: a repository whose ok share is 25 points under the portfolio median (n >= 20 in it).
@@ -302,8 +313,9 @@ function Get-PqFindings {
     $shares = @($byRepo.Keys | Where-Object { $byRepo[$_].Count -ge 20 } | ForEach-Object { @{ repo = $_; share = (Get-PqRunStats $byRepo[$_]).okShare } })
     if ($shares.Count -ge 2) {
         $median = Get-PqPercentile @($shares | ForEach-Object { [double]$_.share }) 50
+        $adoptGap = Get-PqThreshold $Thresholds 'PQ-ADOPT01' 25
         foreach ($s in $shares) {
-            if ($median - [double]$s.share -ge 25) { & $add 'PQ-ADOPT01' 'medium' 'canon' "$($s.repo): ok share $($s.share) % against a portfolio median of $median %" $s.share 25 @() }
+            if ($median - [double]$s.share -ge $adoptGap) { & $add 'PQ-ADOPT01' 'medium' 'canon' "$($s.repo): ok share $($s.share) % against a portfolio median of $median %" $s.share $adoptGap @() }
         }
     }
 
@@ -312,7 +324,7 @@ function Get-PqFindings {
 }
 
 function Get-PqReport {
-    param([Parameter(Mandatory)][string]$Root, [int]$Days = 7, $Standalone = @())
+    param([Parameter(Mandatory)][string]$Root, [int]$Days = 7, $Standalone = @(), $Thresholds = $null)
     $w = Get-PqWindow $Days
     $runs = @(Read-PqRuns -Root $Root -Since $w.since)
     $mono = Read-PqStandaloneRuns -Sources $Standalone -Since $w.since
@@ -365,7 +377,7 @@ function Get-PqReport {
     $report.limits = [ordered]@{ passLimits = (& $count 'pass.limit'); holds = (& $count 'agent.hold'); resumes = (& $count 'agent.resume'); fallbacks = (& $count 'agent.fallback') }
     $runErrCount = @($events | Where-Object { $_.ev -ceq 'run.error' -and (Get-PqValue $_.d 'stage' '') -cne 'provider-pause' }).Count
     $report.telemetry = [ordered]@{ events = $events.Count; logErrors = (& $count 'log.error'); runErrors = $runErrCount; seqGaps = @($ev.gaps).Count; unparsable = $ev.bad; unsupported = $ev.unsupported }
-    $report.findings = @(Get-PqFindings -Runs $runs -Events $events -Gaps $ev.gaps -Bad $ev.bad)
+    $report.findings = @(Get-PqFindings -Runs $runs -Events $events -Gaps $ev.gaps -Bad $ev.bad -Thresholds $Thresholds)
     return $report
 }
 
