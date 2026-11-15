@@ -117,7 +117,6 @@ if (-not (Test-SzaTicketId $Id)) { Write-Error "Invalid -Id '$Id' (must match $(
 $ErrorActionPreference = 'Stop'
 
 $root = (Get-SzaProjectRoot)
-$planRoot = Join-Path $root 'PLAN'
 # -Checkbox -Target Index needs no phase, so this must survive an absent -Phase.
 $phaseNumber = if ([string]::IsNullOrWhiteSpace($Phase)) { '' } else { '{0:d2}' -f [int]$Phase }
 
@@ -126,19 +125,31 @@ if ($State -eq 'Manual' -and [string]::IsNullOrWhiteSpace($Note)) {
     exit 2
 }
 
-$planFolder = Get-ChildItem -LiteralPath $planRoot -Directory -Filter "$($Id)_*" -ErrorAction SilentlyContinue |
-    Select-Object -First 1
+# S0084 / TASK-FLOW rule 70: where the ticket's plan lives is not a fixed directory. A ticket entering Implemented,
+# Verified or BlockNeedUserTest takes its spec file and folder into paths.specArchiveDir, and a tick of its steps still
+# has to find them (a literal `PLAN` plus a glob exited 2 "nothing to tick" for exactly those tickets). The ledger row's
+# `file` names the directory first, as Get-TicketSpecFile does for rule 67; paths.specsDir and paths.specArchiveDir
+# follow for a ticket with no row. The first directory that holds either shape wins, so the folder and the compact file
+# of one ticket are never taken from two places.
+$planFolder = $null
+$compactFile = $null
+foreach ($planHome in @(Get-SzaSpecHomes -FileRef (Get-SzaLedgerFileRef -Id $Id -RepoRoot $root) -RepoRoot $root)) {
+    $planFolder = Get-ChildItem -LiteralPath $planHome -Directory -Filter "$($Id)_*" -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    $compactFile = Get-ChildItem -LiteralPath $planHome -File -Filter "$($Id)_*.md" -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if ($planFolder -or $compactFile) { break }
+}
 # S2666: the compact layout is the majority shape, not an edge case - 123 of the strategic files in
 # PLAN/ carry their steps inline rather than in a tactical folder, because the Simple path writes
 # them there. Resolving the folder alone made every one of those tickets unreachable through the
 # documented tool, so a session either hand-edited the very markers this script exists to keep in
 # step, or the ticket stalled. The strategic file is a SECOND surface, not a fallback for a missing
 # folder: a compact ticket may legitimately own a folder holding only research/ and evidence/.
-$compactFile = Get-ChildItem -LiteralPath $planRoot -File -Filter "$($Id)_*.md" -ErrorAction SilentlyContinue |
-    Select-Object -First 1
+# (Both shapes are looked up in the loop above, in the same directory.)
 if (-not $planFolder -and -not $compactFile) {
     $specsDir = Get-SzaPath 'specsDir' -Relative
-    Write-Error "plan-tick: neither $specsDir/$($Id)_<slug>/ nor $specsDir/$($Id)_<slug>.md exists - nothing to tick." -ErrorAction Continue
+    Write-Error "plan-tick: neither $specsDir/$($Id)_<slug>/ nor $specsDir/$($Id)_<slug>.md exists (nor in the archive directory) - nothing to tick." -ErrorAction Continue
     exit 2
 }
 

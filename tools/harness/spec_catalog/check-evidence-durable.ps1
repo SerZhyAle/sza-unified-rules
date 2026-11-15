@@ -21,8 +21,13 @@ param(
 #     otherwise be unfixable without breaking that guarantee.
 #   - Archived is deliberately NOT gated: it closes a ticket that already passed this
 #     gate, and blocking cleanup would make tidying the catalog harder than leaving it.
+#   - S0084: a citation of a file in the spec's own folder (at the spec's current home, outside
+#     §0) must name a file that exists. Durable evidence that is cited and absent is as
+#     unverifiable as disposable evidence; the relocation step and the rule 70 move are the two
+#     writers that can produce it. A glob, a bare directory and the other home's copy are not judged.
 #
-# Exit codes: 0 = no temp/ evidence outside §0. 1 = blockers reported. 2 = bad invocation.
+# Exit codes: 0 = no temp/ evidence and no dangling own-folder citation outside §0. 1 = blockers
+# reported. 2 = bad invocation.
 
 . (Join-Path $PSScriptRoot '_lib.ps1')
 
@@ -65,6 +70,16 @@ if (Test-Path -LiteralPath $specDir) {
 }
 
 $blockers = New-Object System.Collections.Generic.List[string]
+$dangling = New-Object System.Collections.Generic.List[string]
+
+# S0084: a citation of a file in the ticket's own folder must name a file that exists. The scratch rule above stops a
+# spec citing disposable evidence; this one stops it citing durable evidence that is not there - the case the
+# relocation step (relocate-temp-evidence.ps1) and TASK-FLOW rule 70's move can produce between them, and one no other
+# gate caught. Only the folder at the spec's CURRENT home is judged (the citation the relocator writes and the move
+# then carries over): a citation of the other directory's copy is neither confirmed nor refused here. A glob or a bare
+# directory is not a file citation and is skipped.
+$specBaseRel = ((($specPath.Substring($repoRoot.Length).TrimStart('\', '/')) -replace '\\', '/') -replace '\.md$', '')
+$ownFolderCitation = [regex]::new('(?<![\w/.\-])' + [regex]::Escape("$specBaseRel/") + '(?<rest>[^\s`''"\)\]\[<>|,;*?]+)')
 
 foreach ($target in $targets) {
     # -Encoding UTF8: spec files are UTF-8 and carry Russian prose. Without it Windows
@@ -84,7 +99,36 @@ foreach ($target in $targets) {
             $rel = $target.Substring($repoRoot.Length).TrimStart('\', '/') -replace '\\', '/'
             $blockers.Add(('{0}:{1}: {2}' -f $rel, ($i + 1), $line.Trim()))
         }
+
+        foreach ($m in $ownFolderCitation.Matches($line)) {
+            # A fragment (file.md#section) and a line suffix (file.txt:12) are not part of the file's name.
+            $rest = $m.Groups['rest'].Value -replace '#.*$', ''
+            $rest = ($rest.TrimEnd('.', ':') -replace ':\d+(?::\d+)?$', '').TrimEnd('.', ':')
+            if (-not $rest -or $rest.EndsWith('/')) { continue }
+            $cited = Join-Path $repoRoot ("$specBaseRel/$rest" -replace '/', [IO.Path]::DirectorySeparatorChar)
+            if (-not (Test-Path -LiteralPath $cited)) {
+                $rel = $target.Substring($repoRoot.Length).TrimStart('\', '/') -replace '\\', '/'
+                $dangling.Add(('{0}:{1}: {2}/{3}' -f $rel, ($i + 1), $specBaseRel, $rest))
+            }
+        }
     }
+}
+
+if ($dangling.Count -gt 0) {
+    Write-Output "FAIL $Id"
+    foreach ($b in $dangling) { Write-Output "- $b" }
+    Write-Output ""
+    Write-Output "Spec '$Id' cites files in its own folder that do not exist."
+    Write-Output "A closed spec must keep its audit trail verifiable. For each path above:"
+    Write-Output "  1. restore the file at that path, or"
+    Write-Output "  2. correct the citation to the path the file actually has, or"
+    Write-Output "  3. replace it with a reproducing command plus its expected result."
+    if ($blockers.Count -gt 0) {
+        Write-Output ""
+        Write-Output "And the scratch citations below:"
+        foreach ($b in $blockers) { Write-Output "- $b" }
+    }
+    exit 1
 }
 
 if ($blockers.Count -gt 0) {

@@ -1,11 +1,12 @@
 # templates
 
-Files a project copies into itself when it adopts the canon or stands up a part of it. Copy, then fill against the live
-tree - these are starting points, not render targets, so the copy is edited freely afterwards.
+Files and snippets a project copies into itself when it adopts the canon or stands up a part of it. Copy, then fill
+against the live tree - these are starting points, not render targets, so the copy is edited freely afterwards.
 
 | File | Copy to | Filled by |
 | --- | --- | --- |
 | [.sza-canon.json](.sza-canon.json) | the target repo's root | the [adopt-canon](../skills/adopt-canon/SKILL.md) skill |
+| [agent-rules.md](agent-rules.md) | the authoritative agent-rules file, when the product has a command manifest | the [adopt-canon](../skills/adopt-canon/SKILL.md) skill; copy the snippet and name the executable |
 | [github-pages.yml](github-pages.yml) | `.github/workflows/pages.yml` of a repo whose `site/` Pages serves | the product session, from [SITE_CONFIGURATION.md](../rules/SITE_CONFIGURATION.md) section 4 and the [Google Play reference](../skills/store-publish/references/google-play.md) |
 
 ## The stamp

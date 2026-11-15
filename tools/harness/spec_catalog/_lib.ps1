@@ -1071,6 +1071,56 @@ function Move-PathWithRetry {
     }
 }
 
+function Update-SpecSelfCitations {
+    # S0084: a spec that cites its own place by a repository-rooted path - the attachments the evidence relocator
+    # copied (relocate-temp-evidence.ps1 writes "<specsDir>/<id>_<slug>/attachments/<name>") or any other file in its
+    # folder, or the spec file itself - cites a path that stops existing when TASK-FLOW rule 70 moves the file and
+    # folder into the other directory. Called by Move-SpecToStatusHome after both renames, on the moved files, with the
+    # row's old and new `file`: every citation of the old base path (the file path without ".md", followed by "/" or
+    # ".md") becomes the new one. The citations are rewritten for the home the files actually reached, so a refused
+    # move (a collision, an alternate-catalog run, a repository with one directory) leaves them as they were.
+    #
+    # Section 0 is verbatim captured material and is left alone, the exemption the evidence gate and the relocator
+    # apply. A path that is not repository-rooted (a link relative to the spec) needs no rewrite: file and folder
+    # move together. Returns how many citations were rewritten.
+    param(
+        [Parameter(Mandatory)][string] $OldFileRel,
+        [Parameter(Mandatory)][string] $NewFileRel,
+        [Parameter(Mandatory)][string[]] $Files
+    )
+    $oldBase = ($OldFileRel -replace '\\', '/') -replace '\.md$', ''
+    $newBase = ($NewFileRel -replace '\\', '/') -replace '\.md$', ''
+    if ($oldBase -ceq $newBase) { return 0 }
+    # The lookbehind keeps "PLAN/DONE/S1_t" and "sub/PLAN/S1_t" from matching "PLAN/S1_t".
+    $citation = [regex]::new('(?<![\w/.\-])' + [regex]::Escape($oldBase) + '(?=/|\.md(?!\w))')
+    $replacement = $newBase.Replace('$', '$$')
+    $count = 0
+    foreach ($target in $Files) {
+        $raw = [System.IO.File]::ReadAllText($target)
+        if (-not $citation.IsMatch($raw)) { continue }
+        $newline = if ($raw.Contains("`r`n")) { "`r`n" } else { "`n" }
+        $lines = $raw -split '\r?\n'
+        $changed = $false
+        $inSectionZero = $false
+        for ($i = 0; $i -lt $lines.Count; $i++) {
+            $line = $lines[$i]
+            if ($line -match '^##\s+0\.') { $inSectionZero = $true; continue }
+            if ($inSectionZero -and $line -match '^##\s+(?!0\.)') { $inSectionZero = $false }
+            if ($inSectionZero) { continue }
+            $hits = $citation.Matches($line).Count
+            if ($hits -eq 0) { continue }
+            $lines[$i] = $citation.Replace($line, $replacement)
+            $count += $hits
+            $changed = $true
+        }
+        if ($changed) {
+            $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+            [System.IO.File]::WriteAllText($target, ($lines -join $newline), $utf8NoBom)
+        }
+    }
+    return $count
+}
+
 function Move-SpecToStatusHome {
     # TASK-FLOW rule 70 (S0076): a finished ticket's spec file leaves the working folder with its status.
     # Entering a release-ready status (Implemented, Verified, BlockNeedUserTest) moves the spec file, and its
@@ -1161,6 +1211,22 @@ function Move-SpecToStatusHome {
         $result.moved = $true
         $result.file = $newFile
         $result.note = "moved to $newFile" + $(if ($hasFolder) { ' (with its folder)' } else { '' })
+
+        # S0084: the files now cite a path that no longer exists wherever they name their own old place (the
+        # evidence relocator wrote its attachments citations before this move). Housekeeping like the move: a
+        # failure here is a printed reason, and the move stands.
+        try {
+            $oldRel = if ($fileAbs.StartsWith($script:RepoRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+                ($fileAbs.Substring($script:RepoRoot.Length).TrimStart('\', '/')) -replace '\\', '/'
+            } else { ([string]$Record.file) -replace '\\', '/' }
+            $moved = @($dstFile)
+            if ($hasFolder) { $moved += @(Get-ChildItem -LiteralPath $dstFolder -Filter '*.md' -Recurse -File | ForEach-Object { $_.FullName }) }
+            $rewritten = Update-SpecSelfCitations -OldFileRel $oldRel -NewFileRel $newFile -Files $moved
+            if ($rewritten -gt 0) { $result.note += "; $rewritten citation(s) of its old path rewritten" }
+        }
+        catch {
+            $result.note += "; citations of its old path not rewritten: $($_.Exception.Message)"
+        }
     }
     catch {
         $result.moved = $false

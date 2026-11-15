@@ -46,6 +46,7 @@
 {"path": "rules/WINDOWS_PACKAGING.md", "topic": "Windows Packaging - the delivery-shape decision guide", "area": "rules", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "skills/adopt-canon/SKILL.md", "topic": "---", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "skills/agent-cost/SKILL.md", "topic": "---", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "skills/app-commands/SKILL.md", "topic": "Discover and use product commands", "area": "skills", "update_triggers": ["Changes to product command discovery or the agent risk policy"], "role": "source"}
 {"path": "skills/caveman/SKILL.md", "topic": "---", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "skills/contract-sync/SKILL.md", "topic": "---", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "skills/feature-to-site/SKILL.md", "topic": "---", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
@@ -80,6 +81,7 @@
 {"path": "skills/store-publish/references/winget.md", "topic": "winget - the full payload", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "skills/task-flow-init/SKILL.md", "topic": "---", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "templates/README.md", "topic": "templates", "area": "templates", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "templates/agent-rules.md", "topic": "Agent-rules snippet for a product command line", "area": "templates", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "tools/harness/README.md", "topic": "SZA harness - the development-process layer, shipped", "area": "tools", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "tools/harness/all_features/README.md", "topic": "ALL_FEATURES inventory - schema notes", "area": "tools", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "tools/harness/document_registry/README.md", "topic": "Document registry - how a page gets announced", "area": "tools", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}

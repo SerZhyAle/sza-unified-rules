@@ -14,6 +14,8 @@
 #   Unlock-PqRepo               releases run\repo-<key>.lock.
 #   Get-PqDropMark              a dropped ticket's status, updated and spec-file time, read from the ledger files.
 #   Get-PqDropChange            which of the three differs from the mark taken when the drop was made, or $null.
+#   Invoke-PqLedgerWatch        one look at the named repositories' ledgers against the shared run\ledger-<key>.json:
+#                               ticket.transition, ticket.created and ingest.ledgerDiff of rule 59 (S0082).
 #   Start-PqLoop                the main execution loop of pq start (V1-V9).
 
 # Consecutive provider-error passes per agent name. Declared here, never lazily in the loop: the runner is under strict
@@ -280,7 +282,7 @@ function Update-PqWorkerSeen([int]$Slot) {
     }
 }
 
-function Set-PqWorkerState([int]$Slot, [string]$Repo = $null, [string]$Ticket = $null, [string]$Title = $null, [string]$Agent = $null) {
+function Set-PqWorkerState([int]$Slot, [string]$Repo = $null, [string]$Ticket = $null, [string]$Title = $null, [string]$Agent = $null, [string]$Carry = $null, [string]$CarryAgent = $null) {
     Invoke-PqStateLock {
         $root = Get-PqRoot
         $runDir = Join-Path $root 'run'
@@ -297,6 +299,9 @@ function Set-PqWorkerState([int]$Slot, [string]$Repo = $null, [string]$Ticket = 
             since = $now
             seen = $now
         }
+        # Rule 47 drain (S0082): a worker between two passes of a drained ticket says which, so another worker does
+        # not honour the stop over it while the carry goes on.
+        if ($Carry) { $obj.drainCarry = $Carry; $obj.carryAgent = $CarryAgent }
         $tmp = "$wf.$PID.tmp"
         [IO.File]::WriteAllText($tmp, (($obj | ConvertTo-Json -Compress)), [Text.Encoding]::UTF8)
         [IO.File]::Move($tmp, $wf, $true)
@@ -767,6 +772,167 @@ function Get-PqComplexityChange([string]$From, [string]$To, [string]$StatusBefor
     return $d
 }
 
+# ---- the ledger watch wiring (rule 59, S0082 phase 7) ----
+# Every pool worker is its own dispatcher, so the previous look at a repository's ledger is shared, not per worker:
+# <root>\run\ledger-<key>.json holds the last snapshot (at, ticket rows) and the entry map of Update-PqEnteredAt.
+# Whichever worker looks first under the repository's watch mutex writes the interval's events and advances the file;
+# a worker that finds the mutex taken skips, because the holder is reading the same files at the same moment. A
+# first look with no file writes the baseline and no event (a restart diffs against the file the last run left).
+
+function Get-PqLedgerWatchPath([string]$Key) {
+    return (Join-Path (Join-Path (Get-PqRoot) 'run') "ledger-$Key.json")
+}
+
+# The saved look as @{ snapshot (the shape of Get-PqLedgerSnapshot, complete); enteredAt (ordinal ordered map) }, or
+# $null when the file is absent or unreadable (the next look is then a baseline).
+function Read-PqLedgerWatch([string]$Path) {
+    try {
+        if (-not [IO.File]::Exists($Path)) { return $null }
+        $o = [IO.File]::ReadAllText($Path) | ConvertFrom-Json
+        $tickets = [Collections.Specialized.OrderedDictionary]::new([StringComparer]::Ordinal)
+        foreach ($t in @($o.tickets)) {
+            if ($null -eq $t -or -not $t.id -or $tickets.Contains([string]$t.id)) { continue }
+            $tickets[[string]$t.id] = [pscustomobject][ordered]@{
+                id = [string]$t.id; status = [string]$t.status; updated = $t.updated; created = $t.created; priority = $t.priority; file = $t.file
+            }
+        }
+        $entered = [Collections.Specialized.OrderedDictionary]::new([StringComparer]::Ordinal)
+        foreach ($e in @($o.enteredAt)) { if ($null -ne $e -and $e.id) { $entered[[string]$e.id] = $e.at } }
+        $snap = [pscustomobject][ordered]@{
+            repo = $o.repo; root = $o.root; at = [DateTimeOffset]::Parse([string]$o.at, [Globalization.CultureInfo]::InvariantCulture)
+            tickets = $tickets; bad = 0; ledgerRead = $true; archiveRead = $true; complete = $true
+            errors = [Collections.Generic.List[string]]::new()
+        }
+        return @{ snapshot = $snap; enteredAt = $entered }
+    }
+    catch { return $null }
+}
+
+function Save-PqLedgerWatch([string]$Path, $Snapshot, $EnteredAt) {
+    $dir = Split-Path -Parent $Path
+    if (-not [IO.Directory]::Exists($dir)) { $null = [IO.Directory]::CreateDirectory($dir) }
+    $obj = [ordered]@{
+        repo = $Snapshot.repo
+        root = $Snapshot.root
+        at = ([DateTimeOffset]$Snapshot.at).ToUniversalTime().ToString('o', [Globalization.CultureInfo]::InvariantCulture)
+        tickets = @(foreach ($id in @($Snapshot.tickets.Keys)) { $Snapshot.tickets[$id] })
+        enteredAt = @(foreach ($id in @($EnteredAt.Keys)) { [ordered]@{ id = $id; at = $EnteredAt[$id] } })
+    }
+    $tmp = "$Path.$PID.tmp"
+    [IO.File]::WriteAllText($tmp, ($obj | ConvertTo-Json -Compress -Depth 6), [Text.Encoding]::UTF8)
+    [IO.File]::Move($tmp, $Path, $true)
+}
+
+# The repository runner's journal rows (rule 23) with their instance, from runs-<instance>.jsonl in its runs folder:
+# the last TailBytes of each file only (an attribution window is minutes, a journal grows for months). A row that is
+# not JSON is skipped; a file that cannot be read returns $null (rule 59: the actor is then unknown, and counted).
+function Get-PqRepoRunnerRows([string]$RunsDir, [int]$TailBytes = 262144) {
+    $rows = [Collections.Generic.List[object]]::new()
+    if (-not $RunsDir -or -not [IO.Directory]::Exists($RunsDir)) { return , $rows.ToArray() }
+    try {
+        foreach ($f in [IO.Directory]::GetFiles($RunsDir, 'runs-*.jsonl')) {
+            $instance = [IO.Path]::GetFileNameWithoutExtension($f).Substring(5)
+            $fs = [IO.FileStream]::new($f, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete)
+            try {
+                $start = [Math]::Max([long]0, $fs.Length - $TailBytes)
+                $null = $fs.Seek($start, [IO.SeekOrigin]::Begin)
+                $text = [IO.StreamReader]::new($fs, [Text.Encoding]::UTF8).ReadToEnd()
+            }
+            finally { $fs.Dispose() }
+            $lines = $text.Split("`n")
+            $first = if ($start -gt 0) { 1 } else { 0 }
+            for ($i = $first; $i -lt $lines.Length; $i++) {
+                $line = $lines[$i].Trim()
+                if (-not $line) { continue }
+                try { $r = $line | ConvertFrom-Json } catch { continue }
+                if ($r -isnot [Management.Automation.PSCustomObject]) { continue }
+                $r | Add-Member -NotePropertyName instance -NotePropertyValue $instance -Force
+                $rows.Add($r)
+            }
+        }
+    }
+    catch { return $null }
+    return , $rows.ToArray()
+}
+
+# The passes live now, from the worker state files: @{ repo; id; pass; startedAt; endedAt } as rule 59's reader wants.
+# The pass id is not in a worker file; a pass that already ended is found by its runner row (instance pq<k>).
+function Get-PqLiveWorkerPasses {
+    $out = [Collections.Generic.List[object]]::new()
+    foreach ($w in @(Get-PqWorkerFiles)) {
+        if (-not $w.repository -or -not $w.ticket) { continue }
+        $since = $null
+        if ($w.since) { try { $since = [DateTimeOffset]::Parse([string]$w.since, [Globalization.CultureInfo]::InvariantCulture) } catch { $since = $null } }
+        if ($null -eq $since) { continue }
+        $out.Add(@{ repo = $w.repository; id = $w.ticket; pass = $null; startedAt = $since; endedAt = $null })
+    }
+    return , $out.ToArray()
+}
+
+# Run Body under the repository's watch mutex; $false without running it when another process holds it now.
+function Invoke-PqLedgerWatchLock([string]$Key, [scriptblock]$Body) {
+    $bytes = [Text.Encoding]::UTF8.GetBytes(((Get-PqRoot) + '|ledger-watch|' + $Key).ToLowerInvariant())
+    $name = 'sza-pq-lw-' + [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes))
+    $mutex = [Threading.Mutex]::new($false, $name)
+    $held = $false
+    try {
+        try { $held = $mutex.WaitOne(0) }
+        catch [Threading.AbandonedMutexException] { $held = $true }
+        if (-not $held) { return $false }
+        $null = & $Body
+        return $true
+    }
+    finally {
+        if ($held) { $mutex.ReleaseMutex() }
+        $mutex.Dispose()
+    }
+}
+
+# One look at the ledgers of the named enabled repositories (all enabled ones without -Repos): the interval's
+# ticket.transition, ticket.created and ingest.ledgerDiff (rule 59, EVENTS 3.5 and 3.9) written to the log, the shared
+# look advanced. -LivePasses adds passes the worker files no longer name (the pass that just ended, with its id).
+# ticket.created carries `file`, repository-relative (rule 56). Returns the number of events written; never throws.
+function Invoke-PqLedgerWatch {
+    param([Parameter(Mandatory)]$Registry, $Log, [string]$Run, [int]$Worker, [string[]]$Repos, $LivePasses, [hashtable]$PathsCache)
+    if ($null -eq $PathsCache) { $PathsCache = @{} }
+    $box = @{ n = 0 }
+    foreach ($r in @($Registry.repos)) {
+        if ((Get-PqValue $r 'enabled' $false) -ne $true) { continue }
+        $key = [string]$r.key
+        if ($PSBoundParameters.ContainsKey('Repos') -and $key -cnotin @($Repos)) { continue }
+        try {
+            $repoPath = [string]$r.path
+            $rp = $null
+            if ($PathsCache.ContainsKey($key)) { $rp = $PathsCache[$key] }
+            if ($null -eq $rp) { $rp = Get-PqRepoPaths -RepoPath $repoPath; $PathsCache[$key] = $rp }
+            $null = Invoke-PqLedgerWatchLock $key {
+                $file = Get-PqLedgerWatchPath $key
+                $prev = Read-PqLedgerWatch $file
+                $cur = Get-PqLedgerSnapshot -RepoPath $repoPath -Key $key -Paths $rp
+                if (-not $cur.complete) { return }
+                $prevSnap = if ($null -ne $prev) { $prev.snapshot } else { $null }
+                $entered = if ($null -ne $prev) { $prev.enteredAt } else { [Collections.Specialized.OrderedDictionary]::new([StringComparer]::Ordinal) }
+                if ($null -ne $prevSnap) {
+                    $live = @(@($LivePasses) + @(Get-PqLiveWorkerPasses) | Where-Object { $null -ne $_ })
+                    $rows = Get-PqRepoRunnerRows $rp.RunsDir
+                    foreach ($e in @(Get-PqLedgerEvents -Previous $prevSnap -Current $cur -LivePasses $live -RepoRunnerRows $rows -EnteredAt $entered)) {
+                        $d = $e.D
+                        if ($e.Ev -ceq 'ticket.created' -and $cur.tickets.Contains([string]$e.Id)) {
+                            $specFile = $cur.tickets[[string]$e.Id].file
+                            if ($specFile) { $d.file = Convert-PqRelativePath -RepoPath $repoPath -Path ([string]$specFile) }
+                        }
+                        if (Write-PqEvent -Log $Log -Ev $e.Ev -Run $Run -Repo $e.Repo -Id $e.Id -Pass $e.Pass -Worker $Worker -D $d) { $box.n++ }
+                    }
+                }
+                Update-PqEnteredAt -EnteredAt $entered -Previous $prevSnap -Current $cur
+                Save-PqLedgerWatch $file $cur $entered
+            }
+        }
+        catch { }
+    }
+    return $box.n
+}
+
 function ConvertTo-PqPassEndOutcome([string]$Outcome) {
     switch ($Outcome) {
         'ok' { 'ok' }
@@ -882,8 +1048,9 @@ function Start-PqLoop {
     }
     if ($slot -eq -1) { Write-PqError 'StopInProgress' 'STOP is still draining live workers'; return 3 }
     if ($null -eq $slot) {
+        # A valid start that did not run is 3 (rule 66); 2 is an invalid invocation only (S0083).
         Write-PqError 'NoWorkerSlot' "all $([int]$Registry.maxWorkers) worker slots are busy"
-        return 2
+        return 3
     }
     # A stop of this worker's slot left by an earlier run would end the new worker before its first pass.
     try { Remove-Item -LiteralPath (Get-PqPath -Kind stopTarget -StopKind worker -Target ([string]$slot)) -Force -ErrorAction SilentlyContinue } catch { }
@@ -936,6 +1103,7 @@ function Start-PqLoop {
     # Waiting (rules 41, 58): what a poll saw last, whether a change is still settling, the hour's poll counters.
     $pathsCache = @{}
     $lastFp = $null
+    $ledgerWatched = $false
     $settling = $false
     $quietPolls = 0
     $pollStats = New-PqPollStats
@@ -954,6 +1122,7 @@ function Start-PqLoop {
     # Stops and the pause (rule 47, R56) and the robot-filed Drafts (D5).
     $paused = $false
     $drainCarry = $null
+    $drainCarryAgent = ''
     $robotDrafts = @{}
     $codeStartTime = Get-PqCodeMaxWriteTime
     $lastRunErrText = ''
@@ -1009,11 +1178,14 @@ function Start-PqLoop {
                 $stopRepos = @()
                 $stopAgents = @()
                 $stopTickets = @()
+                # A drain of a repository, an agent or a ticket (S0082) carries the ticket this worker had in flight:
+                # that stop is not honoured while the carry goes on, and its target still takes no other work.
+                $carryStop = if ($drainCarry) { Get-PqCarryStop -Stops $stops -Carry $drainCarry -Agent $drainCarryAgent } else { $null }
                 if ($stops.Count -gt 0) {
                     $liveWorkers = @(Get-PqWorkerFiles)
                     foreach ($ts in $stops) {
                         if ($ts.kind -cin @('all', 'worker')) { continue }
-                        if (Test-PqStopTargetBusy $ts $liveWorkers) {
+                        if (($null -ne $carryStop -and $ts.file -ceq $carryStop.file) -or (Test-PqStopTargetBusy $ts $liveWorkers)) {
                             switch ($ts.kind) { 'repo' { $stopRepos += $ts.target } 'agent' { $stopAgents += $ts.target } 'ticket' { $stopTickets += $ts.target } }
                             continue
                         }
@@ -1034,6 +1206,12 @@ function Start-PqLoop {
                     break
                 }
                 $drainNow = ($null -ne $mine -and $mine.level -ceq 'drain')
+                $carryOn = ($null -eq $named -and $drainCarry -and ($drainNow -or $null -ne $carryStop))
+                if (-not $carryOn -and $drainCarry) {
+                    # The stop over the carry went or turned stricter: the worker state stops naming it, so the stop is honoured.
+                    $drainCarry = $null; $drainCarryAgent = ''; $carryStop = $null
+                    Set-PqWorkerState -Slot $slot
+                }
 
                 # The clock time of the run's end (R56).
                 if ($null -ne $Until -and [DateTime]::Now -ge $Until) {
@@ -1147,6 +1325,12 @@ function Start-PqLoop {
                 $lastFp = Get-PqFingerprint -Registry $Registry -PathsCache $pathsCache -Extra (Get-PqDropFingerprint $drops)
                 $settling = $false
                 $quietPolls = 0
+                # Rule 59 (S0082): the first turn looks at every ledger once - a baseline where no look was saved, the
+                # moves made while no robot ran where one was.
+                if (-not $ledgerWatched) {
+                    $ledgerWatched = $true
+                    $null = Invoke-PqLedgerWatch -Registry $Registry -Log $log -Run $runId -Worker $slot -PathsCache $pathsCache
+                }
 
                 # What the loop itself holds back for a moment lapses on its own: a repository the owner works in, and a
                 # ticket that could not get its resource.
@@ -1202,20 +1386,31 @@ function Start-PqLoop {
                     # A named start asks the rank for that one ticket only: no drain carry, no breadth fill.
                     $rank = Get-PqNextRank -Registry $Registry -HarnessRoot $harness -Exclude $rankExclude -Occupied $rankOccupied -Slots 1 -StopAfter 1 -NamedTicket $OnlyTicket
                 }
-                elseif ($drainNow -and $drainCarry) {
+                elseif ($carryOn) {
                     # A drain (rule 47) goes on with the ticket whose pass was in flight when it was read, as long as the
-                    # repository still offers it; the rank is not asked.
+                    # repository still offers it; the rank is not asked. Of a STOP or this worker's stop the worker then
+                    # ends; of a repository, agent or ticket stop the stop is honoured and the worker takes other work.
                     $dc = $drainCarry -split ':', 2
                     $drec = $byKey[$dc[0]]
                     $dh = if ($null -ne $drec) { Get-PqPickerHead -RepoPath ([string]$drec.path) -HarnessRoot $harness -ForceId $dc[1] } else { $null }
                     $drainCarry = $null
+                    $drainCarryAgent = ''
+                    Set-PqWorkerState -Slot $slot
                     if ($null -ne $dh -and $dh.ok -and $null -ne $dh.head) {
                         $rank = @{ events = @(); skipped = @(); autoSkipReasons = $null; candidates = @([ordered]@{ repo = $dc[0]; id = $dc[1]; status = [string]$dh.head.status; title = [string](Get-PqValue $dh.head 'name' ''); priority = (Get-PqValue $dh.head 'priority') }) }
+                        if ($null -ne $carryStop -and $carryStop.kind -ceq 'agent') { $stopAgents = @($stopAgents | Where-Object { $_ -cne $carryStop.target }) }
                     }
-                    else {
+                    elseif ($drainNow) {
                         $null = Write-PqEvent -Log $log -Ev 'run.stop' -Run $runId -Worker $slot -D ([ordered]@{ level = 'drain'; target = 'all'; reason = 'owner'; passesInFlight = 0 })
                         Write-Host "drain: $($dc[0]):$($dc[1]) is not offered any more - stopping"
                         break
+                    }
+                    else {
+                        $null = Write-PqEvent -Log $log -Ev 'run.stop' -Run $runId -Worker $slot -D ([ordered]@{ level = 'drain'; target = "$($carryStop.kind):$($carryStop.target)"; reason = 'owner'; passesInFlight = 0 })
+                        Complete-PqStop -Stop $carryStop -Log $log
+                        Write-Host "drain of $($carryStop.kind) $($carryStop.target) honoured - $($dc[0]):$($dc[1]) is not offered any more$(if ($carryStop.kind -ceq 'repo') { '; the repository stays on hold until pq release' })"
+                        $carryStop = $null
+                        continue
                     }
                 }
                 else {
@@ -1333,6 +1528,9 @@ function Start-PqLoop {
                             $settling = $true
                             Add-PqPollStat -Stats $pollStats -Log $log -Change
                             $null = Write-PqEvent -Log $log -Ev 'poll.change' -Run $runId -Worker $slot -D ([ordered]@{ files = @($cmp.files); repos = @($cmp.repos) })
+                            if (@($cmp.files) -contains 'ledger' -or @($cmp.files) -contains 'archive') {
+                                $null = Invoke-PqLedgerWatch -Registry $Registry -Log $log -Run $runId -Worker $slot -Repos @($cmp.repos) -PathsCache $pathsCache
+                            }
                             continue
                         }
                         if ($settling) {
@@ -1483,7 +1681,10 @@ function Start-PqLoop {
                 $passCx = Get-PqPassCx $ticketLevel $agentName
                 $pickModel = Get-PqPickModel $pick
 
-                if (-not (Request-PqWorkerAssignment -Slot $slot -Repo $repoRec -Ticket $ticketId -Title $ticketTitle -Agent $agentName -AgentMax ([int](Get-PqValue $pick.record 'maxParallel' 1)))) {
+                # Rule 48 (S0082): past a poll hold's limitPollMinutes the pass is its probe, and the assignment's agent cap of
+                # 1 lets exactly one worker take it; the others see the agent held while it runs.
+                $isProbe = Test-PqAgentProbeDue (Get-PqAgentHold $agentName) $pick.record
+                if (-not (Request-PqWorkerAssignment -Slot $slot -Repo $repoRec -Ticket $ticketId -Title $ticketTitle -Agent $agentName -AgentMax (Get-PqPassAgentMax $pick))) {
                     $occupiedMarks[$repoKey] = @{ until = [DateTime]::UtcNow.AddSeconds(5); why = 'workerCap' }
                     if ($script:PqAssignmentWhy -and (Test-PqSkipDue "$repoKey`:$ticketId`:$($script:PqAssignmentWhy)")) { $null = Write-PqEvent -Log $log -Ev 'dispatch.skip' -Run $runId -Repo $repoKey -Id $ticketId -Worker $slot -D ([ordered]@{ why = $script:PqAssignmentWhy }) }
                     continue
@@ -1572,6 +1773,7 @@ function Start-PqLoop {
                 $profilePath = Join-Path $repoPath '.sza-profile.json'
                 $profileHash = if ([IO.File]::Exists($profilePath)) { Get-PqFileHash ([IO.File]::ReadAllBytes($profilePath)) } else { '' }
                 $passSw = [Diagnostics.Stopwatch]::StartNew()
+                $passBegan = [DateTime]::Now
                 $titlePart = if ($ticketTitle) { " - $ticketTitle" } else { '' }
                 $agentPart = if ($agentName -cne 'claude') { " [$agentName]" } else { '' }
 
@@ -1669,24 +1871,37 @@ function Start-PqLoop {
                 if ($null -ne $cxChange) {
                     $null = Write-PqEvent -Log $log -Ev 'ticket.complexity' -Run $runId -Repo $repoKey -Id $ticketId -Pass $passId -Worker $slot -Agent $agentName -Cx $cxChange.to -D $cxChange
                 }
+                # Rule 59 (S0082): the pass's own moves are written now, with its id as viaPass, not at the next idle poll.
+                $endedPass = @{ repo = $repoKey; id = $ticketId; pass = $passId; startedAt = [DateTimeOffset]$passBegan; endedAt = [DateTimeOffset]::UtcNow }
+                $null = Invoke-PqLedgerWatch -Registry $Registry -Log $log -Run $runId -Worker $slot -Repos @($repoKey) -LivePasses @($endedPass) -PathsCache $pathsCache
 
                 # Rule 47: halt and kill clean up and never decide a status. The lease the pass held is released (done in
-                # Invoke-PqPassChild), the resources above, and the ledger is checked, so a half-written row shows at once
-                # instead of at the next ticket; pass.halt / pass.kill and a console line tell you.
+                # Invoke-PqPassChild), the resources above; the locks dead processes left are cleared, the ledger is
+                # checked, so a half-written row shows at once instead of at the next ticket, and the files the pass
+                # changed are named (S0082); pass.halt / pass.kill and console lines tell you.
                 if ($childRes.killed) {
-                    $validate = $null
-                    try {
-                        $vr = Invoke-PqRepoChild -RepoPath $repoPath -Script (Join-Path $harness 'spec_catalog\validate.ps1') -Arguments @() -TimeoutSeconds 120
-                        $validate = if ($vr.timedOut) { 'timeout' } else { [int]$vr.code }
-                    }
-                    catch { $validate = 'error' }
+                    $cleanup = Invoke-PqStopCleanup -RepoPath $repoPath -HarnessRoot $harness -Since $passBegan
+                    $validate = $cleanup.validate
+                    $cleanD = [ordered]@{ validate = $validate; locks = $cleanup.locks; changedFiles = @($cleanup.changed).Count }
                     if ($childRes.halted) {
-                        $null = Write-PqEvent -Log $log -Ev 'pass.halt' -Run $runId -Repo $repoKey -Id $ticketId -Pass $passId -Worker $slot -Agent $agentName -D ([ordered]@{ signal = 'none'; grace = 0; degradedToKill = $true; validate = $validate })
+                        $haltD = [ordered]@{ signal = 'none'; grace = 0; degradedToKill = $true }
+                        foreach ($ck in $cleanD.Keys) { $haltD[$ck] = $cleanD[$ck] }
+                        $null = Write-PqEvent -Log $log -Ev 'pass.halt' -Run $runId -Repo $repoKey -Id $ticketId -Pass $passId -Worker $slot -Agent $agentName -D $haltD
                     }
                     else {
-                        $null = Write-PqEvent -Log $log -Ev 'pass.kill' -Run $runId -Repo $repoKey -Id $ticketId -Pass $passId -Worker $slot -Agent $agentName -D ([ordered]@{ level = 'kill'; validate = $validate })
+                        $killD = [ordered]@{ level = 'kill' }
+                        foreach ($ck in $cleanD.Keys) { $killD[$ck] = $cleanD[$ck] }
+                        $null = Write-PqEvent -Log $log -Ev 'pass.kill' -Run $runId -Repo $repoKey -Id $ticketId -Pass $passId -Worker $slot -Agent $agentName -D $killD
                     }
-                    Write-Host "pass $passNum ended by the owner's $(if ($childRes.halted) { 'halt' } else { 'kill' }); lease and resources released, ledger validate: $validate"
+                    $lockText = (@($cleanup.locks.Keys | ForEach-Object { "$_ $($cleanup.locks[$_])" }) -join ', ')
+                    Write-Host "pass $passNum ended by the owner's $(if ($childRes.halted) { 'halt' } else { 'kill' }); lease and resources released, dead locks cleared ($lockText; 1 = a live holder kept), ledger validate: $validate"
+                    $changedList = @($cleanup.changed)
+                    if ($changedList.Count -eq 0) { Write-Host "  no file of $repoKey changed since the pass began" }
+                    else {
+                        Write-Host "  $($changedList.Count) file(s) of $repoKey changed since the pass began - check them before the next pass:"
+                        foreach ($cf in @($changedList | Select-Object -First 20)) { Write-Host "    $cf" }
+                        if ($changedList.Count -gt 20) { Write-Host "    .. and $($changedList.Count - 20) more (git status in $repoPath)" }
+                    }
                 }
 
                 # D5: a ticket that is new in the repository after the pass is a ticket the pass filed (park, do not fix,
@@ -1732,6 +1947,10 @@ function Start-PqLoop {
                 # against: a limit is nothing the ticket did. A failure with no limit text in it is an ordinary failed
                 # pass and is never taken for a limit. A pass that ends without a limit clears a poll hold: it was the probe.
                 $agentHeldNow = $false
+                if ($isProbe) {
+                    $probeResult = Get-PqProbeResult $outcomeRes.limits ([bool]$childRes.killed) ([bool]$childRes.failed) ([string]$outcomeRes.outcome)
+                    $null = Write-PqEvent -Log $log -Ev 'agent.probe' -Run $runId -Repo $repoKey -Id $ticketId -Pass $passId -Worker $slot -Agent $agentName -D ([ordered]@{ agent = $agentName; result = $probeResult })
+                }
                 if (-not $childRes.killed -and -not $childRes.failed) {
                     if ($outcomeRes.limits -gt 0) {
                         $heldUntil = Get-PqRunnerLimitUntil -RepoPath $repoPath -Agent $agentName
@@ -1794,14 +2013,14 @@ function Start-PqLoop {
                     Unlock-PqRepo -LockFile $currentRepoLock
                     $currentRepoLock = $null
                 }
-                Set-PqWorkerState -Slot $slot -Repo $null -Ticket $null
-
-                # A drain (rule 47) goes on with the ticket of the pass that was in flight when it was read, while the pass moves it.
+                # A drain (rule 47) goes on with the ticket of the pass that was in flight when it was read, while the pass
+                # moves it - under a drain of any target (S0082); the worker state names the carry so another worker
+                # leaves the stop over it alone.
                 $drainCarry = $null
-                if ($outcomeRes.moved -and -not $childRes.killed) {
-                    $sNow = Get-PqApplicableStop -Stops @(Get-PqStopFiles) -Slot $slot -Repo $repoKey -Agent $agentName -Ticket "$repoKey`:$ticketId"
-                    if ($null -ne $sNow -and $sNow.level -ceq 'drain' -and $sNow.kind -cin @('all', 'worker')) { $drainCarry = "$repoKey`:$ticketId" }
-                }
+                $drainCarryAgent = ''
+                $sNow = Get-PqApplicableStop -Stops @(Get-PqStopFiles) -Slot $slot -Repo $repoKey -Agent $agentName -Ticket "$repoKey`:$ticketId"
+                if (Test-PqDrainCarry $sNow ([bool]$outcomeRes.moved) ([bool]$childRes.killed)) { $drainCarry = "$repoKey`:$ticketId"; $drainCarryAgent = [string]$agentName }
+                Set-PqWorkerState -Slot $slot -Repo $null -Ticket $null -Carry $drainCarry -CarryAgent $drainCarryAgent
 
                 if ($outcomeRes.moved) { $movedCount++ }
                 Write-Host "pass $passNum $repoKey`:$ticketId $statusBefore -> $($outcomeRes.statusAfter)$titlePart ($($outcomeRes.outcome), ${elapsedSec}s)"

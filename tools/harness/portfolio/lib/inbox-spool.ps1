@@ -31,8 +31,13 @@
 #                                         the sidecar names of the claim and the attempts record.
 #   Get-InboxNewPackets -Root             the packet folders in new/: @{ packetId; stage; path; manifestReady;
 #                                         attempts; lastError; retryReady; ageSeconds; age }, oldest first.
-#                                         A missing manifest waits; an invalid manifest is claimed for refusal
-#                                         after one minute, allowing an incomplete sync to finish.
+#                                         A missing manifest waits (until Remove-InboxIncompletePackets collects it);
+#                                         an invalid manifest is claimed for refusal after one minute, allowing an
+#                                         incomplete sync to finish.
+#   Remove-InboxIncompletePackets -Root [-MaxAgeSeconds] -> @{ removed; failed }
+#                                         S0085, once per watcher pass: removes a new\ folder with no manifest.json
+#                                         that nothing in it has written to for 7 days, with its attempts sidecar.
+#                                         A folder with a manifest.json is never touched; never throws.
 #   Read-InboxAttempts / Write-InboxAttempts -Path [-Attempts]
 #                                         the sidecar record: @{ attempts; nextRetryAtEpochMs; lastError }.
 #                                         Unreadable is $null; a failed write throws so a retry cannot lose its count.
@@ -42,6 +47,9 @@
 #                                         win it (a rename that finds the target taken is a lost claim, not an
 #                                         error). Never claimed: ManifestIncomplete, ClaimLost, ClaimMoveFailed.
 #   Read-InboxClaim -Root -PacketId ->    the claim record, $null when none reads.
+#   Release-InboxClaimOwner -Root -PacketId  the claiming process gave up on the packet (a retry that could not
+#                                         move the folder back): pid 0 and a fresh heartbeat, so only the stale
+#                                         window - not the watcher's own lifetime - keeps the claim live. Best-effort.
 #   Update-InboxClaim -Root -PacketId    the heartbeat: claim.json's updatedAt refreshed; best-effort, never thrown.
 #   Test-InboxClaimLiveness -Claim [-StaleMinutes] -> live|stale
 #                                         the lease rule already used for tickets (locks/agent-lock.ps1
@@ -92,6 +100,9 @@ $script:InboxRetryCeiling = 3
 $script:InboxRetryBackoffSeconds = [int[]]@(60, 300, 900)
 # How long an unprocessed packet may sit in new/ or processing/ before pq status/problems names it.
 $script:InboxSpoolAgeThresholdSeconds = 900
+# How long a packet folder with no manifest.json may sit idle in new/ before the PC removes it (S0085; INBOX-PACKET
+# section 2.3, DEVICE-EXCHANGE item FD): 7 days.
+$script:InboxIncompleteMaxAgeSeconds = 604800
 $script:InboxStages = [string[]]@('new', 'processing', 'done', 'failed')
 
 function Resolve-InboxSpoolRoot {
@@ -201,6 +212,68 @@ function Get-InboxNewPackets {
     return @($packets | Sort-Object -Property @{ Expression = { $_.ageSeconds ?? [long]::MaxValue } }, packetId)
 }
 
+# The newest moment anything in a packet folder was written or created: the folder itself and every entry beneath
+# it, creation time included (a file synced with its source's old write time is still new on this disk). A slow
+# upload changes file bytes without touching the folder's own time, so the folder's time alone under-reads it.
+# Throws on an I/O error: the caller treats a folder it cannot measure as not old.
+function Get-InboxPacketNewestWriteUtc([string]$Path) {
+    $info = [IO.DirectoryInfo]::new($Path)
+    $newest = [DateTime]::MinValue
+    foreach ($t in @($info.LastWriteTimeUtc, $info.CreationTimeUtc)) { if ($t -gt $newest) { $newest = $t } }
+    foreach ($entry in $info.EnumerateFileSystemInfos('*', [IO.SearchOption]::AllDirectories)) {
+        foreach ($t in @($entry.LastWriteTimeUtc, $entry.CreationTimeUtc)) { if ($t -gt $newest) { $newest = $t } }
+    }
+    return $newest
+}
+
+# INBOX-PACKET section 2.3 / DEVICE-EXCHANGE item FD: a packet folder in new/ with no manifest.json that nothing has
+# written to for MaxAgeSeconds (7 days) is an upload that never finished; the PC removes it together with its
+# <packetId>.attempts.json sidecar. The deletion is one-way, so every doubt keeps the folder:
+#   - a folder that holds a manifest.json is never touched, parsable or not (expiry of a packet WITH a manifest is
+#     another question; once the manifest is there the packet is the reader's to refuse or ingest);
+#   - the age is the newest write or creation time of the folder and of everything in it, not the folder's own time;
+#   - a folder that cannot be measured, or whose removal fails, is reported in failed and left (a partial removal
+#     refreshes the folder's own time, so a stuck folder waits another full window before the next try);
+#   - the manifest is looked for again right before the delete.
+# Only new/ is read; processing/, done/ and failed/ are never touched. Never throws: it runs once per watcher pass and
+# the watcher must not end over a folder. -> @{ removed = @(@{ packetId; ageSeconds; age }); failed = @(@{ packetId; message }) }
+function Remove-InboxIncompletePackets {
+    param(
+        [Parameter(Mandatory)][string]$Root,
+        [long]$MaxAgeSeconds = $script:InboxIncompleteMaxAgeSeconds
+    )
+    $result = @{ removed = @(); failed = @() }
+    $removed = [Collections.Generic.List[object]]::new()
+    $failed = [Collections.Generic.List[object]]::new()
+    $newDir = Join-Path $Root 'new'
+    try {
+        if (-not [IO.Directory]::Exists($newDir)) { return $result }
+        $manifestName = $script:InboxManifestName
+        foreach ($dir in [IO.Directory]::GetDirectories($newDir)) {
+            $packetId = Split-Path -Leaf $dir
+            try {
+                $manifest = Join-Path $dir $manifestName
+                if ([IO.File]::Exists($manifest) -or [IO.Directory]::Exists($manifest)) { continue }
+                $ageSeconds = [long][Math]::Floor(([DateTime]::UtcNow - (Get-InboxPacketNewestWriteUtc $dir)).TotalSeconds)
+                if ($ageSeconds -le $MaxAgeSeconds) { continue }
+                if ([IO.File]::Exists($manifest) -or [IO.Directory]::Exists($manifest)) { continue }
+                [IO.Directory]::Delete($dir, $true)
+                $removed.Add([pscustomobject]@{ packetId = $packetId; ageSeconds = $ageSeconds; age = (ConvertTo-InboxAgeText $ageSeconds) })
+                $sidecar = Get-InboxAttemptsPath -StageDir $newDir -PacketId $packetId
+                if ([IO.File]::Exists($sidecar)) {
+                    try { [IO.File]::Delete($sidecar) }
+                    catch { $failed.Add([pscustomobject]@{ packetId = $packetId; message = "the folder was removed but $packetId.attempts.json was not: $($_.Exception.Message)" }) }
+                }
+            }
+            catch { $failed.Add([pscustomobject]@{ packetId = $packetId; message = $_.Exception.Message }) }
+        }
+    }
+    catch { $failed.Add([pscustomobject]@{ packetId = ''; message = $_.Exception.Message }) }
+    $result.removed = @($removed)
+    $result.failed = @($failed)
+    return $result
+}
+
 function Read-InboxClaim {
     param(
         [Parameter(Mandatory)][string]$Root,
@@ -241,6 +314,26 @@ function Update-InboxClaim {
         Write-InboxClaimFile -Path (Get-InboxClaimPath -StageDir (Join-Path $Root 'processing') -PacketId $PacketId) -Claim $claim
     }
     catch { }
+}
+
+# A process that gave up on a packet it claimed (a retry that could not move the folder back to new/) lets go of
+# the claim's owner: pid 0 is never read as a running process, so only the heartbeat window judges the claim and
+# the next recovery pass re-queues it once the window is spent - a resident watcher's own pid would otherwise keep
+# the claim live for as long as the watcher runs. Best-effort; $true when the record was rewritten.
+function Release-InboxClaimOwner {
+    param(
+        [Parameter(Mandatory)][string]$Root,
+        [Parameter(Mandatory)][string]$PacketId
+    )
+    $claim = Read-InboxClaim -Root $Root -PacketId $PacketId
+    if ($null -eq $claim) { return $false }
+    try {
+        $claim.pid = 0
+        $claim.updatedAtEpochMs = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+        Write-InboxClaimFile -Path (Get-InboxClaimPath -StageDir (Join-Path $Root 'processing') -PacketId $PacketId) -Claim $claim
+        return $true
+    }
+    catch { return $false }
 }
 
 # The claim's liveness: live when its process runs on this host, else live while updatedAt falls inside the stale

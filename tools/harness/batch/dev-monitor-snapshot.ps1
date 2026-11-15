@@ -168,18 +168,27 @@ function Get-DevMonitorProp {
 
 function Get-DevMonitorTicketLastWrite {
     <#
-        The newest file a ticket wrote: its spec and tactical folder under PLAN/, its scratch dir under
-        temp/. The lease heartbeat is deliberately not counted - it proves the process is scheduled,
-        only a file it wrote proves it is working.
+        The newest file a ticket wrote: its spec and tactical folder in the spec homes, its scratch dir
+        under temp/. The lease heartbeat is deliberately not counted - it proves the process is
+        scheduled, only a file it wrote proves it is working.
+
+        S0087 / TASK-FLOW rule 70: a ticket left in Implemented, Verified or BlockNeedUserTest has its
+        spec file and folder in paths.specArchiveDir, so the directories come from Get-SzaSpecHomes -
+        the ledger row's own `file` first, then paths.specsDir and paths.specArchiveDir - never from a
+        literal PLAN/.
     #>
     param([string]$RepoRoot, [string]$Id)
     if (-not (Test-SzaTicketId $Id)) { return $null }
     $files = @()
-    $planDir = Join-Path $RepoRoot 'PLAN'
-    if (Test-Path -LiteralPath $planDir) {
+    $fileRef = ''
+    $specDirs = @()
+    # A reader of a live monitor never throws: an unreadable ledger or a malformed `file` is an empty answer.
+    try { $fileRef = Get-SzaLedgerFileRef -Id $Id -RepoRoot $RepoRoot } catch { $fileRef = '' }
+    try { $specDirs = @(Get-SzaSpecHomes -FileRef $fileRef -RepoRoot $RepoRoot) } catch { $specDirs = @() }
+    foreach ($specDir in $specDirs) {
         # Two passes on purpose: -Filter applies at every level of -Recurse, so one recursive call
         # filtered by the id prefix would miss INDEX.md and the phase files inside the folder.
-        foreach ($top in @(Get-ChildItem -LiteralPath $planDir -Filter ($Id + '_*') -ErrorAction SilentlyContinue)) {
+        foreach ($top in @(Get-ChildItem -LiteralPath $specDir -Filter ($Id + '_*') -ErrorAction SilentlyContinue)) {
             if ($top.PSIsContainer) { $files += @(Get-ChildItem -LiteralPath $top.FullName -Recurse -File -ErrorAction SilentlyContinue) }
             else { $files += $top }
         }
@@ -199,6 +208,7 @@ function Get-DevMonitorTicketLastWrite {
 function Get-DevMonitorTicketTitle {
     param([string]$RepoRoot, [string]$Id)
     if (-not $Id -or $Id -eq '?') { return '' }
+    $rowFile = ''
     try {
         $journalRel = Get-SzaPath 'journal' -Relative -ErrorAction SilentlyContinue
         if ($journalRel) {
@@ -208,26 +218,17 @@ function Get-DevMonitorTicketTitle {
                     if ($line -match '"id"\s*:\s*"' + [regex]::Escape($Id) + '"') {
                         $rec = $line | ConvertFrom-Json
                         if ($rec.name) { return [string]$rec.name }
+                        if ($rec.PSObject.Properties['file']) { $rowFile = [string]$rec.file }
                     }
                 }
             }
         }
     } catch { }
     try {
-        $specsRel = Get-SzaPath 'specsDir' -Relative -ErrorAction SilentlyContinue
-        if ($specsRel) {
-            $specsDir = Join-Path $RepoRoot $specsRel
-            if (Test-Path -LiteralPath $specsDir) {
-                $file = Get-ChildItem -LiteralPath $specsDir -Filter "$Id*.md" -File -ErrorAction SilentlyContinue | Select-Object -First 1
-                if ($file) {
-                    foreach ($line in [IO.File]::ReadAllLines($file.FullName)) {
-                        if ($line -match '^#\s+(?:' + [regex]::Escape($Id) + '\s*[-:]\s*)?(?<title>.+)$') {
-                            return $Matches['title'].Trim()
-                        }
-                    }
-                }
-            }
-        }
+        # S0084 / TASK-FLOW rule 70: a finished ticket's spec file has left paths.specsDir with its status, so the
+        # title is read from the file the ledger row names, then from both directories.
+        $specTitle = Get-SzaSpecTitleFromFile -Id $Id -FileRef $rowFile -RepoRoot $RepoRoot
+        if ($specTitle) { return $specTitle }
     } catch { }
     try {
         $qRel = Get-SzaPath 'releaseQueue' -Relative -ErrorAction SilentlyContinue

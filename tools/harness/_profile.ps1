@@ -488,6 +488,114 @@ function Get-SzaPath {
     return $joined.Replace('/', [System.IO.Path]::DirectorySeparatorChar)
 }
 
+function Get-SzaLedgerFileRef {
+    <#
+    .SYNOPSIS
+        The `file` of a ticket's ledger row, as the row writes it (project-relative), or '' when no row names one.
+    .DESCRIPTION
+        Active journal first, then the archive journal. A missing or unreadable journal is an empty answer, never an
+        error: the callers are readers that fall back to a directory search (TASK-FLOW rule 70, S0084 - a finished
+        ticket's spec file leaves paths.specsDir with its status, so a reader that assumes the specs directory finds
+        nothing, and the row is the one record that says where the file went).
+    #>
+    param([Parameter(Mandatory)][string]$Id, [string]$RepoRoot = '')
+    if ([string]::IsNullOrWhiteSpace($RepoRoot)) { $RepoRoot = Get-SzaProjectRoot }
+    $needle = '"id"\s*:\s*"' + [regex]::Escape($Id) + '"'
+    foreach ($key in 'journal', 'journalArchive') {
+        try {
+            $rel = Get-SzaPath $key -Relative
+            $path = if ([System.IO.Path]::IsPathRooted($rel)) { $rel } else { Join-Path $RepoRoot $rel }
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { continue }
+            foreach ($line in [System.IO.File]::ReadAllLines($path)) {
+                if ($line -notmatch $needle) { continue }
+                $row = $line | ConvertFrom-Json
+                $idProp = $row.PSObject.Properties['id']
+                $fileProp = $row.PSObject.Properties['file']
+                if ($idProp -and $fileProp -and [string]$idProp.Value -ceq $Id -and -not [string]::IsNullOrWhiteSpace([string]$fileProp.Value)) {
+                    return [string]$fileProp.Value
+                }
+            }
+        } catch { }
+    }
+    return ''
+}
+
+function Get-SzaSpecHomes {
+    <#
+    .SYNOPSIS
+        The existing directories a ticket's spec file may live in, most likely first, each once: the directory the ledger
+        row's `file` names (-FileRef, the caller's row), then paths.specsDir, then paths.specArchiveDir.
+    .DESCRIPTION
+        Reads no ledger itself - a caller that holds the row passes its `file`, one that does not gets it from
+        Get-SzaLedgerFileRef. Relative values join onto -RepoRoot (default: the project root).
+    #>
+    param([string]$FileRef = '', [string]$RepoRoot = '')
+    if ([string]::IsNullOrWhiteSpace($RepoRoot)) { $RepoRoot = Get-SzaProjectRoot }
+    $candidates = New-Object System.Collections.Generic.List[string]
+    if (-not [string]::IsNullOrWhiteSpace($FileRef)) {
+        $ref = $FileRef.Replace('/', [System.IO.Path]::DirectorySeparatorChar)
+        $abs = if ([System.IO.Path]::IsPathRooted($ref)) { $ref } else { Join-Path $RepoRoot $ref }
+        $candidates.Add([System.IO.Path]::GetDirectoryName($abs))
+    }
+    foreach ($key in 'specsDir', 'specArchiveDir') {
+        try {
+            $rel = Get-SzaPath $key -Relative
+            $candidates.Add($(if ([System.IO.Path]::IsPathRooted($rel)) { $rel } else { Join-Path $RepoRoot $rel }))
+        } catch { }
+    }
+    $seen = @{}
+    $homes = New-Object System.Collections.Generic.List[string]
+    foreach ($candidate in $candidates) {
+        if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
+        $full = [System.IO.Path]::GetFullPath($candidate).TrimEnd('\', '/')
+        if ($seen.ContainsKey($full.ToLowerInvariant())) { continue }
+        $seen[$full.ToLowerInvariant()] = $true
+        if (Test-Path -LiteralPath $full -PathType Container) { $homes.Add($full) }
+    }
+    return $homes.ToArray()
+}
+
+function Find-SzaSpecFile {
+    <#
+    .SYNOPSIS
+        The spec file of a ticket as a FileInfo, or $null: the ledger row's own `file` when it exists, else the first
+        `<Id>*.md` in the row's directory, paths.specsDir, then paths.specArchiveDir (TASK-FLOW rule 70).
+    #>
+    param([Parameter(Mandatory)][string]$Id, [string]$FileRef = '', [string]$RepoRoot = '')
+    if ([string]::IsNullOrWhiteSpace($RepoRoot)) { $RepoRoot = Get-SzaProjectRoot }
+    if ([string]::IsNullOrWhiteSpace($FileRef)) { $FileRef = Get-SzaLedgerFileRef -Id $Id -RepoRoot $RepoRoot }
+    if (-not [string]::IsNullOrWhiteSpace($FileRef)) {
+        $ref = $FileRef.Replace('/', [System.IO.Path]::DirectorySeparatorChar)
+        $abs = if ([System.IO.Path]::IsPathRooted($ref)) { $ref } else { Join-Path $RepoRoot $ref }
+        if (Test-Path -LiteralPath $abs -PathType Leaf) { return (Get-Item -LiteralPath $abs) }
+    }
+    foreach ($dir in @(Get-SzaSpecHomes -FileRef $FileRef -RepoRoot $RepoRoot)) {
+        $found = Get-ChildItem -LiteralPath $dir -Filter "$Id*.md" -File -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($found) { return $found }
+    }
+    return $null
+}
+
+function Get-SzaSpecTitleFromFile {
+    <#
+    .SYNOPSIS
+        The title of a ticket read from its spec file's first level-1 heading, or '' - the fallback of a reader whose
+        ledger row carries no name. The file is found through Find-SzaSpecFile, so a spec that already moved into the
+        archive directory still answers.
+    #>
+    param([Parameter(Mandatory)][string]$Id, [string]$FileRef = '', [string]$RepoRoot = '')
+    $file = Find-SzaSpecFile -Id $Id -FileRef $FileRef -RepoRoot $RepoRoot
+    if (-not $file) { return '' }
+    # ReadAllLines, not a foreach over ReadLines: leaving the loop by return keeps the spec open in a long-lived
+    # runner, and the agent's write of the same spec is then refused.
+    foreach ($line in [System.IO.File]::ReadAllLines($file.FullName)) {
+        if ($line -match '^#\s+(?:' + [regex]::Escape($Id) + '\s*[-:]\s*)?(?<title>.+)$') {
+            return $Matches['title'].Trim()
+        }
+    }
+    return ''
+}
+
 function Test-SzaSlashCommand {
     <#
     .SYNOPSIS

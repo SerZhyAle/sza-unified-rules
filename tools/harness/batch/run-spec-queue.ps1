@@ -555,20 +555,14 @@ function Get-TicketTitle {
             if ($rec.PSObject.Properties['title'] -and $rec.title) { return [string]$rec.title }
         }
         try {
-            $specsRel = Get-SzaPath 'specsDir' -Relative -ErrorAction SilentlyContinue
-            $planDir = if ($specsRel) { Join-Path $RepoRoot $specsRel } else { (Get-SzaPath 'specsDir') }
-            if (Test-Path -LiteralPath $planDir) {
-                $file = Get-ChildItem -LiteralPath $planDir -Filter "$Id*.md" -File -ErrorAction SilentlyContinue | Select-Object -First 1
-                if ($file) {
-                    # ReadAllLines: leaving a foreach over ReadLines by return keeps the spec open in this
-                    # long-lived runner, and the agent's write of the same spec is then refused.
-                    foreach ($line in [IO.File]::ReadAllLines($file.FullName)) {
-                        if ($line -match '^#\s+(?:' + [regex]::Escape($Id) + '\s*[-:]\s*)?(?<title>.+)$') {
-                            return $Matches['title'].Trim()
-                        }
-                    }
-                }
-            }
+            # S0084 / TASK-FLOW rule 70: a finished ticket's spec file has left paths.specsDir with its status, so the
+            # file is resolved from the ledger row's own `file` first (as Get-TicketSpecFile does), then both
+            # directories. Get-SzaSpecTitleFromFile reads with ReadAllLines: leaving a foreach over ReadLines by
+            # return keeps the spec open in this long-lived runner, and the agent's write of the same spec is
+            # then refused.
+            $rowFile = if ($null -ne $rec -and $rec.PSObject.Properties['file']) { [string]$rec.file } else { '' }
+            $specTitle = Get-SzaSpecTitleFromFile -Id $Id -FileRef $rowFile -RepoRoot $RepoRoot
+            if ($specTitle) { return $specTitle }
         } catch { }
     }
     return ''

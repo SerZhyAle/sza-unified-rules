@@ -441,7 +441,9 @@ limit is read from the provider's own output (Claude: its transcript; the others
 in the pass's output, which is why those passes are quiet in the console and keep their output in the repository's runs
 folder as `<ticket>.log`), and a failure with no limit text in it is an ordinary failed pass that never moves the order
 on. The spent provider is held machine-wide until the reset time its message gave; with none it is tried again every
-`limitPollMinutes` (30) by one pass, and the first pass that ends without a limit puts it back at the head. The ticket is
+`limitPollMinutes` (30) by one pass - one worker takes that probe, the others keep the provider held while it runs, and
+the log says how it ended (`agent.probe`, `ok`, `limit` or `error`) - and the first pass that ends without a limit puts it
+back at the head. The ticket is
 neither dropped nor counted against while this happens. If a provider's real limit message is not matched, the worker
 says `failed fast .. no usage-limit text was found` - extend `limitDetector.pattern` of its record.
 
@@ -525,7 +527,7 @@ once. The default is `STOP`, every worker, level `pass`: each worker ends after 
 
 | Level | What happens |
 | --- | --- |
-| `drain` | take no new ticket; the ticket whose pass was in flight goes on with its next passes while they move it, then the worker ends |
+| `drain` | take no new ticket; the ticket whose pass was in flight goes on with its next passes while they move it, then the target stops |
 | `pass` (default) | no new pass, not even the next one of the same ticket; the passes in flight end, then the worker ends |
 | `halt` | end the pass now; every agent record says `halt: none` (no polite interrupt exists), so it is a kill that is recorded as `pass.halt` |
 | `kill` (`PQ Stop Kill`, `-Kill`) | kill the process tree of the pass now |
@@ -535,12 +537,16 @@ exists the target gets no new work and its passes stop at the level; once nothin
 A repository stop leaves the repository on hold (`pq release <key>` clears it); the others leave nothing, the target is
 eligible again at the next pick, and a ticket you want kept out is held (`pq hold`). Exit 0 when the request was recorded,
 2 when nothing matched the target (unknown repository, agent or ticket key, no worker with that slot), 3 when no worker
-is running at all (nothing is written). `drain` continues a ticket only for a stop of everything or of one worker.
+is running at all (nothing is written). `drain` continues the ticket in flight under every target: a `STOP` or a worker
+stop then ends the worker, a repository, agent or ticket stop is honoured and the worker takes other work. A `pass`, `halt`
+or `kill` stop over the same ticket wins over the drain.
 
 Each worker kills the process tree of its own pass and nothing else - a local runner's agent and a session of yours in any
 repository are never touched. A halted or killed pass is journalled as `halted` or `killed`, the lease the pass made is
-released so the ticket is offered again at once, the build and emulator tokens it held are released, the repository's ledger
-is validated (`validate` in `pass.halt` / `pass.kill`); its status stays where the agent left
+released so the ticket is offered again at once, the build and emulator tokens it held are released, the code and build
+locks dead processes left in the repository are cleared by `locks/clear-agent-lock.ps1` without `-Force` (a live holder is
+kept; `locks` in `pass.halt` / `pass.kill`), the repository's ledger is validated (`validate`), and the files git reports
+changed since the pass began are listed in the worker window (`changedFiles` counts them); its status stays where the agent left
 it, and a stop never decides a status. Ctrl+C in a worker window ends that worker and its pass tree at once and releases
 the lease the same way; the interrupted pass writes no `runs.jsonl` row (its `pass.launch` has no `pass.end`). Starting a
 worker with a `STOP` present clears it and says so; if workers from the previous stop are still draining, the start exits 3
@@ -606,8 +612,9 @@ The portfolio root is `SZA_PORTFOLIO_ROOT`, else `%USERPROFILE%\.sza\portfolio`.
 | `run\worker-<k>.json` | one live worker: pid, repository, ticket, agent, since |
 | `run\pass-sessions.json` | the newest 200 session ids `pq`'s own passes ran under, so their transcripts are not taken for yours |
 | `resources\<build\|emulator>\<key>__<id>.json` | a build or emulator token and who holds it |
-| `holds\<agent>.json` | an agent other than Claude held after a fast failure; delete the file to give it work again at once |
+| `holds\<agent>.json` | an agent other than Claude held after a spent usage limit; delete the file to give it work again at once |
 | `run\repo-<key>.lock` | the repository a worker is in |
+| `run\ledger-<key>.json` | the last look at a repository's ledger, shared by the workers: the ticket rows and when each entered its status, so a move is written once |
 | `runs.jsonl` | one row per pass: run, pass, repository, ticket, status before and after, exit code, seconds, outcome |
 | `log\events-<UTC day>.<writer>.jsonl` | every step as an event |
 
@@ -621,9 +628,9 @@ instance `pq<k>` (`runs-pq<k>.jsonl`), so they show up in the repository's monit
 `pass.limit`, `dispatch.pick` (the pick, the three alternatives passed over and why the agent), `ticket.complexity`
 (a pass rewrote the level), `wait.enter`, `wait.exit`, `run.stop`, `owner.action`, `ticket.dropped`, `ticket.dropLifted`,
 `ticket.blocked`, `ticket.unblocked`, `xrepo.resolve`, `xrepo.cycle`, `agent.fallback`, `agent.hold`,
-`agent.resume`, `dispatch.skip`, `repo.discovered`, `repo.notready`, `repo.skipped` (a worktree of a registered repository), `repo.ready`, `repo.enabled`, `repo.occupied`,
+`agent.resume`, `agent.probe`, `dispatch.skip`, `repo.discovered`, `repo.notready`, `repo.skipped` (a worktree of a registered repository), `repo.ready`, `repo.enabled`, `repo.occupied`,
 `repo.free`, `resource.acquire`, `resource.release`, `resource.wait`, `poll.change`, `poll.summary`, `ticket.thrash`,
-`intake.robotDraft`, `run.pause`, `run.resume`, `pass.halt`, `pass.kill`. `pass.launch` and `pass.end` carry the model and the level in the envelope (`model`, `cx`),
+`intake.robotDraft`, `run.pause`, `run.resume`, `pass.halt`, `pass.kill`, `ticket.transition` (a status move, with who made it: robot, repo-runner or manual), `ticket.created` and `ingest.ledgerDiff` (the moves of one look at a ledger: at the first turn, after a ledger change seen while waiting, and after each pass). `pass.launch` and `pass.end` carry the model and the level in the envelope (`model`, `cx`),
 with `cxSource` on the launch. No line carries prompt text,
 environment values or keys.
 
@@ -636,7 +643,7 @@ environment values or keys.
 | `start` waits and `Next: none` | no enabled repository offers a ticket: `PQ Dry-run`, then check `enabled`, a `hold` section in either file, and that the ticket is not leased by a manual session |
 | the order is not what the file says | `PQ Dry-run` prints the rule behind each pick and `PQ Doctor` lists bad rows; a repository named only by `<key>:<id>` rows offers just those tickets |
 | a ticket is passed over | it did not move last time and stays dropped until its status, `updated` or spec file changes; or another worker holds the repository; or its `Blocker: <key>:<id>` is not released (the worker printed `waits on`) |
-| an agent gets no work | it is held after a fast failure (`holds\<agent>.json`, probed again after `limitPollMinutes`), at its `maxParallel`, its `levels` exclude the ticket, or the repository has no command file for it |
+| an agent gets no work | it is held after its usage limit (`holds\<agent>.json`, until the reset time, or probed by one pass after `limitPollMinutes`), at its `maxParallel`, its `levels` exclude the ticket, or the repository has no command file for it |
 | a new repository did not join | the worker printed `not joined: <why>` once; fix that and the next scan, within ten minutes, picks it up. Registered but disabled: set a top-level `permissionMode` in `repos.json` |
 | `start` exits 3 at once | a previous `STOP` is still draining live workers - wait for them to leave |
 | refuses unattended work | the repository has no `permissionMode` - register it again with `-PermissionMode`, or set it in `repos.json` |

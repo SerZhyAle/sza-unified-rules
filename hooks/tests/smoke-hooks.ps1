@@ -162,7 +162,7 @@ Write-Host '--- session-start: the payload must survive the console code page --
 # the section sign and the Cyrillic inside rules/INVARIANTS.md left the hook as cp866 bytes, the reader
 # decoded them as UTF-8, and every injection was discarded as malformed JSON - silently, for a month.
 function Invoke-SessionStartCase {
-    param([string]$name, [string]$cwd, [switch]$MustBeSilent)
+    param([string]$name, [string]$cwd, [switch]$MustBeSilent, [string]$MustContain)
     $script:cases++
     $psi = [System.Diagnostics.ProcessStartInfo]::new()
     $psi.FileName = 'pwsh'
@@ -194,6 +194,9 @@ function Invoke-SessionStartCase {
             $text = (New-Object System.Text.UTF8Encoding $false, $true).GetString($raw)
             $parsed = $text | ConvertFrom-Json
             if (-not $parsed.hookSpecificOutput.additionalContext) { $why = 'parsed, but additionalContext is empty' }
+            elseif ($MustContain -and $parsed.hookSpecificOutput.additionalContext -notlike "*$MustContain*") {
+                $why = "additionalContext does not name '$MustContain'"
+            }
         }
         catch { $why = 'output is not UTF-8 JSON the reader can parse: ' + $_.Exception.Message }
     }
@@ -214,7 +217,7 @@ try {
     # The stranger gets a .git marker so the walk stops there instead of climbing into a real adopter
     # above the temp directory.
     New-Item -ItemType Directory -Path (Join-Path $stranger '.git') -Force | Out-Null
-    Invoke-SessionStartCase 'adopter - injection parses as UTF-8 JSON' $adopter
+    Invoke-SessionStartCase 'adopter - UTF-8 JSON lists app-commands' $adopter -MustContain 'app-commands'
     Invoke-SessionStartCase 'non-adopter - stays silent' $stranger -MustBeSilent
 }
 finally {

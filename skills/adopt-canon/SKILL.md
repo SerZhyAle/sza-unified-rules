@@ -105,6 +105,9 @@ live tree. This one file is what every other skill and the compliance gate read.
   anchors, build commands, known-broken gates, owner decisions.
 - Verify every kept claim against the live tree. Fix statements that contradict it: stale paths,
   gitignored-versus-committed mismatches, a documented remap that the script does not actually perform.
+- If the repo has a `docs/cli-commands.json` or `docs/cli-commands.<program>.json` manifest, add the
+  [product commands snippet](../../templates/agent-rules.md) to its authoritative agent-rules file,
+  naming each executable from its manifest.
 - A rule that genuinely is a repo-specific delta but reads like a restatement gets an inline
   `<!-- canon-ok: <reason> -->` so the gate stops flagging it.
 - **`AGENTS.md` is a delegating stub** - a Codex-style `/init` creates one with no canon pointer, which the

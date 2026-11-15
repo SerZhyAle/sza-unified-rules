@@ -18,6 +18,10 @@ param(
 #     command), which a copy cannot make.
 #   - An attachment with the same name and identical content is reused; a different one gets a
 #     numeric suffix. Nothing under the scratch directory is deleted.
+#   - The citation names the folder where the spec stands NOW. TASK-FLOW rule 70 then moves the
+#     spec and its folder into paths.specArchiveDir, after the gates; Move-SpecToStatusHome
+#     (_lib.ps1) rewrites the citations of the old path in the moved files (S0084), and the
+#     evidence gate refuses a cited own-folder file that does not exist.
 #   - Why a repair and not a longer refusal: the refusal already spelled out the move step by step,
 #     and the agent then performed exactly that move by hand and re-ran the transition (measured on
 #     the consumer repository, 2026-09-24). A remedy with no judgement in it belongs to the tool.

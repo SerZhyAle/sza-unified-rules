@@ -234,6 +234,13 @@ shares. Reconciled against the portfolio; per-project records in `contrib/`.
 - Repetitive workflows are **named skills / slash-commands** (build, release, spec lifecycle, doc sync,
   log analysis..) so a routine has one canonical procedure instead of ad-hoc reinvention. Author a new
   rule/gate/skill only after observing the failure it prevents; keep it minimal and trigger-focused.
+- **Product commands before window driving.** Before driving a product's window or writing a one-off
+  script around it, use the [app-commands](../skills/app-commands/SKILL.md) skill to discover its existing
+  commands. A repository with a command manifest points agents to `docs/CLI.md` and `commands --json` in
+  its authoritative agent-rules file. The actual product response wins over a repository manifest; an
+  agent uses a command outside risk `safe` only with the person's setting on, and never enables it. This
+  agent policy also covers commands APP-COMMANDS section 7 item C.4 does not require a product to gate
+  (rules 13, 18 and 20).
 - **Gate it or compress it - prose in a rules file is not enforcement.** Measured across a month of
   this portfolio's sessions: rules with a mechanical gate held at **~99%**; the same rules stated only
   as prose held at **1-8%**. So a rule that matters earns a gate, and a rule that does not is compressed

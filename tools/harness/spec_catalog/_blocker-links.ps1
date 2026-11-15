@@ -39,9 +39,10 @@ function Get-DependsOnValue {
 
 function Get-BlockerLinks {
     # Resolve the ids this spec is BLOCKED BY. Only sources whose FORM states the direction,
-    # because "related to" is not "blocked by" (S1482). Two of them: a `**Depends on:**` line,
-    # else every explicit `Blocker:` / `Блокер:` token in the `## 10.` section and in the
-    # catalog record's statusNote.
+    # because "related to" is not "blocked by" (S1482). Two of them, read together: a
+    # `**Depends on:**` line, and every explicit `Blocker:` / `Блокер:` token in the `## 10.`
+    # section and in the catalog record's statusNote (the contract puts no section limit on the
+    # local token - that narrowing is a recorded exception, S0083).
     #
     # Section 10 is deliberately NOT scraped for bare ids. Its heading is "Связи с другими
     # спеками" and it lists consumers, successors and neighbours next to blockers: 98 spec files
@@ -72,18 +73,19 @@ function Get-BlockerLinks {
     $text = if ($null -ne $SpecText) { [string]$SpecText } else { '' }
     $note = if ($null -ne $StatusNote) { [string]$StatusNote } else { '' }
 
+    # The two sources are a UNION (TASK-FLOW rule 9: "a line `**Depends on:**` or a token `Blocker: <id>`"). Until
+    # S0083 the line replaced the tokens, so a spec whose line named no id silenced the tokens of its note and could
+    # be released early on the id of the line alone.
     $ids = @()
     $depValue = Get-DependsOnValue -Text $text
     if ($null -ne $depValue) {
-        $ids = @([regex]::Matches($depValue, ('\b' + (Get-SzaTicketIdFragment) + '\b')) | ForEach-Object { $_.Value })
+        $ids += @([regex]::Matches($depValue, ('\b' + (Get-SzaTicketIdFragment) + '\b')) | ForEach-Object { $_.Value })
     }
-    else {
-        $tokenText = $note
-        $sec10Match = [regex]::Match($text, '(?ms)^##\s+10\.[^\n]*\n(.+?)(?:\r?\n##\s|\z)')
-        if ($sec10Match.Success) { $tokenText = $sec10Match.Groups[1].Value + "`n" + $tokenText }
-        $ids = @([regex]::Matches($tokenText, ('(?i)(?:Blocker|Блокер)\s*:\s*\**\s*(' + (Get-SzaTicketIdFragment) + ')')) |
-            ForEach-Object { $_.Groups[1].Value })
-    }
+    $tokenText = $note
+    $sec10Match = [regex]::Match($text, '(?ms)^##\s+10\.[^\n]*\n(.+?)(?:\r?\n##\s|\z)')
+    if ($sec10Match.Success) { $tokenText = $sec10Match.Groups[1].Value + "`n" + $tokenText }
+    $ids += @([regex]::Matches($tokenText, ('(?i)(?:Blocker|Блокер)\s*:\s*\**\s*(' + (Get-SzaTicketIdFragment) + ')')) |
+        ForEach-Object { $_.Groups[1].Value })
 
     $ids = @($ids | Sort-Object -Unique)
     if ($SelfId) { $ids = @($ids | Where-Object { $_ -ne $SelfId }) }

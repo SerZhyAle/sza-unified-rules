@@ -21,6 +21,14 @@
 #   rules 53-58 - run.start, run.end and pass.launch carry the cheap keys the loop now fills
 #   rule 41 - analysis.thresholds, named by finding id, move a finding's threshold; a non-number is ignored
 #   rule 49 - a worktree of a registered repository is collected as repo.skipped, not joined
+#   rule 47 - a drain of any target carries the ticket in flight; a stricter stop over it ends the carry; a worker
+#             between two passes of a carried ticket keeps that stop's target busy
+#   rule 47 - halt and kill cleanup clears dead locks through the locks tool, validates the ledger and names the files
+#             changed since the pass began (a throwaway git repository)
+#   rule 48 - past a poll hold's limitPollMinutes exactly one worker takes the probe (agent cap 1 under the assignment
+#             lock), the others see the agent held while it runs, and agent.probe says ok, limit or error
+#   rule 59 - the ledger watch is wired: a shared look per repository, a baseline first, then ticket.transition (actor
+#             from a pq<k> runner row), ticket.created with a repository-relative file and ingest.ledgerDiff, once
 #
 # Exit 0 when every case passed, 1 on the first failure.
 Set-StrictMode -Version Latest
@@ -35,6 +43,8 @@ $lib = Join-Path $PSScriptRoot '..\harness\portfolio\lib'
 . (Join-Path $lib 'events.ps1')
 . (Join-Path $lib 'analysis.ps1')
 . (Join-Path $lib 'discovery.ps1')
+. (Join-Path $lib 'stop.ps1')
+. (Join-Path $lib 'ledger-watch.ps1')
 
 $script:count = 0
 function Assert-Equal($Actual, $Expected, [string]$Case) {
@@ -212,6 +222,107 @@ try {
     $lines = @([IO.File]::ReadAllLines($logFile) | ForEach-Object { ConvertFrom-Json $_ })
     Assert-Equal "$($lines[0].model)/$($lines[0].cx)" 'gpt-x/light' 'rule 53: the envelope carries model and cx'
     Assert-Equal "$($lines[1].ev)/$($lines[1].d.pickerCalls)/$($lines[1].d.pickerMsAvg)/$($lines[1].d.pickerMsMax)" 'poll.summary/2/20/30' 'rule 58: poll.summary counts the ranks as picker calls'
+
+    # ---- rule 47: drain of every target ----
+    $mk = { param($kind, $target, $level) [pscustomobject]@{ kind = $kind; target = $target; level = $level; file = "STOP-$kind-$target" } }
+    $repoDrain = & $mk 'repo' 'demo' 'drain'
+    Assert-Equal "$(Test-PqDrainCarry $repoDrain $true $false)/$(Test-PqDrainCarry $repoDrain $false $false)/$(Test-PqDrainCarry $repoDrain $true $true)/$(Test-PqDrainCarry (& $mk 'repo' 'demo' 'pass') $true $false)/$(Test-PqDrainCarry $null $true $false)" 'True/False/False/False/False' 'rule 47: a moved, unkilled pass under a drain of any target is carried'
+    Assert-Equal (Test-PqDrainCarry (& $mk 'ticket' 'demo:S0001' 'drain') $true $false) $true 'rule 47: a ticket drain carries its ticket'
+    Assert-Equal ((Get-PqCarryStop -Stops @($repoDrain) -Carry 'demo:S0001' -Agent 'codex').file) 'STOP-repo-demo' 'rule 47: a repository drain lets the carried ticket go on'
+    Assert-Equal ((Get-PqCarryStop -Stops @((& $mk 'agent' 'codex' 'drain')) -Carry 'demo:S0001' -Agent 'codex').file) 'STOP-agent-codex' 'rule 47: an agent drain lets the carried ticket of that agent go on'
+    Assert-Equal ($null -eq (Get-PqCarryStop -Stops @($repoDrain, (& $mk 'ticket' 'demo:S0001' 'pass')) -Carry 'demo:S0001')) $true 'rule 47: a pass stop over the carried ticket wins over the drain'
+    Assert-Equal ($null -eq (Get-PqCarryStop -Stops @((& $mk 'repo' 'other' 'drain'), (& $mk 'all' $null 'drain')) -Carry 'demo:S0001')) $true 'rule 47: a drain of another repository or the STOP is no target carry'
+    $carrier = [pscustomobject]@{ slot = 5; key = ''; repository = ''; agent = ''; carry = 'demo:S0001'; carryAgent = 'codex' }
+    Assert-Equal "$(Test-PqStopTargetBusy $repoDrain @($carrier))/$(Test-PqStopTargetBusy (& $mk 'agent' 'codex' 'drain') @($carrier))/$(Test-PqStopTargetBusy (& $mk 'ticket' 'demo:S0001' 'drain') @($carrier))/$(Test-PqStopTargetBusy (& $mk 'repo' 'other' 'drain') @($carrier))" 'True/True/True/False' 'rule 47: a carrying worker keeps its target busy'
+    Set-PqWorkerState -Slot 5 -Carry 'demo:S0001' -CarryAgent 'codex'
+    $w5 = @(Get-PqWorkerFiles | Where-Object { $_.slot -eq 5 })
+    Assert-Equal "$($w5.Count)/$($w5[0].key)/$($w5[0].carry)/$($w5[0].carryAgent)" '1//demo:S0001/codex' 'rule 47: the worker state names the carry and Get-PqWorkerFiles reads it'
+    Set-PqWorkerState -Slot 5
+    Assert-Equal (@(Get-PqWorkerFiles | Where-Object { $_.slot -eq 5 })[0].carry) '' 'rule 47: a plain worker state carries nothing'
+    Assert-Equal ($loopText.Contains("-cin @('all', 'worker')) { `$drainCarry")) $false 'rule 47: the loop no longer limits the carry to STOP and STOP-worker'
+
+    # ---- rule 47: halt and kill cleanup ----
+    $gitRepo = Join-Path $scratch 'repo'
+    $null = [IO.Directory]::CreateDirectory($gitRepo)
+    $null = & git -C $gitRepo init -q 2>&1
+    foreach ($f in 'kept.txt', 'gone.txt', 'old.txt') { [IO.File]::WriteAllText((Join-Path $gitRepo $f), 'x') }
+    $null = & git -C $gitRepo add -A 2>&1
+    $null = & git -C $gitRepo -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m init 2>&1
+    $since = [DateTime]::Now
+    [IO.File]::WriteAllText((Join-Path $gitRepo 'old.txt'), 'y')
+    [IO.File]::SetLastWriteTime((Join-Path $gitRepo 'old.txt'), $since.AddHours(-1))
+    [IO.File]::Delete((Join-Path $gitRepo 'gone.txt'))
+    $null = [IO.Directory]::CreateDirectory((Join-Path $gitRepo 'sub'))
+    [IO.File]::WriteAllText((Join-Path $gitRepo 'sub\new.txt'), 'n')
+    Assert-Equal ((Get-PqChangedSince -RepoPath $gitRepo -Since $since) -join ',') 'gone.txt,sub/new.txt' 'rule 47: the files changed since the pass began are named, an older edit is not'
+    Assert-Equal (@(Get-PqChangedSince -RepoPath $scratch -Since $since).Count) 0 'rule 47: outside a git repository nothing is named'
+    $calls = [Collections.Generic.List[string]]::new()
+    $stub = { param($rp, $sc, $ar) $calls.Add("$([IO.Path]::GetFileName($sc)) $($ar -join ' ')"); @{ code = $(if ($ar -contains 'Code') { 1 } else { 0 }); timedOut = $false } }
+    $clean = Invoke-PqStopCleanup -RepoPath $gitRepo -HarnessRoot 'H:\harness' -Since $since -Invoker $stub
+    Assert-Equal ($calls -join '|') 'clear-agent-lock.ps1 -Name Build|clear-agent-lock.ps1 -Name Code|validate.ps1 ' 'rule 47: cleanup runs the locks tool for both types without -Force, then the ledger validate'
+    Assert-Equal "$($clean.locks['Build'])/$($clean.locks['Code'])/$($clean.validate)/$(@($clean.changed).Count)" '0/1/0/2' 'rule 47: cleanup returns the lock codes, the validate code and the changed files'
+    $thrower = { param($rp, $sc, $ar) throw 'boom' }
+    $bad = Invoke-PqStopCleanup -RepoPath $gitRepo -HarnessRoot 'H:\harness' -Since $since -Invoker $thrower
+    Assert-Equal "$($bad.locks['Build'])/$($bad.locks['Code'])/$($bad.validate)" 'error/error/error' 'rule 47: a failing cleanup step is recorded, never thrown'
+    Assert-Equal ($loopText.Contains('Invoke-PqStopCleanup -RepoPath $repoPath')) $true 'rule 47: the loop runs the cleanup on halt and kill'
+
+    # ---- rule 48: one probe pass of a poll hold ----
+    $codex = [pscustomobject]@{ name = 'codex'; maxParallel = 2; limitPollMinutes = 30 }
+    $holdFile = Get-PqPath -Kind hold -Agent 'codex'
+    $writeHold = { param($minutesAgo, $until) $null = [IO.Directory]::CreateDirectory((Split-Path -Parent $holdFile)); [IO.File]::WriteAllText($holdFile, (ConvertTo-Json -Compress -InputObject ([ordered]@{ agent = 'codex'; until = $until; source = 'log'; detector = 'unproven'; writtenAt = [DateTimeOffset]::UtcNow.AddMinutes(-$minutesAgo).ToString('yyyy-MM-ddTHH:mm:ss.fffZ'); pass = 'r.1' }))) }
+    $pickCodex = @{ agent = 'codex'; record = $codex }
+    & $writeHold 5 $null
+    Assert-Equal "$(Test-PqAgentHeld (Get-PqAgentHold 'codex') $codex)/$(Test-PqAgentProbeDue (Get-PqAgentHold 'codex') $codex)/$(Get-PqPassAgentMax $pickCodex)" 'True/False/2' 'rule 48: a poll hold inside limitPollMinutes holds; no probe yet'
+    & $writeHold 40 $null
+    Assert-Equal "$(Test-PqAgentHeld (Get-PqAgentHold 'codex') $codex)/$(Test-PqAgentProbeDue (Get-PqAgentHold 'codex') $codex)/$(Get-PqPassAgentMax $pickCodex)" 'False/True/1' 'rule 48: past the poll the next pass is the probe, with an agent cap of 1'
+    $otherPid = (Get-Process -Id $PID).Parent.Id
+    $w9 = Join-Path (Join-Path $scratch 'run') 'worker-9.json'
+    [IO.File]::WriteAllText($w9, (ConvertTo-Json -Compress -InputObject ([ordered]@{ slot = 9; pid = $otherPid; repository = 'other'; ticket = 'S0009'; agent = 'codex' })))
+    Assert-Equal (Test-PqAgentHeld (Get-PqAgentHold 'codex') $codex) $true 'rule 48: while another worker''s probe runs, the agent stays held'
+    Remove-Item -LiteralPath $w9 -Force
+    & $writeHold 40 ([DateTimeOffset]::UtcNow.AddHours(2).ToString('o'))
+    Assert-Equal "$(Test-PqAgentProbeDue (Get-PqAgentHold 'codex') $codex)/$(Get-PqPassAgentMax $pickCodex)" 'False/2' 'rule 48: a hold with a reset time has no probe'
+    Remove-Item -LiteralPath $holdFile -Force
+    Assert-Equal "$(Test-PqAgentProbeDue $null $codex)/$(Get-PqPassAgentMax $pickCodex)" 'False/2' 'rule 48: no hold, no probe'
+    Set-PqWorkerState -Slot 1
+    Set-PqWorkerState -Slot 2
+    Assert-Equal (Request-PqWorkerAssignment -Slot 1 -Repo @{ key = 'p1' } -Ticket 'S0001' -Title '' -Agent 'codex' -AgentMax 1) $true 'rule 48: the first worker takes the probe'
+    Assert-Equal "$(Request-PqWorkerAssignment -Slot 2 -Repo @{ key = 'p2' } -Ticket 'S0002' -Title '' -Agent 'codex' -AgentMax 1)/$script:PqAssignmentWhy" 'False/maxWorkers' 'rule 48: a second probe of the agent is refused under the lock'
+    Set-PqWorkerState -Slot 1
+    Assert-Equal "$(Get-PqProbeResult 1 $false $false 'limit-hit')/$(Get-PqProbeResult 0 $true $false 'ok')/$(Get-PqProbeResult 0 $false $false 'child-failed')/$(Get-PqProbeResult 0 $false $false 'ok')" 'limit/error/error/ok' 'rule 48: agent.probe result is limit, error or ok'
+    Assert-Equal ($loopText.Contains("-Ev 'agent.probe'") -and $loopText.Contains('-AgentMax (Get-PqPassAgentMax $pick)')) $true 'rule 48: the loop writes agent.probe and caps the probe assignment'
+
+    # ---- rule 59: the ledger watch wiring ----
+    $lwRepo = Join-Path $scratch 'lwrepo'
+    $null = [IO.Directory]::CreateDirectory((Join-Path $lwRepo 'PLAN'))
+    $null = [IO.Directory]::CreateDirectory((Join-Path $lwRepo 'temp\spec-queue'))
+    $ledgerFile = Join-Path $lwRepo 'PLAN\spec-catalog.jsonl'
+    $row = { param($id, $status, $updated) ConvertTo-Json -Compress -InputObject ([ordered]@{ id = $id; status = $status; updated = $updated; created = '2026-11-15'; priority = 'P2'; file = "PLAN/${id}_x.md" }) }
+    [IO.File]::WriteAllText($ledgerFile, ((& $row 'S0001' 'Draft' '2026-11-15 08:00') + "`n"))
+    $lwReg = [pscustomobject]@{ repos = @([pscustomobject]@{ key = 'lw'; path = $lwRepo; enabled = $true }) }
+    $lwLog = Open-PqLog -Writer 'w8' -Run 'R-lw'
+    Assert-Equal (Invoke-PqLedgerWatch -Registry $lwReg -Log $lwLog -Run 'R-lw' -Worker 8) 0 'rule 59: the first look is a baseline and writes no event'
+    Assert-Equal ([IO.File]::Exists((Get-PqLedgerWatchPath 'lw'))) $true 'rule 59: the look is saved in run\ledger-<key>.json, shared by the workers'
+    $t1 = (Get-Date).AddMinutes(1).ToString('yyyy-MM-dd HH:mm')
+    [IO.File]::WriteAllText($ledgerFile, ((& $row 'S0001' 'Approved' $t1) + "`n" + (& $row 'S0002' 'Draft' $t1) + "`n"))
+    [IO.File]::WriteAllText((Join-Path $lwRepo 'temp\spec-queue\runs-pq8.jsonl'), ((ConvertTo-Json -Compress -InputObject ([ordered]@{ id = 'S0001'; statusBefore = 'Draft'; statusAfter = 'Approved'; finishedAt = (Get-Date).ToString('yyyy-MM-ddTHH:mm:ss') })) + "`n"))
+    Assert-Equal (Invoke-PqLedgerWatch -Registry $lwReg -Log $lwLog -Run 'R-lw' -Worker 8 -Repos @('lw')) 3 'rule 59: a look after a move writes ticket.transition, ticket.created and ingest.ledgerDiff'
+    Assert-Equal (Invoke-PqLedgerWatch -Registry $lwReg -Log $lwLog -Run 'R-lw' -Worker 9 -Repos @('lw')) 0 'rule 59: a second worker''s look at the same ledger writes nothing again'
+    Assert-Equal (Invoke-PqLedgerWatch -Registry $lwReg -Log $lwLog -Run 'R-lw' -Worker 8 -Repos @('other')) 0 'rule 59: a repository not named is not looked at'
+    $lwFile = $lwLog.Path
+    Close-PqLog -Log $lwLog
+    $lwEv = @([IO.File]::ReadAllLines($lwFile) | ForEach-Object { ConvertFrom-Json $_ })
+    Assert-Equal (($lwEv | ForEach-Object { $_.ev }) -join ',') 'ticket.transition,ticket.created,ingest.ledgerDiff' 'rule 59: the events in order'
+    Assert-Equal "$($lwEv[0].id)/$($lwEv[0].d.from)/$($lwEv[0].d.to)/$($lwEv[0].d.actor)" 'S0001/Draft/Approved/robot' 'rule 59: a move covered by a pq<k> runner row is the robot''s'
+    Assert-Equal "$($lwEv[1].id)/$($lwEv[1].d.source)/$($lwEv[1].d.file)" 'S0002/owner/PLAN/S0002_x.md' 'rule 59: ticket.created carries the spec file repository-relative (rule 56)'
+    Assert-Equal "$($lwEv[2].d.transitions)/$($lwEv[2].d.created)/$($lwEv[2].d.unattributed)" '1/1/0' 'rule 59: ingest.ledgerDiff counts the interval'
+    $saved = Read-PqLedgerWatch (Get-PqLedgerWatchPath 'lw')
+    Assert-Equal "$(@($saved.snapshot.tickets.Keys) -join ',')/$($saved.enteredAt['S0001'])" "S0001,S0002/$t1" 'rule 59: the saved look carries the rows and the entry map'
+    $lock = Invoke-PqLedgerWatchLock 'lw' { Invoke-PqLedgerWatchLock 'lw' { } }
+    Assert-Equal $lock $true 'rule 59: the watch lock runs its body when free'
+    Assert-Equal ($null -eq (Get-PqRepoRunnerRows (Join-Path $lwRepo 'temp\spec-queue'))) $false 'rule 59: the runner rows are read'
+    Assert-Equal (@(Get-PqRepoRunnerRows (Join-Path $lwRepo 'temp\spec-queue'))[0].instance) 'pq8' 'rule 59: a runner row carries its instance from the file name'
+    Assert-Equal ($loopText.Contains('-LivePasses @($endedPass)') -and $loopText.Contains("-contains 'ledger'")) $true 'rule 59: the loop looks after each pass and after a ledger change while waiting'
 }
 finally {
     $env:SZA_PORTFOLIO_ROOT = $savedRoot

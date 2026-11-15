@@ -18,7 +18,11 @@
     packet becomes a Draft ticket through spec-draft.ps1 in the named project, in each of projects[] cross-linked,
     or in canon; a refusal lands the packet in failed/ with reason.json, a transient failure is retried with the
     backoff (1, 5, 15 min) and at most three tries. Everything the ingest times and decides is printed, one
-    line per packet, and written to the portfolio event log as 'ingest.packet' (EVENTS.md 3.9).
+    line per packet, and written to the portfolio event log as 'ingest.packet' (EVENTS.md 3.9). Once per pass
+    (S0085) a folder in new/ with no manifest.json that nothing in it has written to for 7 days - an upload that
+    never finished (INBOX-PACKET section 2.3) - is removed with its attempts sidecar; a folder holding a manifest
+    is never touched. An error out of the packet check (a payload another process holds open) is a retry of that
+    packet by the backoff above, not the end of the watcher.
 
     -Once is the scheduler's form: drain what is claimable, then exit (the 5-minute repeating trigger of the
     scheduled task covers a resident listener that died). The slug of every capture is derived by spec-draft
@@ -123,6 +127,10 @@ try {
             foreach ($id in @($recovery.completed)) { Write-Host "watch-inbox: recovered decision for $id" }
             foreach ($id in @($recovery.requeued)) { Write-Host "watch-inbox: re-queued stale claim $id" }
         }
+        # S0085, once per pass: an upload that never finished (no manifest.json, nothing written for 7 days) goes.
+        $collected = Remove-InboxIncompletePackets -Root $root
+        foreach ($g in @($collected.removed)) { Write-Host "watch-inbox: removed incomplete packet $($g.packetId) - no manifest.json and idle for $($g.age); the upload never finished" }
+        foreach ($g in @($collected.failed)) { Write-Host "watch-inbox: could not remove an incomplete packet$(if ($g.packetId) { " $($g.packetId)" }) - $($g.message)" }
         while ($true) {
             $pending = @(Get-InboxNewPackets -Root $root | Where-Object { $_.manifestReady -and $_.retryReady })
             $claimed = 0

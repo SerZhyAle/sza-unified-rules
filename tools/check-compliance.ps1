@@ -15,7 +15,7 @@ Groups:
   LAY    layout and ledger
   FLOW   the task flow stands: profile, ledger, launcher (FLOW01-FLOW03, advisory, off unless -CheckTaskFlow;
          Phase 09 of S0015 turns it on)
-  CTR    shared contracts: pointers not copies, and the catalog named in exactly one file
+  CTR    shared contracts: pointers not copies, the catalog path, and agent discovery of product commands
   SEC    secrets and committed artifacts (SEC05, advisory: a source file hidden by a name glob)
   VER    version shape and channel manifests
   SURF   product surfaces: privacy page, SEO block, sitemap/robots, promotion traps (rating, keywords)
@@ -911,6 +911,28 @@ try {
             Add-Finding -Id 'SZA-CTR03' -Severity 'warn' -Path ($agentFiles | Select-Object -First 1) `
                 -Message 'docs/contracts/ exists but no agent-rules file says where the shared contracts catalog is' `
                 -Fix 'Name the catalog once, in the agent-rules file, and nowhere else (CONTRACTS.md section 3).'
+        }
+    }
+
+    # The command manifest is a repository fact; require the pointer only when that fact is in the
+    # selected file set. A second program can have a manifest even when the main one is absent.
+    $commandDocs = Join-RepoPath 'docs'
+    $commandManifests = @()
+    if (Test-Path -LiteralPath $commandDocs -PathType Container) {
+        $commandManifests = @(Get-ChildItem -LiteralPath $commandDocs -File | Where-Object {
+            $_.Name -cmatch '^cli-commands(\.[a-z][a-z0-9-]*)?\.json$' -and
+                (-not $isGit -or $tracked -contains "docs/$($_.Name)")
+        })
+    }
+    if ($commandManifests.Count -gt 0 -and $agentFiles.Count -gt 0) {
+        $namesCommands = @($agentFiles | Where-Object {
+            $text = Get-Content -LiteralPath (Join-RepoPath $_) -Raw
+            $text -match '(?i)docs[/\\]CLI\.md' -and $text -match '(?i)commands\s+--json'
+        })
+        if ($namesCommands.Count -eq 0) {
+            Add-Finding -Id 'SZA-CTR04' -Severity 'warn' -Path ($agentFiles | Select-Object -First 1) `
+                -Message 'a product command manifest exists but no agent-rules file names both docs/CLI.md and commands --json' `
+                -Fix 'Add the product commands snippet from templates/agent-rules.md to the authoritative agent-rules file.'
         }
     }
 

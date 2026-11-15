@@ -19,15 +19,20 @@
 #   Get-PqAgentHold -Name <agent> / Test-PqAgentHeld -Hold <hold> -Agent <record>
 #       the hold of rule 48 (or $null), and whether it still keeps the agent out. A hold with until in the future holds;
 #       one with until $null holds for limitPollMinutes after it was written, then lets one probe pass through.
+#       While that probe pass is in flight (another live worker of the agent), the agent stays held for everyone else.
+#   Test-PqAgentProbeDue -Hold <hold> -Agent <record> / Get-PqPassAgentMax -Pick <pick> / Get-PqProbeResult
+#       whether the next pass of the agent is the probe of a poll hold; the agent cap of the assignment (1 for a probe,
+#       so two workers never probe at once); and the `agent.probe` result (ok, limit, error) of a pass that was one.
 #   Set-PqAgentHold -Name -Pass -Source -Detector [-Until] / Remove-PqAgentHold -Name
 #       write (until only ever moves forward) or clear holds\<agent>.json.
 #   Select-PqAgent -Registry <registry> -RepoPath <dir> -Level <level>
 #       @{ agent; record; template; fallbacks } for the first agent that passes every test, or with agent $null when
 #       none does. fallbacks lists @{ from; why } (limit, maxParallel, levelNotAllowed, noPipelineForm) for each passed over.
 #
-# Limits of a non-Claude agent are learned only from a fast failure that moved nothing (the `unproven` detector of
-# rule 48): the pass runs in the worker's console, so its text is never read. The Claude agent keeps the repository
-# runner's own transcript detector and its per-repository hold, unchanged.
+# A limit is read only from the provider's own output: Claude's transcript (the repository runner's detector), another
+# provider's pass log by its record's limitDetector pattern. A fast failure with no limit text is an ordinary failed
+# pass, never a probable limit (owner, 2026-10-29: the next provider only on a spent limit); S0082 proposes the
+# contract's fast-failure sentence, source `fastFailure` and `agent.unproven` reserved.
 
 $script:PqFastFailureSeconds = 120
 
@@ -143,7 +148,33 @@ function Test-PqAgentHeld($Hold, $Agent) {
     $written = $null
     try { $written = [DateTimeOffset]::Parse([string](Get-PqValue $Hold 'writtenAt')) } catch { return $false }
     $poll = [int](Get-PqValue $Agent 'limitPollMinutes' 30)
-    return ($written.AddMinutes($poll) -gt $now)
+    if ($written.AddMinutes($poll) -gt $now) { return $true }
+    # Rule 48: one probe pass decides. Past the poll, a live pass of the agent on another worker is that probe, and the
+    # agent stays held for every other worker until it ends (it clears the hold or writes it again).
+    $name = [string](Get-PqValue $Hold 'agent' (Get-PqValue $Agent 'name' ''))
+    return ($name -and (Get-PqAgentLiveCount $name) -gt 0)
+}
+
+# True when the hold is a poll hold (until $null) whose limitPollMinutes have run out: the next pass is its probe.
+function Test-PqAgentProbeDue($Hold, $Agent, [DateTimeOffset]$Now = [DateTimeOffset]::UtcNow) {
+    if ($null -eq $Hold -or (Get-PqValue $Hold 'until')) { return $false }
+    try { $written = [DateTimeOffset]::Parse([string](Get-PqValue $Hold 'writtenAt')) } catch { return $false }
+    return ($written.AddMinutes([int](Get-PqValue $Agent 'limitPollMinutes' 30)) -le $Now)
+}
+
+# The agent cap the assignment is checked against: 1 while the pass would be a probe, so the assignment's own lock lets
+# exactly one worker take it; otherwise the record's maxParallel.
+function Get-PqPassAgentMax($Pick) {
+    if (Test-PqAgentProbeDue (Get-PqAgentHold ([string]$Pick.agent)) $Pick.record) { return 1 }
+    return [int](Get-PqValue $Pick.record 'maxParallel' 1)
+}
+
+# The `agent.probe` result of a pass that was a probe: limit when it ended on one, error when it was killed, failed to
+# run or ended in a failure outcome, else ok.
+function Get-PqProbeResult([int]$Limits, [bool]$Killed, [bool]$Failed, [string]$Outcome) {
+    if ($Limits -gt 0) { return 'limit' }
+    if ($Killed -or $Failed -or $Outcome -cin @('child-failed', 'launch-failed', 'timeout', 'provider-error')) { return 'error' }
+    return 'ok'
 }
 
 function Set-PqAgentHold {

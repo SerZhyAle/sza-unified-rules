@@ -122,7 +122,8 @@ if (-not $NoteSupplied -or [string]::IsNullOrWhiteSpace($note)) {
     exit 1
 }
 
-if ($NewStatus -eq 'BlockQuestions' -and $note -notmatch '(?i)(?<![a-z])(?:Q:\s*[^?]*\?|DO:\s*\S)') {
+# The tokens are LITERAL (TASK-FLOW rule 7): exact case, so "need to do: x" is prose and not a DO: token (S0083).
+if ($NewStatus -eq 'BlockQuestions' -and $note -notmatch '(?-i)(?<![A-Za-z])(?:Q:\s*[^?]*\?|DO:\s*\S)') {
     Write-Output ""
     Write-Output ("{0} -> BlockQuestions is not a question or pre-implementation DO: action." -f $Id)
     Write-Output ""

@@ -82,6 +82,7 @@ compliance gate read instead of guessing.
 | [`spec-next`](skills/spec-next/SKILL.md) (`/sn`) | the head of the project's queue without naming it: the harness picks the first eligible ticket and claims its lease in one call, then `spec-all` takes it |
 | [`spec-all`](skills/spec-all/SKILL.md) (`/sa`) | one ticket from its current status to the audit in any project: lease, drift, the stage the status names (spec-to-audit), release - one ticket, then stop |
 | [`portfolio-queue`](skills/portfolio-queue/SKILL.md) | the robots over all projects (`pq`): which command answers what they are doing, why one is idle, how to stop, pause and steer them, and what they did this week; it never starts a worker on its own |
+| [`app-commands`](skills/app-commands/SKILL.md) | discover each product's command line and use it before driving its window or writing a one-off script, with the person's risk setting respected |
 | [`agent-cost`](skills/agent-cost/SKILL.md) | measuring what a session actually costs, with the five corrections without which every token figure is inflated roughly threefold - and the subagent model tier, the largest single lever that measurement reaches |
 | [`caveman`](skills/caveman/SKILL.md) | terse mode - prose compressed, every exact string and every gate reason left intact; plus the commit and review shapes |
 
@@ -133,7 +134,7 @@ Exit codes: `0` clean, `1` violations, `2` internal error. Checks are grouped `C
 staleness, and a stamp claiming a canon version *ahead* of the canon's own - which is corruption rather
 than staleness, and so carries its own id at error), `RULES` (canon pointer, no restatement, no
 self-declared fork), `HOOK` (every registered hook appears in the inventory table), `LAY` (layout and
-ledger), `SEC` (secrets and committed artifacts), `VER` (version shape and channel manifests), `SURF`
+ledger), `CTR` (contract pointers and agent discovery of product commands), `SEC` (secrets and committed artifacts), `VER` (version shape and channel manifests), `SURF`
 (privacy page, SEO block, sitemap), `STYLE` (house text style).
 
 Two design choices matter:

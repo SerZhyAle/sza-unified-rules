@@ -359,7 +359,20 @@ function Invoke-InboxIngestPacket {
     $specDraft = Resolve-InboxSpecDraft $SpecDraft
 
     # ---- the reader's matrix, whole (INBOX-PACKET section 4): a refused packet is never partially trusted ----
-    $check = Test-InboxPacketFolder -Path $PacketPath -MaxPacketBytes $MaxPacketBytes -MaxFiles $MaxFiles
+    # An error thrown out of the check - a payload another process still holds open, Drive for desktop mid-sync
+    # (S0085) - is a transient failure of this try, not a verdict on the packet and not a reason to end the watcher
+    # (the outer catch of watch-inbox.ps1 exits 1 and a poison packet would repeat that once per claim window). It
+    # takes the retry path a capture failure takes, the error text kept as the last error. A lock that also blocks
+    # the move back to new/ leaves the packet in processing/ (outcome 'pending'); its claim is then released from
+    # this process's pid, so the stale window - not the watcher's own lifetime - decides when recovery re-queues it.
+    try { $check = Test-InboxPacketFolder -Path $PacketPath -MaxPacketBytes $MaxPacketBytes -MaxFiles $MaxFiles }
+    catch {
+        $cause = if ($null -ne $_.Exception.InnerException) { $_.Exception.InnerException } else { $_.Exception }
+        $why = ("the packet check failed ($($cause.GetType().Name)): $($cause.Message)" -replace '\s+', ' ').Trim()
+        $outcome = & $retry $why $why
+        if ($outcome.outcome -ceq 'pending') { $null = Release-InboxClaimOwner -Root $Root -PacketId $packetId }
+        return $outcome
+    }
     if (-not $check.ok) {
         $names = @($check.errors | ForEach-Object { $_.name } | Select-Object -Unique)
         $detail = (@($check.errors) | ForEach-Object { "$($_.name): $($_.message)" }) -join ' | '
