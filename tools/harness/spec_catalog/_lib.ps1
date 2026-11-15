@@ -1045,6 +1045,131 @@ function Resolve-SpecPath {
     return (Join-Path $script:RepoRoot $p)
 }
 
+function Move-PathWithRetry {
+    # Rename a file or a folder, retried for a short while when a reader holds it open - the same window
+    # Move-ReplaceFile waits out (every reader of a spec opens it without FileShare.Delete for a few
+    # milliseconds, and a rename that lands inside it fails). The wait is bounded; after it the error is the caller's.
+    param(
+        [Parameter(Mandatory)][string] $Source,
+        [Parameter(Mandatory)][string] $Destination,
+        [switch] $Directory,
+        [int] $TimeoutMs = 3000
+    )
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    $delay = 10
+    while ($true) {
+        try {
+            if ($Directory) { [System.IO.Directory]::Move($Source, $Destination) }
+            else { [System.IO.File]::Move($Source, $Destination) }
+            return
+        }
+        catch [System.IO.IOException], [System.UnauthorizedAccessException] {
+            if ($sw.ElapsedMilliseconds -ge $TimeoutMs) { throw }
+            Start-Sleep -Milliseconds $delay
+            if ($delay -lt 100) { $delay *= 2 }
+        }
+    }
+}
+
+function Move-SpecToStatusHome {
+    # TASK-FLOW rule 70 (S0076): a finished ticket's spec file leaves the working folder with its status.
+    # Entering a release-ready status (Implemented, Verified, BlockNeedUserTest) moves the spec file, and its
+    # folder when it has one, from paths.specsDir into paths.specArchiveDir; leaving that set for a status that
+    # is not Archived moves them back. Archived stays archive.ps1's (rule 17).
+    #
+    # Called by every writer of a status (update.ps1, close.ps1, bulk-update.ps1) AFTER the gates of the target
+    # status passed - they read the spec at the path the row still names - and under the catalog lock, BEFORE the
+    # journal write, so the caller writes the returned `file` in the same write.
+    #
+    # Best effort, and it never throws: the status change is the contract, the folder is housekeeping. Every
+    # case that cannot be moved cleanly returns moved = $false with the reason in `note`; a row the move left
+    # behind is healed by the queue sync (rule 68). Silent no-ops (note empty): a status that moves nothing, a
+    # file that is already at home or lives somewhere other than the top level of the folder it would leave,
+    # and a repository whose two directories are one (that is how a repository opts out).
+    #
+    # Returns @{ moved; file; note }: `file` is the row's `file` to write (unchanged unless moved).
+    param(
+        [Parameter(Mandatory)] $Record,
+        [string] $OldStatus,
+        [Parameter(Mandatory)][string] $NewStatus
+    )
+    $result = [pscustomobject]@{ moved = $false; file = [string]$Record.file; note = '' }
+    $toArchive = Test-ReleaseReadyStatus -Status $NewStatus
+    $leaving = (-not $toArchive) -and $NewStatus -ne 'Archived' -and
+        (-not [string]::IsNullOrEmpty($OldStatus)) -and (Test-ReleaseReadyStatus -Status $OldStatus)
+    if (-not $toArchive -and -not $leaving) { return $result }
+
+    try {
+        # An alternate-catalog run reads the real spec bodies but writes a sandbox journal: moving a real file
+        # there would leave the real ledger naming a path that no longer exists.
+        if (Get-SzaEnv 'SPEC_CATALOG_DIR') {
+            $result.note = 'not moved: alternate catalog run'
+            return $result
+        }
+        $specsAbs   = [System.IO.Path]::GetFullPath((Get-SzaPath 'specsDir')).TrimEnd('\', '/')
+        $archiveAbs = [System.IO.Path]::GetFullPath((Get-SzaPath 'specArchiveDir')).TrimEnd('\', '/')
+        if ($specsAbs -ieq $archiveAbs) { return $result }
+
+        $fromDir = if ($toArchive) { $specsAbs } else { $archiveAbs }
+        $toDir   = if ($toArchive) { $archiveAbs } else { $specsAbs }
+        $toKey   = if ($toArchive) { 'specArchiveDir' } else { 'specsDir' }
+        $toRel   = ([string](Get-SzaPath -Key $toKey -Relative) -replace '\\', '/').TrimEnd('/')
+
+        $fileAbs = [System.IO.Path]::GetFullPath((Resolve-SpecPath -PathRef ([string]$Record.file)))
+        $fileDir = ([System.IO.Path]::GetDirectoryName($fileAbs)).TrimEnd('\', '/')
+        if ($fileDir -ieq $toDir) { return $result }
+        if ($fileDir -ine $fromDir) { return $result }
+        if (-not (Test-Path -LiteralPath $fileAbs -PathType Leaf)) {
+            $result.note = "not moved: $($Record.file) does not exist"
+            return $result
+        }
+
+        $leaf = [System.IO.Path]::GetFileName($fileAbs)
+        $newFile = "$toRel/$leaf"
+        if ($newFile -notmatch $script:FilePattern) {
+            $result.note = "not moved: '$newFile' does not match the profile's grammar.specFilePattern"
+            return $result
+        }
+        $dstFile = Join-Path $toDir $leaf
+        if (Test-Path -LiteralPath $dstFile) {
+            $result.note = "not moved: $newFile already exists"
+            return $result
+        }
+
+        # -replace, not ChangeExtension: a slug may carry a dot and ChangeExtension would cut at it.
+        $srcFolder = $fileAbs -replace '\.md$', ''
+        $hasFolder = ($srcFolder -ne $fileAbs) -and (Test-Path -LiteralPath $srcFolder -PathType Container)
+        $dstFolder = Join-Path $toDir ([System.IO.Path]::GetFileName($srcFolder))
+        if ($hasFolder -and (Test-Path -LiteralPath $dstFolder)) {
+            $result.note = "not moved: $toRel/$([System.IO.Path]::GetFileName($srcFolder))/ already exists"
+            return $result
+        }
+
+        if (-not (Test-Path -LiteralPath $toDir -PathType Container)) {
+            New-Item -ItemType Directory -Path $toDir -Force | Out-Null
+        }
+        # The folder first: it is the part a running process can hold (a shell standing in it), and a refusal
+        # there must leave the pair untouched. The file goes second; if it fails the folder goes back.
+        if ($hasFolder) { Move-PathWithRetry -Source $srcFolder -Destination $dstFolder -Directory }
+        try {
+            Move-PathWithRetry -Source $fileAbs -Destination $dstFile
+        }
+        catch {
+            if ($hasFolder) { try { Move-PathWithRetry -Source $dstFolder -Destination $srcFolder -Directory } catch { } }
+            throw
+        }
+        $result.moved = $true
+        $result.file = $newFile
+        $result.note = "moved to $newFile" + $(if ($hasFolder) { ' (with its folder)' } else { '' })
+    }
+    catch {
+        $result.moved = $false
+        $result.file = [string]$Record.file
+        $result.note = "not moved: $($_.Exception.Message)"
+    }
+    return $result
+}
+
 function Invoke-SpecCheckers {
     # Run a list of checker scripts, refusing the transition on the first non-zero exit.
     #

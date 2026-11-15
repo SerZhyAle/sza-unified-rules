@@ -184,6 +184,16 @@ $updated.updated = Get-Now
 
 Assert-Record -Record $updated
 
+# TASK-FLOW rule 70 (S0076): a ticket entering Implemented, Verified or BlockNeedUserTest takes its spec file (and
+# folder) into paths.specArchiveDir, and one leaving them for an open status brings them back. After every gate above
+# (they read the file where the row still names it), under the lock, before the write so the row carries the new
+# `file`. Best effort: a refusal is a printed reason, never a failed status change.
+if ($PSBoundParameters.ContainsKey('Status')) {
+    $homeMove = Move-SpecToStatusHome -Record $updated -OldStatus ([string]$oldStatus) -NewStatus ([string]$updated.status)
+    if ($homeMove.moved) { $updated.file = $homeMove.file }
+    if ($homeMove.note) { Write-Host ("  spec file {0}" -f $homeMove.note) -ForegroundColor DarkGray }
+}
+
 # Route the write to the journal that matches the NEW status, handling all four
 # transitions (active<->active, active->archive, archive->active, archive->archive).
 $newIsArchived = ($updated.status -eq 'Archived')

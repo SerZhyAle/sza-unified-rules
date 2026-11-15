@@ -65,11 +65,29 @@ $repoRoot = (Get-SzaProjectRoot)
 # PLAN/ itself stays untracked; .gitignore re-includes PLAN/archive/ specifically.
 # The folder sits beside the archive JOURNAL, so an alternate-catalog run (FMS_SPEC_CATALOG_DIR,
 # S1534) moves fixture files into its own sandbox instead of the production PLAN/archive/.
-$doneDir = Join-Path (Split-Path -Parent (Get-ArchivePath)) 'archive'
+#
+# S0076 / TASK-FLOW rule 70: the destination is the directory the row will name, paths.specArchiveDir. It used to
+# be "<journal folder>/archive" whatever the profile said, so a repository that declares another archive
+# directory (the canon's own is PLAN/DONE) had its files sent to one folder and its rows pointing at the other.
+# An alternate-catalog run keeps the sandbox rule above.
+$doneDir = if (Get-SzaEnv 'SPEC_CATALOG_DIR') {
+    Join-Path (Split-Path -Parent (Get-ArchivePath)) 'archive'
+} else {
+    [System.IO.Path]::GetFullPath((Get-SzaPath 'specArchiveDir')).TrimEnd('\', '/')
+}
 if (-not (Test-Path $doneDir)) {
     New-Item -ItemType Directory -Path $doneDir -Force | Out-Null
 }
-$doneLabel = ($doneDir.Substring($repoRoot.Length).TrimStart('\', '/') -replace '\\', '/') + '/'
+$doneLabel = if ($doneDir.StartsWith($repoRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+    ($doneDir.Substring($repoRoot.Length).TrimStart('\', '/') -replace '\\', '/') + '/'
+} else {
+    ($doneDir -replace '\\', '/') + '/'
+}
+# Since rule 70 a ticket usually reaches archive.ps1 with its file already in the archive directory; moving a
+# file onto itself is a failure under -Force, so a path that is already its destination is left alone.
+function Test-SamePath([string] $A, [string] $B) {
+    return ([System.IO.Path]::GetFullPath($A).TrimEnd('\', '/') -ieq [System.IO.Path]::GetFullPath($B).TrimEnd('\', '/'))
+}
 
 $planDir = Join-Path $repoRoot 'PLAN'
 $lines      = [System.Collections.Generic.List[string]]::new()
@@ -208,16 +226,24 @@ if ($plans.Count -gt 0) {
                     # PLAN/archive/ matches the journal (shared fail-soft helper, first line only).
                     [void](Sync-SpecHeaderStatus -PathRef $plan.SpecFile -Status 'Archived')
                     $specFileName = Split-Path -Path $plan.SpecFile -Leaf
-                    Move-Item -LiteralPath $plan.SpecFile -Destination (Join-Path $doneDir $specFileName) -Force
-                    $moved.Add($specFileName)
+                    if (-not (Test-SamePath $plan.SpecFile (Join-Path $doneDir $specFileName))) {
+                        Move-Item -LiteralPath $plan.SpecFile -Destination (Join-Path $doneDir $specFileName) -Force
+                        $moved.Add($specFileName)
+                    } else {
+                        $moved.Add("$specFileName (already there)")
+                    }
                 } else {
                     $noArtefact.Add($oneId)
                     Write-Warning "Strategic file not found in PLAN for '$($plan.SpecFileRel)' - skipping file move."
                 }
                 foreach ($tacticalDir in $plan.TacticalDirs) {
                     $tacticalDirName = Split-Path -Path $tacticalDir -Leaf
-                    Move-Item -LiteralPath $tacticalDir -Destination (Join-Path $doneDir $tacticalDirName) -Force
-                    $moved.Add("${tacticalDirName}/")
+                    if (-not (Test-SamePath $tacticalDir (Join-Path $doneDir $tacticalDirName))) {
+                        Move-Item -LiteralPath $tacticalDir -Destination (Join-Path $doneDir $tacticalDirName) -Force
+                        $moved.Add("${tacticalDirName}/")
+                    } else {
+                        $moved.Add("${tacticalDirName}/ (already there)")
+                    }
                 }
 
                 # When the id is no longer in the active journal (already moved to archive),

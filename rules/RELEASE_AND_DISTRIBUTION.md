@@ -110,6 +110,8 @@ outside `release-verdicts/` to have changed since, so any later edit voids the v
 A release also carries the product's **shared contracts**, and they fail the same way a verdict does -
 silently, because nothing went red. Before the one-way step ([CONTRACTS.md](CONTRACTS.md) §6):
 
+- the product has **caught up since its last reconciliation**: its synchronization spec was read against the code
+  (CONTRACTS.md §6 item 6) - every release, whether or not it touches a boundary;
 - every contract this product produces or consumes has a **current registry row** in the catalog, with a
   verification date not older than the last release;
 - the product ships against the **current version** where possible; behind is allowed with a dated reason

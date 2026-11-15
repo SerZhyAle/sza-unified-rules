@@ -184,6 +184,14 @@ rule is caught earlier: `spec-to-audit` asks whether a change touches a contract
 4. A release that changes anything at a contract boundary **blocks until the catalog change is in** (§4).
 5. The **conformance vectors run in this product's own suite**, against the catalog's vectors, at the
    version the registry names. A green suite against a stale vector proves nothing.
+6. **Catch up before the version is cut** (the owner's order of 2026-11-15). The first step of every release is
+   the product's synchronization spec, `tools/contract-lag.ps1 -Product <name> -EmitSpec`: for each contract in
+   scope, every document-log entry between the version the row says the product is synchronized with and the
+   current one is read against the code, a divergence is fixed or recorded as a dated exception, and the
+   product's own row then moves to the current version with a fresh verification date. A row that stays behind
+   carries a dated reason that names the entries not yet taken (item 2). This runs for every release, not only
+   for one that touches a boundary: a catalog that moved since the last release is the usual reason a row is
+   stale.
 
 ## 7. Evidence
 

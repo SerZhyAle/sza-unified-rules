@@ -302,6 +302,11 @@ Two rules give "Verified" its meaning, and both are **refusals**, not advice:
   user-visible behaviour already works end to end**. Created classes, wired contracts and a passing compile
   are milestones, not deliverables. Never invite a human to test while the advertised action still logs,
   shows a placeholder, or no-ops.
+- **The status move relocates the spec file (TASK-FLOW rule 70, S0076).** Setting `Implemented`, `Verified` or
+  `BlockNeedUserTest` through the status tool moves the spec file and its folder into the project's archive
+  directory (`PLAN/DONE` or `PLAN/archive`); reopening moves them back. So every edit of the spec - the
+  `## Last Audit` block, the `### Assumed` entries, the notes - comes **before** the status call, and anything
+  after it resolves the path from the ledger row's `file`, never from the path the pass was handed.
 - **The unattended compile gate (S0040)**: in an unattended pass that edited compiled source,
   `BlockNeedUserTest` is entered only after the repository's declared compile check passed - or after the
   repo declares none (`commands.compileCheck` absent or empty) and the note says so. An `Implemented`

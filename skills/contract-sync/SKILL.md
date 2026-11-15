@@ -156,6 +156,11 @@ The registry is the ledger of which version each product is synchronized with. F
 A row can be behind because the code is, or because nobody re-read the contract since it moved; the spec
 cannot tell which, and the owner's verification is what tells.
 
+**Every release starts with this catch-up** (the owner's order of 2026-11-15, [CONTRACTS.md](../../rules/CONTRACTS.md)
+§6 item 6): generate the spec for the product's registry name, read each log entry since its synchronized version
+against the code, then move the product's own row. The `release` skill's contract gate reads the result; do not wait
+for release time when the catalog has moved - a product that sees it opens the catch-up as its own ticket.
+
 ## Answering a request from a sibling product
 
 When another product asks about a shared contract, answer in a dated `RESPONSE` document ([CONTRACTS.md](../../rules/CONTRACTS.md) §4): contract facts cite id and section; implementation facts cite code with the tree's date and say what was **not run**; every deviation found while answering becomes a ticket in this repo and a registry row; the answer amends nothing; and it corrects the requester's wrong premises rather than answering around them.

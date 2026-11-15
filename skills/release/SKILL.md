@@ -163,6 +163,14 @@ runs. The contracts in scope are the ones this product produces or consumes: its
 pointers, plus every row the shared registry holds for it. The catalog is wherever the repo's agent-rules
 file says it is.
 
+**First, catch up since the last reconciliation - every release, not only one that touches a boundary.** Run
+`pwsh -File <root>/tools/contract-lag.ps1 -Product "<this product's registry name>" -EmitSpec -OutFile temp/contract-catchup.md`
+(`<root>` is the plugin root; the script reads the catalog from `SZA_CONTRACTS_ROOT` or the default) and read it:
+for each contract in scope, every document-log entry between the version the registry says this product is
+synchronized with and the current one is read against the code. A divergence is fixed or recorded as a dated
+exception; the product's own row then moves to the current version with today's verification date. A row that stays
+behind carries a dated reason that names the entries not taken (check 2). The checks below judge the result.
+
 1. **Every contract in scope has a registry row** with a verification date no older than the last release
    tag. A missing row is a **blocker**; a stale one is a blocker until it is re-verified against the code -
    and only this product's own row is touched to do it.

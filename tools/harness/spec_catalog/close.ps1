@@ -72,6 +72,12 @@ foreach ($prop in $old.PSObject.Properties) {
 
 Assert-Record -Record $updated
 
+# TASK-FLOW rule 70 (S0076): closing to Verified takes the spec file (and folder) into paths.specArchiveDir; the gates
+# above have read it where the row still names it. Best effort, never a failed close.
+$homeMove = Move-SpecToStatusHome -Record $updated -OldStatus ([string]$oldStatus) -NewStatus ([string]$Status)
+if ($homeMove.moved) { $updated.file = $homeMove.file }
+if ($homeMove.note) { Write-Host ("  spec file {0}" -f $homeMove.note) -ForegroundColor DarkGray }
+
 # Closing to Archived relocates the record into the archive journal; closing to
 # Verified keeps it in the active journal.
 if ($Status -eq 'Archived') {

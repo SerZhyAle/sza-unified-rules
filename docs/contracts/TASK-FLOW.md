@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Contract | `TASK-FLOW` |
-| Version | 0.26, draft |
+| Version | 0.27, draft |
 | Home | the shared contracts catalog, domain `task-flow/` (the path is in [CLAUDE.md](../../CLAUDE.md)) |
 | Role | **shared implementation, partial**: `tools/harness/` supplies the ticket tools, repository runner and day-0 scaffold; `tools/harness/portfolio/` supplies the S0015 dispatcher, registry, queue, rank and event log. Remaining portfolio features belong to S0016. The owner is `shared`, so this repository edits the contract only through the canon session |
 
@@ -100,3 +100,10 @@
   `_block-links-hook.ps1` (`SZA_BLOCK_LINKS=0` switches the call off); a cross-repository release runs `-Check` in
   the other repository, whose own `update.ps1` moves the ticket. The same edit makes `_blocker-links.ps1` read
   `**Depends on:**` as its line (rule 9). Covered by `tools/tests/block-links.tests.ps1` (6 cases, release tier).
+- 0.27 (2026-11-15): a finished ticket's spec file leaves the working folder with its status (rule 70).
+  `Move-SpecToStatusHome` in `spec_catalog/_lib.ps1` moves the spec file and its folder into `paths.specArchiveDir` on
+  entry into `Implemented`, `Verified` or `BlockNeedUserTest` and back on reopen; `update.ps1`, `close.ps1` and
+  `bulk-update.ps1` call it after the gates, under the ledger lock, and write the new `file` in the same write.
+  `archive.ps1` now moves into `paths.specArchiveDir` and leaves a file already there alone. Equal directories, an
+  alternate catalog, a collision or a pattern the profile does not admit leave the file in place. Covered by
+  `tools/tests/spec-home-move.tests.ps1` (4.97 s, at the 5-second line: run by name).

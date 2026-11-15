@@ -169,6 +169,19 @@ if ($errors.Count -gt 0) {
     exit 1
 }
 
+# Phase 2b - TASK-FLOW rule 70 (S0076): a ticket entering Implemented, Verified or BlockNeedUserTest takes its spec
+# file (and folder) into paths.specArchiveDir, one leaving them for an open status brings them back. Every gate has
+# passed (they read each file where its row still names it) and the lock is held; the new `file` is written by the
+# journal write below. Best effort, noted per ticket on the host stream so the result lines stay as they were.
+if ($PSBoundParameters.ContainsKey('Status')) {
+    foreach ($move in $hookMoves) {
+        $moveRec = $allRecords[$indexMap[$move.Id]]
+        $homeMove = Move-SpecToStatusHome -Record $moveRec -OldStatus $move.Old -NewStatus $move.New
+        if ($homeMove.moved) { $moveRec.file = $homeMove.file }
+        if ($homeMove.note) { Write-Host ("  {0}: spec file {1}" -f $move.Id, $homeMove.note) -ForegroundColor DarkGray }
+    }
+}
+
 # Phase 3: atomic writes, routing newly-Archived records into the archive journal.
 # (Reviving an archived id is out of scope for bulk - use update.ps1 for that.)
 $archivedNow = @($allRecords | Where-Object { $_.status -eq 'Archived' })
