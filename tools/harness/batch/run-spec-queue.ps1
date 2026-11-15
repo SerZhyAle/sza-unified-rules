@@ -55,8 +55,9 @@
     Give each instance its own -Instance name so the journal and the per-ticket logs do not collide.
 
     What each instance LAUNCHES is the profile's, per instance (S2698). runner.instances maps an
-    -Instance name onto a record whose `command`, `argsTemplate` and `headlessMatch` each fall back
-    to the shared runner.<field> beside it, so a project declaring no map launches exactly what it
+    -Instance name onto a record whose `command`, `argsTemplate`, `headlessMatch`, `promptTemplate`,
+    `complexityModels` and `effortByModel` each fall back to the shared runner.<field> beside it
+    (HARNESS-PROFILE rules 8 and 9), so a project declaring no map launches exactly what it
     launched before. The template's substitutions are {prompt}, {permissionMode}, {model} and
     {effort}, and an element carrying {model} or {effort} is dropped with the flag before it when
     there is no value for it. -AgentJson, the portfolio's agent record for one pass (TASK-FLOW
@@ -96,7 +97,8 @@
 
       1. a status in runner.alwaysStrongStatuses  -> strong (BlockQuestions, whose whole product is
          a set of questions put to the owner),
-      2. a `**Complexity:**` line in the spec     -> runner.complexityModels[level] - light, medium
+      2. a `**Complexity:**` line in the spec     -> complexityModels[level], the instance's own map or
+         else runner.complexityModels - light, medium
          and hard name haiku, sonnet and opus. In a runner.cheapStatuses state the run audits code
          the tree already carries, so the answer never rises above the cheap model there,
       3. a status in runner.cheapStatuses         -> cheap,
@@ -222,7 +224,7 @@ param(
     [int] $ClaimGraceSeconds = 180,
 
     # The command each child runs. {id} is replaced with the ticket id. Empty = the profile's
-    # runner.promptTemplate.
+    # promptTemplate: this instance's own, else runner.promptTemplate (HARNESS-PROFILE rule 9).
     [string] $PromptTemplate = '',
 
     # Permission mode for the child session.
@@ -274,6 +276,7 @@ param(
 . (Join-Path $PSScriptRoot '_release-wait.ps1')
 . (Join-Path $PSScriptRoot '_limit-hold.ps1')
 . (Join-Path $PSScriptRoot '_pass-usage.ps1')
+. (Join-Path $PSScriptRoot '_instance-settings.ps1')
 if ([string]::IsNullOrWhiteSpace($RepoRoot)) { $RepoRoot = Get-SzaProjectRoot }
 # The portfolio dispatcher sets this in the pass's environment rather than passing the switch, so a runner stand-in
 # with a fixed parameter list keeps working.
@@ -298,29 +301,18 @@ Set-Location $RepoRoot
 # Preconditions
 # ---------------------------------------------------------------------------------------------
 
-if ([string]::IsNullOrWhiteSpace($PromptTemplate)) {
-    $PromptTemplate = [string](Get-SzaProfileValue 'runner.promptTemplate')
-}
-# A slash command this repository does not have reaches the child as plain text; send the lifecycle skill instead.
-$promptResolution = Resolve-SzaPromptTemplate -Template $PromptTemplate -Root $RepoRoot
-# The profile spells the placeholder {Id}; this script has always accepted {id}. Both work.
-$PromptTemplate = ([string]$promptResolution.template).Replace('{Id}', '{id}')
 function Get-InstanceSetting {
     <#
         One field of the child invocation, resolved instance first (S2698). The chain is
         runner.instances.<instance>.<field> -> runner.<field>, and the profile's own defaults sit
         under the second of those - so a project that declares no instances map gets exactly what
-        it got before this existed, and an instance absent from a non-empty map does too.
+        it got before this existed, and an instance absent from a non-empty map does too. The pass's
+        agent record, when the portfolio handed one in, outranks both. The chain itself lives in
+        _instance-settings.ps1 (HARNESS-PROFILE rules 8 and 9), where a test can call it.
     #>
     param([Parameter(Mandatory)][string] $Field)
 
-    if ($null -ne $script:AgentRecord -and (Test-SzaHasProperty -Object $script:AgentRecord -Name $Field)) { return $script:AgentRecord.$Field }
-    $map = Get-SzaProfileValue 'runner.instances'
-    if (Test-SzaHasProperty -Object $map -Name $Instance) {
-        $entry = $map.$Instance
-        if (Test-SzaHasProperty -Object $entry -Name $Field) { return $entry.$Field }
-    }
-    return (Get-SzaProfileValue ("runner.{0}" -f $Field))
+    return (Get-SzaInstanceSetting -Field $Field -Instance $Instance -Record $script:AgentRecord)
 }
 
 function Expand-ChildArgs {
@@ -463,6 +455,16 @@ $recordEffort = if ($null -ne $script:AgentRecord -and (Test-SzaHasProperty -Obj
 $runnerCommand = [string](Get-InstanceSetting -Field 'command')
 $runnerArgsTemplate = @(Get-InstanceSetting -Field 'argsTemplate')
 $headlessMatch = [string](Get-InstanceSetting -Field 'headlessMatch')
+# The prompt follows the same chain as the command (HARNESS-PROFILE rule 9): the -PromptTemplate parameter, else
+# the pass's record, the instance's own promptTemplate, runner.promptTemplate. It is resolved here, after the record
+# is parsed, because the chain needs the record and the instance name.
+if ([string]::IsNullOrWhiteSpace($PromptTemplate)) {
+    $PromptTemplate = [string](Get-InstanceSetting -Field 'promptTemplate')
+}
+# A slash command this repository does not have reaches the child as plain text; send the lifecycle skill instead.
+$promptResolution = Resolve-SzaPromptTemplate -Template $PromptTemplate -Root $RepoRoot
+# The profile spells the placeholder {Id}; this script has always accepted {id}. Both work.
+$PromptTemplate = ([string]$promptResolution.template).Replace('{Id}', '{id}')
 $isClaudeChild = if ($null -ne $script:AgentRecord) {
     (Test-SzaHasProperty -Object $script:AgentRecord -Name 'name') -and [string]$script:AgentRecord.name -ceq 'claude'
 } else {
@@ -919,15 +921,9 @@ function Select-ModelFor {
         # predates the key, is treated as no declaration: the ticket then gets the default below.
         $level = Get-TicketComplexity -Ticket $Ticket
         if ($level) {
-            $mapped = ''
-            try {
-                # The same dotted read Get-InstanceSetting uses: the merged tree holds ordered
-                # dictionaries where the defaults declare a map and objects where only the project does.
-                $map = Get-SzaProfileValue 'runner.complexityModels'
-                if (Test-SzaHasProperty -Object $map -Name $level) { $mapped = [string]$map.$level }
-            } catch {
-                $mapped = ''
-            }
+            # The map follows the chain of HARNESS-PROFILE rule 9: the instance's own complexityModels, else
+            # runner.complexityModels. An unreadable map answers '' - no declaration.
+            $mapped = Get-SzaComplexityModel -Level $level -Instance $Instance -Record $script:AgentRecord
             if ($mapped) {
                 # Code-complete states are audits of code the tree already carries, and a big change
                 # already made is not a big decision still to take (measured below): the declared

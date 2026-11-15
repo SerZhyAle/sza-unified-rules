@@ -100,6 +100,13 @@
   `_block-links-hook.ps1` (`SZA_BLOCK_LINKS=0` switches the call off); a cross-repository release runs `-Check` in
   the other repository, whose own `update.ps1` moves the ticket. The same edit makes `_blocker-links.ps1` read
   `**Depends on:**` as its line (rule 9). Covered by `tools/tests/block-links.tests.ps1` (6 cases, release tier).
+- Read rule by rule against 0.27 on 2026-11-15 (canon ticket S0077, static reading, nothing run): rules 43-45, 52, 54,
+  55, 57, 60, 62 (tokens), 63-70 and the amendments to rules 7, 8, 9, 23 and 26 are implemented; rules 41, 42, 46
+  (row format), 47, 48, 49, 51, 53, 58, 59 (library only, not wired), 61 and 62 (event data) diverge in part, and
+  30 of the 83 catalogued event names have no emitter. The registry row stays `partial 0.27`; each gap is a dated
+  exception there with a ticket (S0080 the `$stopPath` defect in the dispatch loop, S0082 rules 41-64 and `EVENTS.md`,
+  S0083 the ledger side, S0084 the readers broken by rule 70). Rule 61's concurrent-repository sentence contradicts the
+  owner's S0034 decision and the code and is filed as a proposal in the catalog, not changed here.
 - 0.27 (2026-11-15): a finished ticket's spec file leaves the working folder with its status (rule 70).
   `Move-SpecToStatusHome` in `spec_catalog/_lib.ps1` moves the spec file and its folder into `paths.specArchiveDir` on
   entry into `Implemented`, `Verified` or `BlockNeedUserTest` and back on reopen; `update.ps1`, `close.ps1` and

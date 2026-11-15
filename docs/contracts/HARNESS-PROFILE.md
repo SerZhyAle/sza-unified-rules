@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Contract | `HARNESS-PROFILE` |
-| Version | 0.17, draft; source reader verified at 0.13; rules 8-10 not implemented |
+| Version | 0.17, draft; source reader verified at 0.13; rules 9 to 12 implemented, rule 8 in part |
 | Home | the shared contracts catalog, domain `rule-adoption/` (the path is in [CLAUDE.md](../../CLAUDE.md)) |
 | Role | **consumer**, and the schema's owner. Each repository running the harness writes its own profile |
 
@@ -23,13 +23,27 @@
   Installed-consumer delivery remains unverified.
 - The agent fields of `runner.instances.<name>`, the per-instance `promptTemplate` and `complexityModels`
   and the optional `portfolio` override object are 0.14 (the 2026-10-27 amendment, section 3 rules 8-10);
-  every key is optional and the wire stays 1.0. The S0015 dispatcher reuses the existing runner with
-  `-ModelPolicy shape` and an explicit permission mode; `_profile.ps1` remains unchanged. The reader
-  tolerates additional profile keys through its unknown-key merge and reads instance fields through
-  `Test-SzaHasProperty`. Multi-agent overrides and portfolio agent records belong to S0016; the first
-  dispatcher does not claim to implement them (`TASK-FLOW` rule 42). A change to `_profile.ps1` regenerates
-  the reader vectors (`tools/tests/export-contract-vectors.ps1`), because the file is fingerprinted in their
-  manifest.
+  every key is optional and the wire stays 1.0. Read against the code on 2026-11-15: **rule 8 holds for the
+  fields the repository runner reads** - `command`, `argsTemplate`, `headlessMatch` and `effortByModel` resolve
+  the pass's agent record, then the instance, then the shared value, then the shipped default
+  (`Get-InstanceSetting` in `batch/run-spec-queue.ps1`, which calls `Get-SzaInstanceSetting` in
+  `batch/_instance-settings.ps1`), and the `{effort}` substitution is known to it - and the portfolio reads the
+  other agent fields from the registry's record, so a per-repository runner ignoring the rest is the allowed
+  case. **Rule 9 is implemented (S0078, 2026-11-15)**: `promptTemplate` goes through the same chain, and the
+  level map is chosen by it (`Get-SzaComplexityModel`) - the instance's own `complexityModels`, else
+  `runner.complexityModels`; an instance map owns the whole map, so a level it omits is no declaration, not the
+  shared answer. The shared paths were already declared in the default tree, so rule 4 held. The instance's
+  fixed `model` of rule 8 is still not read by the runner. **Rule 10 is implemented (S0078, 2026-11-15)** as
+  the resolver the portfolio calls - `Resolve-PqConsoleSetting` and `Resolve-PqAnalysisThreshold` in
+  `portfolio/lib/registry.ps1`, order profile, registry, built-in default, a value that is not a number (a
+  positive one for the minutes) skipped - and the default tree declares `portfolio` with `$null` values so it
+  masks nothing. **No dispatcher code reads the registry's console or analysis values yet** (the registry only
+  defaults and validates them; the gap is S0082's), so the override changes no behaviour until a reader calls
+  the resolver. The reader tolerates additional profile keys through its unknown-key merge and reads instance
+  fields through `Test-SzaHasProperty`. A change to `_profile.ps1` regenerates the reader vectors
+  (`tools/tests/export-contract-vectors.ps1`), because the file is fingerprinted in their manifest; that
+  regeneration is S0079, a release item. Fast cases: `tools/tests/instance-settings.tests.ps1` (rule 9) and
+  `tools/tests/portfolio-profile-override.tests.ps1` (rule 10).
 - `commands.compileCheck` is optional and empty by default (rule 11, the 2026-11-11 amendment): the
   repository's declared compile-only command, run once by an unattended pass that edited compiled source
   before it sets `Implemented` or `BlockNeedUserTest` (`Testing & QA` section 2, its one exception).

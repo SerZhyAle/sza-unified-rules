@@ -222,9 +222,14 @@ $Script:SzaProfileDefaults = [ordered]@{
         # Get-InstanceSetting, so a project pins a per-instance map the same way as argsTemplate.
         effortByModel        = [ordered]@{ haiku = 'xhigh'; sonnet = 'xhigh'; opus = 'medium' }
         # The child invocation, per runner instance. A key is the -Instance name; the value may
-        # carry `command`, `argsTemplate` and `modelPolicy`, each falling back to the shared value
-        # beside it. Empty is the honest default: every instance launches the same command, which
-        # is what a single-provider project wants and what this file described before S2698.
+        # carry `command`, `argsTemplate`, `headlessMatch`, `promptTemplate`, `complexityModels`,
+        # `effortByModel` and `modelPolicy`, each falling back to the shared value beside it
+        # (HARNESS-PROFILE rules 8 and 9; the shared promptTemplate and complexityModels are
+        # declared above, which is what lets the runner read them without a throw, rule 4).
+        # An instance map (complexityModels, effortByModel) owns the whole map: a level or a model
+        # it omits is not looked up in the shared one. Empty is the honest default: every instance
+        # launches the same command, which is what a single-provider project wants and what this
+        # file described before S2698.
         instances        = [ordered]@{}
         # The argument vector handed to the child, as a template. The substitutions are {prompt},
         # {permissionMode}, {model} and {effort}; an element carrying {model} or {effort} is dropped
@@ -287,6 +292,18 @@ $Script:SzaProfileDefaults = [ordered]@{
         # print the absolute harness path.
         entryPoints = [ordered]@{}
         invokePrefix = 'pwsh -NoProfile -File'
+    }
+    # HARNESS-PROFILE rule 10: this repository's override of the portfolio registry's console and
+    # analysis values, because a build is quiet for long in one repository and not in another. Read
+    # by the portfolio (portfolio/lib/registry.ps1, Resolve-PqConsoleSetting and
+    # Resolve-PqAnalysisThreshold) from the profile as written, and by no per-repository runner. The
+    # tree declares the names the profile may carry, so a typo is an error there (rule 4), and every
+    # value is $null: "this repository says nothing", which leaves the registry's value - and, below
+    # it, the built-in default - in force. A number here would mask the registry for every
+    # repository that has no portfolio object, which is the opposite of an override.
+    portfolio   = [ordered]@{
+        console  = [ordered]@{ quietMinutes = $null; stallMinutes = $null }
+        analysis = [ordered]@{ thresholds = [ordered]@{} }
     }
 }
 

@@ -39,6 +39,19 @@
 #   Get-PqRepoOrder -Registry       the repositories in project order: rank ascending, equal ranks in array order
 #                                   (rule 45); each @{ key; rank; index }.
 #   Get-PqRepoKeyFor -Path          a key from the folder name; throws 'RepoKeyInvalid: ..' when none results.
+#   Get-PqRepoPortfolioOverride -RepoPath
+#                                   the `portfolio` object of the repository's .sza-profile.json as written (never the
+#                                   merged default tree), or $null when the file, the key or a readable object is absent.
+#   Resolve-PqConsoleSetting -Name <quietMinutes|stallMinutes|graceSeconds> [-Registry <doc>] [-RepoPath <dir>]
+#                                   HARNESS-PROFILE rule 10, value by value: the repository's profile (portfolio.console,
+#                                   quietMinutes and stallMinutes only), then the registry's console, then the built-in
+#                                   default (5, 15, 30). A value that is not a positive number is skipped, never guessed.
+#                                   A name that is not a console setting throws: a typo is not "not configured".
+#   Resolve-PqAnalysisThreshold -Name <threshold> [-Registry <doc>] [-RepoPath <dir>]
+#                                   the same order for analysis.thresholds: the profile, then the registry, then $null -
+#                                   there is no built-in default, so a threshold nobody names is $null. An unknown name
+#                                   is ignored, as the registry ignores it (rule 10); a value that is not a number is
+#                                   skipped.
 
 . (Join-Path $PSScriptRoot 'paths.ps1')
 . (Join-Path $PSScriptRoot 'events.ps1')
@@ -48,6 +61,10 @@ $script:PqPermissionModes = @('acceptEdits', 'auto', 'bypassPermissions', 'manua
 $script:PqRoles = @('product', 'canon-home', 'portfolio', 'internal')
 $script:PqLevels = @('light', 'medium', 'hard')
 $script:PqKeyPattern = '^[a-z][a-z0-9-]*$'
+# The built-in console values (TASK-FLOW rule 41), the one copy: the registry's defaults and Resolve-PqConsoleSetting
+# both read it. graceSeconds is the registry's alone - the profile may override only the two below it (rule 10).
+$script:PqConsoleDefaults = [ordered]@{ quietMinutes = 5; stallMinutes = 15; graceSeconds = 30 }
+$script:PqProfileConsoleNames = @('quietMinutes', 'stallMinutes')
 
 function Test-PqIntValue($Value) {
     return ($Value -is [int] -or $Value -is [long]) -and $Value -isnot [bool]
@@ -320,12 +337,61 @@ function Test-PqRegistry {
     return @{ ok = ($errors.Count -eq 0); errors = $errors.ToArray(); warnings = $warnings.ToArray() }
 }
 
+# HARNESS-PROFILE rule 10. The profile is read as written, with ConvertFrom-Json and never through _profile.ps1 (that
+# script holds one project per process); the declared names live in the shipped default tree, `portfolio`, and
+# $script:PqProfileConsoleNames repeats the two a repository may override. An unreadable profile is an absence here:
+# the dispatcher must not stop because one repository's file does not parse - pq doctor names that file.
+function Get-PqRepoPortfolioOverride {
+    param([Parameter(Mandatory)][string]$RepoPath)
+    $file = Join-Path $RepoPath '.sza-profile.json'
+    if (-not [IO.File]::Exists($file)) { return $null }
+    try { $doc = ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($file)) -DateKind String } catch { return $null }
+    if (-not (Test-PqObjectValue $doc)) { return $null }
+    $portfolio = Get-PqValue $doc 'portfolio'
+    if (Test-PqObjectValue $portfolio) { return $portfolio }
+    return $null
+}
+
+function Resolve-PqConsoleSetting {
+    param([Parameter(Mandatory)][string]$Name, $Registry = $null, [string]$RepoPath = '')
+    if (-not $script:PqConsoleDefaults.Contains($Name)) {
+        throw "Resolve-PqConsoleSetting: '$Name' is not a console setting (known: $($script:PqConsoleDefaults.Keys -join ', '))"
+    }
+    $positive = { param($v) (Test-PqNumberValue $v) -and $v -gt 0 }
+    if ($RepoPath -and ($script:PqProfileConsoleNames -contains $Name)) {
+        $fromProfile = Get-PqValue (Get-PqValue (Get-PqRepoPortfolioOverride -RepoPath $RepoPath) 'console') $Name
+        if (& $positive $fromProfile) { return $fromProfile }
+    }
+    $fromRegistry = Get-PqValue (Get-PqValue $Registry 'console') $Name
+    if (& $positive $fromRegistry) { return $fromRegistry }
+    return $script:PqConsoleDefaults[$Name]
+}
+
+function Resolve-PqAnalysisThreshold {
+    param([Parameter(Mandatory)][string]$Name, $Registry = $null, [string]$RepoPath = '')
+    if ($RepoPath) {
+        $override = Get-PqRepoPortfolioOverride -RepoPath $RepoPath
+        $fromProfile = Get-PqValue (Get-PqValue (Get-PqValue $override 'analysis') 'thresholds') $Name
+        if (Test-PqNumberValue $fromProfile) { return $fromProfile }
+    }
+    $fromRegistry = Get-PqValue (Get-PqValue (Get-PqValue $Registry 'analysis') 'thresholds') $Name
+    if (Test-PqNumberValue $fromRegistry) { return $fromRegistry }
+    return $null
+}
+
 function Copy-PqJson($Value) {
     return (ConvertFrom-Json -InputObject (ConvertTo-Json -InputObject $Value -Depth 64) -DateKind String)
 }
 
 function Add-PqDefault($Object, [string]$Name, $Value) {
     if (-not (Test-PqHasKey $Object $Name)) { $Object | Add-Member -NotePropertyName $Name -NotePropertyValue $Value }
+}
+
+# A fresh object of the built-in console values: the registry takes its own copy, so changing one never changes the next.
+function New-PqConsoleDefault {
+    $console = [ordered]@{}
+    foreach ($name in $script:PqConsoleDefaults.Keys) { $console[$name] = $script:PqConsoleDefaults[$name] }
+    return [pscustomobject]$console
 }
 
 # The registry with the defaults of rules 41 and 42 applied, as a copy; the document itself is never changed.
@@ -343,7 +409,7 @@ function Get-PqRegistryWithDefaults($Document) {
         Add-PqDefault $r.resources 'build' 3
         Add-PqDefault $r.resources 'emulator' 1
     }
-    if (-not (Test-PqHasKey $r 'console')) { Add-PqDefault $r 'console' ([pscustomobject][ordered]@{ quietMinutes = 5; stallMinutes = 15; graceSeconds = 30 }) }
+    if (-not (Test-PqHasKey $r 'console')) { Add-PqDefault $r 'console' (New-PqConsoleDefault) }
     if (-not (Test-PqHasKey $r 'agents')) {
         $claude = [pscustomobject][ordered]@{
             name = 'claude'; command = 'claude'
