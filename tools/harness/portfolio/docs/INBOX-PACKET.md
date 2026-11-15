@@ -6,8 +6,9 @@
 (`tools/tests/data/inbox-ticket-vector/`).
 **Contract line:** the envelope is the DEVICE-EXCHANGE section 24 Drive packet (item CN,
 `schemaVersion` 2) with the `TICKET` `payloadKind`, folded into DEVICE-EXCHANGE 1.12 as items FC
-and FD (accepted 2026-11-12; the catalog adopted the conformance vector byte for byte). This
-document stays the implementation detail of the first deployment - the visible shared Drive
+and FD (accepted 2026-11-12; the catalog adopted the conformance vector byte for byte) and amended
+by 1.16 (2026-11-15, the six owner answers of canon ticket S0086). This document stays the
+implementation detail of the first deployment - the visible shared Drive
 folder, the spool layout and the reader's refusal names; where it and items FC and FD differ, the
 contract wins.
 
@@ -69,7 +70,10 @@ order are frozen exactly as DEVICE-EXCHANGE item CN freezes them for Drive packe
 A `files[]` entry is `{ name, size, sha256, mimeType, role }`:
 
 - `name` - a base name, no `/`, `\` or control character, not `.`, `..` or `manifest.json`
-  (the item CN rule; the reader refuses anything else as unsafe);
+  (the item CN rule; the reader refuses anything else as unsafe), and the reader also refuses the
+  characters the PC's own file system cannot carry (`<`, `>`, `:`, `"`, `|`, `?`, `*` on Windows)
+  as `FileNameUnsafe` - the first deployment refuses what its file system cannot hold (item FC,
+  1.16);
 - `size` - bytes, non-negative integer;
 - `sha256` - lower-case hex over the file's bytes;
 - `mimeType` - a string (`application/octet-stream` when unknown);
@@ -78,7 +82,9 @@ A `files[]` entry is `{ name, size, sha256, mimeType, role }`:
 
 A reader ignores a member it does not know - the same forward-compatibility rule as item CN. A
 packet with no project and no `projects` files once into `canon` for triage; a key unknown to the
-PC registry is accepted by the format (the ingest decides where it lands).
+PC registry is accepted by the format (the ingest decides where it lands). `targetDeviceName` and
+`targetDeviceId` are type-checked and otherwise informational here: the v1 PC has no device
+identity and files every packet of the inbox root whatever its target (item FC, 1.16).
 
 ### 2.2 Limits
 
@@ -95,8 +101,9 @@ On the PC's clock (a file system has no Drive `createdTime`, so the folder's wri
 
 - a packet folder without a manifest, older than 7 days, is garbage-collected - a phone upload
   that never finished (mirrors item CR);
-- a claimed packet past `createdAtEpochMs + ttlSeconds` is still ingested: once claimed the
-  ticket files whole; expiry protects `new/` only.
+- a packet past `createdAtEpochMs + ttlSeconds` - claimed or not - is still ingested and filed:
+  the v1 PC does not expire a packet at all, a late ticket being better than a lost one (item FC,
+  1.16); expiry is the Drive channel's rule, not this deployment's.
 
 ## 3. projects.json - the phone's project picker
 
@@ -141,15 +148,15 @@ byte of a refused packet. The reason names are frozen so the phone can show the 
 | `SenderDeviceNameInvalid` | `senderDeviceName` absent, empty, not a string |
 | `MemberInvalid`         | `senderDeviceId`/`targetDeviceName` present and neither a string nor `null` |
 | `TtlInvalid`            | `ttlSeconds` absent, not a positive integer |
-| `StatusInvalid`         | `status` present and not `PENDING`/`CLAIMED`/`EXPIRED` |
+| `StatusInvalid`         | `status` present, not `null`, and not `PENDING`/`CLAIMED`/`EXPIRED` (`null` is as absent; item FC, 1.16) |
 | `FilesMemberMissing`    | `files` absent (it may be `[]`) |
 | `FileEntryInvalid`      | an entry misses `name`, `size`, `sha256` or `mimeType`, or a member has a wrong type |
-| `FileNameUnsafe`        | a `name` fails the base-name rule of section 2.1 |
+| `FileNameUnsafe`        | a `name` fails the base-name rule of section 2.1, or holds a character the PC's file system cannot carry (item FC, 1.16) |
 | `FileNamesMismatch`     | `fileNames` is not the `name` list of `files[]`, in order |
 | `TotalSizeMismatch`     | `totalSizeBytes` is not the sum of `sizes` |
 | `RoleInvalid`           | `role` present and outside the five-value set |
 | `ProjectKeyInvalid`     | `project`/`projects` present a key that fails `^[a-z][a-z0-9-]*$` |
-| `TextInvalid`           | `text` present and empty, whitespace-only or not a string |
+| `TextInvalid`           | `text` present, not `null`, and empty, whitespace-only or not a string (item FC, 1.16) |
 | `FileMissing`           | a `files[]` name is not in the folder |
 | `FileSizeMismatch`      | the file's bytes are fewer/more than `size` |
 | `FileHashMismatch`      | the `sha256` does not match the bytes |
@@ -175,7 +182,11 @@ The marking is owner choice 5(a): a move, not a message.
   the text names no channel) and `buildIntent` (true when the text asks for a build). The original fields
   and packet payload remain intact.
 - A refused packet moves to `failed\<packetId>\` with `reason.json`: `{ "error", "detail" }` -
-  the `error` is a reason name of section 4.
+  the `error` is a reason name of section 4, or one of the ingest's receiver-side names:
+  `DedupHit`, `DuplicateActiveRecord`, `CaptureFailed` and `RetryCeiling` (filing failures, not
+  refusals of the packet) and `TextInvalid` for a packet with no words anywhere, neither a `text`
+  member nor a text payload file (item FD, 1.16). A phone that maps only the 26 names of section 4
+  shows its generic line for the five until it learns them.
 - The phone reads `done/` on its next Drive sync and shows `processed: <key>:<id>`; deletion after
   receipt (item CR) stays the owner's manual call on the phone - the PC keeps the spool as the
   audit trail. A `REPLY`-shaped confirmation (item CO) is the later step, when the

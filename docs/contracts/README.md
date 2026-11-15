@@ -13,7 +13,7 @@ these files are concise pointers, not local copies.
 | `DOC-INTERNAL-QUALITY` | 0.13, draft | `documentation-quality/` | declared technical corpora | [DOC-INTERNAL-QUALITY.md](DOC-INTERNAL-QUALITY.md) |
 | `DOC-EXTERNAL-QUALITY` | 0.14, draft | `documentation-quality/` | not bound; no public end-user corpus | [DOC-EXTERNAL-QUALITY.md](DOC-EXTERNAL-QUALITY.md) |
 | `APP-COMMANDS` | 0.2, draft | `app-commands/` | reader of the discovery interface (rules 18 and 20, item R.1) | [APP-COMMANDS.md](APP-COMMANDS.md) |
-| `DEVICE-EXCHANGE` | 1.15, active | `device-exchange/` | receiver of the `TICKET` packet kind (section 24, items CN, FC, FD), partial | [DEVICE-EXCHANGE.md](DEVICE-EXCHANGE.md) |
+| `DEVICE-EXCHANGE` | 1.16, active | `device-exchange/` | receiver of the `TICKET` packet kind (section 24, items CN, FC, FD; the six answers of S0086 folded by 1.16), partial | [DEVICE-EXCHANGE.md](DEVICE-EXCHANGE.md) |
 
 It also implements one contract it does not own: `TASK-FLOW` (domain `task-flow/`, owner `shared`), through the
 harness - see [TASK-FLOW.md](TASK-FLOW.md). The last two rows are contracts it reads rather than owns: the harness
