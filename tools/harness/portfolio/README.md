@@ -140,15 +140,15 @@ of ours is left alone.
 | PQ Start | `pq start` | run one worker; it waits when nothing is ranked |
 | PQ Start 1 ticket | `pq start -MaxTickets 1` | do exactly one pass and stop - the attended first run |
 | PQ Start Drain | `pq start -Drain` | work until nothing is ranked, then end |
-| PQ Status | `pq status` | see workers, today's (local-day) passes, what waits for you, whether `STOP` is set; `pq status -Next` also runs the rank and prints the next ticket |
+| PQ Status | `pq status` | see workers, today's (local-day) passes, what waits for you, whether `STOP` is set, a `Held:` line naming each held project with the same `hold=` as `pq list`; `pq status -Next` also runs the rank and prints the next ticket |
 | PQ Log | `pq log -Last 60` | read the last 60 events across all writers |
 | PQ Stop | `pq stop` | let every worker finish the pass it is on, then end |
 | PQ Stop Kill | `pq stop -Kill` | end now: runner children are terminated and the ticket in flight is abandoned |
 | PQ Pause | `pq pause` | no worker launches a new pass until PQ Resume |
 | PQ Resume | `pq resume` | undo PQ Pause |
 | PQ Report | `pq report` | the last seven days in numbers, with the open findings |
-| PQ Doctor | `pq doctor` | check the enabled repositories and the queue file |
-| PQ Repos | `pq list` | list the registered repositories |
+| PQ Doctor | `pq doctor` | check the enabled repositories and the queue file; `WARN stamp - stale since <version>` when a stamps digest is not the canons (a digest that cannot be compared warns too), `WARN trust` when a repository with `.claude/settings.json` or `.claude/hooks` has no accepted trust under its exact `~/.claude.json` key (upper-case drive, forward slashes) |
+| PQ Repos | `pq list` | list the registered repositories; `hold=` is `true` (the registry flag), `queue` (a whole-project row under `hold` in `PORTFOLIO_QUEUE.md`), `true+queue` (both) or `false` |
 | PQ Guide | - | open this file |
 
 The same commands from a console: `pwsh -NoProfile -File tools/harness/portfolio/pq.ps1 <verb>`; `pq` is a script, not a
@@ -561,7 +561,7 @@ nothing to follow for a Codex or Gemini pass.
 | --- | --- |
 | `pq inbox [-Json]` | what waits for the owner across all projects: one line per kind (count, oldest age, the command that clears it), then the tickets with id, age and note; `BlockByOtherTask` as chain roots |
 | `pq report [-Days n]` | the last n days (7): passes, moved and ok shares, outcomes, ending statuses overall and by agent, entries and exits for owner-waiting statuses, closed unbuilt per repository, tokens and a list-price estimate by repository, model and outcome, the passes each registered repository's own R0 made outside pq (its `runs-mono.jsonl`, in the same window, counted apart from the pq figures, with any journal that could not be read named), the splits by agent, model, complexity and repository (only where n is at least 5), waiting, occupancy, resources, stops, robot-filed tickets, limits, log health and the open findings; `-Json` for the object |
-| `pq problems [-Days n]` | the open findings only, severity first, each with the events behind it: `PQ-RACE01` (a lost claim), `PQ-SAFE01` (a tripwire), `PQ-SAFE02` (the robot-filed cap), `PQ-LIMIT01` (a limit with no reset time), `PQ-THRASH01`, `PQ-RES03` (a token waited on for 30 minutes), `PQ-STALL01`, `PQ-XREPO01` (a blocker cycle), `PQ-DATA01` (a log gap or error), `PQ-COST02` (`light` that needed three passes), `PQ-ADOPT01` (a repository far below the median) |
+| `pq problems [-Days n]` | the open findings only, severity first, each with the events behind it: `PQ-RACE01` (a lost claim), `PQ-SAFE01` (a tripwire), `PQ-SAFE02` (the robot-filed cap), `PQ-LIMIT01` (a limit with no reset time), `PQ-THRASH01`, `PQ-RES03` (a token waited on for 30 minutes), `PQ-STALL01`, `PQ-XREPO01` (a blocker cycle), `PQ-DATA01` (a log gap or error), `PQ-COST02` (`light` that needed three passes), `PQ-ADOPT01` (a repository far below the median); and a `stale hold:` line for a whole-project hold row whose comment says the project has no ticket queue while it now has one |
 | `pq trace <key:id>` | every event of one ticket in time order, grouped by pass |
 | `pq export [-What runs|events] [-Format jsonl|csv] [-Days n]` | the run rows (default) or the events, to stdout |
 | `pq compare [-By canon|plugin|registryHash|profileHash|agent|model|complexity|repo] [-Days n]` | the run rows split by that field in the order its values first appear, with n, ok share, and a verdict between the last two values: `better` or `worse` at 15 points and n of at least 5 each, else `no evidence` |

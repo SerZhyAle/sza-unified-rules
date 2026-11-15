@@ -37,7 +37,7 @@ any folder.
 | run exactly this ticket now, whatever its rank | `pq start -Ticket <key>:<id>` - hand the command to the owner (see "Run one ticket or one project" below) |
 | keep a worker on one project only | `pq start -Repo <key>` - hand the command to the owner |
 | which providers work, in what order, who is out of limit | `pq agents` (and `-Order codex,claude`, `-Release <provider>`) |
-| is the setup sound | `pq doctor`, `pq list` |
+| is the setup sound | `pq doctor` (a `WARN stamp - stale since <version>` is a stamp behind the canon, a `WARN trust` a workspace Claude Code has not trusted under its exact key), `pq list` (`hold=queue` is a hold row in `PORTFOLIO_QUEUE.md`, `hold=true` the registry flag, `true+queue` both) |
 
 ## Run one ticket or one project
 
@@ -82,7 +82,8 @@ in the one-ticket skills: `/spec-all <key>:<id>` and `/sa <key>:<id>` work one n
   repositories are read before one rank, so it does not come back to them one by one) and looks again when the window can
   have run out. The window is `occupiedMinutes` in `repos.json` (3 minutes on the owner's machine). Any live session of yours
   in that repository counts, this chat included: the robot cannot work in a repository while you work in it.
-- `pq problems` lists findings with stable ids (`PQ-RACE01`, `PQ-SAFE02`, `PQ-THRASH01`, `PQ-LIMIT01`, `PQ-DATA01` and others);
+- `pq problems` lists findings with stable ids (`PQ-RACE01`, `PQ-SAFE02`, `PQ-THRASH01`, `PQ-LIMIT01`, `PQ-DATA01` and others),
+  plus a `stale hold:` line for a hold row whose comment says "no ticket queue" while the project has one;
   a figure is printed with its n and a split only where n is at least 5. Say "no evidence" where the report does.
   `closed unbuilt` is what the passes said about themselves, and `unknown` there is no disclosure, not a build;
   token and dollar figures are a list-price estimate from a dated local snapshot, not a bill, and a pass with no

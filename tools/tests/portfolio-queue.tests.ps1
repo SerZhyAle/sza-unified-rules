@@ -54,6 +54,8 @@ $savedProjectRoot = $env:SZA_PROJECT_ROOT
 $savedAgent = $env:SZA_AGENT_ID
 $FixtureCache = @{}
 $Zeros = '0' * 64
+. (Join-Path $SourceRoot 'tools/harness/portfolio/lib/health.ps1')
+$script:FixtureCanonDigest = (Get-PqCanonDigestInfo $SourceRoot).digest
 
 function Assert-That([bool]$Condition, [string]$Reason) { if (-not $Condition) { throw $Reason } }
 
@@ -197,7 +199,8 @@ function Get-Names($Problems) { return @(@($Problems) | ForEach-Object { [string
 
 # A fixture stamp: a hand-written minimal REPO-STAMP, not an adoption.
 function Write-FixtureStamp([string]$Dir, [string]$Role = 'product') {
-    $stamp = [ordered]@{ schemaVersion = '1.0'; canon = [ordered]@{ version = '2026.10.27.1'; coreDigest = "sha256:$Zeros"; model = 'reference' } }
+    # The digest of the canon under test, so pq doctor's freshness compare (S0044) passes.
+    $stamp = [ordered]@{ schemaVersion = '1.0'; canon = [ordered]@{ version = '2026.10.27.1'; coreDigest = $script:FixtureCanonDigest; model = 'reference' } }
     if ($Role) { $stamp.role = $Role }
     $stamp.overlay = @()
     $stamp.ledgerShape = 'none'

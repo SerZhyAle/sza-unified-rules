@@ -111,6 +111,14 @@ project's own queue (a hold, a disabled project or a missing registration is rep
 section 0, in every project; `spec_catalog/attachment-capture.ps1` holds the copy and the links for every capture path.
 `pwsh -NoProfile -File tools/tests/spec-draft.tests.ps1` checks it over throwaway repositories.
 
+`portfolio/app-commands-list.ps1` is the discovery half of the APP-COMMANDS contract (rule 20): it walks the registered
+repositories and prints the commands of each one's `docs/cli-commands.json` - product, verb, summary, risk class, cold
+start - telling a repository with no manifest (`NONE`), a manifest that does not parse (`INVALID`, with the reason, and
+none of its commands) and a registered folder that is gone (`MISSING`) from one that parses (`OK`). It reads that one
+file per repository and nothing else, writes nothing, and an empty registry is an empty report with exit 0; `-Project
+<key|folder>` narrows it and `-Json` prints the records. `pwsh -NoProfile -File tools/tests/app-commands-list.tests.ps1`
+checks it over throwaway repositories in about a second.
+
 `portfolio/quiz-list.ps1` is the mechanical half of the `spec-quiz` skill (`/spec-quiz`, `/sq`): it reads the ledgers
 of the current project, a named one or every registered one and lists the tickets in `BlockQuestions` with their
 reason notes, and for an id says what that id is in the current project and where else it waits (ids repeat across

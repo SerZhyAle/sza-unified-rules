@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "ClaudeInChromeDomain(sites.google.com)",
+      "ClaudeInChromeDomain(github.com)",
+      "ClaudeInChromeDomain(controlpanel.host)",
+      "ClaudeInChromeDomain(4pda.to)",
+      "ClaudeInChromeDomain(forum.ru-board.com)",
+      "ClaudeInChromeDomain(www.cyberforum.ru)"
+    ]
+  }
+}

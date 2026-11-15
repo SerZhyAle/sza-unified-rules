@@ -9,7 +9,7 @@
                                                    root); it joins disabled unless -Enable, with maxWorkers 1 and
                                                    concurrent false; -PermissionMode (acceptEdits, auto,
                                                    bypassPermissions, manual, dontAsk, plan) is written on its record
-    pq list [-Json]                                 the registered repositories
+    pq list [-Json]                                 the registered repositories; hold=true|queue|true+queue|false
     pq dry-run [-Slots <n>] [-Json] [-All]          the global order and the slot plan; launches and writes nothing
     pq queue [-Init] [-NoOpen]                      open PORTFOLIO_QUEUE.md, synced first: every registered
                                                    repository's queued tickets, new ones added to their project's
@@ -143,6 +143,7 @@ $lib = Join-Path $PSScriptRoot 'lib'
 . (Join-Path $lib 'delivery.ps1')
 . (Join-Path $lib 'registry.ps1')
 . (Join-Path $lib 'queue-file.ps1')
+. (Join-Path $lib 'health.ps1')
 . (Join-Path $lib 'picker.ps1')
 . (Join-Path $lib 'rank.ps1')
 . (Join-Path $lib 'ledger-watch.ps1')
@@ -259,12 +260,25 @@ function Invoke-PqList {
     $read = Get-PqRegistryOrFail
     if ($null -eq $read) { return 2 }
     if ($Json) { ConvertTo-Json -InputObject $read.document -Depth 64; return 0 }
+    # hold= names who holds the project (S0044): true is the registry's flag, queue a whole-project row under the
+    # hold heading of PORTFOLIO_QUEUE.md, true+queue both; the rank skips the project for either.
+    $queueHeld = @(Get-PqQueueHeldRepoKeys $read.registry)
     foreach ($r in @($read.registry.repos)) {
         '{0}  enabled={1}  hold={2}  rank={3}  maxWorkers={4}  {5}' -f $r.key, $r.enabled.ToString().ToLowerInvariant(),
-        $r.hold.ToString().ToLowerInvariant(), $r.rank, $r.maxWorkers, $r.path
+        (Format-PqHoldFlag -RegistryHold ($r.hold -eq $true) -QueueHold ($queueHeld -ccontains [string]$r.key)), $r.rank, $r.maxWorkers, $r.path
     }
     if (@($read.registry.repos).Count -eq 0) { 'no repositories registered' }
     return 0
+}
+
+# The keys a whole-project row under the queue file's hold heading holds; none when the file is absent or unreadable.
+function Get-PqQueueHeldRepoKeys($Registry) {
+    try {
+        $qp = Get-PqQueuePath $Registry
+        if (-not [IO.File]::Exists($qp)) { return @() }
+        return @(Get-PqQueueHeldRepos (Read-PqQueueFile -Path $qp))
+    }
+    catch { return @() }
 }
 
 function Invoke-PqQueueWriter([string]$Which) {
@@ -480,7 +494,7 @@ function Invoke-PqDryRun {
     return 0
 }
 
-function Test-PqDoctorRepo($Repo, $Out) {
+function Test-PqDoctorRepo($Repo, $Out, $CanonInfo, $Trust) {
     $k = [string]$Repo.key
     $p = [string]$Repo.path
     $add = { param($v, $check, $detail) $Out.Add("$v $k $check - $detail") }
@@ -503,7 +517,14 @@ function Test-PqDoctorRepo($Repo, $Out) {
             try { Assert-SzaSchemaCarrier $stamp 'schemaVersion' 'REPO-STAMP' } catch { $carrier = $_.Exception.Message }
             if ($missing.Count -gt 0) { & $add 'FAIL' 'stamp' "missing $($missing -join ', ')" }
             elseif ($carrier) { & $add 'FAIL' 'stamp' $carrier }
-            else { & $add 'PASS' 'stamp' "canon $($canon.version)" }
+            else {
+                # S0044: the digest compare check-compliance.ps1 makes, against the canon this harness ships in. A
+                # digest that could not be compared is a WARN, never a PASS: no evidence is not freshness.
+                $fresh = Get-PqStampFreshness -Stamp $stamp -Canon $CanonInfo
+                if ($fresh.state -ceq 'current') { & $add 'PASS' 'stamp' $fresh.detail }
+                elseif ($fresh.state -ceq 'stale') { & $add 'WARN' 'stamp' $fresh.detail }
+                else { & $add 'WARN' 'stamp' "canon $($canon.version), $($fresh.detail)" }
+            }
         }
     }
     # profile: R37, ready needs a profile. Read with ConvertFrom-Json, never through _profile.ps1 (one project per process).
@@ -572,6 +593,14 @@ function Test-PqDoctorRepo($Repo, $Out) {
     }
     if ($launcher) { & $add 'PASS' 'launcher' $launcher }
     else { & $add 'WARN' 'launcher' 'no launcher: no r0.ps1 or r0.cmd, and no a.ps1 with an r0 target (init-task-flow.ps1 renders them; the migration of existing repositories is S0016 Phase 09)' }
+    # S0044: a repository whose Claude settings or hooks a headless pass loads needs its workspace trusted under the
+    # exact key Claude Code writes; read-only, the trust itself is the owner's to accept.
+    if (Test-PqTrustNeeded $p) {
+        $tk = ConvertTo-PqTrustKey $p
+        if ($null -eq $Trust -or -not $Trust.ok) { & $add 'WARN' 'trust' "not checked - $(if ($null -ne $Trust) { $Trust.error } else { 'no Claude config read' })" }
+        elseif ($Trust.projects.ContainsKey($tk) -and $Trust.projects[$tk]) { & $add 'PASS' 'trust' $tk }
+        else { & $add 'WARN' 'trust' "$tk has no hasTrustDialogAccepted in $($Trust.path) - open the folder in Claude Code once and accept the trust dialog" }
+    }
 }
 
 function Invoke-PqDoctor {
@@ -585,7 +614,10 @@ function Invoke-PqDoctor {
         $out.Add("PASS registry - $(@($read.registry.repos).Count) repositories")
         $repos = @(@($read.registry.repos) | Where-Object { $All -or $_.enabled -eq $true })
     }
-    foreach ($r in $repos) { Test-PqDoctorRepo $r $out }
+    # Computed once: the canon digest of the tree this harness ships in, and the trust map (S0044).
+    $canonInfo = Get-PqCanonDigestInfo ([IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\..')))
+    $trust = Read-PqClaudeTrust $env:SZA_CLAUDE_CONFIG
+    foreach ($r in $repos) { Test-PqDoctorRepo $r $out $canonInfo $trust }
     $registry = if ($read.ok) { $read.registry } else { $null }
     $qp = Get-PqQueuePath $registry
     if (-not [IO.File]::Exists($qp)) { $out.Add("WARN queue - no $qp; run 'pq queue -Init'") }
@@ -907,12 +939,22 @@ function Invoke-PqStatus {
     try { $lastBuilds = @(Get-PqLastDeliveries) } catch { }
     $targetStops = @(Get-PqStopFiles | Where-Object { $_.kind -cne 'all' })
     $paused = Test-PqPaused
+    # S0044: every held project and who holds it - the registry flag (true), a queue-file hold row (queue) or both.
+    $holds = [Collections.Generic.List[object]]::new()
+    if ($null -ne $reg) {
+        $queueHeld = @(Get-PqQueueHeldRepoKeys $reg)
+        foreach ($r in @($reg.repos)) {
+            $flag = Format-PqHoldFlag -RegistryHold ($r.hold -eq $true) -QueueHold ($queueHeld -ccontains [string]$r.key)
+            if ($flag -cne 'false') { $holds.Add([ordered]@{ repo = [string]$r.key; hold = $flag }) }
+        }
+    }
 
     if ($Json) {
         $res = [ordered]@{
             stop = if ($stopPresent) { @{ present = $true; level = $stopLevel } } else { @{ present = $false } }
             targetStops = @($targetStops | ForEach-Object { [ordered]@{ kind = $_.kind; target = $_.target; level = $_.level } })
             paused = $paused
+            holds = @($holds)
             workers = $workers
             passesToday = $passesToday
             next = $nextCandidate
@@ -929,6 +971,7 @@ function Invoke-PqStatus {
     "STOP: $(if ($stopPresent) { "present (level=$stopLevel)" } else { 'none' })"
     foreach ($ts in $targetStops) { "STOP of $($ts.kind) $($ts.target): level=$($ts.level)" }
     if ($paused) { 'Paused: yes (pq resume continues)' }
+    if ($holds.Count -gt 0) { "Held: $((@($holds) | ForEach-Object { "$($_.repo) hold=$($_.hold)" }) -join ', ')" }
     if ($workers.Count -eq 0) {
         "Workers: none active"
     }
@@ -1189,6 +1232,20 @@ function Invoke-PqProblems {
         }
         catch { $spoolLines += "phone inbox: could not inspect filed packets for unknown projects: $($_.Exception.Message)" }
     }
+    # S0044: a whole-project hold row whose own reason says the project has no ticket queue, while it has one now -
+    # the hold outlived its cause. Printed beside the findings like the spool lines; the file is not touched.
+    try {
+        $regHold = Read-PqRegistryIfAny
+        if ($null -ne $regHold) {
+            $qpHold = Get-PqQueuePath $regHold
+            if ([IO.File]::Exists($qpHold)) {
+                foreach ($s in @(Get-PqStaleHoldLines -Queue (Read-PqQueueFile -Path $qpHold) -Registry $regHold)) {
+                    $spoolLines += "stale hold: $($s.repo) (line $($s.line)) says '$($s.reason)' but $($s.queuePath) exists - pq release $($s.repo) if the hold has no other reason"
+                }
+            }
+        }
+    }
+    catch { $spoolLines += "stale hold: could not inspect the hold rows: $($_.Exception.Message)" }
     if ($Json) {
         foreach ($l in $spoolLines) { [Console]::Error.WriteLine($l) }
         ConvertTo-Json -InputObject $f -Depth 8; return 0

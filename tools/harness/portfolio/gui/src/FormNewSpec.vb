@@ -38,11 +38,13 @@ Public Class FormNewSpec
     End Sub
 
     Private Sub InitializeComponent()
-        Me.Text = "New Specification (/spec-draft) - Capture Task or Problem"
+        ' The caption is short on purpose: a long one is cut by the window buttons (APP-BEHAVIOUR rule 2).
+        Me.Text = "New Specification (/spec-draft)"
         Me.AutoScaleDimensions = New SizeF(7.0F, 15.0F)
         Me.AutoScaleMode = AutoScaleMode.Font
         Me.ClientSize = New Size(780, 720)
-        Me.MinimumSize = New Size(700, 640)
+        ' Narrower than this the Type row (three radio buttons on one line) no longer fits.
+        Me.MinimumSize = New Size(760, 660)
         Me.StartPosition = FormStartPosition.CenterParent
         Me.Font = New Font("Segoe UI", 9.0F)
         Me.SuspendLayout()
@@ -73,11 +75,15 @@ Public Class FormNewSpec
             .Padding = Padding.Empty
         }
 
+        ' BUTTONS section 3: width is the caption plus padding (never a fixed or equal width), height 32.
         btnCancel = New Button With {
             .Name = "btnCancel",
             .Text = "Cancel",
-            .Size = New Size(110, 36),
-            .Margin = New Padding(0, 2, 0, 0),
+            .AutoSize = True,
+            .AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            .MinimumSize = New Size(0, 32),
+            .Padding = New Padding(12, 0, 12, 0),
+            .Margin = New Padding(0, 2, 8, 0),
             .AccessibleName = "Cancel Button",
             .AccessibleRole = AccessibleRole.PushButton
         }
@@ -86,66 +92,78 @@ Public Class FormNewSpec
         btnDraft = New Button With {
             .Name = "btnDraft",
             .Text = "📝 &Create Specification",
-            .Size = New Size(240, 36),
-            .Margin = New Padding(0, 2, 12, 0),
+            .AutoSize = True,
+            .AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            .MinimumSize = New Size(0, 32),
+            .Padding = New Padding(12, 0, 12, 0),
+            .Margin = New Padding(0, 2, 0, 0),
             .Font = New Font("Segoe UI", 9.5F, FontStyle.Bold),
             .AccessibleName = "Create Specification Button",
             .AccessibleRole = AccessibleRole.PushButton
         }
         AddHandler btnDraft.Click, AddressOf BtnDraft_Click
 
-        pnlButtons.Controls.AddRange({btnCancel, btnDraft})
+        ' The strip fills from the right, so the first control sits rightmost: Create first, then Cancel to its
+        ' left - reading order Cancel, then the affirmative action (BUTTONS section 4 rule 4).
+        pnlButtons.Controls.AddRange({btnDraft, btnCancel})
         pnlBottom.Controls.AddRange({pnlButtons, lblStatus})
 
-        ' --- Top Controls (Adaptive 4-column TableLayoutPanel, zero overlapping at any DPI) ---
+        ' --- Top Controls: a caption column and one shared editor column (WINDOWS-UI section 4). No editor is sized as a
+        '     percentage of a spanned row, so nothing is cut or wrapped away at any DPI (APP-BEHAVIOUR rule 2) ---
         Dim tblTop As New TableLayoutPanel With {
             .Name = "tblTop",
             .Dock = DockStyle.Top,
             .AutoSize = True,
             .AutoSizeMode = AutoSizeMode.GrowAndShrink,
             .Padding = New Padding(20, 16, 20, 6),
-            .ColumnCount = 4,
-            .RowCount = 4
+            .ColumnCount = 2,
+            .RowCount = 6
         }
         tblTop.SuspendLayout()
 
         tblTop.ColumnStyles.Add(New ColumnStyle(SizeType.AutoSize))
-        tblTop.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 45.0F))
-        tblTop.ColumnStyles.Add(New ColumnStyle(SizeType.AutoSize))
-        tblTop.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 55.0F))
+        tblTop.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100.0F))
 
-        For i = 0 To 3
+        For i = 0 To 5
             tblTop.RowStyles.Add(New RowStyle(SizeType.AutoSize))
         Next
 
-        ' Row 0: Target Project & Complexity
+        ' An editor fills the editor column up to this width and stays left-aligned beyond it; the longest
+        ' complexity item is about 200 px, so nothing in a dropdown is cut.
+        Dim editorMax As New Size(360, 0)
+
+        ' Row 0: Target Project
         Dim lblProj As New Label With {
             .Name = "lblProj",
             .Text = "Target &Project:",
             .AutoSize = True,
             .Font = New Font("Segoe UI", 9.0F, FontStyle.Bold),
             .Anchor = AnchorStyles.Left,
-            .Margin = New Padding(0, 0, 8, 8)
+            .Margin = New Padding(0, 0, 16, 8)
         }
         cmbProject = New ComboBox With {
             .Name = "cmbProject",
             .DropDownStyle = ComboBoxStyle.DropDownList,
-            .Dock = DockStyle.Fill,
-            .Margin = New Padding(0, 0, 16, 8),
+            .Anchor = AnchorStyles.Left Or AnchorStyles.Right,
+            .MaximumSize = editorMax,
+            .Margin = New Padding(0, 0, 0, 8),
             .AccessibleName = "Target Project Dropdown"
         }
 
+        ' Row 1: Complexity
         Dim lblComp As New Label With {
             .Name = "lblComp",
             .Text = "&Complexity:",
             .AutoSize = True,
+            .Font = New Font("Segoe UI", 9.0F, FontStyle.Bold),
             .Anchor = AnchorStyles.Left,
-            .Margin = New Padding(8, 0, 8, 8)
+            .Margin = New Padding(0, 0, 16, 8)
         }
         cmbComplexity = New ComboBox With {
             .Name = "cmbComplexity",
             .DropDownStyle = ComboBoxStyle.DropDownList,
-            .Dock = DockStyle.Fill,
+            .Anchor = AnchorStyles.Left Or AnchorStyles.Right,
+            .MaximumSize = editorMax,
             .Margin = New Padding(0, 0, 0, 8),
             .AccessibleName = "Complexity Dropdown"
         }
@@ -158,25 +176,27 @@ Public Class FormNewSpec
 
         tblTop.Controls.Add(lblProj, 0, 0)
         tblTop.Controls.Add(cmbProject, 1, 0)
-        tblTop.Controls.Add(lblComp, 2, 0)
-        tblTop.Controls.Add(cmbComplexity, 3, 0)
+        tblTop.Controls.Add(lblComp, 0, 1)
+        tblTop.Controls.Add(cmbComplexity, 1, 1)
 
-        ' Row 1: Type / Prefix Row
-        Dim pnlType As New FlowLayoutPanel With {
-            .Name = "pnlType",
-            .Dock = DockStyle.Fill,
-            .AutoSize = True,
-            .AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            .WrapContents = True,
-            .FlowDirection = FlowDirection.LeftToRight,
-            .Margin = New Padding(0, 2, 0, 8)
-        }
+        ' Row 2: Type / prefix. The three radio buttons stay on one line (WrapContents off); a wrapped third
+        ' button dropped under the caption column and read as a separate field.
         Dim lblType As New Label With {
             .Name = "lblType",
             .Text = "Type:",
             .AutoSize = True,
             .Font = New Font("Segoe UI", 9.0F, FontStyle.Bold),
-            .Margin = New Padding(0, 3, 16, 0)
+            .Anchor = AnchorStyles.Left,
+            .Margin = New Padding(0, 0, 16, 8)
+        }
+        Dim pnlType As New FlowLayoutPanel With {
+            .Name = "pnlType",
+            .AutoSize = True,
+            .AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            .Anchor = AnchorStyles.Left,
+            .WrapContents = False,
+            .FlowDirection = FlowDirection.LeftToRight,
+            .Margin = New Padding(0, 0, 0, 8)
         }
         rdoFeature = New RadioButton With {
             .Name = "rdoFeature",
@@ -203,41 +223,42 @@ Public Class FormNewSpec
         }
         AddHandler rdoHotfix.CheckedChanged, AddressOf RdoType_CheckedChanged
 
-        pnlType.Controls.AddRange({lblType, rdoFeature, rdoBug, rdoHotfix})
-        tblTop.Controls.Add(pnlType, 0, 1)
-        tblTop.SetColumnSpan(pnlType, 4)
+        pnlType.Controls.AddRange({rdoFeature, rdoBug, rdoHotfix})
+        tblTop.Controls.Add(lblType, 0, 2)
+        tblTop.Controls.Add(pnlType, 1, 2)
 
-        ' Row 2: Ticket Slug & Pin
+        ' Row 3: Ticket Slug
         Dim lblSlug As New Label With {
             .Name = "lblSlug",
             .Text = "Ticket &Slug (optional):",
             .AutoSize = True,
             .Font = New Font("Segoe UI", 9.0F, FontStyle.Bold),
             .Anchor = AnchorStyles.Left,
-            .Margin = New Padding(0, 0, 8, 8)
+            .Margin = New Padding(0, 0, 16, 8)
         }
         txtSlug = New TextBox With {
             .Name = "txtSlug",
-            .Dock = DockStyle.Fill,
+            .Anchor = AnchorStyles.Left Or AnchorStyles.Right,
+            .MaximumSize = editorMax,
             .Font = New Font("Consolas", 9.5F),
-            .Margin = New Padding(0, 0, 16, 8),
+            .Margin = New Padding(0, 0, 0, 8),
             .AccessibleName = "Ticket Slug Input"
         }
+        tblTop.Controls.Add(lblSlug, 0, 3)
+        tblTop.Controls.Add(txtSlug, 1, 3)
+
+        ' Row 4: Pin, under the slug it belongs to
         chkPin = New CheckBox With {
             .Name = "chkPin",
             .Text = "Pin to &top of queue (-Pin)",
             .AutoSize = True,
             .Anchor = AnchorStyles.Left,
-            .Margin = New Padding(8, 0, 0, 8),
+            .Margin = New Padding(0, 0, 0, 8),
             .AccessibleName = "Pin to top checkbox"
         }
+        tblTop.Controls.Add(chkPin, 1, 4)
 
-        tblTop.Controls.Add(lblSlug, 0, 2)
-        tblTop.Controls.Add(txtSlug, 1, 2)
-        tblTop.Controls.Add(chkPin, 2, 2)
-        tblTop.SetColumnSpan(chkPin, 2)
-
-        ' Row 3: Description Header
+        ' Row 5: Description header
         Dim lblDesc As New Label With {
             .Name = "lblDesc",
             .Text = "&Task or Problem Description (in your own words; spec-draft will turn this into an aligned spec):",
@@ -245,8 +266,8 @@ Public Class FormNewSpec
             .Font = New Font("Segoe UI", 9.0F, FontStyle.Bold),
             .Margin = New Padding(0, 4, 0, 4)
         }
-        tblTop.Controls.Add(lblDesc, 0, 3)
-        tblTop.SetColumnSpan(lblDesc, 4)
+        tblTop.Controls.Add(lblDesc, 0, 5)
+        tblTop.SetColumnSpan(lblDesc, 2)
 
         tblTop.ResumeLayout(False)
         tblTop.PerformLayout()
@@ -269,32 +290,39 @@ Public Class FormNewSpec
         pnlContent.Controls.Add(txtDescription)
 
         ' --- Attachments: files and pasted screenshots, copied into the ticket folder by spec-draft ---
+        ' The panel is tall enough for its caption, a list of several rows and one row of command buttons; the buttons
+        ' flow horizontally at their content width and wrap whole when the window is narrow (BUTTONS section 4).
         Dim pnlAttach As New Panel With {
             .Name = "pnlAttach",
             .Dock = DockStyle.Bottom,
-            .Height = 120,
-            .Padding = New Padding(20, 8, 20, 0)
+            .Height = 168,
+            .Padding = New Padding(20, 8, 20, 4)
         }
         Dim lblAttach As New Label With {
             .Name = "lblAttach",
             .Text = "&Attachments (screenshots, logs):",
             .Dock = DockStyle.Top,
-            .Height = 22,
+            .Height = 24,
+            .TextAlign = ContentAlignment.MiddleLeft,
             .Font = New Font("Segoe UI", 9.0F, FontStyle.Bold)
         }
         Dim pnlAttachButtons As New FlowLayoutPanel With {
             .Name = "pnlAttachButtons",
-            .Dock = DockStyle.Right,
-            .Width = 150,
-            .FlowDirection = FlowDirection.TopDown,
-            .WrapContents = False,
-            .Padding = New Padding(8, 0, 0, 0)
+            .Dock = DockStyle.Bottom,
+            .AutoSize = True,
+            .AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            .FlowDirection = FlowDirection.LeftToRight,
+            .WrapContents = True,
+            .Padding = Padding.Empty
         }
         btnAddFile = New Button With {
             .Name = "btnAddFile",
             .Text = "Add &File..",
-            .Size = New Size(136, 28),
-            .Margin = New Padding(0, 0, 0, 4),
+            .AutoSize = True,
+            .AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            .MinimumSize = New Size(0, 32),
+            .Padding = New Padding(12, 0, 12, 0),
+            .Margin = New Padding(0, 8, 8, 0),
             .AccessibleName = "Add File Button",
             .AccessibleRole = AccessibleRole.PushButton
         }
@@ -302,8 +330,11 @@ Public Class FormNewSpec
         btnPasteImage = New Button With {
             .Name = "btnPasteImage",
             .Text = "Paste &Image",
-            .Size = New Size(136, 28),
-            .Margin = New Padding(0, 0, 0, 4),
+            .AutoSize = True,
+            .AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            .MinimumSize = New Size(0, 32),
+            .Padding = New Padding(12, 0, 12, 0),
+            .Margin = New Padding(0, 8, 8, 0),
             .AccessibleName = "Paste Image Button",
             .AccessibleRole = AccessibleRole.PushButton
         }
@@ -311,8 +342,11 @@ Public Class FormNewSpec
         btnRemoveAttachment = New Button With {
             .Name = "btnRemoveAttachment",
             .Text = "&Remove",
-            .Size = New Size(136, 28),
-            .Margin = New Padding(0),
+            .AutoSize = True,
+            .AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            .MinimumSize = New Size(0, 32),
+            .Padding = New Padding(12, 0, 12, 0),
+            .Margin = New Padding(0, 8, 0, 0),
             .AccessibleName = "Remove Attachment Button",
             .AccessibleRole = AccessibleRole.PushButton
         }
@@ -321,11 +355,13 @@ Public Class FormNewSpec
         lstAttachments = New ListBox With {
             .Name = "lstAttachments",
             .Dock = DockStyle.Fill,
+            .BorderStyle = BorderStyle.FixedSingle,
             .SelectionMode = SelectionMode.MultiExtended,
             .HorizontalScrollbar = True,
             .IntegralHeight = False,
             .AccessibleName = "Attachments List"
         }
+        ' Docking runs from the last control added to the first: caption (top), buttons (bottom), then the list fills.
         pnlAttach.Controls.Add(lstAttachments)
         pnlAttach.Controls.Add(pnlAttachButtons)
         pnlAttach.Controls.Add(lblAttach)
@@ -341,18 +377,36 @@ Public Class FormNewSpec
         Me.AcceptButton = btnDraft
         Me.CancelButton = btnCancel
 
-        ' Tab Order
-        cmbProject.TabIndex = 0
-        cmbComplexity.TabIndex = 1
-        rdoFeature.TabIndex = 2
-        rdoBug.TabIndex = 3
-        rdoHotfix.TabIndex = 4
-        txtSlug.TabIndex = 5
-        chkPin.TabIndex = 6
-        txtDescription.TabIndex = 7
-        pnlAttach.TabIndex = 8
-        btnDraft.TabIndex = 9
-        btnCancel.TabIndex = 10
+        ' Tab order follows reading order, and each caption sits right before its editor so that its mnemonic
+        ' (Alt+letter) lands there; Cancel comes before Create, as they read.
+        tblTop.TabIndex = 0
+        lblProj.TabIndex = 0
+        cmbProject.TabIndex = 1
+        lblComp.TabIndex = 2
+        cmbComplexity.TabIndex = 3
+        lblType.TabIndex = 4
+        pnlType.TabIndex = 5
+        rdoFeature.TabIndex = 0
+        rdoBug.TabIndex = 1
+        rdoHotfix.TabIndex = 2
+        lblSlug.TabIndex = 6
+        txtSlug.TabIndex = 7
+        chkPin.TabIndex = 8
+        lblDesc.TabIndex = 9
+        pnlContent.TabIndex = 1
+        txtDescription.TabIndex = 0
+        pnlAttach.TabIndex = 2
+        lblAttach.TabIndex = 0
+        lstAttachments.TabIndex = 1
+        pnlAttachButtons.TabIndex = 2
+        btnAddFile.TabIndex = 0
+        btnPasteImage.TabIndex = 1
+        btnRemoveAttachment.TabIndex = 2
+        pnlBottom.TabIndex = 3
+        lblStatus.TabIndex = 0
+        pnlButtons.TabIndex = 1
+        btnCancel.TabIndex = 0
+        btnDraft.TabIndex = 1
 
         Me.ResumeLayout(False)
         Me.PerformLayout()
@@ -361,8 +415,23 @@ Public Class FormNewSpec
     Protected Overrides Sub OnLoad(e As EventArgs)
         MyBase.OnLoad(e)
         LoadProjects()
+        ApplyDialogTheme()
+        AddHandler ThemeService.ThemeChanged, Sub() ApplyDialogTheme()
+
+        ' When the project is already chosen (the dialog opens on the selected repository) the cursor starts where
+        ' the typing starts, in the description; otherwise it starts at the project dropdown.
+        If Not String.IsNullOrWhiteSpace(_defaultProjectKey) AndAlso cmbProject.SelectedIndex >= 0 Then
+            Me.ActiveControl = txtDescription
+        End If
+    End Sub
+
+    ' ThemeService has no list-box branch (a CheckedListBox on another form would change with it), so the attachments
+    ' list takes the same field colours the text boxes get; left alone it stays white on the dark theme.
+    Private Sub ApplyDialogTheme()
         ThemeService.ApplyTheme(Me)
-        AddHandler ThemeService.ThemeChanged, Sub() ThemeService.ApplyTheme(Me)
+        Dim p = ThemeService.Palette
+        lstAttachments.BackColor = If(ThemeService.IsDark, p.SurfaceSunken, p.WindowBackground)
+        lstAttachments.ForeColor = p.TextPrimary
     End Sub
 
     Private Sub LoadProjects()
@@ -441,7 +510,7 @@ Public Class FormNewSpec
 
         btnDraft.Enabled = False
         btnCancel.Enabled = False
-        SetStatus("Generating ticket specification via spec-draft.ps1...", isError:=False)
+        SetStatus("Generating ticket specification via spec-draft.ps1..", isError:=False)
 
         Dim attachments As New List(Of String)
         For Each item In lstAttachments.Items
