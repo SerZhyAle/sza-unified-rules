@@ -21,7 +21,7 @@ vocabulary). Every other product listens to it:
   a desktop) the desktop contracts govern. Where a desktop contract and FMS disagree on something both
   cover, the product follows FMS and files a proposal to amend the contract.
 - **A product that disagrees complies or amends** ([CONTRACTS.md](CONTRACTS.md)): a proposal to the catalog,
-  or a dated exception with an `until` date. A silent local look is a violation, because it is invisible to
+  or a dated exception, which has no end date. A silent local look is a violation, because it is invisible to
   every other product until a user notices that two of them feel unrelated.
 - **Take the intent and the gate, not the raw counts.** FMS drifts from its own documents in places
   (literal text sizes in layouts, toasts where the policy says snackbar). Copying what FMS *does* instead of
@@ -208,7 +208,7 @@ holds the principles.
 
 - Approved permanent variants named by the shared UI contracts are recorded in the product's design
   or profile, without expiring exceptions. Missing mandatory behavior is temporary migration debt:
-  maintain a dated plan with a deadline, referenced in that product's registry migration/exception row.
+  maintain a dated plan with no deadline, referenced in that product's registry migration/exception row.
   A plan is not conformance. New or substantially reworked surfaces follow current rules immediately;
   existing surfaces are not permanently grandfathered. Never advance another product's implementation row.
 - Validation uses a mandatory baseline scenario set plus risk-selected combinations with recorded

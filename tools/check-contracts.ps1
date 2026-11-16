@@ -12,7 +12,6 @@ Checks:
   CTR-FOLDER  every registry row points at a folder that exists
   CTR-LINK    relative markdown links inside the catalog resolve
   CTR-PATH    no Windows path inside markdown link parentheses (the backslashes vanish silently)
-  CTR-EXPIRE  no exception row past its `until` date
   CTR-STALE   how many adoption rows are still unverified (informational)
   CTR-LAG     how many adoption rows are behind their contract, from tools/contract-lag.ps1 (informational)
 
@@ -104,15 +103,8 @@ try {
                     }
                 }
             }
-            # Extension tables with an Until column also carry expiring exceptions.
-            if ($cells.ContainsKey('Until')) {
-                $until = $cells['Until']
-                $parsed = [datetime]::MinValue
-                if ([datetime]::TryParse($until, [ref]$parsed) -and (Get-Date).Date -gt $parsed.Date) {
-                    Add-Finding -Id 'CTR-EXPIRE' -Severity 'error' -Path '_meta/REGISTRY.md' -Line $row.line `
-                        -Message "exception expired on $until - $($cells['Contract']) / $($cells['Product'])"
-                }
-            }
+            # No expiry check: nothing in the catalog expires (owner decision, 2026-11-16, RULES.md section 7).
+            # The exceptions table keeps its Until column only for the readers in products that still parse it.
         }
     }
 

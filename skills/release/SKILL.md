@@ -176,8 +176,9 @@ behind carries a dated reason that names the entries not taken (check 2). The ch
    and only this product's own row is touched to do it.
 2. **Behind the current version** is allowed with a dated reason in the row. **One MAJOR behind** is a
    warning in the plan; **two** blocks the release if it touches that boundary.
-3. **An exception past its `until` date** in the registry is a violation, not a formality - a blocker until
-   it is renewed with a reason or closed.
+3. **An exception has no end date** (owner decision, 2026-11-16): an open row in the registry stands until it
+   is closed and a date in its text is history, so no check here judges time. The release verdict still names
+   each open exception that touches this release and its impact.
 4. **The diff since the last tag touches a contract boundary** - a file a pointer names as the
    implementation, a serializer, importer or exporter, a wire field - **blocks until the catalog change is
    in**: the version bump and the dated document-log row exist before the tag does.

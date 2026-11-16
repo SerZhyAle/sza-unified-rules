@@ -320,7 +320,8 @@ function Expand-ChildArgs {
         The child's argument vector, from the instance's template (S2698). Substitutions are
         {prompt}, {permissionMode}, {model} and {effort}, applied per element and BEFORE
         ArgumentList, so escaping stays .NET's job - the property that stopped three tickets being
-        lost to Start-Process's unquoted join.
+        lost to Start-Process's unquoted join. {harnessRoot} is this harness's own folder (tools/harness),
+        for a record that launches a script shipped beside the runner and must survive a plugin update.
     #>
     param(
         [string[]] $Template,
@@ -344,7 +345,8 @@ function Expand-ChildArgs {
             }
             continue
         }
-        $out += $text.Replace('{prompt}', $Prompt).Replace('{permissionMode}', $Mode).Replace('{model}', $Model).Replace('{effort}', $Effort)
+        # {harnessRoot} first, so a prompt that happens to contain the word is never rewritten.
+        $out += $text.Replace('{harnessRoot}', (Split-Path -Parent $PSScriptRoot)).Replace('{prompt}', $Prompt).Replace('{permissionMode}', $Mode).Replace('{model}', $Model).Replace('{effort}', $Effort)
     }
     # A bare return, not `, $out`: the comma hands the caller a one-element wrapper AROUND the
     # vector, so `@(Expand-ChildArgs ..)` would be one argument holding an array and every child

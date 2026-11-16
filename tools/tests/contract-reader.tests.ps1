@@ -228,9 +228,10 @@ artifacts: none
                 $registryFile = Join-Path $catalog '_meta/REGISTRY.md'
                 $lines | Set-Content $registryFile
                 $result = Invoke-Child (Join-Path $SourceRoot 'tools/check-contracts.ps1') @('-CatalogRoot', $catalog, '-Json')
-                Assert-That ($result.code -eq $(if ($expired) { 1 } else { 0 })) $result.output
+                # Nothing in the catalog expires (RULES.md section 7, 2026-11-16): a date in the past never turns the gate red.
+                Assert-That ($result.code -eq 0) $result.output
                 $findings = @($result.output | ConvertFrom-Json)
-                Assert-That ((@($findings | Where-Object id -eq 'CTR-EXPIRE').Count -eq 1) -eq $expired) $result.output
+                Assert-That (@($findings | Where-Object id -eq 'CTR-EXPIRE').Count -eq 0) $result.output
                 Assert-That (@($findings | Where-Object id -eq 'CTR-STALE').Count -eq 1) 'Pending column missed'
                 $lag = Invoke-Child (Join-Path $SourceRoot 'tools/contract-lag.ps1') @('-CatalogRoot', $catalog, '-Json')
                 Assert-That ($lag.code -eq 0) $lag.output

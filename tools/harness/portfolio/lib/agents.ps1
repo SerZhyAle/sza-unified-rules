@@ -455,6 +455,9 @@ $script:PqProviders = @(
     # ticket only while the earlier is at its limit.
     @{ id = 'gemini'; agent = 'gemini'; also = @('gemini-argon'); label = 'Google (Gemini)'; aliases = @('gemini', 'google') }
     @{ id = 'zai'; agent = 'zai'; label = 'z.ai (GLM)'; aliases = @('zai', 'glm', 'zcode', 'zhipu') }
+    # Mistral's own subscription (admin.mistral.ai/subscription), used through the Mistral Vibe VS Code extension: the same
+    # GLM-5.3 as z.ai, hosted by Mistral, with its own "Vibe budget".
+    @{ id = 'mistral'; agent = 'mistral'; label = 'Mistral (Vibe, GLM)'; aliases = @('mistral', 'vibe', 'mistralvibe') }
 )
 
 function Resolve-PqProvider([string]$Name) {
@@ -534,6 +537,26 @@ function Find-PqProviderCli([string]$Id) {
             if (-not (Get-PqEnvValue 'ZAI_API_KEY')) { return @{ found = $false; command = $null; prefix = @(); note = 'set the user environment variable ZAI_API_KEY to a key from z.ai/manage-apikey' } }
             return @{ found = $true; command = 'claude'; prefix = @(); note = '' }
         }
+        'mistral' {
+            # Mistral Vibe ships as a VS Code extension whose only binary is vibe-acp.exe (an ACP server, no `vibe -p`);
+            # vibe-acp-pass.ps1 beside this folder is the headless client, run by PowerShell. The sign-in is the extension's
+            # own Credential Manager entry, so a pass without it would end in a second with no limit text.
+            $pwsh = Find-PqApplication 'pwsh'
+            if (-not $pwsh) { return @{ found = $false; command = $null; prefix = @(); note = 'pwsh is not on PATH (the Vibe client is a PowerShell script)' } }
+            $acp = $null
+            foreach ($root in @('.vscode', '.vscode-insiders')) {
+                $ext = Join-Path $HOME "$root\extensions"
+                if (-not [IO.Directory]::Exists($ext)) { continue }
+                foreach ($dir in [IO.Directory]::GetDirectories($ext, 'mistralai.mistral-vibe-code-*')) {
+                    $exe = Join-Path $dir 'bin\vibe-acp.exe'
+                    if ([IO.File]::Exists($exe) -and (-not $acp -or [IO.File]::GetLastWriteTimeUtc($exe) -gt [IO.File]::GetLastWriteTimeUtc($acp))) { $acp = $exe }
+                }
+            }
+            if (-not $acp) { $acp = Find-PqApplication 'vibe-acp' }
+            if (-not $acp) { return @{ found = $false; command = $null; prefix = @(); note = 'Mistral Vibe not found (install the "Mistral Vibe" extension in VS Code)' } }
+            if (-not ((& cmdkey.exe /list:ai.mistral.vibe 2>$null) -match 'ai\.mistral\.vibe')) { return @{ found = $false; command = $null; prefix = @(); note = 'Mistral Vibe is not signed in: open the extension in VS Code and sign in' } }
+            return @{ found = $true; command = $pwsh; prefix = @(); note = '' }
+        }
     }
     return @{ found = $false; command = $null; prefix = @(); note = "no provider '$Id'" }
 }
@@ -597,6 +620,19 @@ function New-PqProviderRecord([string]$Id, [string]$Agent = '') {
                 # Seen on 2026-11-10 (a real pass, exit 0, 197 s): "API Error: Request rejected (429) · [1308][Usage limit reached
                 # for 5 hour. Your limit will reset at 2026-11-11 00:34:51]". The clock is China time, UTC+8.
                 limitDetector = [ordered]@{ kind = 'transcript'; pattern = '(?i)usage limit reached|limit (will )?reset|limit exhausted|rate limit reached|insufficient balance|no resource package|package has expired'; status = 'proven'; resetOffset = '+08:00' }
+            }
+        }
+        'mistral' {
+            # {harnessRoot} is resolved by the runner at launch, so the record survives a plugin update. The model is the
+            # option value of Vibe's own list (`glm-5-3` is zai-glm-5-3, GLM-5.3 hosted by Mistral); thinking is low or high.
+            # The script prints a `[vibe] LIMIT reached:` line when the provider answers 402/429 ("Vibe budget exhausted",
+            # seen in ~/.vibe/logs/vibe.log on 2026-09-12 and 2026-09-23); no reset time is given, so a hold is polled.
+            $rec = [ordered]@{
+                name = 'mistral'; command = $cli.command
+                argsTemplate = @('-NoProfile', '-File', '{harnessRoot}\portfolio\vibe-acp-pass.ps1', '-Model', '{model}', '-Thinking', '{effort}', '-Prompt', '{prompt}')
+                headlessMatch = '(?i)vibe-acp-pass\.ps1'; promptForm = 'file'
+                model = 'glm-5-3'; effort = 'high'; maxParallel = 2; contractFile = 'AGENTS.md'
+                limitDetector = [ordered]@{ kind = 'exitText'; pattern = '(?i)\[vibe\] limit reached'; status = 'unproven' }
             }
         }
     }

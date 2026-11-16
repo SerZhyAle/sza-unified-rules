@@ -75,7 +75,7 @@ makes sense under the product's name, it is probably a private decision rather t
 
 In `P:\Contracts\_meta\REGISTRY.md`, for every contract this product produces or consumes: the version it
 **implements**, the range it **reads**, today's date as **verified**, a one-line note. Record deviations
-under the rights and evidence requirements in step 5; only temporary debt needs an `until` date.
+under the rights and evidence requirements in step 5; an exception has no end date and stands until it is closed.
 
 Write the cells in the format `REGISTRY.md` section 2 states, because a program reads them: **one** version
 (or `partial <version>`, or `-`) per cell, one contract id per row, `pending` or a date in `Verified`, and
@@ -97,8 +97,8 @@ verdict, not from memory of the edit.
 
 **Rights retained throughout synchronization.** The project may declare justified exceptions in its own
 registry rows without prior contract-owner approval and recommend corrections or additions. Record the
-clause, scope, evidence, impact, compensating behavior and review condition. Temporary debt needs an
-expiry and remediation ticket; a permanent supported variant needs a dated linked design record. For
+clause, scope, evidence, impact, compensating behavior and review condition. Temporary debt needs a
+remediation ticket and no end date; a permanent supported variant needs a dated linked design record. For
 another owner's contract, file a dated proposal and retain an exception until its decision where needed.
 Do not equate synchronization with unconditional conformity or remove these rights from the final report.
 Independent legal, store, security and data-safety release blockers still apply (CONTRACTS section 4).
@@ -130,7 +130,7 @@ so: the registry's artifacts column exists to make the gap visible, not comforta
 - contracts **already there**, now pointed at correctly;
 - findings **left** as non-contracts, one line each;
 - registry rows **written**, exceptions **recorded** with scope, impact, responsible project and review
-  condition; temporary debt with expiry/remediation ticket, permanent supported variants with a dated
+  condition; temporary debt with a remediation ticket, permanent supported variants with a dated
   linked design record;
 - the seven answers from step 5, with the tickets opened;
 - what could not be verified, and what it would take.

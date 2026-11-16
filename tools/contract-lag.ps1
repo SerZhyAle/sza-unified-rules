@@ -283,7 +283,7 @@ try {
         $null = $sb.AppendLine('2. The implementation matches it, or the project declares a justified exception in its own REGISTRY section 3 row')
         $null = $sb.AppendLine('   without prior owner approval: clause, scope, evidence, impact, compensating behavior and review condition.')
         $null = $sb.AppendLine('   Name the responsible project. These rights apply to mandatory, active and draft contracts; no unconditional compliance claim is required.')
-        $null = $sb.AppendLine('   Temporary debt has an `until` date and remediation ticket; a permanent supported variant has a linked design record.')
+        $null = $sb.AppendLine('   Temporary debt has a remediation ticket and no end date; a permanent supported variant has a linked design record.')
         $null = $sb.AppendLine('3. The product''s own suite runs the catalog''s conformance vectors at the current version; the command and')
         $null = $sb.AppendLine('   its exit code are cited.')
         $null = $sb.AppendLine('4. The product''s own rows in REGISTRY section 2 carry `Implements`, `Reads`, `Verified` (today) and a one-line')

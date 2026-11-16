@@ -424,9 +424,10 @@ You choose who spends tokens, and in what order. Four providers are known:
 | `anthropic` | `claude` | Claude Code on PATH |
 | `gemini` | `gemini`, `gemini-argon` | Antigravity CLI `agy` (`irm https://antigravity.google/cli/install.ps1 \| iex`), signed in with Google; it reuses the Antigravity sign-in. The Gemini CLI no longer serves personal Google sign-ins (closed 2026-06-18) |
 | `zai` | `zai` | Claude Code and the user environment variable `ZAI_API_KEY` (a key from z.ai/manage-apikey); the pass is Claude Code pointed at z.ai's Anthropic-compatible endpoint |
+| `mistral` | `mistral` | the **Mistral Vibe** extension in VS Code, signed in (the subscription at admin.mistral.ai/subscription); the pass is `vibe-acp-pass.ps1` driving the extension's `vibe-acp.exe` |
 
 ```powershell
-pq agents                                  # the four, with their place in the order, CLI and limit hold
+pq agents                                  # the providers, with their place in the order, CLI and limit hold
 pq agents -Order openai,anthropic          # these spend tokens, the first one first
 pq agents -Release openai                  # forget openai's limit hold, try it again now
 ```
@@ -473,6 +474,21 @@ shipped `+08:00` offset, and its detector is marked `proven`. A real z.ai pass t
 The Gemini pattern matches agy's observed `Individual quota reached. .. Resets in 57h10m24s.` message
 (`RESOURCE_EXHAUSTED`, exit 3), whose reset time is read. Gemini has advanced a ticket, but its shipped detector remains
 `unproven`. When no reset time can be read, the provider is retried after `limitPollMinutes`.
+
+Mistral Vibe has no `vibe -p`: the extension's only binary is `vibe-acp.exe`, an Agent Client Protocol server on stdio.
+[vibe-acp-pass.ps1](vibe-acp-pass.ps1) is the smallest client that runs one prompt to its end - initialize, a session in
+the repository, the `auto-approve` mode, the model, the prompt, and an `allow` for every permission request - and prints the
+agent's text and tool lines as the pass log. The sign-in is Vibe's own (the Credential Manager entry `ai.mistral.vibe`);
+no key is read or stored by the harness. The record runs it as `pwsh -File {harnessRoot}\portfolio\vibe-acp-pass.ps1`,
+where `{harnessRoot}` is the runner's own `tools/harness` at launch, so the record outlives a plugin update. The model is
+`glm-5-3` - GLM-5.3 hosted by Mistral (`zai-glm-5-3`); `zai-glm-5-3-flash`, `mistral-large-4-0-3` and `mistral-medium-3.5`
+are the other values the extension offers, and `model` in the record switches it. Thinking is `high` (`low` is the
+other). Exit codes: 0 the turn ended, 3 a limit (the line `[vibe] LIMIT reached:` carries the provider's own words, such as
+`402 Vibe budget exhausted` or `Check your subscription`), 4 no message from the agent for 30 minutes, 1 any other failure.
+The limit detector is `unproven`: it was built from the 402 answers in `~/.vibe/logs/vibe.log`, never from a spent budget
+met by a pass, and Mistral gives no reset time, so a spent budget is retried after `limitPollMinutes`. Vibe trusts a folder
+through `~/.vibe/trusted_folders.toml`; a pass in an untrusted repository still ran its tools in the check, and the harness
+does not edit that file.
 
 ## Other agents
 

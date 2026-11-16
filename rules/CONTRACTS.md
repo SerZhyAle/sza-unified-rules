@@ -76,7 +76,8 @@ A product that finds a contract wrong, insufficient, or in the way does exactly 
 
 1. **Amend the contract in the catalog** - a new dated section, a version bump, regenerated artifacts, an
    updated registry row - and only then change the code; or
-2. **Record a dated exception** in the catalog's registry, carrying a reason and an `until` date.
+2. **Record a dated exception** in the catalog's registry, carrying a reason and a review condition. It has
+   no end date: it stands until it is closed (owner decision, 2026-11-16).
 
 There is no third option, and "temporarily" is not one. A local fix that nothing records is invisible to
 every other product until the day their data disagrees, which is the failure the catalog exists to end.
@@ -86,7 +87,7 @@ declare a justified exception in its own registry rows without prior approval fr
 and recommend corrections, clarifications or additions. This right also applies to mandatory portfolio
 contracts and newly consolidated requirements. Record the clause, scope, concrete reason and evidence,
 user/data/security impact, compensating behavior and review condition. Temporary migration debt carries
-an `until` date and a remediation ticket; a permanent supported variant belongs in a dated design record
+a remediation ticket and no end date; a permanent supported variant belongs in a dated design record
 linked from the registry, with an explicit review condition. An exception does not waive a separate legal,
 store, security or data-safety release blocker. A synchronization spec must offer these routes rather than
 require an unconditional compliance claim. For another owner's contract, recommendations are dated

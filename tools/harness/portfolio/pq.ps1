@@ -31,7 +31,7 @@
     pq release <repo[:id]>                          remove a row from under hold; a bare key also clears the
                                                     registry hold of that repository (TASK-FLOW rule 41)
     pq agents [-Order <p1,p2,..>] [-Release <p>] [-Json]
-                                                   the model providers (openai, anthropic, gemini, zai) and the
+                                                   the model providers (openai, anthropic, gemini, zai, mistral) and the
                                                    order in which they spend tokens; bare, list them with their
                                                    position, CLI and usage-limit hold; with -Order choose the
                                                    providers and their order (the first works until its limit is
