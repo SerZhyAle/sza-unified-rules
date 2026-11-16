@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Contract | `TASK-FLOW` |
-| Version | 0.27, draft |
+| Version | 0.28, draft |
 | Home | the shared contracts catalog, domain `task-flow/` (the path is in [CLAUDE.md](../../CLAUDE.md)) |
 | Role | **shared implementation, partial**: `tools/harness/` supplies the ticket tools, repository runner and day-0 scaffold; `tools/harness/portfolio/` supplies the S0015 dispatcher, registry, queue, rank and event log. Remaining portfolio features belong to S0016. The owner is `shared`, so this repository edits the contract only through the canon session |
 
@@ -114,3 +114,8 @@
   `archive.ps1` now moves into `paths.specArchiveDir` and leaves a file already there alone. Equal directories, an
   alternate catalog, a collision or a pattern the profile does not admit leave the file in place. Covered by
   `tools/tests/spec-home-move.tests.ps1` (4.97 s, at the 5-second line: run by name).
+- 0.28 (2026-11-15): the contract text was brought to what the harness does (README section 9, `EVENTS.md` section 5):
+  reserved keys, path kinds, halt modes and 26 event names, the `concurrent` sentence of rule 61, `seconds`,
+  `status-drift` -> `statusDrift` in rule 46's outcome table (`ConvertTo-PqPassEndOutcome` in `portfolio/lib/loop.ps1`
+  maps it from 2026-11-16, checked by a direct call), and eight readings of the ledger rules. The row stays
+  `partial`; its exceptions of 2026-11-15 are closed or narrowed in the registry as the evidence allows.

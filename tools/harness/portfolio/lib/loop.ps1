@@ -948,6 +948,7 @@ function ConvertTo-PqPassEndOutcome([string]$Outcome) {
         'launch-failed' { 'launchFailed' }
         'provider-error' { 'providerError' }
         'orphaned' { 'orphaned' }
+        'status-drift' { 'statusDrift' }
         'context-handoff' { 'ok' }
         default { if ($Outcome) { $Outcome } else { 'unknown' } }
     }
