@@ -453,8 +453,12 @@ first and then from your user and machine environment, so a key set with `setx` 
 
 z.ai is reached through Claude Code with `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN` (`%ZAI_API_KEY%`) and
 `API_TIMEOUT_MS` set **for that pass only**, as z.ai's own Claude Code guide describes. Do not put those in
-`~/.claude/settings.json` or your user environment: `anthropic` would then spend z.ai's plan too. The model is left to
-z.ai's mapping of `opus`. Gemini runs as `agy --model <slug> --dangerously-skip-permissions --print`, and a non-Claude
+`~/.claude/settings.json` or your user environment: `anthropic` would then spend z.ai's plan too. The record names
+the GLM model itself (`glm-5.3`) and pins Claude Code's `opus`, `sonnet` and `haiku` aliases with
+`ANTHROPIC_DEFAULT_*_MODEL`, because z.ai echoes whatever name it was asked for: left to its own mapping of `opus`,
+the console, the events log and the transcript all say `opus` and nothing shows which GLM model ran. `GET
+https://api.z.ai/api/anthropic/v1/models` lists the names the account accepts; `model` in the record switches it.
+Gemini runs as `agy --model <slug> --dangerously-skip-permissions --print`, and a non-Claude
 agent has one fixed model (rule 42), so the provider is two records that follow each other in the order: `gemini` runs
 `gemini-4-hydrogen-high` - Google's model for everyday coding and agent work, fast and cheap - and takes every ticket;
 `gemini-argon` runs `gemini-4-argon-high`, the deeper and costlier one, and takes a ticket only while Hydrogen's quota is

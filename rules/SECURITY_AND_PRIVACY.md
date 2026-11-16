@@ -54,6 +54,24 @@ leak globs; a real build secret goes in the CI secrets store, referenced by name
   app's own `Origin`; check `Host` against DNS rebinding; accept state-changing requests only as `POST`
   with the expected content type (a `GET` never acts); and list it as a network surface in §7 even though
   no other machine can reach it.
+- **A store restricts a sensitive permission to a product's core function, and a system alternative must be found
+  insufficient first.** *(Android reference: the Play policy announced 2026-10-29, Play Console Help answer 18100766,
+  with the rules themselves under answer 16909972. A product that keeps one of these permissions answers a Play Console
+  declaration for it; the manifest carries it only on the flavors whose feature needs it, and where the preview and the
+  full text of a Play rule disagree, the full text applies.)*
+  - `READ_CONTACTS`: from 2027-01-27 for a product targeting API 37+, and only where the Android Contact Picker cannot
+    deliver the core function. `MANAGE_CONTACTS` is a separate permission, from 2027-08-25, and `ACTION_INSERT` and
+    `ACTION_EDIT` come first. `WRITE_CONTACTS` is named by neither rule.
+  - `ACCESS_FINE_LOCATION`: from 2027-01-27, with a declaration that coarse location and the Android location button
+    are insufficient. For a product targeting API 37+, a one-time, user-initiated fix goes through the location button
+    (the `onlyForLocationButton` flag), and `ACCESS_COARSE_LOCATION` is requested instead of fine location whenever it
+    supports the feature.
+  - `ACCESS_LOCAL_NETWORK`: from 2027-08-25 for a product targeting API 37+, and only where a device picker such as
+    `NsdManager` cannot deliver the core function.
+  - `MANAGE_EXTERNAL_STORAGE`: all-files access stays on the flavor whose core feature it is; Play refuses an update
+    that carries it as "Not a core feature" (reference: `FastMediaSorter_mob_v2` keeps it on its sideload flavor alone).
+  - `READ_CALL_LOG`: from 2027-01-27 account verification by a phone call is no longer a permitted use; the SMS User
+    Consent API replaces it.
 
 ## 4. Data handling & the privacy promise
 

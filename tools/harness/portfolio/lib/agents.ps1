@@ -585,8 +585,15 @@ function New-PqProviderRecord([string]$Id, [string]$Agent = '') {
                 name = 'zai'; command = 'claude'
                 argsTemplate = @('-p', '{prompt}', '--permission-mode', '{permissionMode}', '--model', '{model}')
                 headlessMatch = '(?i)\bclaude(\.exe)?\s.*(-p|--print)\b'; promptForm = 'slash'
-                env = [ordered]@{ ANTHROPIC_BASE_URL = 'https://api.z.ai/api/anthropic'; ANTHROPIC_AUTH_TOKEN = '%ZAI_API_KEY%'; API_TIMEOUT_MS = '3000000' }
-                model = 'opus'; effort = 'default'; maxParallel = 2; contractFile = 'CLAUDE.md'
+                # The model is named, never left to z.ai's server-side mapping of Claude Code's `opus`: that mapping is not
+                # disclosed, z.ai echoes the requested name back, so the console, the events log and the session transcript
+                # all said `opus` while a GLM model ran. The three aliases are pinned too, so a subagent that asks for
+                # `sonnet` or `haiku` is a named GLM model as well. Verified on 2026-11-16 against /v1/models and a live call.
+                env = [ordered]@{
+                    ANTHROPIC_BASE_URL = 'https://api.z.ai/api/anthropic'; ANTHROPIC_AUTH_TOKEN = '%ZAI_API_KEY%'; API_TIMEOUT_MS = '3000000'
+                    ANTHROPIC_DEFAULT_OPUS_MODEL = 'glm-5.3'; ANTHROPIC_DEFAULT_SONNET_MODEL = 'glm-5.3'; ANTHROPIC_DEFAULT_HAIKU_MODEL = 'glm-5.3-flash'
+                }
+                model = 'glm-5.3'; effort = 'default'; maxParallel = 2; contractFile = 'CLAUDE.md'
                 # Seen on 2026-11-10 (a real pass, exit 0, 197 s): "API Error: Request rejected (429) · [1308][Usage limit reached
                 # for 5 hour. Your limit will reset at 2026-11-11 00:34:51]". The clock is China time, UTC+8.
                 limitDetector = [ordered]@{ kind = 'transcript'; pattern = '(?i)usage limit reached|limit (will )?reset|limit exhausted|rate limit reached|insufficient balance|no resource package|package has expired'; status = 'proven'; resetOffset = '+08:00' }

@@ -291,8 +291,23 @@ The upload keystore, the release bundles, the app signing key import at the firs
 for review" - the release, with its pre-flight and its update-over-a-prior-install proof. Where section 3, step 1 found an earlier removed
 app of the same product, the release reads that app's original notice first and checks the new listing against it before the
 first "Send for review": a corrected new version is allowed, re-publishing the violation is not. The account-level "Declare your
-trader status" banner (due February 2027 on the reference account) belongs to the owner, not to a product. The console
+trader status" banner belongs to the owner, not to a product (the dates are below). The console
 shows setup finished only after the screenshots exist.
+
+The account-level dates of the Play policy announcement of 2026-10-29 (Play Console Help, answer 18100766) are the owner's
+too, none a product's:
+
+- **Trader status:** the declaration opens in November 2026, and every existing account answers it by 2027-02-01 (Help answer
+  17594752; missing it risks blocked app updates). A trader also confirms each app under App content, and from 2027-03-01
+  users see a trader's contact details and terms-of-service link.
+- **Japan:** a seller into or out of Japan completes the authorization by 2026-12-01, or payments are held globally
+  (Payments Center answer 17595997).
+- **Play Age Signals:** the API is open to every developer; it is how a product tailors features and content by age.
+- **App quality:** the new memory and code-optimization thresholds bind from February 2027.
+
+Permission declarations are per product, not per account: the restricted permissions, their dates and the system alternative
+that comes first are in [SECURITY_AND_PRIVACY.md](../../../rules/SECURITY_AND_PRIVACY.md) section 3, and each product's
+merged manifest is checked against them at its pre-flight.
 
 ## 5. Notices to the family (about 10 minutes)
 
