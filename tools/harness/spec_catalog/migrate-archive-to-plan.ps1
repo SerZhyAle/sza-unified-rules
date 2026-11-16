@@ -7,7 +7,7 @@ param(
 . (Join-Path $PSScriptRoot '..\_profile.ps1')
 
 # One-shot migration for S1620: move the closed-spec archive from the disposable,
-# git-ignored temp/done/ into version-controlled PLAN/archive/, and repair the journal
+# git-ignored temp/done/ into the local PLAN/archive/, and repair the journal
 # records whose `file` still points at the PLAN/ path the spec occupied before archiving.
 #
 # Background: archive.ps1 used to move the artefact but keep the original `file` value,

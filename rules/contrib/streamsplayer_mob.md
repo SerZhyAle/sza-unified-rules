@@ -4,6 +4,9 @@ Source repo: P:\ANDROID\StreamsPlayer_mob | Date: 2026-10-02, refreshed 2026-11-
 Read: NEW_PROJECT_CHECKLIST, PLATFORM_OVERLAYS, REPOSITORY_LAYOUT, CONTRACTS, INVARIANTS, RELEASE_AND_DISTRIBUTION section 8, AI_USAGE (sections), harness README and spec_catalog SCHEMA; on 2026-11-13 also CHANNEL_MATRIX, SITE_CONFIGURATION, the store-publish skill's Google Play reference, the repository's own stamp, profile, `.git/config`, `.github/workflows/pages.yml` and its `docs/play/` file names, the public GitHub API and the Pages URLs, and the deviceinfo record (S0057) as the model; deduped against: contrib/fastmediasorter_mob_v2.md, contrib/streams_player.md
 ---
 
+> **Owner decision, 2026-11-16:** `PLAN/` and its archive are local and ignored. Earlier statements below
+> that the workspace is tracked or public describe the former policy.
+
 StreamsPlayer for Android: phone app, Wear OS app and watch face for internet radio, live video and RTSP, plus
 live broadcast from phone and watch. An independent product extracted from FastMediaSorter Android
 (`fastmediasorter_mob_v2.md`) under its ticket S4053 of that repository; the Android sibling of StreamsPlayer for

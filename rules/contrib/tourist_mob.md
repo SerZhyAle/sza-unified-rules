@@ -4,6 +4,9 @@ Source repo: P:\ANDROID\Tourist_mob | Date: 2026-10-02, refreshed 2026-11-13 (S0
 Read: NEW_PROJECT_CHECKLIST, PLATFORM_OVERLAYS, CONTRACTS, INVARIANTS, RELEASE_AND_DISTRIBUTION section 8, harness README and spec_catalog SCHEMA, the adopt-canon and contract-sync skills; on 2026-11-13 also the product's remote `.sza-canon.json`, its `.github/workflows/pages.yml`, the names of its `docs/play/` files, the public GitHub API and the Pages URLs, and the deviceinfo (S0057) and StreamsPlayer (S0059) records as models; deduped against: contrib/streamsplayer_mob.md, contrib/fastmediasorter_mob_v2.md
 ---
 
+> **Owner decision, 2026-11-16:** `PLAN/` and its archive are local and ignored. Earlier statements below
+> that the workspace is tracked or public describe the former policy.
+
 Tourist for Android: a hike kit - the Tourist dashboard with compass, SOS, the water flashlight, the screen and
 camera flashlights, a multi-participant stopwatch - as a phone app, a Wear OS app and a watch face. An
 independent product extracted from FastMediaSorter Android (`fastmediasorter_mob_v2.md`) under its ticket S4070;

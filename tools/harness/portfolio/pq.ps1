@@ -355,7 +355,8 @@ function Invoke-PqAgents {
     if ($Release) {
         $p = Resolve-PqProvider $Release
         if ($null -eq $p) { Write-PqError 'UnknownProvider' "no provider '$Release'"; return 2 }
-        $released = Remove-PqAgentHold -Name $p.agent
+        $released = $false
+        foreach ($agentName in @(Get-PqProviderAgents $p)) { if (Remove-PqAgentHold -Name $agentName) { $released = $true } }
         Write-PqOwnerAction 'agents'
         if (-not $Json) { if ($released) { "released $($p.id) - its limit hold is cleared" } else { "$($p.id) was not held" } }
     }

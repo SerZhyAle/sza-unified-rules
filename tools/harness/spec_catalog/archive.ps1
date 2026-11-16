@@ -59,10 +59,8 @@ $ids = @($Id | ForEach-Object { "$_" -split ',' } | ForEach-Object { $_.Trim() }
 if ($ids.Count -eq 0) { throw "No id given (-Id must carry at least one S#### id)." }
 
 $repoRoot = (Get-SzaProjectRoot)
-# S1620: the archive is the only durable record of WHY a closed decision was made, so it
-# lives under version control. It used to go to temp/done/, which is git-ignored and
-# disposable - archiving therefore deleted the reasoning from every machine but this one.
-# PLAN/ itself stays untracked; .gitignore re-includes PLAN/archive/ specifically.
+# The archive keeps the reasoning behind closed decisions in the local specification workspace.
+# Both the workspace and its archive are ignored by Git; a separate backup may preserve them.
 # The folder sits beside the archive JOURNAL, so an alternate-catalog run (FMS_SPEC_CATALOG_DIR,
 # S1534) moves fixture files into its own sandbox instead of the production PLAN/archive/.
 #

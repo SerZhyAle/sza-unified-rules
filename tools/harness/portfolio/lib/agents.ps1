@@ -450,7 +450,10 @@ function Get-PqLogLimitUntil {
 $script:PqProviders = @(
     @{ id = 'openai'; agent = 'codex'; label = 'OpenAI (Codex)'; aliases = @('openai', 'codex', 'gpt', 'chatgpt') }
     @{ id = 'anthropic'; agent = 'claude'; label = 'Anthropic (Claude)'; aliases = @('anthropic', 'claude') }
-    @{ id = 'gemini'; agent = 'gemini'; label = 'Google (Gemini)'; aliases = @('gemini', 'google') }
+    # `also` names the provider's further records, each a model with its own quota (rule 42 gives a non-Claude agent one
+    # fixed model, so a second model is a second record): they follow the first in the order, and the next one takes the
+    # ticket only while the earlier is at its limit.
+    @{ id = 'gemini'; agent = 'gemini'; also = @('gemini-argon'); label = 'Google (Gemini)'; aliases = @('gemini', 'google') }
     @{ id = 'zai'; agent = 'zai'; label = 'z.ai (GLM)'; aliases = @('zai', 'glm', 'zcode', 'zhipu') }
 )
 
@@ -458,6 +461,14 @@ function Resolve-PqProvider([string]$Name) {
     $n = ($Name.ToLowerInvariant() -replace '[^a-z0-9]', '')
     foreach ($p in $script:PqProviders) { if ($p.aliases -contains $n) { return $p } }
     return $null
+}
+
+# The agent records of a provider in the order they take a ticket: its own, then its `also` records.
+function Get-PqProviderAgents($Provider) {
+    $names = [Collections.Generic.List[string]]::new()
+    $names.Add([string]$Provider.agent)
+    if ($Provider.ContainsKey('also')) { foreach ($n in $Provider.also) { $names.Add([string]$n) } }
+    return [string[]]$names.ToArray()
 }
 
 # The JS entry of a globally installed npm CLI. npm's PATH shims are .ps1/.cmd files a process cannot start as
@@ -527,8 +538,9 @@ function Find-PqProviderCli([string]$Id) {
     return @{ found = $false; command = $null; prefix = @(); note = "no provider '$Id'" }
 }
 
-# The shipped record of a provider, built against the CLI found on this machine: @{ ok; record; why }.
-function New-PqProviderRecord([string]$Id) {
+# The shipped record of a provider, built against the CLI found on this machine: @{ ok; record; why }. -Agent names one
+# of the provider's `also` records; it is empty for the provider's own.
+function New-PqProviderRecord([string]$Id, [string]$Agent = '') {
     $cli = Find-PqProviderCli $Id
     if (-not $cli.found) { return @{ ok = $false; record = $null; why = $cli.note } }
     $common = [ordered]@{ levels = @('light', 'medium', 'hard'); identityVar = 'SZA_AGENT_ID'; halt = 'none'; limitPollMinutes = 30 }
@@ -554,12 +566,16 @@ function New-PqProviderRecord([string]$Id) {
             }
         }
         'gemini' {
+            # Hydrogen is Google's model for everyday coding and agent work (fast, cheap, the successor of 3.8 Flash) and
+            # takes every ticket; Argon, the deeper and costlier model, is the second record and works only while Hydrogen's
+            # quota is spent.
+            $isArgon = ($Agent -ceq 'gemini-argon')
             $rec = [ordered]@{
-                name = 'gemini'; command = $cli.command
+                name = $(if ($isArgon) { 'gemini-argon' } else { 'gemini' }); command = $cli.command
                 # The model slug carries the effort (agy models). Each model has its own quota.
                 argsTemplate = @($cli.prefix) + @('--model', '{model}', '--dangerously-skip-permissions', '--print', '{prompt}')
                 headlessMatch = '(?i)agy(\.exe)?"?\s.*(-p|--print|--prompt)\b'; promptForm = 'file'
-                model = 'gemini-3.8-flash-high'; effort = 'default'; maxParallel = 2; contractFile = 'GEMINI.md'
+                model = $(if ($isArgon) { 'gemini-4-argon-high' } else { 'gemini-4-hydrogen-high' }); effort = 'default'; maxParallel = 2; contractFile = 'GEMINI.md'
                 # Seen on 2026-10-29: "Individual quota reached. .. Resets in 57h10m24s." (RESOURCE_EXHAUSTED, exit 3).
                 limitDetector = [ordered]@{ kind = 'exitText'; pattern = '(?i)quota reached|resource_exhausted|usage limit|rate limit|credits? (are )?(exhausted|exceeded)'; status = 'unproven' }
             }
@@ -587,20 +603,37 @@ function Get-PqProviderStatus {
     $order = @($Registry.agentOrder | ForEach-Object { [string]$_ })
     $byName = @{}
     foreach ($a in @($Registry.agents)) { $byName[[string]$a.name] = $a }
+    # The place counts providers, not records: a provider's records are one entry of the order.
+    $providerOrder = [Collections.Generic.List[string]]::new()
+    foreach ($name in $order) {
+        foreach ($p in $script:PqProviders) {
+            if ((@(Get-PqProviderAgents $p) -ccontains $name) -and -not $providerOrder.Contains([string]$p.id)) { $providerOrder.Add([string]$p.id) }
+        }
+    }
     foreach ($p in $script:PqProviders) {
         $cli = Find-PqProviderCli $p.id
         $rec = $byName[$p.agent]
-        $hold = Get-PqAgentHold $p.agent
-        $rel = Get-PqHoldRelease $hold $rec
-        $held = ($null -ne $hold) -and (Test-PqAgentHeld $hold $rec)
+        # The provider's tokens are spent only when every one of its records is at its limit; it is back when the
+        # first of them is, so the row carries the earliest release among them.
+        $members = @(Get-PqProviderAgents $p | Where-Object { $_ -ceq $p.agent -or $byName.ContainsKey($_) })
+        $held = $true
+        $first = $null
+        foreach ($m in $members) {
+            $mRec = $byName[$m]
+            $mHold = Get-PqAgentHold $m
+            if (-not (($null -ne $mHold) -and (Test-PqAgentHeld $mHold $mRec))) { $held = $false; break }
+            $mRel = Get-PqHoldRelease $mHold $mRec
+            if ($null -eq $first -or ($null -ne $mRel -and ($null -eq $first.rel -or $mRel -lt $first.rel))) { $first = @{ rel = $mRel; hold = $mHold } }
+        }
+        $rel = $(if ($held -and $first) { $first.rel } else { $null })
         [ordered]@{
             id = $p.id; agent = $p.agent; label = $p.label
-            position = ([Array]::IndexOf($order, $p.agent) + 1)
+            position = ($providerOrder.IndexOf([string]$p.id) + 1)
             record = ($null -ne $rec)
             cliFound = [bool]$cli.found; cliNote = [string]$cli.note
             held = [bool]$held
             holdUntil = $(if ($held -and $rel) { $rel.ToString('o') } else { $null })
-            holdKind = $(if (-not $held) { $null } elseif (Get-PqValue $hold 'until') { 'resets' } else { 'probe' })
+            holdKind = $(if (-not $held) { $null } elseif (Get-PqValue $first.hold 'until') { 'resets' } else { 'probe' })
         }
     }
 }
@@ -629,12 +662,16 @@ function Set-PqAgentOrder {
     }
     $have = @($records | ForEach-Object { [string](Get-PqValue $_ 'name') })
     foreach ($p in $picked) {
-        if ($have -contains $p.agent) { continue }
-        $new = New-PqProviderRecord $p.id
-        if (-not $new.ok) { return @{ ok = $false; changed = $false; error = 'ProviderUnavailable'; message = "$($p.label): $($new.why)" } }
-        $records.Add($new.record)
+        foreach ($agentName in @(Get-PqProviderAgents $p)) {
+            if ($have -contains $agentName) { continue }
+            $new = New-PqProviderRecord $p.id $(if ($agentName -cne $p.agent) { $agentName } else { '' })
+            if (-not $new.ok) { return @{ ok = $false; changed = $false; error = 'ProviderUnavailable'; message = "$($p.label): $($new.why)" } }
+            $records.Add($new.record)
+            $have += $agentName
+        }
     }
-    $names = [string[]]@($picked | ForEach-Object { $_.agent })
+    # A provider's records stay together, its own first: the order is chosen per provider, not per record.
+    $names = [string[]]@($picked | ForEach-Object { Get-PqProviderAgents $_ })
     $before = if (Test-PqHasKey $doc 'agentOrder') { (@($doc.agentOrder) -join ',') } else { '' }
     $doc | Add-Member -NotePropertyName agents -NotePropertyValue @($records) -Force
     $doc | Add-Member -NotePropertyName agentOrder -NotePropertyValue $names -Force

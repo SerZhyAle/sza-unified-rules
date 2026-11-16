@@ -33,12 +33,12 @@ declaration.
 | The Developer Program Policies and US export laws declarations | Legal declarations |
 | The IARC terms of use in the content rating questionnaire | Accepted terms |
 | The Wear OS review policy opt-in | A policy agreement |
-| A public GitHub repository and a Pages deploy | Outward-facing: the order must name them ("create the repository on GitHub on my behalf"). What becomes public is everything tracked - a tracked `PLAN/` and the prose of `docs/` included |
+| A public GitHub repository and a Pages deploy | Outward-facing: the order must name them ("create the repository on GitHub on my behalf"). Everything tracked, including the prose of `docs/`, becomes public |
 
 ## Order, and why
 
 1. **Decide in the repository first** (a ticket on the day, the S0008 shape in `deviceinfo_mob`): application id,
-   license, remote name, channel, site pages, whether `PLAN/` is public. The id is the one that cannot be revised after
+   license, remote name, channel and site pages. The id is the one that cannot be revised after
    step 4. The console may bind the decided id before the build carries it (section 0).
 2. GitHub repository. 3. Pages site. 4. Play Console app. 5. Notices to the family. 6. Records.
 
@@ -48,11 +48,9 @@ family notices come last because a notice names URLs that must already answer.
 
 ## 0. Preconditions in the repository
 
-- Owner decisions recorded: application id, license, remote name, channel, site pages - and **whether `PLAN/` stays
-  public or is ignored**. The canon default is ignored ([REPOSITORY_LAYOUT.md](../../../rules/REPOSITORY_LAYOUT.md) role
-  map); a repository that tracked it while it had no remote (`streamsplayer_mob` had 192 files under `PLAN/` on
-  2026-11-13) publishes every ticket with the first push. Ask the owner in the same batch as the other open inputs; the
-  answer is not assumed from the tree.
+- Owner decisions recorded: application id, license, remote name, channel and site pages. The specification workspace
+  and its archives stay ignored and untracked, including in repositories that previously published them
+  ([REPOSITORY_LAYOUT.md](../../../rules/REPOSITORY_LAYOUT.md) role map).
 - **The console may bind the decided id before the build carries it.** On the filler_mob run the build still carried a
   provisional id (`com.sza.filler.provisional`) under a release guard that refuses release packaging while the id ends
   in `.provisional`, and the console app was created with the decided id, which binds it. The build switch stays with the
@@ -115,8 +113,8 @@ family notices come last because a notice names URLs that must already answer.
      first commit and after it (drop `--no-index --exclude-standard` once tracked); then grep for the owner's own
      phone, street and machine paths, which only the owner can name. The commit author address is the owner's own git
      setting, the same in every public repository, and is not a finding.
-   - **`PLAN/`.** If it is tracked, the owner's answer from step 0 decides: ignore it (`git rm -r --cached PLAN`, add it
-     to `.gitignore`) or push it after the scan above.
+   - **Specification workspace.** Ignore the configured workspace and archive, then untrack any tracked files with
+     `git rm -r --cached` for those paths. Keep the working files and verify the index and ignore rules.
    - **Images.** Look at every image in the push set, montaged to save turns: a capture can show what no text scan finds.
      On the Tourist_mob run an emulator's notification shade showed the emulator's signed-in Google account name, and a
      location capture was safe only because its ticket recorded a fixed `geo fix`. Record a disposition for each image.

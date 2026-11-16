@@ -37,7 +37,7 @@
                                  is written with -NoForwarder or -NoLaunchers
 
     It does not create tickets, install the agent, write a pipeline command or touch .gitignore: the
-    temp directory holds run journals and leases and should be ignored, which is printed as a hint.
+    specs, archive and temp directories are local working material, which is printed as a hint.
 
 .PARAMETER Root
     The project root. Must exist. Defaults to the current directory.
@@ -312,9 +312,11 @@ $lines | ForEach-Object { Write-Host $_ }
 if ($promptNote) { Write-Host $promptNote -ForegroundColor Yellow }
 $runnerRel = [IO.Path]::GetRelativePath($Root, $runnerFull).Replace('\', '/')
 $tempRel = Get-SzaPath 'tempDir' -Relative
+$specsRel = Get-SzaPath 'specsDir' -Relative
+$archiveRel = Get-SzaPath 'specArchiveDir' -Relative
 Write-Host ''
 Write-Host 'Next:'
-Write-Host "  1. add '$tempRel/' to .gitignore - it holds run journals and leases, which are not source."
+Write-Host "  1. ignore '$specsRel/', '$archiveRel/' and '$tempRel/' in .gitignore; untrack any already tracked specification files without deleting them."
 Write-Host ('  2. create tickets, one at a time: ' + (Get-Hint 'spec_catalog/capture-draft' '-Slug <kebab-slug> -Text "<the owner''s words>"'))
 Write-Host ('  3. check the ledger:              ' + (Get-Hint 'spec_catalog/validate'))
 Write-Host "  4. read the order R0 would use:    pwsh -NoProfile -File ./$runnerRel -DryRun"

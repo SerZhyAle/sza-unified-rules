@@ -75,7 +75,9 @@ forward through `tools/harness.ps1`, so they never go stale when the plugin upda
 wins over the fixed one. `-NoLaunchers` skips all six, and so does `-NoForwarder`, since they have nothing to
 forward through.
 
-Then add the temp directory to `.gitignore`: it holds run journals and leases, which are not source.
+Then add the configured specs directory, its archive and the temp directory to `.gitignore`. Specs, ticket
+journals, run journals and leases are local working material. If the specs or archive were already tracked,
+remove them from the Git index without removing the working files; check both the ignore rules and the index.
 
 ## Step 3 - Seed the backlog, one ticket at a time
 

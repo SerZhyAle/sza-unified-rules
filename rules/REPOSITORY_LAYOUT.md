@@ -47,6 +47,22 @@ repository's choice and not a layout role.
 Nothing checks the **In git** column yet; `git check-ignore -v <path>` is the proof, and it is the first
 thing to run on a repository whose layout is in doubt.
 
+**The specification workspace is local in every project.** Ignore the whole configured `paths.specsDir`,
+its archive (`paths.specArchiveDir`, even when it is elsewhere), and any separate ticket journals, including
+their contents and subfolders. This applies to existing workspaces as well as new ones; a local directory
+named `PLAN/`, `tasks/`, `DEV/plan/` or `docs/specifications/` has the same role. Remove already tracked
+workspace files from the Git index with `git rm --cached`, keeping their working copies; an ignore pattern
+alone does not untrack them. Check both `git check-ignore --no-index` and `git ls-files` for the configured
+paths. The existing Git history is not rewritten by this change. Keep any desired backup outside Git.
+
+**Finished specifications move with their status.** On entry into `Implemented`, `Verified` or
+`BlockNeedUserTest`, the status tool moves the spec file and its matching ticket folder into the configured
+archive (`DONE/` or `archive/`), and records the new path; configure that archive separately from the active
+specification directory. Reopening moves the files back. The status and its
+meaning do not change merely because a file moves. Existing ready tickets can be reconciled with
+`spec_catalog/reconcile-spec-homes.ps1` (dry run first, then `-Apply`); it reports missing files, collisions
+and leases without overwriting them. The detailed lifecycle is `TASK-FLOW` rules 17 and 70.
+
 **Root stays minimal.** Only what a *user* or a *first-time contributor* expects at eye level lives at
 root: the README(s), LICENSE, the agent rules, the launcher and the toolchain's own build files, the
 site's pages when the repo hosts one, and the dot-files. Everything explanatory goes under `docs/`,

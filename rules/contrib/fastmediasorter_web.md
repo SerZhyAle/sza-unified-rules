@@ -4,6 +4,9 @@ Source repo: P:\WEB\FastMediaSorter_WEB | Date: 2026-10-16
 Read: NEW_PROJECT_CHECKLIST, PLATFORM_OVERLAYS, INVARIANTS, REPOSITORY_LAYOUT, the adopt-canon, contract-sync and task-flow-init skills, the catalog's RULES, VERSIONING and REGISTRY, rule-adoption sections 2-5; deduped against: contrib/tourist_mob.md, contrib/streamsplayer_mob.md
 ---
 
+> **Owner decision, 2026-11-16:** `PLAN/` and its archive are local and ignored. Earlier statements below
+> that the workspace is tracked describe the former policy.
+
 FMS_Web gives people on systems the native programs do not serve - macOS, Linux, ChromeOS, iOS and iPadOS, and anyone
 who cannot install a program - a subset of the functions of FMS_A and FMS_Win inside the popular browsers (owner,
 2026-10-16). One slice is the client of the device-exchange server that FMS_Win hosts (account, devices, resources,

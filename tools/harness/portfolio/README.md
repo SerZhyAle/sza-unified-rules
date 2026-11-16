@@ -422,7 +422,7 @@ You choose who spends tokens, and in what order. Four providers are known:
 | --- | --- | --- |
 | `openai` | `codex` | the Codex CLI (`npm install -g @openai/codex`) |
 | `anthropic` | `claude` | Claude Code on PATH |
-| `gemini` | `gemini` | Antigravity CLI `agy` (`irm https://antigravity.google/cli/install.ps1 \| iex`), signed in with Google; it reuses the Antigravity sign-in. The Gemini CLI no longer serves personal Google sign-ins (closed 2026-06-18) |
+| `gemini` | `gemini`, `gemini-argon` | Antigravity CLI `agy` (`irm https://antigravity.google/cli/install.ps1 \| iex`), signed in with Google; it reuses the Antigravity sign-in. The Gemini CLI no longer serves personal Google sign-ins (closed 2026-06-18) |
 | `zai` | `zai` | Claude Code and the user environment variable `ZAI_API_KEY` (a key from z.ai/manage-apikey); the pass is Claude Code pointed at z.ai's Anthropic-compatible endpoint |
 
 ```powershell
@@ -454,9 +454,14 @@ first and then from your user and machine environment, so a key set with `setx` 
 z.ai is reached through Claude Code with `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN` (`%ZAI_API_KEY%`) and
 `API_TIMEOUT_MS` set **for that pass only**, as z.ai's own Claude Code guide describes. Do not put those in
 `~/.claude/settings.json` or your user environment: `anthropic` would then spend z.ai's plan too. The model is left to
-z.ai's mapping of `opus`. Gemini runs as `agy --model gemini-3.8-flash-high --dangerously-skip-permissions --print`; the
-slug carries the effort, `agy models` lists the others, and each model has its own quota - change `model` in the record to
-switch. ZCode's own CLI is not used: it needs the desktop app's runtime files.
+z.ai's mapping of `opus`. Gemini runs as `agy --model <slug> --dangerously-skip-permissions --print`, and a non-Claude
+agent has one fixed model (rule 42), so the provider is two records that follow each other in the order: `gemini` runs
+`gemini-4-hydrogen-high` - Google's model for everyday coding and agent work, fast and cheap - and takes every ticket;
+`gemini-argon` runs `gemini-4-argon-high`, the deeper and costlier one, and takes a ticket only while Hydrogen's quota is
+spent. Each model has its own quota, so each record has its own limit hold. The slug carries the effort, `agy models`
+lists the others, and `model` in a record switches it. For `pq agents` and the Providers dialog the two are one provider:
+`-Order` keeps them together, `-Release gemini` clears both holds, and the row shows the provider held only when both
+are. ZCode's own CLI is not used: it needs the desktop app's runtime files.
 
 The z.ai pattern follows z.ai's error code list (1308, 1310, 1316-1321 `Usage limit reached` / `Limit Exhausted`, 1113
 `Insufficient balance`, 1302 `Rate limit reached`); its observed limit message and reset time are recognized with the
