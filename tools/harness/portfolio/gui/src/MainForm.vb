@@ -108,7 +108,7 @@ Partial Class MainForm
         For Each c In InboxColumns
             AddTextColumn(dgvRepos, c.Column, c.Header, 50)
         Next
-        AddTextColumn(dgvRepos, "colPerm", "Permission", 115)
+        AddButtonColumn(dgvRepos, "colQuiz", "Questions", "Quiz", 65)
         AddButtonColumn(dgvRepos, "colNewSpec", "Spec", "+ Spec...", 65)
         AddButtonColumn(dgvRepos, "colQueue", "Tickets", "Open Queue", 85)
         AddButtonColumn(dgvRepos, "colFolder", "Folder", "Open VSCode", 95)
@@ -407,7 +407,6 @@ Partial Class MainForm
                 row.Cells("colKey").Value = r.Key
                 row.Cells("colStatus").Value = statusText
                 row.Cells("colQueued").Value = If(r.RunnableRows > 0, CStr(r.RunnableRows), "")
-                row.Cells("colPerm").Value = r.PermissionMode
                 row.Tag = r
                 row.Cells("colKey").ToolTipText = r.Path
                 row.Cells("colQueued").ToolTipText = $"{r.RunnableRows} the runner would take, of {r.QueuedRows} rows in the queue file (blocked, idle-held, held and unknown rows are not taken)" &
@@ -415,6 +414,7 @@ Partial Class MainForm
                 FillInboxCells(row, r.Key, p)
                 row.Cells("colOrder").ToolTipText = $"rank {r.Rank}"
                 row.Cells("colStartRepo").ToolTipText = $"Starts a worker that takes tickets of '{r.Key}' only, in their order ('pq start -Repo {r.Key}'). Holds, STOP and the other safeguards apply as for any start."
+                row.Cells("colQuiz").ToolTipText = $"Answer questions for '{r.Key}' in an interactive session"
                 row.Cells("colSession").ToolTipText = $"Opens a terminal in {r.Path} running claude - an interactive session with the project's own commands and hooks, no VS Code window"
 
                 Dim statusCell = row.Cells("colStatus")
@@ -427,8 +427,8 @@ Partial Class MainForm
                     statusCell.Style.ForeColor = p.StatusSuccess
                 End If
                 If r.Enabled AndAlso String.IsNullOrWhiteSpace(r.PermissionMode) Then
-                    row.Cells("colPerm").Value = "(none - start refuses)"
-                    row.Cells("colPerm").Style.ForeColor = p.StatusDanger
+                    statusCell.Style.ForeColor = p.StatusDanger
+                    statusCell.ToolTipText = "No permission mode is configured; worker start refuses. Set permissionMode in the registry."
                 End If
 
                 If r.Key.Equals(selKey, StringComparison.Ordinal) Then selIdx = idx
@@ -615,12 +615,17 @@ Partial Class MainForm
     ' One sitting over the questions of every project (S0026): an interactive session in the canon checkout, where
     ' the quiz finds every registered project's waiting tickets. It only opens a terminal - no ticket is touched here.
     Private Sub BtnAnswer_Click(sender As Object, e As EventArgs)
+        OpenQuiz("--all", "portfolio")
+    End Sub
+
+    Private Sub OpenQuiz(target As String, description As String)
         Dim root = PqCli.CanonRoot
-        LogConsole($"Opening the portfolio quiz: a terminal running claude ""/sza:sq --all"" in {root}")
-        Dim err = PqCli.OpenClaudeSession(root, "/sza:sq --all")
+        Dim prompt = $"/sza:sq {target}"
+        LogConsole($"Opening the {description} quiz: a terminal running claude ""{prompt}"" in {root}")
+        Dim err = PqCli.OpenClaudeSession(root, prompt)
         If err IsNot Nothing Then
-            LogConsole($"Cannot open the portfolio quiz in {root}: {err}")
-            MessageBox.Show(Me, $"Cannot open the portfolio quiz in {root}:{Environment.NewLine}{err}", "Answer questions", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+            LogConsole($"Cannot open the {description} quiz in {root}: {err}")
+            MessageBox.Show(Me, $"Cannot open the {description} quiz in {root}:{Environment.NewLine}{err}", "Answer questions", MessageBoxButtons.OK, MessageBoxIcon.Warning)
         End If
     End Sub
 
@@ -879,6 +884,8 @@ Partial Class MainForm
         Select Case column
             Case "colAsk", "colTest", "colOutside", "colChain", "colUnbuilt"
                 ListInbox(r, column)
+            Case "colQuiz"
+                OpenQuiz(r.Key, $"project '{r.Key}'")
             Case "colNewSpec"
                 ShowNewSpec(r.Key)
             Case "colQueue"

@@ -178,6 +178,7 @@ runs every change through `pq.ps1`, so it never writes a file of its own.
 | Pause / Resume / Report / Problems | `pq pause`, `pq resume`, `pq report -Days 1`, `pq problems`, the output in the console; they run at once as Stop does |
 | the project list (**Projects** tab) | in project order; **▲ / ▼** move the selected project (`pq rank -Order ..`), **Arrange** runs `pq arrange` |
 | Ask / Test / Outside / Chain / Unbuilt | per project, what waits for you, from `pq inbox -Json` (read on start, by Refresh and every minute): your answers (`BlockQuestions`), your manual test (`BlockNeedUserTest`), someone outside (`BlockExternal`), another ticket (`BlockByOtherTask`, counted in the project the waiting ticket belongs to, whatever project its blocker is in), the audit (`Implemented`); a click lists the tickets in the console with what clears them; `?` means the count is unknown and the tooltip says why |
+| Quiz / Answer questions | **Quiz** on a project row opens `/sza:sq <project>` for that project; **Answer questions** opens `/sza:sq --all` for the portfolio. Answering the questions returns eligible tickets to the runner, subject to project holds |
 | Session | a terminal in the project folder running `claude` - an interactive session with the project's own commands and hooks, no VS Code window |
 | **Queue** tab | the ticket rows of `PORTFOLIO_QUEUE.md` in the order the runner reads them, held rows last |
 | Ticket / Project box | `pq pin`, `pq hold`, `pq release` on what it holds; a click on a project or a double-click on a worker, a pass or a Queue row fills it |
@@ -198,7 +199,7 @@ tree's own path.
 
 A ticket that needs the owner's call leaves the queue as `BlockQuestions`, and `pq` never takes it back by itself.
 The `spec-quiz` skill (`/spec-quiz` or `/sq`, with `quiz-list.ps1` in this folder) is the exit: it lists the waiting
-tickets of the current project, of a named one (`<key>:<id>`) or of all (`--all`), asks only the decisions the code and
+tickets of the current project, of a named project (`<key>`), of a named ticket (`<key>:<id>`) or of all (`--all`), asks only the decisions the code and
 the records do not settle, writes the answers into each ticket and restores it one level - after which `pq` offers it
 again, unless its project is on hold. `quiz-list.ps1 -Id S0021` is the lookup for an id that exists in several
 projects: it prints the id's status in the current project and every project where it waits. The script reads only.
