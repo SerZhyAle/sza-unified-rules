@@ -15,6 +15,8 @@
     "releaseQueue": "PLAN/RELEASE_QUEUE.md",
     "releaseReady": "PLAN/RELEASE_READY.md",
     "releaseQueueDone": "PLAN/RELEASE_QUEUE_DONE.md",
+    "$comment_releasesDir": "The release ledger (RELEASE-LEDGER): channels.json, builds.json, history.jsonl and the rendered RELEASES.md. Written only by releases/release-ledger.ps1.",
+    "releasesDir": "docs/releases",
     "tempDir": "temp",
     "locksDir": "temp",
     "leasesDir": "temp/SPEC-TICKET.LEASES",

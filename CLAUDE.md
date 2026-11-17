@@ -47,7 +47,7 @@ pwsh -File deploy.ps1 -DryRun                             # the gates + what wou
 - **An ordinary edit gets checks of 5 seconds or less only** ([TESTING_AND_QA.md](rules/TESTING_AND_QA.md) §2). Do
   not run any test, suite or gate above 5 s after a normal modification - the owner switched them off on 2026-10-28
   and set the 5 s line for the whole portfolio on 2026-10-29. Measured on 2026-10-29 (a timed call of each): fast -
-  `check-rules.ps1` 0.8 s, `check-contracts.ps1` 2.4 s, `check-documents.py` 0.6 s, `assert-portable.ps1` 1.1 s, and from 2026-11-15 `pq-holds-health.tests.ps1` 4.0 s, `instance-settings.tests.ps1` 3.5 s and `portfolio-profile-override.tests.ps1` 0.6 s, and from 2026-11-15 `inbox-packet.tests.ps1` (the ticket-packet vector replay, 50 cases) 2.3 s and `app-commands-list.tests.ps1` 1.8 s, and from 2026-11-15 `taskflow-ledger-conformance.tests.ps1` (rules 7, 9, 65, 66 and 68, 12 cases) 4.0 s, and from 2026-11-15 `inbox-incomplete-packets.tests.ps1` (S0085, the removal of manifest-less packet folders and the retry of a packet whose check hits an I/O error, 11 cases) 1.4 s, and `app-commands-awareness.tests.ps1` (SZA-CTR04, 7 cases) 3.47 s;
+  `check-rules.ps1` 0.8 s, `check-contracts.ps1` 2.4 s, `check-documents.py` 0.6 s, `assert-portable.ps1` 1.1 s, and from 2026-11-15 `pq-holds-health.tests.ps1` 4.0 s, `instance-settings.tests.ps1` 3.5 s and `portfolio-profile-override.tests.ps1` 0.6 s, and from 2026-11-15 `inbox-packet.tests.ps1` (the ticket-packet vector replay, 50 cases) 2.3 s and `app-commands-list.tests.ps1` 1.8 s, and from 2026-11-15 `taskflow-ledger-conformance.tests.ps1` (rules 7, 9, 65, 66 and 68, 12 cases) 4.0 s, and from 2026-11-15 `inbox-incomplete-packets.tests.ps1` (S0085, the removal of manifest-less packet folders and the retry of a packet whose check hits an I/O error, 11 cases) 1.4 s, and `app-commands-awareness.tests.ps1` (SZA-CTR04, 7 cases) 3.47 s, and from 2026-11-17 `release-ledger.tests.ps1` (S0092, 10 cases) 2.7 s;
   release tier - `layout-gate.tests.ps1` 26.5 s, `portfolio-events.tests.ps1` 20.4 s, `ticket-id-grammar.tests.ps1`
   about 18 s, and from 2026-10-28 `ledger-rules.tests.ps1` 313 s, `portfolio-queue.tests.ps1` about 200-330 s,
   `smoke-portfolio-runner.ps1` 120-300 s, `batch-runner.tests.ps1` 163 s, and from 2026-11-13 `block-links.tests.ps1` 19 s. What stays is the fast list and a direct call of
@@ -66,11 +66,12 @@ pwsh -File deploy.ps1 -DryRun                             # the gates + what wou
   clones a repo has no `P:` drive; `check-compliance.ps1` enforces that in every repo whose stamp role is
   not `canon-home`. The catalog's own law is its `_meta/RULES.md`; the canon side is the rule doc above,
   and the per-repo alignment run is the skill.
-- **This repo owns four contracts.** `REPO-STAMP`, `HARNESS-PROFILE`,
+- **This repo owns five contracts.** `REPO-STAMP`, `HARNESS-PROFILE`,
   `REPO-LAYOUT` and `RULE-DELIVERY`, in the catalog's `rule-adoption/` domain, bind the machine-readable
   interface between the canon and a repository - the stamp, the harness profile, the names tools address,
-  the version pair that decides whether a rule change arrives. The rules' own text is **not** a contract
-  and never becomes one. Pointers are in [docs/contracts/](docs/contracts/), beside the pointers for six
+  the version pair that decides whether a rule change arrives. `RELEASE-LEDGER` (domain `release-ledger/`, from
+  2026-11-17) binds the release ledger every application keeps and `tools/harness/releases/` writes. The rules' own
+  text is **not** a contract and never becomes one. Pointers are in [docs/contracts/](docs/contracts/), beside the pointers for six
   contracts outside that domain - `TASK-FLOW` (owner `shared`, implemented by the harness), `CHECK-VERDICT`,
   `DOC-INTERNAL-QUALITY`, `DOC-EXTERNAL-QUALITY`, and the two the harness reads - `APP-COMMANDS` (the command
   manifests it lists) and `DEVICE-EXCHANGE` (the phone-ticket packet it files) - whose roles are in that folder's README. Changing `.sza-canon.json`,
@@ -130,8 +131,9 @@ pwsh -File deploy.ps1 -DryRun                             # the gates + what wou
   keeps the canon default.
 - **[tools/harness/](tools/harness/README.md) is the shipped process layer**, one folder per mechanism:
   `spec_catalog/` (the ticket ledger and its closing gates), `locks/` (ticket leases, domain locks), `batch/`
-  (the repository runner: one fresh agent process per ticket), `scaffold/` (day 0), `portfolio/`, and the
-  smaller `document_registry/`, `all_features/`, `chat/`, `devlog/`, `aliases/`. A script body never carries a
+  (the repository runner: one fresh agent process per ticket), `scaffold/` (day 0), `portfolio/`, `releases/`
+  (the release ledger's writer and read-only channel probes), and the smaller `document_registry/`,
+  `all_features/`, `chat/`, `devlog/`, `aliases/`. A script body never carries a
   project's path, prefix or vocabulary - that is what `assert-portable.ps1` refuses. Each script finds the
   project root itself: `SZA_PROJECT_ROOT`, the first profile above the working directory, the first above the
   harness, then the first `.git`.

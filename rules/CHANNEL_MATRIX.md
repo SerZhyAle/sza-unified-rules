@@ -181,6 +181,23 @@ overlay / accessibility / capture permissions): self-hosted APK off the site or 
 validator (Meta: `ovr-platform-util upload-quest-build --validate`) before every upload - it caught four
 manifest defects an in-house gate missed - and note that the first upload freezes the package name.
 
+## How each channel is confirmed (the release ledger)
+
+Every row above is recorded in the repository's release ledger ([RELEASE_AND_DISTRIBUTION.md](RELEASE_AND_DISTRIBUTION.md)
+§10) under a channel key, and each key names the probe kind that confirms it. A probe only reads; what it cannot
+see is confirmed by hand with the public URL as evidence.
+
+| Channel | Probe kind | What the probe reads | What it can see |
+| --- | --- | --- | --- |
+| GitHub Release | `github` | `gh release list` of the repository, tags `v<digit>..` | live; a draft as pending |
+| winget | `winget` | `microsoft/winget-pkgs` manifests folder and its open pull requests, through `gh` | live (merged); submitted (PR open) |
+| Microsoft Store | `msstore` | `msstore submission get <public product id>`, the same read-only call as the Store preflight | live; submitted (in certification); rejected (a failed status) |
+| Google Play | `play` | Play Developer API, one track, through a service account key named by `SZA_PLAY_SERVICE_ACCOUNT_JSON` (a transient edit is opened and deleted, nothing is committed) | live with the rollout fraction; withdrawn (halted); pending (draft) |
+| Chrome Web Store | `chrome` | the public update service for the item id | live only - a revision in review is recorded by the release flow |
+| Edge Add-ons | `edge` | the public product details for the crx id | live only - same |
+| VS Code Marketplace | `vscode` | the public gallery query for `<publisher>.<name>` | live, with every earlier version for `import` |
+| Sideload, VR store, a forum post, a catalogue | `url` or `manual` | a public page, matched by a version pattern or by a version the ledger already knows | live when the page as delivered shows it; otherwise `confirm` by hand |
+
 ## Cross-channel invariants (hold for every row)
 
 - **Listing text is a render target, never re-authored per channel.** The long form lives in
@@ -193,7 +210,7 @@ manifest defects an in-house gate missed - and note that the first upload freeze
   fact, and [SECURITY_AND_PRIVACY.md](SECURITY_AND_PRIVACY.md) §2).
 - **Post-release proof is the update path, not just a fresh install.** A frozen-anchor mistake only shows up
   when a real prior install tries to update (see [RELEASE_AND_DISTRIBUTION.md](RELEASE_AND_DISTRIBUTION.md)
-  §6). Record: version, date, channels shipped, coverage-gate result.
+  §6). Record each channel's step in the release ledger as it happens, and the coverage-gate result with it.
 - **A multi-edition release fans out per channel and edition; none blocks the others.** Each row is its own
   one-way op with its own trigger tag and cadence (see PLATFORM_OVERLAYS "Editions").
 
@@ -204,3 +221,4 @@ manifest defects an in-house gate missed - and note that the first upload freeze
    the skill renders the concrete commands *from* this matrix.
 3. Reserve each row's frozen anchor (once).
 4. Add the update-from-prior-install check to the post-release step for every store row.
+5. Declare each kept row in the release ledger's `channels.json` with its probe kind and public identity.

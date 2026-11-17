@@ -72,6 +72,9 @@
     pq inbox [-Json]                               what waits for the owner across all projects, read-only: one line
                                                    per kind (count, oldest age, the command that clears it), then the
                                                    tickets with id, age and note; BlockByOtherTask as chain roots
+    pq releases [-Repo <key>] [-Json]              the release ledger of every registered project, read-only: the last
+                                                   build, the live and in-flight version per channel, release builds no
+                                                   channel carries yet (RELEASE-LEDGER; written by releases/release-ledger.ps1)
     pq tail [<repo:id>] [-Worker <n>] [-Last <n>]   follow what the agent of a running pass is doing, read from the
                                                    transcript it writes (Claude passes; another agent writes none
                                                    until the pass ends); Ctrl+C leaves, it ends by itself with the pass
@@ -160,6 +163,7 @@ $lib = Join-Path $PSScriptRoot 'lib'
 . (Join-Path $lib 'waiting.ps1')
 . (Join-Path $lib 'console.ps1')
 . (Join-Path $lib 'analysis.ps1')
+. (Join-Path $lib 'releases.ps1')
 
 function Write-PqError([string]$Name, [string]$Message) {
     [Console]::Error.WriteLine("pq: $Name - $Message")
@@ -1288,6 +1292,28 @@ function Invoke-PqExport {
     return 0
 }
 
+function Invoke-PqReleases {
+    $read = Get-PqRegistryOrFail
+    if ($null -eq $read) { return 2 }
+    $r = Get-PqReleases $read.registry
+    if ($Repo) { $r.repos = [object[]]@($r.repos | Where-Object { $_.key -ceq $Repo }) }
+    if ($Json) { ConvertTo-Json -InputObject $r -Depth 12; return 0 }
+    $withLedger = 0
+    foreach ($x in $r.repos) {
+        if ($x.error) { '{0,-16} error: {1}' -f $x.key, $x.error; continue }
+        if (-not $x.hasLedger) { '{0,-16} no ledger ({1})' -f $x.key, $x.dir; continue }
+        $withLedger++
+        $b = $x.lastBuild
+        $bt = if ($null -ne $b) { "last build $(Get-RlProp $b 'package')/$(Get-RlProp $b 'flavor') $(Get-RlProp $b 'kind') $(Get-RlProp $b 'version') ($(Format-RlDay ([string](Get-RlProp $b 'builtAt'))))" } else { 'no build recorded' }
+        '{0,-16} {1}' -f $x.key, $bt
+        foreach ($c in @($x.channels)) { '  {0,-14} {1,-8} {2}' -f $c.key, $c.package, (Format-PqReleaseChannel $c) }
+        foreach ($u in @($x.unpublished)) { '  built, not published: {0}/{1} {2} ({3})' -f $u.package, $u.flavor, $u.version, (Format-RlDay $u.builtAt) }
+        foreach ($w in @($x.warnings)) { '  warning: {0}' -f $w }
+    }
+    "pq releases: $withLedger of $(@($r.repos).Count) project(s) keep a release ledger"
+    return 0
+}
+
 function Invoke-PqCompare {
     $d = if ($Days -gt 0) { $Days } else { 30 }
     $by = if ($By) { $By } else { 'canon' }
@@ -1312,7 +1338,7 @@ $verbs = [ordered]@{
     rank = { Invoke-PqRank }; arrange = { Invoke-PqArrange }; agents = { Invoke-PqAgents }
     queue = { Invoke-PqQueue }; sync = { Invoke-PqSync }; tickets = { Invoke-PqTickets }; register = { Invoke-PqRegister }; list = { Invoke-PqList }; 'dry-run' = { Invoke-PqDryRun }
     report = { Invoke-PqReport }; trace = { Invoke-PqTrace }; problems = { Invoke-PqProblems }; export = { Invoke-PqExport }; compare = { Invoke-PqCompare }; analyze = $null; improve = $null
-    doctor = { Invoke-PqDoctor }
+    doctor = { Invoke-PqDoctor }; releases = { Invoke-PqReleases }
 }
 
 if ($Help -or -not $Verb) {

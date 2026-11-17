@@ -1,0 +1,24 @@
+[
+  {
+    "timestamp": "2026-11-17T19:01:03.6949055+01:00",
+    "command": "",
+    "target": "",
+    "operation": "",
+    "fullCommand": "C:\\GD\\tc\\SZA\\_APP\\filedo.exe version",
+    "parameters": {},
+    "results": {},
+    "duration": "0s",
+    "success": false
+  },
+  {
+    "timestamp": "2026-11-17T19:01:03.7117086+01:00",
+    "command": "",
+    "target": "",
+    "operation": "",
+    "fullCommand": "C:\\GD\\tc\\SZA\\_APP\\filedo.exe help",
+    "parameters": {},
+    "results": {},
+    "duration": "0s",
+    "success": false
+  }
+]

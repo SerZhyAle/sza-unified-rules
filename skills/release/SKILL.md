@@ -198,7 +198,9 @@ one line and the gate is `n/a`.
 - Validate with **both** a shape regex and a real-date parse before anything irreversible - that is what stops
   a mistyped `v26.1345.9999`.
 - Monotonic against every published version - every channel's list, including an off-tag stamp that shipped on
-  one channel only. Never reuse a timestamp. Derive date stamps in UTC, or name the local clock the repo uses
+  one channel only. Read that list from the release ledger after a fresh `probe`
+  ([RELEASE_AND_DISTRIBUTION.md](../../rules/RELEASE_AND_DISTRIBUTION.md) §10: `release-ledger probe`, then
+  `release-ledger show`), and ask a channel by hand only where the probe says `unverified`. Never reuse a timestamp. Derive date stamps in UTC, or name the local clock the repo uses
   and keep it; the clock is part of the frozen shape.
 - **Pin the build to the tag** where the stamp is otherwise computed at build time from the clock
   (`-p:Version=<tag>`, `-p:ReleaseVersion=<tag>`, `-ldflags -X main.version=<tag>`), so binary, asset name and
@@ -303,18 +305,24 @@ A release is not done until it is proven live.
   irreversible.
 - Channel liveness with the right latency: `winget show <Id>` only after the PR merges (hours to a day); the
   Store sits in certification for days; Edge review is slower than Chrome.
-- **Write each channel's state to the repo's durable state file** (default `RELEASE_STATE.md`) with the
-  vocabulary `pending`, `submitted`, `live`, `blocked`, `n/a` - `submitted` is not `live`. Note every credential
-  with a fixed lifetime and its rotation date (the Edge Add-ons API key lasts about 72 days; an expired key
-  shows as HTTP 401 at the one-way step, so check it in Phase 2).
+- **Record each channel's step in the release ledger as it happens**
+  ([RELEASE_AND_DISTRIBUTION.md](../../rules/RELEASE_AND_DISTRIBUTION.md) §10), through the harness script
+  `releases/release-ledger` (the repository's `tools/harness.ps1 releases/release-ledger ..` or the plugin's
+  `tools/harness/releases/release-ledger.ps1`): `publish -Key <channel> -Version <v> -State <state> -Ref <tag, PR,
+  submission> -Url <public page>`, with `pending`, `submitted`, `live`, `blocked`, `rejected`, `withdrawn`, `n/a` -
+  `submitted` is not `live`. Then run `probe` and report what it still says `submitted` or `unverified`. A repository
+  that still keeps a hand-run `RELEASE_STATE.md` records in the ledger as well, and its adoption ticket retires the old
+  file. Note every credential with a fixed lifetime and its rotation date in the release doc (the Edge Add-ons API key
+  lasts about 72 days; an expired key shows as HTTP 401 at the one-way step, so check it in Phase 2).
 - Reset state: `## [Unreleased]` empty again.
 - **Ship the release package, and ship it before any archive or cleanup sweep.** One operator command moves
   the ready block into the history file (newest first, stamped with the version that shipped) and advances
   the package marker. A sweep that flips finished tickets to an archived state runs **after** this, never
   before - run it first and it drops those lines, and the record of what shipped goes with them. Then report
   the unfinished lines; never auto-move them and never re-order the file.
-- Record the release - version, date, channels shipped, coverage-gate result - and report to the owner with
-  links and an honest list of what is still in review or still manual.
+- Record the release - the ledger's events carry the version, the date and the channels shipped; put the
+  coverage-gate result into the note of the first one - and report to the owner with links and an honest list of
+  what is still in review or still manual (`release-ledger show` prints it).
 
 ---
 
@@ -338,6 +346,7 @@ A release is not done until it is proven live.
 - [ ] Post-release proof including **update from a real prior install**.
 - [ ] Release package shipped into the history file **before** any archive sweep, marker advanced, the
       unfinished lines reported and left exactly as the owner ordered them (where the repo keeps a plan).
+- [ ] Every channel step recorded in the release ledger, a `probe` run after the last one.
 - [ ] State reset, release recorded, owner told with links.
 
 ## Guardrails

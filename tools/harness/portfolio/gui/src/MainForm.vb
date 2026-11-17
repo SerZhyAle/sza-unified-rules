@@ -40,6 +40,7 @@ Partial Class MainForm
         _boldWorkers = New Font(dgvWorkers.Font, FontStyle.Bold)
         _baseTitle = Me.Text
         ConfigureGrids()
+        InitReleasesTab()
     End Sub
 
     Protected Overrides Sub OnLoad(e As EventArgs)
@@ -222,6 +223,7 @@ Partial Class MainForm
                                         RefreshAll()
                                         _ticks += 1
                                         If _ticks Mod InboxEveryTicks = 0 Then RefreshInboxAsync()
+                                        If _ticks Mod InboxEveryTicks = 0 AndAlso tabLeft.SelectedTab Is _tabReleases Then RefreshReleasesAsync()
                                     End Sub
 
         AddHandler ThemeService.ThemeChanged, AddressOf OnThemeChanged
@@ -271,6 +273,7 @@ Partial Class MainForm
         UpdateThemeButtonText()
         ThemeService.ApplyTheme(Me)
         RefreshAll()
+        FillReleasesGrid()
     End Sub
 
     Private Sub BtnToggleConsole_Click(sender As Object, e As EventArgs)

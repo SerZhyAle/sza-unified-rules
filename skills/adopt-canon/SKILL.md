@@ -235,6 +235,25 @@ pwsh -NoProfile -File (Join-Path $sza 'tools/harness/aliases/register-spec-comma
 
    Idempotent; a command file the project wrote by hand is kept. The line it prints is the evidence for "Done means".
 
+## Step 6b - The release ledger (every application)
+
+Every repository that builds or publishes anything keeps the release ledger
+([RELEASE_AND_DISTRIBUTION.md](../../rules/RELEASE_AND_DISTRIBUTION.md) §10, the `RELEASE-LEDGER` contract). `$rl` is
+`<plugin root>/tools/harness/releases/release-ledger.ps1`, or `tools/harness.ps1 releases/release-ledger` where the
+forwarder exists.
+
+1. `init` writes a starter `docs/releases/channels.json` from the stamp's `channels` (it never overwrites one). Fill
+   each channel's public identity - the GitHub `repo`, the winget `id`, the Store's twelve-character `storeId`, the Play
+   `id` and `track`, the Chrome and Edge item ids, the VS Code `publisher.name`, a forum or VR-store `url` (with a
+   `pattern` when the page shows the version) - and split `app` into one package per installable unit (phone, wear,
+   watch face, browser extension).
+2. Hook the build: the last step of every successful build script, a test build included, calls `build -Package
+   -Kind release|test|debug -Version [-Flavor] [-Artifact]` and reports, never fails, on a non-zero exit.
+3. `import`, then `probe`: the past publications from the automatic sources, then the current state. Read both
+   outputs; a channel the probe calls `unverified` is either given its identity or `confirm`ed by hand.
+4. A hand-run state file the repository kept before (`RELEASE_STATE.md` and its script) is retired onto the ledger in
+   the same run: its current rows become `confirm` events, and the release doc names the ledger instead.
+
 ## Step 7 - Re-sync (existing adoption, canon moved)
 
 The staleness ladder, from the compliance gate:
@@ -282,6 +301,8 @@ Re-run the compliance gate and show the before/after counts.
       ticket store's single write path, or skipped with a one-line reason.
 - [ ] Day 0 of the task flow stands (profile, ledger, plan files, template, launchers) and pq register ran, or
       its printed instruction is in the report; the spec commands are registered (its step 5), the printed line cited.
+- [ ] The release ledger stands (step 6b): `channels.json` declares every channel of the stamp, the build script
+      records its builds, `import` and `probe` ran and their outputs are in the report.
 - [ ] The repo's own gates pass, with exit codes cited.
 - [ ] The compliance gate's error count is zero, or every remaining error has a recorded exemption.
 - [ ] The contrib record carries a dated adoption section.

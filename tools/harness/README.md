@@ -51,6 +51,14 @@ launcher is standalone: it reads the ledger and the queue file and starts one fr
 it keeps working on a machine that has no harness. The `task-flow-init` skill drives all of this with its
 rehearsal; the rules are the `TASK-FLOW` contract in the shared catalog.
 
+## Release ledger
+
+`releases/release-ledger.ps1` is the one writer of a repository's release ledger (the `RELEASE-LEDGER` contract,
+canon [RELEASE_AND_DISTRIBUTION.md](../../rules/RELEASE_AND_DISTRIBUTION.md) §10): the last build of each package,
+every publication event per channel, and the rendered `RELEASES.md`, in `paths.releasesDir` (`docs/releases`). Its
+verbs and the build-script hook are in [releases/README.md](releases/README.md); `pq releases` and PQShell's
+Releases tab read every registered repository's ledger.
+
 ## What is deliberately not here
 
 - **The test suites.** A `*.tests/Run-Tests.ps1` exercises the harness through one project's paths,

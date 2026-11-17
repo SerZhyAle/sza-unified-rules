@@ -37,6 +37,7 @@ any folder.
 | run exactly this ticket now, whatever its rank | `pq start -Ticket <key>:<id>` - hand the command to the owner (see "Run one ticket or one project" below) |
 | keep a worker on one project only | `pq start -Repo <key>` - hand the command to the owner |
 | which providers work, in what order, who is out of limit | `pq agents` (and `-Order codex,claude`, `-Release <provider>`) |
+| which version was built last, what each channel carries, what is in review, what was built and never published | `pq releases` (every project's release ledger, read-only; `-Repo <key>` for one, `-Json` for PQShell's Releases tab). It shows what the projects recorded - a fresh channel reading is `release-ledger probe` in that project |
 | is the setup sound | `pq doctor` (a `WARN stamp - stale since <version>` is a stamp behind the canon, a `WARN trust` a workspace Claude Code has not trusted under its exact key), `pq list` (`hold=queue` is a hold row in `PORTFOLIO_QUEUE.md`, `hold=true` the registry flag, `true+queue` both) |
 
 ## Run one ticket or one project

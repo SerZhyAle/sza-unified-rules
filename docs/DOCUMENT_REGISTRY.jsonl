@@ -16,6 +16,7 @@
 {"path": "docs/contracts/DOC-INTERNAL-QUALITY.md", "topic": "DOC-INTERNAL-QUALITY - pointer", "area": "docs", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "docs/contracts/HARNESS-PROFILE.md", "topic": "HARNESS-PROFILE - pointer", "area": "docs", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "docs/contracts/README.md", "topic": "Contract pointers", "area": "docs", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "docs/contracts/RELEASE-LEDGER.md", "topic": "RELEASE-LEDGER - pointer", "area": "docs", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "docs/contracts/REPO-LAYOUT.md", "topic": "REPO-LAYOUT - pointer", "area": "docs", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "docs/contracts/REPO-STAMP.md", "topic": "REPO-STAMP - pointer", "area": "docs", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "docs/contracts/RULE-DELIVERY.md", "topic": "RULE-DELIVERY - pointer", "area": "docs", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
@@ -87,6 +88,7 @@
 {"path": "tools/harness/document_registry/README.md", "topic": "Document registry - how a page gets announced", "area": "tools", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "tools/harness/portfolio/README.md", "topic": "pq - the portfolio queue, operator's guide", "area": "tools", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "tools/harness/portfolio/docs/INBOX-PACKET.md", "topic": "INBOX-PACKET - the phone-ticket transport packet (S0045)", "area": "tools", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "tools/harness/releases/README.md", "topic": "Release ledger - the harness writer", "area": "tools", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "tools/harness/scaffold/templates/ticket-template.md", "topic": "{{ID}}_{{SLUG}}", "area": "tools", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "tools/harness/spec_catalog/SCHEMA.md", "topic": "Spec Catalog - Journal Schema", "area": "tools", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "tools/tests/data/inbox-ticket-vector/ticket-vector-s0045-a/text.md", "topic": "Phone ticket (voice note entry)", "area": "tools", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}

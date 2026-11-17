@@ -172,7 +172,12 @@ The four rules that decide most outcomes:
   verification.
 - Liveness latency is per channel: `winget show <Id>` only after the PR merges (hours to a day); the Store
   sits in certification for days; Edge review is slower than Chrome.
-- Record: version, date, channels shipped, coverage-gate result.
+- **Record every leg in the release ledger as it happens** - staged, handed over, live, blocked, rejected - with
+  `release-ledger publish -Key <channel> -Version <v> -State <state> -Ref <tag, PR#, submission> -Url <public page>`
+  ([RELEASE_AND_DISTRIBUTION.md](../../rules/RELEASE_AND_DISTRIBUTION.md) §10); a channel with no probe (a forum post,
+  a VR store) is `confirm`ed by hand with its URL. Then `release-ledger probe`: it reads each channel and records only
+  what changed, so a `submitted` leg turns `live` when the channel shows it. Put the coverage-gate result into the
+  note of the first event.
 
 ## New product - the one-time path
 

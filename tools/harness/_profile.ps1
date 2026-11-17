@@ -57,6 +57,9 @@ $Script:SzaProfileDefaults = [ordered]@{
         releaseQueue     = 'PLAN/RELEASE_QUEUE.md'
         releaseReady     = 'PLAN/RELEASE_READY.md'
         releaseQueueDone = 'PLAN/RELEASE_QUEUE_DONE.md'
+        # The release ledger's folder (RELEASE-LEDGER rule 1, HARNESS-PROFILE 0.18 rule 14): channels.json,
+        # builds.json, history.jsonl and the rendered RELEASES.md, written by releases/release-ledger.ps1.
+        releasesDir      = 'docs/releases'
         # The fallback names of a repository's own ticket queue, tried in order by Get-PqTicketQueuePath
         # (portfolio/lib/queue-file.ps1) when neither the registry record nor the repository's
         # .sza-profile.json names one. Declared here rather than in that function's body because a path

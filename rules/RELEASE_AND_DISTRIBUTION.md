@@ -255,12 +255,14 @@ A release is not "done" until proven live:
 - **Every "includes X" sentence in a listing is true of each channel's built artifact**, and is checked against
   that package, not the source tree: the GitHub zip, the winget zip, the installer and the MSIX are different
   builds, and a bundled tool or data pack can be present in one and absent from another.
-- **A fan-out keeps durable per-channel state** in a tracked file (default `RELEASE_STATE.md`), one row per
-  channel, with the vocabulary `pending`, `submitted`, `live`, `blocked`, `n/a`. `submitted` is not `live` - a
-  store that keeps the previous revision published while the new one is in review is `submitted`. Record every
-  credential with a fixed lifetime beside it, with its rotation date, and check it in the pre-flight (§2): the
-  Edge Add-ons API key lasts about 72 days, and an expired one first shows as HTTP 401 at the one-way step.
-- Record the release: version, date, channels shipped, and the coverage-gate result.
+- **Every channel step is recorded in the release ledger (§10)** as it happens - `pending`, `submitted`,
+  `live`, `blocked`, `rejected`, `withdrawn`, `n/a` - never in prose and never from memory. `submitted` is not
+  `live`: a store that keeps the previous revision published while the new one is in review is `submitted`,
+  and the ledger's probe moves it to `live` only when the channel shows it. Record every credential with a
+  fixed lifetime in the project's release doc, with its rotation date, and check it in the pre-flight (§2):
+  the Edge Add-ons API key lasts about 72 days, and an expired one first shows as HTTP 401 at the one-way step.
+- Record the release: the version, the date and the channels shipped are the ledger's events; the
+  coverage-gate result goes into the note of the first one.
 - Where the project keeps a release package plan, ship the package now (§8) - the ready block moves into
   the history file and the package marker advances - **before** any archive or cleanup sweep runs.
 
@@ -415,3 +417,51 @@ are the checklist in the `adopt-canon` skill.
 5. Script the post-release checks (§6), including an update-from-prior-install test.
 6. Decide whether the project keeps a release package plan (§8); if it does, hook its reconcile into the
    ticket store's single write path before anything else.
+7. Start the release ledger (§10): declare the channels, hook the build script, import what was published.
+
+## 10. The release ledger (what was built, what is where, what was before)
+
+Every application keeps one record of its builds and publications, so "which version is where" is read, not
+re-asked of the channels or of the owner. The format is the `RELEASE-LEDGER` contract; this section is when it
+is written and who reads it. Process hygiene, not an invariant - but a release that is not recorded here
+leaves the next release's monotonic-version check (§4) and the portfolio view without their input.
+
+**Where.** One folder per repository, `paths.releasesDir` of the harness profile (`docs/releases` by default),
+tracked in git: `channels.json` (the packages and the channels each ships to, written at adoption and by
+hand), `builds.json` (the last build of each package, flavor and kind), `history.jsonl` (every publication
+event, append-only) and `RELEASES.md` (the human view, rendered after every write - a render target, never
+edited). One writer for the three data files: the harness script `releases/release-ledger`, run through the
+repository's forwarder (`tools/harness.ps1 releases/release-ledger <verb>`) or from the plugin.
+
+**Who writes what, and when:**
+
+- **Every successful build** - a test build included - calls `build -Package -Kind release|test|debug
+  -Version [-Flavor] [-Artifact]` as its last step. Only the last build of each package, flavor and kind is
+  kept: the ledger answers "what was built last", and a project that wants every build keeps its own log. A
+  ledger write never fails a build - the build script reports a non-zero exit and goes on.
+- **Every channel step of a release** (§5, §6) calls `publish -Key <channel> -Version -State` at the moment
+  it happens - `pending` when the package is staged, `submitted` when it is handed over, `live` when it is
+  proven live, `blocked` or `rejected` when the channel says so - with the tag, the pull request or the
+  submission as `-Ref` and the public page as `-Url`.
+- **A channel no probe can see** - a forum post, a VR store, a catalogue - is confirmed by hand with
+  `confirm -Key -Version -State live -Url <where it can be seen>`; the URL is the evidence.
+- **`probe`** reads every declared channel - read-only: GitHub Releases and winget-pkgs through `gh`, the
+  Microsoft Store through `msstore submission get`, Google Play through the Play Developer API with a service
+  account, Chrome, Edge and the VS Code Marketplace through their public endpoints, any public page by
+  finding the version in it - and records only what changed. A channel it cannot see is reported
+  `unverified` with the reason and nothing is written. Run it after a release and whenever a `submitted`
+  publication is waiting for its review.
+- **`import`** backfills the history once, at adoption, from the same automatic sources.
+
+**The channels are an open list.** A new channel is one entry in `channels.json`: a known probe kind with its
+public identity, a public page with a version pattern, or a manual one. Nothing in the tools or the panel
+changes for it.
+
+**Who reads it.** `pq releases` lists every registered project's last build, live version per channel, what
+is in flight and the release builds no channel carries yet; PQShell shows the same on its Releases tab. The
+release skill takes "newer than every published version" (§4) from it, after a `probe`, instead of asking each
+channel by hand.
+
+**Never in the ledger:** a token, a key, a seller, tenant or client id, an absolute local path, a machine or
+user name. A credential a probe needs is read from the environment or a file outside every repository. **A
+probe never writes to a channel** - it reads; publishing stays the one-way operation of §1.
