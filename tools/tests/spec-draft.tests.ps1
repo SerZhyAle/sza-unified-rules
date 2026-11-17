@@ -26,6 +26,10 @@
          copied byte for byte beside the spec and linked in section 0 after the untouched request text; a file
          already in the attachments folder is not overwritten; -WhatIf copies nothing; a project script that drops
          the request text leaves the links unwritten and exits 1 naming the ticket.
+     15. A profiled project with no TICKET_TEMPLATE.md (S0098): the canon capture falls back to the scaffold form
+         with a notice line, creates no project file besides the ticket, and a present project form still wins.
+     16. A ticket template with no {{TEXT}} token refuses the capture before anything is created, with and
+         without -Attach (S0099); a template given its token back captures as before.
 
     -Only <regex> runs the cases whose name matches it (cases 2-4 build on case 1, so use it for 8 and 9 only).
 #>
@@ -301,6 +305,52 @@ exit 0
         $empty = Join-Path $scratch 'plain-empty'; New-Item -ItemType Directory -Path $empty | Out-Null
         $r = Invoke-Draft @('-Project', $empty, '-Slug', 'first-ever', '-TextFile', $f)
         Assert-That ($r.code -eq 0 -and $r.last -ceq 'drafted plain-empty:S0001 file=PLAN/S0001_first-ever.md priority=- pq=no-task-flow position=0/0') "empty project: $($r.last) | $($r.output)"
+    }
+
+    Run-Case '15 a profiled project with no ticket template is captured from the canon form (S0098); a present form still wins' {
+        $repoNoTpl = New-Repo 'repo-no-template'
+        Remove-Item -LiteralPath (Join-Path $repoNoTpl 'PLAN\TICKET_TEMPLATE.md')
+        $f = Write-Text 'owner15.txt' $tricky
+        $r = Invoke-Draft @('-Project', $repoNoTpl, '-Slug', 'no-template', '-TextFile', $f)
+        Assert-That ($r.code -eq 0) "exit $($r.code): $($r.output)"
+        Assert-That ($r.output -match 'no ticket template at' -and $r.output -match 'canon scaffold template') "no fallback notice: $($r.output)"
+        Assert-That ($r.last -ceq 'drafted repo-no-template:S0001 file=PLAN/S0001_no-template.md priority=50 pq=unregistered position=0/0') "result: $($r.last)"
+        $spec = [IO.File]::ReadAllText((Join-Path $repoNoTpl 'PLAN\S0001_no-template.md'))
+        Assert-That ($spec.Contains($tricky)) 'the owner text is not in the spec byte for byte'
+        Assert-That ($spec.Contains('## 0. Owner request (verbatim)') -and $spec.Contains('## 3.3 Owner inputs (Approval gate)')) 'the canon form did not shape the spec'
+        Assert-That ($spec -match '(?m)^\*\*Complexity:\*\* medium - not assessed at capture\r?$') 'the Complexity line is missing'
+        Assert-That ((Get-Content (Join-Path $repoNoTpl 'PLAN\RELEASE_QUEUE.md') -Raw) -match 'S0001_no-template') 'no row in the ticket queue'
+        Assert-That (-not (Test-Path -LiteralPath (Join-Path $repoNoTpl 'PLAN\TICKET_TEMPLATE.md'))) 'the fallback wrote a project template'
+
+        $repoMarked = New-Repo 'repo-marked'
+        [IO.File]::WriteAllText((Join-Path $repoMarked 'PLAN\TICKET_TEMPLATE.md'), "# {{ID}} marked form`r`n`r`n{{TEXT}}`r`n", [Text.UTF8Encoding]::new($false))
+        $r = Invoke-Draft @('-Project', $repoMarked, '-Slug', 'marked-form', '-TextFile', $f)
+        Assert-That ($r.code -eq 0 -and $r.output -notmatch 'no ticket template at') "a present project form was passed over: $($r.output)"
+        Assert-That ([IO.File]::ReadAllText((Join-Path $repoMarked 'PLAN\S0001_marked-form.md')).StartsWith('# S0001 marked form')) 'the marker form was not used'
+    }
+
+    Run-Case '16 a ticket template with no {{TEXT}} token refuses the capture unconditionally; a token returned captures' {
+        $repoNoText = New-Repo 'repo-no-text-token'
+        $template = Join-Path $repoNoText 'PLAN\TICKET_TEMPLATE.md'
+        # A template a hand edit left without the token - every other token intact, the owner's words with no line to land on.
+        [IO.File]::WriteAllText($template, "# {{ID}}_{{SLUG}} hand-edited form`r`n`r`n## 0. Owner request (verbatim)`r`n`r`n", [Text.UTF8Encoding]::new($false))
+        $f = Write-Text 'owner-16.txt' $tricky
+        $shot = Write-Text 'shot16.png' 'png'
+        $ledger = Get-LedgerCount $repoNoText
+        foreach ($extra in @($null, @('-Attach', $shot))) {
+            $r = Invoke-Draft (@('-Project', 'repo-no-text-token', '-Slug', 'tokenless-capture', '-TextFile', $f) + $extra)
+            $with = if ($null -eq $extra) { ' no' } else { ' ' + ($extra -join ' ') }
+            Assert-That ($r.code -eq 2) "with$with -Attach: expected exit 2, got $($r.code): $($r.output)"
+            Assert-That ($r.output -match [regex]::Escape('{{TEXT}}') -and $r.output -match "owner's words would be lost") "no lost-words refusal: $($r.output)"
+        }
+        Assert-That ((Get-LedgerCount $repoNoText) -eq $ledger) 'a refusal created a ledger row'
+        Assert-That (-not (Test-Path (Join-Path $repoNoText 'PLAN\S0001_tokenless-capture.md'))) 'a refusal wrote the spec file'
+        # The token back: the same capture lands, and the owner's words are in the spec byte for byte.
+        [IO.File]::WriteAllText($template, "# {{ID}}_{{SLUG}} hand-edited form`r`n`r`n## 0. Owner request (verbatim)`r`n`r`n{{TEXT}}`r`n", [Text.UTF8Encoding]::new($false))
+        $r = Invoke-Draft @('-Project', 'repo-no-text-token', '-Slug', 'tokenless-capture', '-TextFile', $f)
+        Assert-That ($r.code -eq 0 -and $r.last -match '^drafted repo-no-text-token:S0001 ') "token restored: $($r.output)"
+        $spec = [IO.File]::ReadAllText((Join-Path $repoNoText 'PLAN\S0001_tokenless-capture.md'))
+        Assert-That ($spec.Contains($tricky)) 'the owner text is not in the spec byte for byte'
     }
 
     Run-Case '10 a hotfix is pinned first without being asked; -NoPin leaves it in place; -Pin with -NoPin is refused' {

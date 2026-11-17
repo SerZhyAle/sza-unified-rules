@@ -1,0 +1,19 @@
+{
+  "schema": "1",
+  "packages": [
+    {
+      "id": "sza",
+      "title": "sza plugin (sza-unified-rules)"
+    }
+  ],
+  "channels": [
+    {
+      "key": "marketplace",
+      "channel": "url",
+      "package": "sza",
+      "title": "Claude plugin marketplace (main)",
+      "url": "https://raw.githubusercontent.com/SerZhyAle/sza-unified-rules/main/.claude-plugin/plugin.json",
+      "pattern": "\"version\"\\s*:\\s*\"(\\d+\\.\\d+\\.\\d+)\""
+    }
+  ]
+}

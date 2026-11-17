@@ -67,7 +67,7 @@ function Get-PendingPath([string]$line) {
 # being shipped, and forgetting to list it costs a harmless bump instead of an undelivered canon.
 function Test-ShipsToConsumers([string[]]$paths) {
     $exempt = @('README.md', 'LICENSE', 'CANON_VERSION', '.claude-plugin/plugin.json', '.gitignore')
-    $exemptDirs = @('rules/contrib/', 'tools/__pycache__/')
+    $exemptDirs = @('rules/contrib/', 'tools/__pycache__/', 'docs/releases/')
     foreach ($path in $paths) {
         $normalized = $path -replace '\\', '/'
         if ($exempt -contains $normalized) { continue }
@@ -168,7 +168,45 @@ if ($pending.Count -eq 0) {
     exit 0
 }
 
+# Best-effort release-ledger step: missing script, non-zero exit, or exception warns and never fails the deploy.
+function Invoke-ReleaseLedgerStep {
+    param(
+        [Parameter(Mandatory)][string]$Root,
+        [Parameter(Mandatory)][string[]]$Arguments,
+        [string]$Pwsh = 'pwsh',
+        [string]$ScriptRel = 'tools\harness\releases\release-ledger.ps1'
+    )
+    $script = Join-Path $Root $ScriptRel
+    if (-not (Test-Path -LiteralPath $script -PathType Leaf)) {
+        Write-Host "deploy: release-ledger skipped ($ScriptRel not found)" -ForegroundColor Yellow
+        return 'missing'
+    }
+    $prevEap = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $out = @(& $Pwsh -NoProfile -File $script @Arguments 2>&1)
+        $code = $LASTEXITCODE
+    }
+    catch {
+        Write-Host "deploy: release-ledger failed - $($_.Exception.Message)" -ForegroundColor Yellow
+        return 'failed'
+    }
+    finally {
+        $ErrorActionPreference = $prevEap
+    }
+    if ($code -ne 0) {
+        $detail = (@($out | ForEach-Object { "$_" } | Where-Object { $_.Trim() } | Select-Object -Last 2) -join '; ')
+        Write-Host "deploy: release-ledger exited $code$(if ($detail) { " - $detail" })" -ForegroundColor Yellow
+        return 'failed'
+    }
+    foreach ($line in @($out | ForEach-Object { "$_" } | Where-Object { $_.Trim() })) {
+        Write-Host "deploy:   $line" -ForegroundColor DarkGray
+    }
+    return 'ok'
+}
+
 # --- 2a. Raise the version pair, before staging, so both files ride in this commit. ----------------
+$bumpedVersion = $null
 $ships = Test-ShipsToConsumers (@($pending) | ForEach-Object { Get-PendingPath $_ })
 if ($NoVersionBump) {
     Write-Host 'deploy: -NoVersionBump - the version pair is left where it is' -ForegroundColor Yellow
@@ -181,7 +219,21 @@ if ($NoVersionBump) {
     $bumpCode = $LASTEXITCODE
     if ($bumpCode -ne 0) { Fail "the version bump failed (exit $bumpCode) - nothing was staged" $bumpCode }
 
-    # The two version files are themselves changes; re-read so they appear in the preview and reach git add.
+    if (-not $DryRun) {
+        $pluginText = Get-Content -LiteralPath (Join-Path $root '.claude-plugin/plugin.json') -Raw
+        if ($pluginText -match '"version"\s*:\s*"([^"]+)"') { $bumpedVersion = $Matches[1] }
+        if ($bumpedVersion) {
+            $canonPath = Join-Path $root 'CANON_VERSION'
+            $ledgerArgs = @('build', '-Package', 'sza', '-Kind', 'release', '-Version', $bumpedVersion)
+            if (Test-Path -LiteralPath $canonPath -PathType Leaf) {
+                $canonNote = (Get-Content -LiteralPath $canonPath -Raw).Trim()
+                if ($canonNote) { $ledgerArgs += @('-Note', "CANON_VERSION $canonNote") }
+            }
+            $null = Invoke-ReleaseLedgerStep -Root $root -Arguments $ledgerArgs
+        }
+    }
+
+    # The two version files (and the release ledger) are themselves changes; re-read so they appear in the preview and reach git add.
     $pending = @(git -C $root status --porcelain)
     if ($LASTEXITCODE -ne 0) { Fail 'cannot re-read the working tree status after the version bump' 2 }
 }
@@ -288,5 +340,11 @@ function Update-PluginCache {
     return 'stale'
 }
 
-$null = Update-PluginCache -Root $root -Branch $branch -Skip:$NoPluginUpdate
+$cacheState = Update-PluginCache -Root $root -Branch $branch -Skip:$NoPluginUpdate
+if ($bumpedVersion -and $cacheState -in @('updated', 'current')) {
+    $null = Invoke-ReleaseLedgerStep -Root $root -Arguments @(
+        'publish', '-Key', 'marketplace', '-Version', $bumpedVersion, '-State', 'live',
+        '-Ref', $sha, '-Url', 'https://github.com/SerZhyAle/sza-unified-rules/blob/main/.claude-plugin/plugin.json'
+    )
+}
 exit 0

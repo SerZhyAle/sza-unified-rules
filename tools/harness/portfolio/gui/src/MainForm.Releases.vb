@@ -215,9 +215,95 @@ Partial Class MainForm
             If Not snap.Ok AndAlso (_releases Is Nothing OrElse _releases.Ok) Then LogConsole(snap.ErrorText)
             _releases = snap
             FillReleasesGrid()
+            RefreshAll()
         Finally
             _isReleasesBusy = False
         End Try
+    End Sub
+
+    Private Shared Function ReleaseSeverityColor(severity As Integer, p As ThemePalette) As Color
+        Return If(severity >= 3, p.StatusDanger, If(severity = 2, p.StatusWarning, If(severity = 1, p.StatusSuccess, p.TextMuted)))
+    End Function
+
+    Private Shared Function BuildReleaseBuildTooltip(r As ReleaseRepo) As String
+        Dim buildTip = If(r.BuildsTip <> "", r.BuildsTip, "no build recorded")
+        If r.Unpublished.Count > 0 Then
+            buildTip &= Environment.NewLine & "built, not published:" & Environment.NewLine & String.Join(Environment.NewLine, r.Unpublished)
+        End If
+        If r.Warnings.Count > 0 Then buildTip &= Environment.NewLine & "warnings:" & Environment.NewLine & String.Join(Environment.NewLine, r.Warnings)
+        Return buildTip
+    End Function
+
+    Private Function BuildReleaseLookup() As Dictionary(Of String, ReleaseRepo)
+        If _releases Is Nothing OrElse Not _releases.Ok Then Return Nothing
+        Dim map As New Dictionary(Of String, ReleaseRepo)(StringComparer.Ordinal)
+        For Each r In _releases.Repos
+            If r.Key <> "" AndAlso Not map.ContainsKey(r.Key) Then map(r.Key) = r
+        Next
+        Return map
+    End Function
+
+    ' Last build and GitHub publication cells on the Projects tab, sharing the snapshot and color semantics of Releases.
+    Private Sub FillRepoReleaseCells(row As DataGridViewRow, releaseMap As Dictionary(Of String, ReleaseRepo), repoKey As String, p As ThemePalette)
+        Dim buildCell = row.Cells("colLastBuild")
+        Dim ghCell = row.Cells("colGithub")
+        If _releases Is Nothing OrElse Not _releases.Ok Then
+            Dim reason = If(_releases Is Nothing,
+                "not read yet - the release ledgers ('pq releases') are read a few seconds after the panel opens",
+                $"the release ledgers could not be read: {_releases.ErrorText}")
+            buildCell.Value = "?"
+            buildCell.ToolTipText = reason
+            buildCell.Style.ForeColor = p.TextMuted
+            ghCell.Value = "?"
+            ghCell.ToolTipText = reason
+            ghCell.Style.ForeColor = p.TextMuted
+            Return
+        End If
+
+        Dim r As ReleaseRepo = Nothing
+        If releaseMap Is Nothing OrElse Not releaseMap.TryGetValue(repoKey, r) Then
+            buildCell.Value = ""
+            buildCell.ToolTipText = "not listed in 'pq releases'"
+            ghCell.Value = ""
+            ghCell.ToolTipText = "not listed in 'pq releases'"
+            Return
+        End If
+
+        If r.ErrorText <> "" Then
+            buildCell.Value = "error"
+            buildCell.ToolTipText = r.ErrorText
+            buildCell.Style.ForeColor = p.StatusDanger
+            ghCell.Value = ""
+            ghCell.ToolTipText = r.ErrorText
+            Return
+        End If
+
+        If Not r.HasLedger Then
+            Dim noLedgerTip = $"no {r.Dir} folder - run 'release-ledger init' in that project"
+            buildCell.Value = ""
+            buildCell.ToolTipText = noLedgerTip
+            ghCell.Value = ""
+            ghCell.ToolTipText = noLedgerTip
+            Return
+        End If
+
+        buildCell.Value = If(r.LastBuild <> "", r.LastBuild, "-")
+        buildCell.ToolTipText = BuildReleaseBuildTooltip(r)
+        If r.Unpublished.Count > 0 Then
+            buildCell.Style.ForeColor = p.StatusWarning
+        ElseIf r.LastBuild = "" Then
+            buildCell.Style.ForeColor = p.TextMuted
+        End If
+
+        Dim gh As ReleaseCell = Nothing
+        If r.Cells.TryGetValue("github", gh) Then
+            ghCell.Value = gh.Text
+            ghCell.ToolTipText = gh.Tip
+            ghCell.Style.ForeColor = ReleaseSeverityColor(gh.Severity, p)
+        Else
+            ghCell.Value = ""
+            ghCell.ToolTipText = "no github channel declared in channels.json"
+        End If
     End Sub
 
     Private Sub FillReleasesGrid()
@@ -242,20 +328,15 @@ Partial Class MainForm
             End If
             row.Cells("colRelBuild").Value = If(r.LastBuild <> "", r.LastBuild, "-")
             row.Cells("colRelBuilt").Value = r.LastBuildAt
-            Dim buildTip = If(r.BuildsTip <> "", r.BuildsTip, "no build recorded")
-            If r.Unpublished.Count > 0 Then
-                buildTip &= Environment.NewLine & "built, not published:" & Environment.NewLine & String.Join(Environment.NewLine, r.Unpublished)
-                row.Cells("colRelBuild").Style.ForeColor = p.StatusWarning
-            End If
-            If r.Warnings.Count > 0 Then buildTip &= Environment.NewLine & "warnings:" & Environment.NewLine & String.Join(Environment.NewLine, r.Warnings)
-            row.Cells("colRelBuild").ToolTipText = buildTip
+            If r.Unpublished.Count > 0 Then row.Cells("colRelBuild").Style.ForeColor = p.StatusWarning
+            row.Cells("colRelBuild").ToolTipText = BuildReleaseBuildTooltip(r)
             For Each c In ReleasesSnapshot.Columns
                 Dim cell As ReleaseCell = Nothing
                 If Not r.Cells.TryGetValue(c.Kind, cell) Then Continue For
                 Dim gridCell = row.Cells(c.Column)
                 gridCell.Value = cell.Text
                 gridCell.ToolTipText = cell.Tip
-                gridCell.Style.ForeColor = If(cell.Severity >= 3, p.StatusDanger, If(cell.Severity = 2, p.StatusWarning, If(cell.Severity = 1, p.StatusSuccess, p.TextMuted)))
+                gridCell.Style.ForeColor = ReleaseSeverityColor(cell.Severity, p)
             Next
         Next
         RestoreScroll(_dgvReleases, scroll)

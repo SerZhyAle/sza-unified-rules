@@ -9,14 +9,19 @@
     the validator and the next-ticket ranking read does not exist until something writes it, and a
     ledger row without its file is a malformed ticket. This is the missing half - it calls insert.ps1
     (the id is allocated inside the catalog lock, so two concurrent captures cannot be handed the same
-    id) and then writes <specs>/<id>_<slug>.md from the project's ticket template.
+    id) and then writes <specs>/<id>_<slug>.md from the project's ticket template, or the canon's when
+    the project has none.
 
     The text lands exactly as typed: it is substituted last and with String.Replace, so a `$`, a
     `{{ID}}` token or a regex metacharacter inside it is written as it was given. The file is UTF-8
     without a BOM.
 
-    The template is <specs>/TICKET_TEMPLATE.md, written once by scaffold/init-task-flow.ps1 and then
-    owned by the project. Tokens: {{ID}}, {{SLUG}}, {{NAME}}, {{DATE}}, {{COMPLEXITY}}, {{TEXT}}.
+    The template is <specs>/TICKET_TEMPLATE.md when the project has one, else the canon's
+    scaffold/templates/ticket-template.md (S0098) - the same fallback a plain capture takes, so a profiled
+    project can receive work before its owner runs init-task-flow. Only the form falls back: the numbering,
+    grammar and archive still come from the project profile, nothing is created in the project besides the
+    ticket itself, and giving the project its own form stays init-task-flow's call (the owner's).
+    Tokens: {{ID}}, {{SLUG}}, {{NAME}}, {{DATE}}, {{COMPLEXITY}}, {{TEXT}}.
 
     Every ticket leaves here with a `**Complexity:** <level> - <reason>` header line (DEVELOPMENT.md
     section 8): the -Complexity value, else `medium - not assessed at capture`, which the spec pass
@@ -80,8 +85,10 @@
     pwsh -NoProfile -File capture-draft.ps1 -Slug fix-typo -Text "Settings says Sav." -Complexity "light - one string"
 
 Exit codes: 0 the ticket exists (the id is the last line printed); 1 the catalog refused the insert or the
-spec file could not be written; 2 bad invocation - slug, text, -Complexity, or the template is missing;
-3 refused - the dedup query hit a closed ticket and -AllowClosedDuplicate was not given.
+spec file could not be written; 2 bad invocation - slug, text, -Complexity, a ticket template with no
+{{TEXT}} token (the owner's words would be lost, S0099), or both the project template and the canon scaffold
+template missing (S0098: a broken harness install; a missing project template alone falls back); 3 refused -
+the dedup query hit a closed ticket and -AllowClosedDuplicate was not given.
 #>
 [CmdletBinding(SupportsShouldProcess, PositionalBinding = $false)]
 param(
@@ -157,13 +164,23 @@ if (-not $Name) { $Name = $Slug }
 
 $root = Get-SzaProjectRoot
 $env:SZA_PROJECT_ROOT = $root                                # the children resolve the same root
+# The project's own form wins; a profiled project with no form is captured from the canon's (S0098), the same
+# fallback the plain-capture path takes. The scaffold skill never runs here - its file is read and nothing is
+# created in the project besides the ticket, so gaining an own form stays init-task-flow's call.
 $templatePath = Join-Path (Get-SzaPath 'specsDir') 'TICKET_TEMPLATE.md'
 if (-not (Test-Path -LiteralPath $templatePath -PathType Leaf)) {
-    Stop-BadInvocation "no ticket template at $templatePath - run scaffold/init-task-flow.ps1 first"
+    $fallback = Join-Path $Script:SzaHarnessRoot 'scaffold/templates/ticket-template.md'
+    if (-not (Test-Path -LiteralPath $fallback -PathType Leaf)) {
+        Stop-BadInvocation "no ticket template at $templatePath and no canon form at $fallback - the harness install is missing its scaffold template"
+    }
+    Write-Host "capture-draft: no ticket template at $templatePath - laying the ticket out from the canon scaffold template ($fallback); init-task-flow gives the project its own form" -ForegroundColor Yellow
+    $templatePath = $fallback
 }
 $template = [IO.File]::ReadAllText($templatePath)
-if ($Attach -and -not $template.Contains('{{TEXT}}')) {
-    Stop-BadInvocation "the ticket template $templatePath has no {{TEXT}} token for the request and attachment links"
+# S0099: unconditional - with no attachments the text had nowhere to land and the capture went
+# through anyway, writing the ticket without the owner's words and without one error line.
+if (-not $template.Contains('{{TEXT}}')) {
+    Stop-BadInvocation "the ticket template $templatePath has no {{TEXT}} token, so the owner's words would be lost"
 }
 $pwshExe = (Get-Process -Id $PID).Path
 

@@ -3,5 +3,12 @@
   "registry": "docs/DOCUMENT_REGISTRY.jsonl",
   "map": "docs/DOCS_MAP.md",
   "roots": ["README.md", "AGENTS.md", "CLAUDE.md", "EXPERIENCE_MAP.md", "rules", "skills", "hooks", "tools", "docs", "templates", "memory"],
-  "ignore": [{"pattern": "rules/contrib/*.md", "reason": "Frozen historical project surveys; current shared guidance lives in the maintained core rules."}]
+  "ignore": [{"pattern": "rules/contrib/*.md", "reason": "Frozen historical project surveys; current shared guidance lives in the maintained core rules."}],
+  "generated": [
+    {
+      "pattern": "docs/releases/RELEASES.md",
+      "generator": "pwsh -NoProfile -File tools/harness/releases/release-ledger.ps1 render",
+      "check": "pwsh -NoProfile -File tools/harness/releases/release-ledger.ps1 show"
+    }
+  ]
 }

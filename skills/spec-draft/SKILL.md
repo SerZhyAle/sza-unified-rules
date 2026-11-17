@@ -80,7 +80,8 @@ a file already there is never overwritten. A missing, unreadable, folder or repe
 is created.
 
 The script uses the project's own `scripts/utils/capture-draft.ps1` when it has one (FastMediaSorter_mob_v2 does:
-its templates, tier and attachments), else the canon's, which needs `PLAN/TICKET_TEMPLATE.md`.
+its templates, tier and attachments), else the canon's, which uses the project's `PLAN/TICKET_TEMPLATE.md` when it
+has one, else the canon's scaffold form (S0098) - so a profiled project with no form of its own still receives work.
 
 **A project with no `.sza-profile.json` is not refused.** It gets a *plain capture*: one file,
 `PLAN/<id>_<slug>.md`, numbered the way the project already numbers its tickets (`SP-0255` after `SP-0254`, `S0001`
@@ -92,7 +93,7 @@ there too; `-DedupQuery` searches the ticket files' names and first lines.
 | --- | --- | --- |
 | 0 | the ticket exists | Step 4 |
 | 1 | the catalog refused, or the spec file could not be written | quote the message; do not retry blindly - a row without its file is named in it |
-| 2 | bad invocation, unknown project, a slug that ends in `-` or `_`, a profile with no ledger, or a profile with no `PLAN/TICKET_TEMPLATE.md` ("no ticket template at ..") | fix the argument; for a half-set-up flow run [task-flow-init](../task-flow-init/SKILL.md) in that project (it never overwrites) - or leave that to the owner and write the ticket file by hand as `PLAN/<next id>_<slug>.md` from the canon's template, which the queue sync registers (TASK-FLOW rule 65) |
+| 2 | bad invocation, unknown project, a slug that ends in `-` or `_`, or a profile with no ledger | fix the argument; a profile with no ledger is a half-set-up flow - run [task-flow-init](../task-flow-init/SKILL.md) in that project (it never overwrites) - or leave that to the owner and write the ticket file by hand as `PLAN/<next id>_<slug>.md` from the canon's template, which the queue sync registers (TASK-FLOW rule 65). A profile with no `PLAN/TICKET_TEMPLATE.md` is no longer refused (S0098): the capture lays the ticket out from the canon's scaffold form and prints a line saying so |
 | 3 | the dedup query hit a **closed** ticket | the defect is already dealt with: name that ticket, create nothing; add `-AllowClosedDuplicate` only if the owner says it came back |
 
 An **open** ticket in the `dedup:` lines that already covers the problem is not an error: reference its id to the

@@ -13,6 +13,7 @@ Partial Class MainForm
     Private _baseTitle As String = ""
     ' The registry as the last refresh read it: a double-click resolves a row's project key against it.
     Private _repos As New List(Of RepoInfo)()
+    Private _repoActionMenu As ContextMenuStrip = Nothing
 
     ' The console keeps the tail of the session; a panel left open for days must not grow without bound.
     Private Const ConsoleMaxChars As Integer = 200000
@@ -95,6 +96,7 @@ Partial Class MainForm
         WireEvents()
         RefreshAll()
         RefreshInboxAsync()
+        RefreshReleasesAsync()
 
         tmrRefresh.Interval = 4000
         tmrRefresh.Enabled = chkAutoRefresh.Checked
@@ -109,12 +111,9 @@ Partial Class MainForm
         For Each c In InboxColumns
             AddTextColumn(dgvRepos, c.Column, c.Header, 50)
         Next
-        AddButtonColumn(dgvRepos, "colQuiz", "Questions", "Quiz", 65)
-        AddButtonColumn(dgvRepos, "colNewSpec", "Spec", "+ Spec...", 65)
-        AddButtonColumn(dgvRepos, "colQueue", "Tickets", "Open Queue", 85)
-        AddButtonColumn(dgvRepos, "colFolder", "Folder", "Open VSCode", 95)
-        AddButtonColumn(dgvRepos, "colSession", "Session", "Claude", 70)
-        AddButtonColumn(dgvRepos, "colStartRepo", "Worker", "Start here", 80)
+        AddTextColumn(dgvRepos, "colLastBuild", "Last build", 125)
+        AddTextColumn(dgvRepos, "colGithub", "GitHub", 105)
+        AddButtonColumn(dgvRepos, "colActions", "Actions", "Actions ▾", 90)
 
         dgvWorkers.Columns.Clear()
         AddTextColumn(dgvWorkers, "colSlot", "Slot", 45)
@@ -201,6 +200,7 @@ Partial Class MainForm
         AddHandler btnRelease.Click, Sub() SteerAsync("release", requireTicket:=False)
 
         AddHandler dgvRepos.CellClick, AddressOf DgvRepos_CellClick
+        AddHandler dgvRepos.CellMouseUp, AddressOf DgvRepos_CellMouseUp
         AddHandler dgvRepos.SelectionChanged, AddressOf DgvRepos_SelectionChanged
         AddHandler dgvWorkers.CellDoubleClick, Sub(s, e) SteerAndOpenFromRow(dgvWorkers, e.RowIndex, "colWorkerRepo", "colWorkerTicket")
         AddHandler dgvPasses.CellDoubleClick, Sub(s, e) SteerAndOpenFromRow(dgvPasses, e.RowIndex, "colPassRepo", "colPassTicket")
@@ -217,13 +217,16 @@ Partial Class MainForm
         AddHandler btnRefreshNow.Click, Async Sub()
                                             Await RunLoggedAsync(btnRefreshNow, "sync")
                                             RefreshInboxAsync()
+                                            RefreshReleasesAsync()
                                         End Sub
         AddHandler chkAutoRefresh.CheckedChanged, Sub() tmrRefresh.Enabled = chkAutoRefresh.Checked
         AddHandler tmrRefresh.Tick, Sub()
                                         RefreshAll()
                                         _ticks += 1
-                                        If _ticks Mod InboxEveryTicks = 0 Then RefreshInboxAsync()
-                                        If _ticks Mod InboxEveryTicks = 0 AndAlso tabLeft.SelectedTab Is _tabReleases Then RefreshReleasesAsync()
+                                        If _ticks Mod InboxEveryTicks = 0 Then
+                                            RefreshInboxAsync()
+                                            RefreshReleasesAsync()
+                                        End If
                                     End Sub
 
         AddHandler ThemeService.ThemeChanged, AddressOf OnThemeChanged
@@ -272,6 +275,7 @@ Partial Class MainForm
     Private Sub OnThemeChanged(sender As Object, e As EventArgs)
         UpdateThemeButtonText()
         ThemeService.ApplyTheme(Me)
+        If _repoActionMenu IsNot Nothing Then ThemeService.ApplyMenuTheme(_repoActionMenu, ThemeService.Palette)
         RefreshAll()
         FillReleasesGrid()
     End Sub
@@ -400,6 +404,7 @@ Partial Class MainForm
             ' 5. Repositories
             Dim selKey = SelectedRepoKey()
             Dim reposScroll = FirstVisibleRow(dgvRepos)
+            Dim releaseMap = BuildReleaseLookup()
             dgvRepos.Rows.Clear()
             Dim selIdx = -1
             For Each r In repos
@@ -415,10 +420,9 @@ Partial Class MainForm
                 row.Cells("colQueued").ToolTipText = $"{r.RunnableRows} the runner would take, of {r.QueuedRows} rows in the queue file (blocked, idle-held, held and unknown rows are not taken)" &
                     If(r.IdleRows > 0, $"; {r.IdleRows} idle-held: the last runs of each ended without moving its status, so the runner passes it over until a run of it moves the status (naming the ticket runs it anyway)", "")
                 FillInboxCells(row, r.Key, p)
+                FillRepoReleaseCells(row, releaseMap, r.Key, p)
                 row.Cells("colOrder").ToolTipText = $"rank {r.Rank}"
-                row.Cells("colStartRepo").ToolTipText = $"Starts a worker that takes tickets of '{r.Key}' only, in their order ('pq start -Repo {r.Key}'). Holds, STOP and the other safeguards apply as for any start."
-                row.Cells("colQuiz").ToolTipText = $"Answer questions for '{r.Key}' in an interactive session"
-                row.Cells("colSession").ToolTipText = $"Opens a terminal in {r.Path} running claude - an interactive session with the project's own commands and hooks, no VS Code window"
+                row.Cells("colActions").ToolTipText = $"Actions for '{r.Key}': Quiz, New spec, Ticket queue, VS Code, Claude, Start worker"
 
                 Dim statusCell = row.Cells("colStatus")
                 If r.IsHeld Then
@@ -760,7 +764,7 @@ Partial Class MainForm
             Dim isProject = dgvRepos.Rows.Cast(Of DataGridViewRow)().Any(Function(r) String.Equals(CStr(r.Cells("colKey").Value), bare, StringComparison.Ordinal))
             Dim selected = SelectedRepoKey()
             If isProject Then
-                MessageBox.Show(Me, $"Run now takes one ticket, 'repo:ticket' - '{target}' names a whole project. Use 'Start here' on its row to work a project.",
+                MessageBox.Show(Me, $"Run now takes one ticket, 'repo:ticket' - '{target}' names a whole project. Use 'Actions -> Start worker here' on its row to work a project.",
                                 "Run now", MessageBoxButtons.OK, MessageBoxIcon.Information)
                 Return ""
             End If
@@ -887,44 +891,105 @@ Partial Class MainForm
         Select Case column
             Case "colAsk", "colTest", "colOutside", "colChain", "colUnbuilt"
                 ListInbox(r, column)
-            Case "colQuiz"
-                OpenQuiz(r.Key, $"project '{r.Key}'")
-            Case "colNewSpec"
-                ShowNewSpec(r.Key)
-            Case "colQueue"
-                Dim queuePath = PortfolioState.GetTicketQueuePath(r)
-                If File.Exists(queuePath) Then
-                    LogConsole($"Opening ticket queue of '{r.Key}': {queuePath}")
-                    Dim err = PqCli.OpenFileWithDefaultApp(queuePath)
-                    If err IsNot Nothing Then LogConsole($"Cannot open {queuePath}: {err}")
-                Else
-                    LogConsole($"Ticket queue file missing for '{r.Key}': {queuePath}")
-                    MessageBox.Show(Me, $"No ticket queue file found at:{Environment.NewLine}{queuePath}{Environment.NewLine}{Environment.NewLine}A ticket queue is created when the first ticket is drafted in this project.", "Ticket Queue Missing", MessageBoxButtons.OK, MessageBoxIcon.Information)
-                End If
-            Case "colFolder"
-                LogConsole($"Opening folder in VS Code: {r.Path}")
-                Dim err = PqCli.OpenVsCode(r.Path)
-                If err IsNot Nothing Then LogConsole($"Cannot open VS Code for {r.Path}: {err}")
-            Case "colSession"
-                LogConsole($"Opening a Claude session in '{r.Key}': a terminal running claude in {r.Path}")
-                Dim err = PqCli.OpenClaudeSession(r.Path)
-                If err IsNot Nothing Then
-                    LogConsole($"Cannot open a Claude session for {r.Path}: {err}")
-                    MessageBox.Show(Me, $"Cannot open a Claude session in '{r.Key}':{Environment.NewLine}{err}", "Claude session", MessageBoxButtons.OK, MessageBoxIcon.Warning)
-                End If
-            Case "colStartRepo"
-                ' A worker for one project runs for as long as the project has tickets: a visible terminal like Start,
-                ' where pq's own refusal (unknown or held project, STOP, no agent) stays on screen.
-                ' A click anywhere in the cell, or a double click, must not start two workers that spend tokens: ask first.
-                If MessageBox.Show(Me, $"Start a worker that takes tickets of '{r.Key}' only?", "Start on this project", MessageBoxButtons.YesNo, MessageBoxIcon.Question) <> DialogResult.Yes Then Exit Select
-                LogConsole($"Launching 'pq start -Repo {r.Key}' in a new terminal..")
-                Dim err = PqCli.LaunchInteractive("start", "-Repo", r.Key)
-                If err IsNot Nothing Then
-                    LogConsole($"Launch failed: {err}")
-                    MessageBox.Show(Me, $"Cannot start a worker on '{r.Key}':{Environment.NewLine}{err}", "Start on this project", MessageBoxButtons.OK, MessageBoxIcon.Warning)
-                End If
-                RefreshAll()
+            Case "colActions"
+                Dim rect = dgvRepos.GetCellDisplayRectangle(e.ColumnIndex, e.RowIndex, False)
+                Dim anchor = If(rect.Width > 0 AndAlso rect.Height > 0,
+                    dgvRepos.PointToScreen(New Point(rect.Left, rect.Bottom)),
+                    Cursor.Position)
+                ShowRepoActionsMenu(r, anchor)
         End Select
+    End Sub
+
+    Private Sub DgvRepos_CellMouseUp(sender As Object, e As DataGridViewCellMouseEventArgs)
+        If e.Button <> MouseButtons.Right OrElse e.RowIndex < 0 Then Return
+        dgvRepos.ClearSelection()
+        dgvRepos.Rows(e.RowIndex).Selected = True
+        dgvRepos.CurrentCell = dgvRepos.Rows(e.RowIndex).Cells(Math.Max(0, e.ColumnIndex))
+        Dim r = TryCast(dgvRepos.Rows(e.RowIndex).Tag, RepoInfo)
+        If r Is Nothing Then Return
+        ShowRepoActionsMenu(r, Cursor.Position)
+    End Sub
+
+    Private Sub ShowRepoActionsMenu(r As RepoInfo, screenPoint As Point)
+        _repoActionMenu?.Dispose()
+        Dim menu As New ContextMenuStrip()
+        menu.ShowImageMargin = False
+
+        Dim mQuiz As New ToolStripMenuItem("Answer questions (Quiz)") With {
+            .ToolTipText = $"Answer questions for '{r.Key}' in an interactive Claude session (/sza:sq {r.Key})"
+        }
+        AddHandler mQuiz.Click, Sub() OpenQuiz(r.Key, $"project '{r.Key}'")
+
+        Dim mSpec As New ToolStripMenuItem("New spec...") With {
+            .ToolTipText = $"Draft a new ticket specification for '{r.Key}'"
+        }
+        AddHandler mSpec.Click, Sub() ShowNewSpec(r.Key)
+
+        Dim mQueue As New ToolStripMenuItem("Open ticket queue") With {
+            .ToolTipText = $"Open the local ticket queue of '{r.Key}'"
+        }
+        AddHandler mQueue.Click, Sub() OpenProjectTicketQueue(r)
+
+        Dim mCode As New ToolStripMenuItem("Open in VS Code") With {
+            .ToolTipText = $"Open {r.Path} in VS Code"
+        }
+        AddHandler mCode.Click, Sub() OpenProjectVsCode(r)
+
+        Dim mClaude As New ToolStripMenuItem("Open Claude session") With {
+            .ToolTipText = $"Open a terminal in {r.Path} running claude"
+        }
+        AddHandler mClaude.Click, Sub() OpenProjectClaudeSession(r)
+
+        Dim mStart As New ToolStripMenuItem("Start worker here") With {
+            .ToolTipText = $"Start a worker that takes tickets of '{r.Key}' only ('pq start -Repo {r.Key}')"
+        }
+        AddHandler mStart.Click, Sub() StartProjectWorker(r)
+
+        menu.Items.AddRange({mQuiz, mSpec, mQueue, New ToolStripSeparator(), mCode, mClaude, New ToolStripSeparator(), mStart})
+        ThemeService.ApplyMenuTheme(menu, ThemeService.Palette)
+        _repoActionMenu = menu
+        menu.Show(screenPoint)
+    End Sub
+
+    Private Sub OpenProjectTicketQueue(r As RepoInfo)
+        Dim queuePath = PortfolioState.GetTicketQueuePath(r)
+        If File.Exists(queuePath) Then
+            LogConsole($"Opening ticket queue of '{r.Key}': {queuePath}")
+            Dim err = PqCli.OpenFileWithDefaultApp(queuePath)
+            If err IsNot Nothing Then LogConsole($"Cannot open {queuePath}: {err}")
+        Else
+            LogConsole($"Ticket queue file missing for '{r.Key}': {queuePath}")
+            MessageBox.Show(Me, $"No ticket queue file found at:{Environment.NewLine}{queuePath}{Environment.NewLine}{Environment.NewLine}A ticket queue is created when the first ticket is drafted in this project.", "Ticket Queue Missing", MessageBoxButtons.OK, MessageBoxIcon.Information)
+        End If
+    End Sub
+
+    Private Sub OpenProjectVsCode(r As RepoInfo)
+        LogConsole($"Opening folder in VS Code: {r.Path}")
+        Dim err = PqCli.OpenVsCode(r.Path)
+        If err IsNot Nothing Then LogConsole($"Cannot open VS Code for {r.Path}: {err}")
+    End Sub
+
+    Private Sub OpenProjectClaudeSession(r As RepoInfo)
+        LogConsole($"Opening a Claude session in '{r.Key}': a terminal running claude in {r.Path}")
+        Dim err = PqCli.OpenClaudeSession(r.Path)
+        If err IsNot Nothing Then
+            LogConsole($"Cannot open a Claude session for {r.Path}: {err}")
+            MessageBox.Show(Me, $"Cannot open a Claude session in '{r.Key}':{Environment.NewLine}{err}", "Claude session", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+        End If
+    End Sub
+
+    Private Sub StartProjectWorker(r As RepoInfo)
+        ' A worker for one project runs for as long as the project has tickets: a visible terminal like Start,
+        ' where pq's own refusal (unknown or held project, STOP, no agent) stays on screen.
+        ' A click anywhere in the cell, or a double click, must not start two workers that spend tokens: ask first.
+        If MessageBox.Show(Me, $"Start a worker that takes tickets of '{r.Key}' only?", "Start on this project", MessageBoxButtons.YesNo, MessageBoxIcon.Question) <> DialogResult.Yes Then Return
+        LogConsole($"Launching 'pq start -Repo {r.Key}' in a new terminal..")
+        Dim err = PqCli.LaunchInteractive("start", "-Repo", r.Key)
+        If err IsNot Nothing Then
+            LogConsole($"Launch failed: {err}")
+            MessageBox.Show(Me, $"Cannot start a worker on '{r.Key}':{Environment.NewLine}{err}", "Start on this project", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+        End If
+        RefreshAll()
     End Sub
 
     Protected Overrides Sub OnFormClosing(e As FormClosingEventArgs)
@@ -950,6 +1015,7 @@ Partial Class MainForm
     Protected Overrides Sub OnFormClosed(e As FormClosedEventArgs)
         tmrRefresh.Enabled = False
         MyBase.OnFormClosed(e)
+        _repoActionMenu?.Dispose()
         _boldRepos.Dispose()
         _boldWorkers.Dispose()
     End Sub

@@ -20,8 +20,9 @@
     the owner's call. A project with a profile but no ledger is half set up and is refused (exit 2).
 
     Capture: a project's own scripts/utils/capture-draft.ps1 wins when it has one (it owns its templates and
-    attachments - FastMediaSorter_mob_v2 does); otherwise the canon's spec_catalog/capture-draft.ps1, which needs
-    the project's PLAN/TICKET_TEMPLATE.md. Both write the ledger row, the spec file and the row in the project's
+    attachments - FastMediaSorter_mob_v2 does); otherwise the canon's spec_catalog/capture-draft.ps1, which
+    uses the project's PLAN/TICKET_TEMPLATE.md when it has one, else the canon's scaffold form (S0098 - the
+    project keeps its own numbering, grammar and archive either way). Both write the ledger row, the spec file and the row in the project's
     ticket queue (PLAN/RELEASE_QUEUE.md): a new ticket lands at the END of the current release package, because
     the order of that file is the owner's plan and no tool reorders it.
 

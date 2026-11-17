@@ -322,4 +322,95 @@ Public Class ThemeService
         dgv.ColumnHeadersDefaultCellStyle.SelectionForeColor = p.TextPrimary
         dgv.ColumnHeadersBorderStyle = DataGridViewHeaderBorderStyle.Single
     End Sub
+
+    Public Shared Sub ApplyMenuTheme(menu As ContextMenuStrip, p As ThemePalette)
+        If menu Is Nothing Then Return
+        menu.BackColor = p.SurfaceRaised
+        menu.ForeColor = p.TextPrimary
+        menu.Renderer = New ThemeMenuRenderer(p)
+        For Each item As ToolStripItem In menu.Items
+            item.ForeColor = p.TextPrimary
+        Next
+    End Sub
+
+    Private Class ThemeMenuColorTable
+        Inherits ProfessionalColorTable
+        Private ReadOnly _p As ThemePalette
+
+        Public Sub New(palette As ThemePalette)
+            _p = palette
+            UseSystemColors = False
+        End Sub
+
+        Public Overrides ReadOnly Property ToolStripDropDownBackground As Color
+            Get
+                Return _p.SurfaceRaised
+            End Get
+        End Property
+        Public Overrides ReadOnly Property ImageMarginGradientBegin As Color
+            Get
+                Return _p.SurfaceRaised
+            End Get
+        End Property
+        Public Overrides ReadOnly Property ImageMarginGradientMiddle As Color
+            Get
+                Return _p.SurfaceRaised
+            End Get
+        End Property
+        Public Overrides ReadOnly Property ImageMarginGradientEnd As Color
+            Get
+                Return _p.SurfaceRaised
+            End Get
+        End Property
+        Public Overrides ReadOnly Property MenuBorder As Color
+            Get
+                Return _p.Border
+            End Get
+        End Property
+        Public Overrides ReadOnly Property MenuItemBorder As Color
+            Get
+                Return _p.Border
+            End Get
+        End Property
+        Public Overrides ReadOnly Property MenuItemSelected As Color
+            Get
+                Return _p.ControlHover
+            End Get
+        End Property
+        Public Overrides ReadOnly Property MenuItemSelectedGradientBegin As Color
+            Get
+                Return _p.ControlHover
+            End Get
+        End Property
+        Public Overrides ReadOnly Property MenuItemSelectedGradientEnd As Color
+            Get
+                Return _p.ControlHover
+            End Get
+        End Property
+        Public Overrides ReadOnly Property SeparatorDark As Color
+            Get
+                Return _p.Border
+            End Get
+        End Property
+        Public Overrides ReadOnly Property SeparatorLight As Color
+            Get
+                Return _p.Border
+            End Get
+        End Property
+    End Class
+
+    Private Class ThemeMenuRenderer
+        Inherits ToolStripProfessionalRenderer
+        Private ReadOnly _p As ThemePalette
+
+        Public Sub New(palette As ThemePalette)
+            MyBase.New(New ThemeMenuColorTable(palette))
+            _p = palette
+        End Sub
+
+        Protected Overrides Sub OnRenderItemText(e As ToolStripItemTextRenderEventArgs)
+            e.TextColor = If(e.Item IsNot Nothing AndAlso Not e.Item.Enabled, _p.TextDisabled, _p.TextPrimary)
+            MyBase.OnRenderItemText(e)
+        End Sub
+    End Class
 End Class

@@ -317,12 +317,16 @@ merged manifest is checked against them at its pre-flight.
    first, then the listing.
 3. **Every product in the map's consumers line:** one ticket to add the new tool to its footer grid from its own source
    (dictionary, footer template, generator) - no body cross-link (rule 4 of that contract).
-4. **`spec-draft.ps1` refuses (exit 2) a project that has a profile and no `PLAN/TICKET_TEMPLATE.md`** - the hub and
-   OneClickRunner did on 2026-11-13. The half-set-up guard is deliberate; the way through is the owner's: either the
-   scaffold (`init-task-flow`, which also renders launchers and queue files there), or write the ticket by hand as
-   `PLAN/<next id>_<slug>.md` from the canon template, which the portfolio queue sync registers (TASK-FLOW rule 65 - a ticket
-   file written to `PLAN/` with no ledger row is registered by the sync, where the profile says so). A project with no
-   profile at all is not refused: it gets a plain capture.
+4. **`spec-draft.ps1` and a profiled project with no `PLAN/TICKET_TEMPLATE.md` (the hub and OneClickRunner were,
+   on 2026-11-13):** refused until S0098 (2026-11-17), when the owner ordered the fallback the plain-capture path
+   already takes - `capture-draft.ps1` now lays the ticket out from the canon's scaffold template and prints a line
+   saying so; the profile's numbering, grammar and archive are untouched, and giving the project its own form stays
+   `init-task-flow`'s call (the owner's). A profile with no **ledger** is still refused (exit 2, the half-set-up
+   guard): the way through is the owner's - either the scaffold (`init-task-flow`, which also renders launchers and
+   queue files there), or write the ticket by hand as `PLAN/<next id>_<slug>.md` from the canon template, which the
+   portfolio queue sync registers (TASK-FLOW rule 65 - a ticket file written to `PLAN/` with no ledger row is
+   registered by the sync, where the profile says so). A project with no profile at all is not refused: it gets a
+   plain capture.
 
 ## 6. Records in the product repository
 

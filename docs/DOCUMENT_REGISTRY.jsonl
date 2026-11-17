@@ -21,6 +21,7 @@
 {"path": "docs/contracts/REPO-STAMP.md", "topic": "REPO-STAMP - pointer", "area": "docs", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "docs/contracts/RULE-DELIVERY.md", "topic": "RULE-DELIVERY - pointer", "area": "docs", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "docs/contracts/TASK-FLOW.md", "topic": "TASK-FLOW - pointer", "area": "docs", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "docs/releases/RELEASES.md", "topic": "Releases", "area": "docs", "update_triggers": ["Changes to the documented interface or workflow"], "role": "render"}
 {"path": "hooks/README.md", "topic": "hooks/ - the canon's enforcement layer", "area": "hooks", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "memory/MEMORY.md", "topic": "Agent Memory Index", "area": "memory", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "rules/AI_USAGE.md", "topic": "AI Usage - how agents work on these projects", "area": "rules", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
