@@ -110,14 +110,15 @@ outside `release-verdicts/` to have changed since, so any later edit voids the v
 A release also carries the product's **shared contracts**, and they fail the same way a verdict does -
 silently, because nothing went red. Before the one-way step ([CONTRACTS.md](CONTRACTS.md) §6):
 
-- the product has **caught up since its last reconciliation**: its synchronization spec was read against the code
-  (CONTRACTS.md §6 item 6) - every release, whether or not it touches a boundary;
+- the product has **caught up since its last reconciliation**: its synchronization spec was generated and each row
+  below its contract's version was handled by the kind of change in between (CONTRACTS.md §6 item 6) - every
+  release, whether or not it touches a boundary;
 - every contract this product produces or consumes has a **current registry row** in the catalog, with a
   verification date not older than the last release;
 - the product ships against the **current version** where possible; behind is allowed with a dated reason
   in that row, absent is not. One MAJOR behind is a warning, two is a blocker for new work at that
   boundary;
-- anything this release changes **at a contract boundary** is already in the catalog - the contract commit
+- anything this release changes **at a contract boundary** is already in the catalog - the contract change
   comes first, never after;
 - the **conformance vectors ran in this product's own suite**, against the catalog's vectors at the
   version the registry names, and the run is cited like any other evidence.

@@ -148,8 +148,6 @@ try {
         Assert-That (@($r.candidates).Count -eq 0 -and $r.named.why -ceq 'occupied') "occupied: $($r.named.why)"
         $r = Get-Rank @{ NamedTicket = 'alpha:A1'; Exclude = @('alpha:A1') }
         Assert-That (@($r.candidates).Count -eq 0 -and $r.named.why -ceq 'excluded') "excluded: $($r.named.why)"
-        $r = Get-Rank @{ NamedTicket = 'alpha:A1'; TicketBlocked = @{ 'alpha:A1' = 'resource' } }
-        Assert-That (@($r.candidates).Count -eq 0 -and $r.named.why -ceq 'excluded') "resource: $($r.named.why)"
     }
 
     # ---- 4. no pre-emption ----
@@ -199,8 +197,6 @@ try {
         $rank = Get-Rank @{ NamedTicket = 'beta:B1'; Occupied = @('beta') }
         $m = @{ xblocked = @{ 'beta:B1' = @{ blocker = 'alpha:A9' } }; transient = @{}; occupied = @{}; exclude = @() }
         Assert-That ((Get-PqNamedNotRunReason -Rank $rank -Key beta -Id B1 -Marks $m) -like '*blocker in another project (alpha:A9)*') 'xblocked mark'
-        $m = @{ xblocked = @{}; transient = @{ 'beta:B1' = @{ why = 'deviceLevel' } }; occupied = @{}; exclude = @() }
-        Assert-That ((Get-PqNamedNotRunReason -Rank $rank -Key beta -Id B1 -Marks $m) -like '*real hardware*') 'deviceLevel mark'
         $m = @{ xblocked = @{}; transient = @{ 'beta:B1' = @{ why = 'resource' } }; occupied = @{}; exclude = @() }
         Assert-That ((Get-PqNamedNotRunReason -Rank $rank -Key beta -Id B1 -Marks $m) -like '*machine resource*') 'resource mark'
         $m = @{ xblocked = @{}; transient = @{}; occupied = @{ beta = @{ why = 'workerCap' } }; exclude = @() }

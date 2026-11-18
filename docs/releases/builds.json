@@ -5,9 +5,9 @@
       "package": "sza",
       "flavor": "default",
       "kind": "release",
-      "version": "2026.1118.4",
-      "builtAt": "2026-11-18T17:50:52+01:00",
-      "note": "rules: DEVELOPMENT; tools 19, docs 3, skills 2, root 1"
+      "version": "2026.1118.5",
+      "builtAt": "2026-11-18T20:43:49+01:00",
+      "note": "rules: CONTRACTS, README, RELEASE_AND_DISTRIBUTION; tools 53, docs 7, skills 7, root 3, templates 2"
     }
   ]
 }

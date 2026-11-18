@@ -15,8 +15,6 @@
 #                                       events from Since on.
 #   Get-PqPercentile -Values -P         the p-th percentile (nearest rank) of numbers, or $null.
 #   Get-PqRunStats -Runs                n, moved, ok, minutes p50 and p90 for a group of run rows.
-#   Get-PqBuildFigures -Runs            per repository: closing passes (Implemented / Verified / BlockNeedUserTest) and how many
-#                                       of them said built=false (closed unbuilt); a row without built is unknown (S0037).
 #   Get-PqUsageFigures -Runs            tokens and list-price estimate (TASK-FLOW 0.20) summed by repository, model and outcome;
 #                                       passes without usage, incomplete usage and unpriced passes are counted, never zero.
 #   Get-PqReport -Root -Days [-Standalone <Sources>] [-Thresholds <registry analysis.thresholds>]
@@ -162,21 +160,6 @@ function Get-PqStatusFigures($Runs) {
         if ($gates.Contains($before)) { $gates[$before].left++ }
     }
     return [ordered]@{ ended = $ended; byAgent = $byAgent; gates = $gates }
-}
-
-function Get-PqBuildFigures($Runs) {
-    $byRepo = [ordered]@{}
-    foreach ($row in @($Runs)) {
-        $after = [string](Get-PqValue $row 'statusAfter' '')
-        if ($after -cnotin @('Implemented', 'Verified', 'BlockNeedUserTest')) { continue }
-        $repo = [string](Get-PqValue $row 'repo' '')
-        if (-not $repo) { $repo = '(unknown)' }
-        if (-not $byRepo.Contains($repo)) { $byRepo[$repo] = [ordered]@{ closing = 0; unbuilt = 0; unknown = 0 } }
-        $byRepo[$repo].closing++
-        $b = Get-PqValue $row 'built' $null
-        if ($b -is [bool] -and -not $b) { $byRepo[$repo].unbuilt++ } else { $byRepo[$repo].unknown++ }
-    }
-    return $byRepo
 }
 
 function Get-PqUsageFigures($Runs) {
@@ -340,7 +323,6 @@ function Get-PqReport {
     foreach ($g in @($runs | Group-Object { [string](Get-PqValue $_ 'outcome' 'unknown') } | Sort-Object Count -Descending)) { $outcomes[$g.Name] = $g.Count }
     $report.outcomes = $outcomes
     $report.statuses = Get-PqStatusFigures $runs
-    $report.built = Get-PqBuildFigures $runs
     $report.usage = Get-PqUsageFigures $runs
     # S0037: a repository's own R0 runs, outside pq - kept apart so the pq figures above stay pq's alone.
     $monoRows = @($mono.rows)

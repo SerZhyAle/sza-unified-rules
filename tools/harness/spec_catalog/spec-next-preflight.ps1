@@ -3,7 +3,8 @@
 # Collapses the per-round boilerplate that /spec-next used to run as 4+ separate
 # calls (search.ps1 rank + skip-cache list + preview.ps1 per candidate + drift-check.ps1)
 # into a single read-only invocation that returns:
-#   - the full ranked eligible list, ordered by the owner's release plan
+#   - the full ranked eligible list: in a repository registered with the portfolio, the tickets named by its rows
+#     of the portfolio queue file first, in that file's line order (_portfolio-order.ps1); then the owner's release plan
 #     (PLAN/RELEASE_QUEUE.md: package asc, then line order inside the package),
 #     with catalog priority desc / updated desc / id asc only as the fallback for a
 #     ticket the queue does not list,
@@ -122,6 +123,10 @@ if (-not [string]::IsNullOrWhiteSpace($ClaimAs)) {
 # same code tree. The audit is static, so a second one over the same files says nothing new.
 . (Get-SzaHarnessScript 'batch/_release-wait.ps1')
 
+<# TASK-FLOW rules 18 and 44: in a repository registered with the portfolio, the order of its tickets is the line
+   order of its rows in the portfolio queue file; the plan files order only the tickets that file does not name. #>
+. (Join-Path $PSScriptRoot '_portfolio-order.ps1')
+
 $pwshExe = if (Test-Path "$env:ProgramFiles\PowerShell\7\pwsh.exe") {
     "$env:ProgramFiles\PowerShell\7\pwsh.exe"
 } else {
@@ -197,7 +202,15 @@ function Get-QueueLineOrder {
     if ($queueRank.ContainsKey($Id)) { return $queueRank[$Id] }
     return [int]::MaxValue
 }
+<# The portfolio queue file first (see the dot-source above). The dispatcher's own picker run (SZA_PQ_PICKER=1) walks
+   that file's rows itself and asks about one named id, so an order computed here would never be read there. #>
+$portfolioOrder = @{ key = $null; file = $null; ids = [string[]]@() }
+if ($env:SZA_PQ_PICKER -cne '1') { $portfolioOrder = Get-PortfolioQueueOrder -ProjectRoot $projectRoot }
+$portfolioRank = @{}
+foreach ($orderedId in $portfolioOrder.ids) { $portfolioRank[[string]$orderedId] = $portfolioRank.Count }
 $ranked = @($eligible | Sort-Object `
+    @{ Expression = { if ($portfolioRank.ContainsKey([string]$_.id)) { 0 } else { 1 } }; Descending = $false }, `
+    @{ Expression = { if ($portfolioRank.ContainsKey([string]$_.id)) { $portfolioRank[[string]$_.id] } else { 0 } }; Descending = $false }, `
     @{ Expression = { Get-QueueRelBucket -Id $_.id }; Descending = $false }, `
     @{ Expression = { Get-QueueLineOrder -Id $_.id }; Descending = $false }, `
     @{ Expression = { [int]$_.priority }; Descending = $true }, `
@@ -586,7 +599,9 @@ foreach ($k in $skipCache.Keys) {
 $result = [PSCustomObject]@{
     total          = $all.Count
     eligible_count = $eligible.Count
-    order_source   = ('{0} (release package, then line order); catalog priority is the fallback' -f (Get-SzaPath 'releaseQueue' -Relative))
+    order_source   = ('{0}{1} (release package, then line order); catalog priority is the fallback' -f $(
+            if ($portfolioRank.Count -gt 0) { "$($portfolioOrder.file) (the line order of the $($portfolioOrder.key): rows); then " } else { '' }
+        ), (Get-SzaPath 'releaseQueue' -Relative))
     current_release = (Get-CurrentRelease)
     ranked         = $rankedOut
     skip_cache     = $skipCacheOut

@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Contract | `HARNESS-PROFILE` |
-| Version | 0.18, draft; source reader verified at 0.13; rules 9 to 12 and 14 implemented, rule 8 in part |
+| Version | 0.19, draft; source reader verified at 0.13; rules 9 to 12, 14 and 15 implemented, rule 8 in part |
 | Home | the shared contracts catalog, domain `rule-adoption/` (the path is in [CLAUDE.md](../../CLAUDE.md)) |
 | Role | **consumer**, and the schema's owner. Each repository running the harness writes its own profile |
 
@@ -69,3 +69,12 @@
   default `docs/releases` in `_profile.ps1` and in the profile template; `tools/harness/releases/` reads it, and
   `pq releases` reads it from each repository's profile as written. The default was added to `_profile.ps1`, so the
   reader vectors are regenerated at the next release (`tools/tests/export-contract-vectors.ps1`), not in S0092.
+- Eight defaults are derived, not fixed (rule 15, the 2026-11-18 amendment, S0122): `paths.journal`,
+  `journalArchive`, `burnedIds`, `releaseQueue`, `releaseReady`, `releaseQueueDone`, `grammar.specFileTemplate`
+  and `grammar.specFilePattern` follow the profile's `paths.specsDir`, `paths.specArchiveDir` and
+  `grammar.ticketIdPattern` (`Get-SzaDerivedDefaults` in `_profile.ps1`, applied by `Get-SzaProfile`); a key the
+  profile carries wins, and `paths.probeBaseline` stays fixed. Five readers parse a profile on their own and
+  still read the fixed defaults (`portfolio/lib/queue-file.ps1`, `portfolio/lib/ledger-watch.ps1`,
+  `portfolio/spec-draft.ps1`, `spec_catalog/block-links.ps1`, the ledger check of `tools/check-compliance.ps1`),
+  so a profile drops one of the eight keys only after they call the same function. Fast case:
+  `tools/tests/portfolio-profile-override.tests.ps1`. The reader vectors are regenerated at the next release.

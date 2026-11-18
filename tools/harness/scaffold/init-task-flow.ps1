@@ -197,10 +197,12 @@ $queueText = @"
 # Release Queue
 current-next-release: 1
 
-The owner orders the work here and only here. A bare number opens a package, `--` is work not yet
-scheduled, a row is the ticket (id and slug), the time it last changed and its status. Within a package
-the runner takes rows in line order. The plan tool adds a row for every new ticket, at the end, and keeps
-the status and the time current; it never reorders. Putting the work in the order you want is moving lines.
+A bare number opens a package, -- is work not yet scheduled, a row is the ticket (id and slug), the time
+it last changed and its status. The plan tool adds a row for every new ticket, at the end, and keeps the
+status and the time current; it never reorders. Once the project is registered with the portfolio queue
+(pq), the order of work is the line order of its rows in PORTFOLIO_QUEUE.md: move lines there, and the
+line order here decides only among tickets that file does not name. Until then the runner takes the rows
+of a package in line order, and putting the work in the order you want is moving lines here.
 
 ticket                                                         changed         status
 1
@@ -307,6 +309,10 @@ if (-not $profileCreated -and -not $skipLaunchers) {
     if ([string](Get-SzaProfileValue 'runner.promptTemplate') -ceq $defaultPrompt) {
         $promptNote = "note: .sza-profile.json has no runner.promptTemplate of its own - r1-r3 send '$defaultPrompt'; set runner.promptTemplate if that command does not exist here (the profile was not changed)"
     }
+}
+# A profile this run created without -Prompt carries no runner block, so R0 and r1-r3 send different prompts; say so once.
+if ($profileCreated -and -not $skipLaunchers -and -not $PSBoundParameters.ContainsKey('Prompt')) {
+    $promptNote = 'note: r0.ps1 sends the one-step prompt; r1-r3 and the portfolio queue send the canon default'
 }
 # Hints name the forwarder unless the profile maps entry points of its own (Get-SzaInvocation reads them).
 function Get-Hint([string] $Script, [string] $Arguments = '') {

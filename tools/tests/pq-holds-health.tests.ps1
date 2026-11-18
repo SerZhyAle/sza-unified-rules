@@ -19,8 +19,10 @@
          default name; a file under another name is never adopted and the default tree has no paths.queueCandidates.
       9. The wait words: the one 'held' count of the event splits into held and frozen, a disabled project is
          named and replaces 'none', every other count passes through, and the event counts are not touched.
+     10. The session harness root: SZA_HARNESS_ROOT wins, else the newest cached version (compared as versions).
+     11. The doctor's harness line: one copy and equal scripts are PASS, differing scripts and no copy are NOTE.
 
-    Touches: a scratch folder under the system temp directory only (removed unless -KeepScratch). Fast tier.
+    Touches: a scratch folder under the system temp directory only (removed unless -KeepScratch).
 #>
 param([switch]$KeepScratch)
 
@@ -133,6 +135,37 @@ try {
         Write-Text (Join-Path $led 'PLAN/PQ_QUEUE.md') "# queue`n"
         $got = Get-PqTicketQueuePath $rec
         Assert-That ($got -ceq [IO.Path]::GetFullPath((Join-Path $led 'PLAN/PQ_QUEUE.md'))) "a profile naming an existing file: '$got'"
+    }
+
+    Test-Case 'the session harness root: the variable first, else the newest cached version' {
+        $cache = Join-Path $scratch 'cache'
+        foreach ($d in '2026.1002.9/tools/harness', '2026.1002.10/tools/harness', '2026.1100.1', 'notaversion/tools/harness') {
+            $null = New-Item -ItemType Directory -Path (Join-Path $cache $d) -Force
+        }
+        $newest = [IO.Path]::GetFullPath((Join-Path $cache '2026.1002.10/tools/harness'))
+        $got = Get-PqSessionHarnessRoot -EnvRoot '' -CacheDir $cache
+        Assert-That ($got -ceq $newest) "newest: $got"
+        $named = Join-Path $scratch 'named-harness'
+        Assert-That ((Get-PqSessionHarnessRoot -EnvRoot $named -CacheDir $cache) -ceq [IO.Path]::GetFullPath($named)) 'the variable did not win over the cache'
+        Assert-That ($null -eq (Get-PqSessionHarnessRoot -EnvRoot '' -CacheDir (Join-Path $scratch 'no-cache'))) 'a missing cache gave a root'
+    }
+
+    Test-Case 'the harness line: one copy, same scripts, differing scripts, no installed copy' {
+        $h1 = Join-Path $scratch 'h1'
+        $h2 = Join-Path $scratch 'h2'
+        Write-Text (Join-Path $h1 'a.ps1') "one`r`ntwo`r`n"
+        Write-Text (Join-Path $h2 'a.ps1') "one`ntwo`n"
+        Write-Text (Join-Path $h1 'sub/b.ps1') "same`n"
+        Write-Text (Join-Path $h2 'sub/b.ps1') "same`n"
+        $one = Format-PqHarnessLine -Own $h1 -Session $h1
+        Assert-That ($one.StartsWith('PASS harness - one copy: ')) "one copy: $one"
+        $same = Format-PqHarnessLine -Own $h1 -Session $h2
+        Assert-That ($same.StartsWith('PASS harness - robots run ') -and $same.EndsWith('all 2 scripts are the same')) "same: $same"
+        Write-Text (Join-Path $h2 'sub/b.ps1') "changed`n"
+        $diff = Format-PqHarnessLine -Own $h1 -Session $h2
+        Assert-That ($diff.StartsWith('NOTE harness - ') -and $diff.Contains('; 1 of 2 scripts differ ')) "differ: $diff"
+        $none = Format-PqHarnessLine -Own $h1 -Session ''
+        Assert-That ($none.StartsWith('NOTE harness - ') -and $none.Contains('no installed plugin copy')) "none: $none"
     }
 
     Test-Case 'pq list and pq status print hold=queue, hold=true and hold=true+queue' {

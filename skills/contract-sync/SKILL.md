@@ -77,7 +77,9 @@ In `P:\Contracts\_meta\REGISTRY.md`, for every contract this product produces or
 **implements**, the range it **reads**, today's date as **verified**, a one-line note. Record deviations
 under the rights and evidence requirements in step 5; an exception has no end date and stands until it is closed.
 
-Write the cells in the format `REGISTRY.md` section 2 states, because a program reads them: **one** version
+Write the cells in the format `REGISTRY.md` section 2 states, because a program reads them: the `Product` cell starts
+with this repository's key, then a surface in parentheses (rows that still carry the product's name keep it until the
+repository rewrites all of its rows together with its own checks that read the name), **one** version
 (or `partial <version>`, or `-`) per cell, one contract id per row, `pending` or a date in `Verified`, and
 everything else in the note. `tools/contract-lag.ps1` reports a row it cannot read as `unparsed`; fix your own.
 
@@ -135,8 +137,11 @@ so: the registry's artifacts column exists to make the gap visible, not comforta
 - the seven answers from step 5, with the tickets opened;
 - what could not be verified, and what it would take.
 
-Commit only if the owner asks. The catalog is outside git, so changes there are live the moment they are
-written - say plainly what you changed in it.
+Commit only if the owner asks, and only in this repository. A change in the catalog is live the moment it is
+written - say plainly what you changed in it. The catalog keeps a local git history that only the canon
+session (`sza-unified-rules`) writes: **from any other repository's session, run no git command in
+`P:\Contracts`** - not `status`, not `diff`, not `add`, `commit`, `checkout`, `restore` or `stash`. Several
+sessions write there at once, and one session's command can stage or discard the work of another.
 
 ---
 
@@ -146,7 +151,7 @@ The registry is the ledger of which version each product is synchronized with. F
 
 - `pwsh -File tools/contract-lag.ps1` lists every adoption row that is **behind** its contract, `partial`,
   `pending` or unreadable. `check-contracts.ps1` shows the totals as `CTR-LAG`.
-- `pwsh -File tools/contract-lag.ps1 -Product <name> -EmitSpec -OutFile <path>` writes the **synchronization
+- `pwsh -File tools/contract-lag.ps1 -Product <repository key> -EmitSpec -OutFile <path>` writes the **synchronization
   spec** for one product: per contract, the document-log entries between its version and the current one, each
   with its kind and what it obliges, plus the definition of done. Hand it to that product's own session; this
   skill, run in the canon, never edits another product's rows or tree.
@@ -157,9 +162,11 @@ A row can be behind because the code is, or because nobody re-read the contract 
 cannot tell which, and the owner's verification is what tells.
 
 **Every release starts with this catch-up** (the owner's order of 2026-11-15, [CONTRACTS.md](../../rules/CONTRACTS.md)
-§6 item 6): generate the spec for the product's registry name, read each log entry since its synchronized version
-against the code, then move the product's own row. The `release` skill's contract gate reads the result; do not wait
-for release time when the catalog has moved - a product that sees it opens the catch-up as its own ticket.
+§6 item 6): generate the spec for the product's repository key; read the entries of each
+`behind (breaking)` row against the code, and those of a `behind (additive)` row when the release touches that
+contract's boundary; then move the rows that were read. An `unread` row opens no ticket. The `release` skill's
+contract gate reads the result; do not wait for release time when a breaking change has landed - a product that
+sees one opens the catch-up as its own ticket.
 
 ## Answering a request from a sibling product
 
@@ -175,5 +182,7 @@ When another product asks about a shared contract, answer in a dated `RESPONSE` 
   row intact, because a consumer may have shipped against it.
 - **Never touch another repository's working tree.** One repo per run, and the other side of a shared
   contract finds out by proposal, not by surprise.
+- **Never run a git command in the catalog from a product session.** Its history is written by the canon
+  session alone (`_meta\RULES.md` section 6); a change there that you did not make is a sibling's work.
 - **Never edit a contract this product does not own** - sealed, draft or not. Write
   `PROPOSAL-<date>-<topic>.md` beside it in its domain folder and leave the contract untouched.

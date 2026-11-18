@@ -7,14 +7,9 @@
   "envPrefix": "SZA",
 
   "paths": {
-    "journal": "PLAN/spec-catalog.jsonl",
-    "journalArchive": "PLAN/spec-catalog-archive.jsonl",
-    "burnedIds": "PLAN/spec-catalog-burned-ids.jsonl",
+    "$comment_specsDir": "Three facts place the ticket flow: paths.specsDir, paths.specArchiveDir and grammar.ticketIdPattern. The ledger files (journal, journalArchive, burnedIds), the queue files (releaseQueue, releaseReady, releaseQueueDone), grammar.specFileTemplate and grammar.specFilePattern follow them (Get-SzaDerivedDefaults in tools/harness/_profile.ps1). Write one of those eight keys only for a file that is not named the default way.",
     "specsDir": "PLAN",
     "specArchiveDir": "PLAN/archive",
-    "releaseQueue": "PLAN/RELEASE_QUEUE.md",
-    "releaseReady": "PLAN/RELEASE_READY.md",
-    "releaseQueueDone": "PLAN/RELEASE_QUEUE_DONE.md",
     "$comment_releasesDir": "The release ledger (RELEASE-LEDGER): channels.json, builds.json, history.jsonl and the rendered RELEASES.md. Written only by releases/release-ledger.ps1.",
     "releasesDir": "docs/releases",
     "tempDir": "temp",
@@ -41,8 +36,6 @@
 
   "grammar": {
     "ticketIdPattern": "^S\\d{4}$",
-    "specFilePattern": "^PLAN/(archive/)?S\\d{4}_(?!spec_)",
-    "specFileTemplate": "PLAN/{0}_{1}.md",
     "statusVocabulary": ["Draft", "Approved", "Tactical", "In Progress", "Implemented", "Verified", "Partial", "Broken", "BlockByOtherTask", "BlockNeedUserTest", "BlockQuestions", "BlockExternal", "Archived"]
   },
 

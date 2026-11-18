@@ -86,7 +86,8 @@ in the one-ticket skills: `/spec-all <key>:<id>` and `/sa <key>:<id>` work one n
 - `pq problems` lists findings with stable ids (`PQ-RACE01`, `PQ-SAFE02`, `PQ-THRASH01`, `PQ-LIMIT01`, `PQ-DATA01` and others),
   plus a `stale hold:` line for a hold row whose comment says "no ticket queue" while the project has one;
   a figure is printed with its n and a split only where n is at least 5. Say "no evidence" where the report does.
-  `closed unbuilt` is what the passes said about themselves, and `unknown` there is no disclosure, not a build;
+  `closed without a build` is counted from the ledgers (tickets at `Implemented` written since the last recorded build),
+  and `not available` there means no release ledger or no recorded build in that project, never zero;
   token and dollar figures are a list-price estimate from a dated local snapshot, not a bill, and a pass with no
   usage or no price is unknown, never zero.
 - A provider out of limit is held machine-wide until its reset time (`pq agents` shows it); the ticket goes to the next

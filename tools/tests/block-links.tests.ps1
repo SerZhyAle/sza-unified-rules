@@ -16,7 +16,7 @@
       5. -Check releases a ticket whose Blocker: token was removed by hand.
       6. The fixed `**Depends on:**` reader stops at the end of its line and does not read a following bullet list.
 
-    Spawns about ten pwsh processes, so it is above the 5-second line: release tier, run by name.
+    Spawns about ten pwsh processes.
     -KeepScratch leaves the repositories for inspection.
 #>
 [CmdletBinding()]

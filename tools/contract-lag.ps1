@@ -4,22 +4,27 @@ brings a lagging one up to date.
 
 The ledger is the catalog's own registry (_meta/REGISTRY.md, section 2 "Adoption"); nothing is stored here.
 For every adoption row the program compares the version the product is synchronized with - `Implements`,
-or `Reads` for a pure consumer - against the contract's current version (section 1), and reports one state:
+or `Reads` for a pure consumer - against the contract's current version (the header block in the domain README, or registry section 1 for an id that has no block), and reports one state:
 
   current    the product is on the contract's version
-  behind     lower than the contract's version
+  behind     lower than the contract's version, and a breaking or an additive log entry lies in between
+             (the row's `lag` field says which: breaking, additive)
+  unread     lower than the contract's version, and only clarifications or corrections lie in between -
+             informational: no spec section, no ticket; the row may advance on a read (lag: clarification)
   ahead      higher than the contract's version (a typo, or a version not yet published)
   partial    the cell says `partial <version>`
   pending    `Verified` is `pending` - nobody has confirmed the row since the catalog took this shape
   n/a        `Implements` and `Reads` are both `-`
   unparsed   the cell is not one version; the owning project normalizes it (REGISTRY section 2)
 
-With -Product <text> -EmitSpec the program writes the synchronization spec for every product whose name
-contains <text>: per contract, the document-log entries between the product's version and the current one,
+With -Product <key> -EmitSpec the program writes the synchronization spec for the repository whose Product cells
+start with that key (REGISTRY section 2). A value that no row carries as its key is matched by text against the
+rows that carry no key yet, as before, and the output says so. Per contract, the spec lists
+the document-log entries between the product's version and the current one,
 each with its kind and what it obliges, and the definition of done. The spec is handed to that product's own
 session; this program never edits a registry row or another repository.
 
-Exit codes: 0 = report written; 1 = -FailOnLag and at least one row is behind; 2 = internal error.
+Exit codes: 0 = report written; 1 = -FailOnLag and at least one row is behind; 2 = internal error, or -Product matched no row.
 
 Usage:
   pwsh -File tools/contract-lag.ps1
@@ -31,6 +36,7 @@ Usage:
 param(
     [string]$CatalogRoot,
     [string]$Product,
+    [string]$PortfolioRoot,
     [switch]$EmitSpec,
     [string]$OutFile,
     [switch]$Json,
@@ -47,10 +53,32 @@ try {
         throw "contracts catalog not found at '$CatalogRoot' (set -CatalogRoot or SZA_CONTRACTS_ROOT)"
     }
     $CatalogRoot = (Resolve-Path -LiteralPath $CatalogRoot).Path
-    if ($EmitSpec -and -not $Product) { throw '-EmitSpec needs -Product <name or part of it>' }
+    if ($EmitSpec -and -not $Product) { throw '-EmitSpec needs -Product <repository key>' }
 
     $registryPath = Join-Path $CatalogRoot '_meta\REGISTRY.md'
     if (-not (Test-Path -LiteralPath $registryPath)) { throw "no registry at '$registryPath'" }
+
+    # The Product cell starts with a repository key (REGISTRY section 2): a key of the portfolio registry
+    # (repos.json in the portfolio root, TASK-FLOW rule 41) or the reserved `all`. That registry is machine-local;
+    # where it cannot be read no cell is taken as keyed and -Product matches by text, as it always did.
+    $knownKeys = @()
+    try {
+        if (-not $PortfolioRoot) { $PortfolioRoot = $env:SZA_PORTFOLIO_ROOT }
+        if (-not $PortfolioRoot) { $PortfolioRoot = Join-Path ([Environment]::GetFolderPath('UserProfile')) '.sza\portfolio' }
+        $reposFile = Join-Path $PortfolioRoot 'repos.json'
+        if (Test-Path -LiteralPath $reposFile) {
+            $knownKeys = @(@((Get-Content -LiteralPath $reposFile -Raw | ConvertFrom-Json).repos) |
+                ForEach-Object { [string]$_.key } | Where-Object { $_ }) + @('all')
+        }
+    }
+    catch { $knownKeys = @() }
+
+    # -cmatch and -ccontains on purpose: a product name such as 'FileDO' must not be read as the key 'filedo'.
+    function Get-ProductKey {
+        param([string]$Cell)
+        if ($Cell -cmatch '^([a-z][a-z0-9-]*)(?:\s+\(.*\))?$' -and $knownKeys -ccontains $Matches[1]) { return $Matches[1] }
+        return ''
+    }
 
     function ConvertTo-Ver {
         param([string]$Text)
@@ -100,6 +128,14 @@ try {
         }
     }
 
+    # The header block in the domain README is the one writer of a contract's version and status (RULES.md
+    # section 4); registry section 1 is its mirror and may lag. A block wins over the registry row, and the
+    # row is kept only for an id that has no README block.
+    foreach ($b in Read-SzaContractBlocks $CatalogRoot) {
+        if ($b.version -notmatch '^\d+\.\d+$') { continue }
+        $contracts[$b.id] = [pscustomobject]@{ version = $b.version; status = $b.status; folder = $b.domain }
+    }
+
     # ------------------------------------------------------------------ states
 
     $result = foreach ($r in $rows) {
@@ -122,20 +158,39 @@ try {
                  else { 'current' }
 
         [pscustomobject]@{
-            contract = $r.contract; product = $r.product; role = $r.role
+            contract = $r.contract; product = $r.product; key = (Get-ProductKey $r.product); role = $r.role
             synced = if ($synced) { $synced.ToString() } else { '' }
             current = if ($curVer) { $curVer.ToString() } else { '' }
-            state = $state; verified = $r.verified; multiId = $r.multiId; line = $r.line
+            state = $state; lag = ''; verified = $r.verified; multiId = $r.multiId; line = $r.line
             raw = if ($implNone) { $r.readsCell } else { $r.implCell }
         }
     }
     $result = @($result)
-    if ($Product) { $result = @($result | Where-Object { $_.product -like "*$Product*" }) }
+    $matchedBy = 'all'
+    if ($Product) {
+        $carried = @($result | ForEach-Object key | Where-Object { $_ } | Sort-Object -Unique)
+        $byKey = @($result | Where-Object { $_.key -and $_.key -ceq $Product })
+        if ($byKey.Count -gt 0) { $result = $byKey; $matchedBy = 'key' }
+        else {
+            # Not a key any row carries: the text match this program always had, over the rows that carry no key
+            # yet, so a caller that still passes a product's name gets the rows it always got.
+            $result = @($result | Where-Object { -not $_.key -and $_.product -like "*$Product*" })
+            $matchedBy = 'text'
+        }
+        if ($result.Count -eq 0) {
+            throw ("no adoption row matches -Product '$Product'. Pass the repository key its rows start with (REGISTRY " +
+                "section 2), or the product's name while its rows still carry the name. Keys the rows carry: " +
+                $(if ($carried) { $carried -join ', ' } else { 'none' }))
+        }
+    }
+    $textNote = ($matchedBy -eq 'text' -and $knownKeys.Count -gt 0)
 
     # ------------------------------------------------------------------ the spec
 
     function Get-DocLog {
         param([string]$Folder)
+        if (-not $script:docLogCache) { $script:docLogCache = @{} }
+        if ($script:docLogCache.ContainsKey($Folder)) { return $script:docLogCache[$Folder] }
         $readme = Join-Path (Join-Path $CatalogRoot $Folder) 'README.md'
         $entries = New-Object System.Collections.Generic.List[object]
         if (-not (Test-Path -LiteralPath $readme)) { return @() }
@@ -154,7 +209,8 @@ try {
                 })
             }
         }
-        return $entries.ToArray()
+        $script:docLogCache[$Folder] = $entries.ToArray()
+        return $script:docLogCache[$Folder]
     }
 
     function Test-EntryFor {
@@ -168,27 +224,54 @@ try {
         return $false
     }
 
-    function Get-Owed {
+    function Get-KindClass {
         param([string]$Kind)
         # The Kind cell is free text in practice (49 distinct spellings on 2026-11-18: 'additive + breaking (draft)',
         # 'minor (clarification)', 'format (draft move; major ..)'), so each word is looked for anywhere in the cell and
-        # the strictest reading wins: breaking, then additive, then the read-only kinds, then a bare 'minor', whose
-        # content is unknown and is therefore reviewed.
+        # the strictest reading wins. Only a kind that names a clarification, a correction, an editorial change or a
+        # consolidation is read-only; a bare 'minor', '-' and any other spelling has unknown content and is reviewed.
         $k = $Kind.Trim().ToLower()
-        $must = 'MUST adapt or declare a justified scoped exception - the older implementation disagrees with this contract'
-        $review = 'Review - adopt it, or record a dated exception saying why not'
-        $read = 'Read - code changes only if it relied on the older wording'
-        if ($k -match '(?<!non-|not |no )breaking|(?<!no )\bmajor\b|^format\b') { return $must }
-        if ($k -match 'additive|addition|amendment|artifact|adoption') { return $review }
-        if ($k -match 'clarification|correcti|editorial') { return $read }
-        if ($k -match '\bminor\b') { return $review }
-        return $read
+        if ($k -match '(?<!non-|not |no )breaking|(?<!no )\bmajor\b|^format\b') { return 'breaking' }
+        if ($k -match 'additive|addition|amendment|artifact|adoption') { return 'additive' }
+        if ($k -match 'clarification|correcti|editorial|consolidation') { return 'clarification' }
+        return 'additive'
+    }
+
+    function Get-Owed {
+        param([string]$Kind)
+        switch (Get-KindClass $Kind) {
+            'breaking' { return 'MUST adapt or declare a justified scoped exception - the older implementation disagrees with this contract' }
+            'additive' { return 'Review - adopt it, or record a dated exception saying why not' }
+            default { return 'Read - code changes only if it relied on the older wording' }
+        }
     }
 
     function Limit-Text {
         param([string]$Text, [int]$Max = 480)
         if ($Text.Length -le $Max) { return $Text }
         return $Text.Substring(0, $Max).TrimEnd() + ' ..'
+    }
+
+    # ------------------------------------------------------------------ lag by kind
+    # A row below its contract's version is `behind` only when the change in between can bind the product: a MAJOR
+    # step or a breaking entry (lag breaking), an addition, an unrecognised kind or a step the log does not explain
+    # (lag additive). When every entry in between is a clarification or a correction the row is `unread`, which is
+    # informational (catalog RULES section 14). A `partial` row keeps its state and gets the same `lag`.
+    foreach ($row in $result) {
+        if ($row.state -notin @('behind', 'partial') -or -not $row.synced) { continue }
+        $from = [version]$row.synced
+        $to = [version]$row.current
+        if ($from -ge $to) { continue }
+        $folder = $contracts[$row.contract].folder
+        $classes = @()
+        if ($folder) {
+            $classes = @(Get-DocLog $folder | Where-Object { Test-EntryFor $_ $row.contract $from $to } |
+                ForEach-Object { Get-KindClass $_.kind })
+        }
+        $row.lag = if ($from.Major -lt $to.Major -or $classes -contains 'breaking') { 'breaking' }
+                   elseif ($classes.Count -eq 0 -or $classes -contains 'additive') { 'additive' }
+                   else { 'clarification' }
+        if ($row.state -eq 'behind' -and $row.lag -eq 'clarification') { $row.state = 'unread' }
     }
 
     function New-Spec {
@@ -201,6 +284,11 @@ try {
         $null = $sb.AppendLine("Generated $today by tools/contract-lag.ps1 from the registry and the contracts' document logs.")
         $null = $sb.AppendLine('For the project session that owns the product: it files this as its own ticket, edits its own registry')
         $null = $sb.AppendLine('rows and its own code, and nobody does either on its behalf. Surfaces covered: ' + ($names -join '; ') + '.')
+        if ($textNote) {
+            $null = $sb.AppendLine()
+            $null = $sb.AppendLine("Selected by text: '$Product' is not a repository key that any row carries, so a row of this product")
+            $null = $sb.AppendLine('spelled differently is not here. REGISTRY section 2 states the key the Product cell starts with.')
+        }
         $null = $sb.AppendLine()
         $null = $sb.AppendLine('The log entries below are matched by version and by the contract ids a row names; a row that names none is')
         $null = $sb.AppendLine('shown for every contract in its domain. Treat each list as a map, not as the whole change.')
@@ -209,6 +297,7 @@ try {
         $behind = @($Rows | Where-Object { $_.state -in 'behind', 'partial' })
         $pending = @($Rows | Where-Object { $_.state -eq 'pending' })
         $unparsed = @($Rows | Where-Object { $_.state -eq 'unparsed' })
+        $unread = @($Rows | Where-Object { $_.state -eq 'unread' })
 
         $null = $sb.AppendLine('## What is owed')
         $null = $sb.AppendLine()
@@ -219,7 +308,8 @@ try {
             $null = $sb.AppendLine('| Contract | Surface | Synchronized with | Current | State | Verified |')
             $null = $sb.AppendLine('| --- | --- | --- | --- | --- | --- |')
             foreach ($b in ($behind | Sort-Object contract, product)) {
-                $null = $sb.AppendLine(('| `{0}` | {1} | {2} | {3} | {4} | {5} |' -f $b.contract, $b.product, $b.synced, $b.current, $b.state, $b.verified))
+                $stateText = if ($b.lag) { '{0} ({1})' -f $b.state, $b.lag } else { $b.state }
+                $null = $sb.AppendLine(('| `{0}` | {1} | {2} | {3} | {4} | {5} |' -f $b.contract, $b.product, $b.synced, $b.current, $stateText, $b.verified))
             }
         }
         $null = $sb.AppendLine()
@@ -268,6 +358,18 @@ try {
             $null = $sb.AppendLine()
         }
 
+        if ($unread.Count -gt 0) {
+            $null = $sb.AppendLine('## Unread clarifications (informational)')
+            $null = $sb.AppendLine()
+            $null = $sb.AppendLine('Only clarifications and corrections lie between these versions. Nothing is owed and no ticket is opened:')
+            $null = $sb.AppendLine('read the log entries when convenient; the row may then move to the current version with a fresh date.')
+            $null = $sb.AppendLine()
+            foreach ($u in ($unread | Sort-Object contract, product)) {
+                $null = $sb.AppendLine(('- `{0}` ({1}), {2} to {3}' -f $u.contract, $u.product, $u.synced, $u.current))
+            }
+            $null = $sb.AppendLine()
+        }
+
         if ($pending.Count -gt 0) {
             $null = $sb.AppendLine('## Never verified (`pending`)')
             $null = $sb.AppendLine()
@@ -306,7 +408,7 @@ try {
         $null = $sb.AppendLine()
         $null = $sb.AppendLine('## Definition of done')
         $null = $sb.AppendLine()
-        $null = $sb.AppendLine('1. Each contract above is read at its current version and cited by id and section, never by catalog path.')
+        $null = $sb.AppendLine('1. Each contract with a row owed above is read at its current version and cited by id and section, never by catalog path; an `unread` row owes nothing.')
         $null = $sb.AppendLine('2. The implementation matches it, or the project declares a justified exception in its own REGISTRY section 3 row')
         $null = $sb.AppendLine('   without prior owner approval: clause, scope, evidence, impact, compensating behavior and review condition.')
         $null = $sb.AppendLine('   Name the responsible project. These rights apply to mandatory, active and draft contracts; no unconditional compliance claim is required.')
@@ -328,7 +430,7 @@ try {
     # ------------------------------------------------------------------ output
 
     $counts = [ordered]@{}
-    foreach ($s in 'current', 'behind', 'partial', 'pending', 'ahead', 'n/a', 'unparsed') {
+    foreach ($s in 'current', 'behind', 'unread', 'partial', 'pending', 'ahead', 'n/a', 'unparsed') {
         $counts[$s] = @($result | Where-Object { $_.state -eq $s }).Count
     }
 
@@ -339,12 +441,12 @@ try {
             $dir = Split-Path -Parent $full
             if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
             [System.IO.File]::WriteAllText($full, $spec, (New-Object System.Text.UTF8Encoding($false)))
-            Write-Output "spec written: $OutFile ($($counts['behind']) behind, $($counts['partial']) partial, $($counts['pending']) pending, $($counts['unparsed']) unparsed)"
+            Write-Output "spec written: $OutFile ($($counts['behind']) behind, $($counts['unread']) unread, $($counts['partial']) partial, $($counts['pending']) pending, $($counts['unparsed']) unparsed)"
         }
         else { Write-Output $spec }
     }
     elseif ($Json) {
-        [pscustomobject]@{ catalog = $CatalogRoot; counts = $counts; rows = $result } | ConvertTo-Json -Depth 4
+        [pscustomobject]@{ catalog = $CatalogRoot; matchedBy = $matchedBy; keysKnown = ($knownKeys.Count -gt 0); counts = $counts; rows = $result } | ConvertTo-Json -Depth 4
     }
     else {
         "catalog: $CatalogRoot"
@@ -352,7 +454,14 @@ try {
         ''
         $lag = @($result | Where-Object { $_.state -in 'behind', 'partial' } | Sort-Object product, contract)
         if ($lag.Count -gt 0) {
-            $lag | Format-Table product, contract, state, synced, current, verified -AutoSize | Out-String -Width 220
+            $lag | Format-Table product, contract, state, lag, synced, current, verified -AutoSize | Out-String -Width 220
+        }
+        if ($textNote) { "matched by text: '$Product' is not a repository key that any row carries (REGISTRY section 2)"; '' }
+        $unkeyed = @($result | Where-Object { -not $_.key })
+        if ($knownKeys.Count -gt 0 -and $unkeyed.Count -gt 0) {
+            "product cells that name no repository key: $(@($unkeyed | ForEach-Object product | Sort-Object -Unique).Count) cells, $($unkeyed.Count) rows"
+            $unkeyed | Group-Object product | Sort-Object Name | ForEach-Object { '  {0,4}  {1}' -f $_.Count, $_.Name }
+            ''
         }
         $bad = @($result | Where-Object { $_.state -eq 'unparsed' })
         if ($bad.Count -gt 0) {

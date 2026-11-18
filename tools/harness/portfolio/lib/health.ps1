@@ -26,6 +26,14 @@
 #       the key Claude Code writes: full path, forward slashes, upper-case drive letter, no trailing slash.
 #   Test-PqTrustNeeded -Path <dir>
 #       $true when the repository carries .claude/settings.json or a .claude/hooks folder.
+#   Get-PqSessionHarnessRoot [-EnvRoot <dir>] [-CacheDir <dir>]
+#       the harness folder a repository's forwarder resolves: SZA_HARNESS_ROOT when set, else tools/harness of the
+#       newest installed plugin version (compared as versions), else $null.
+#   Get-PqHarnessDiffCount -Own <dir> -Other <dir>
+#       @{ differ; total } over the *.ps1 files of Own, compared as text with CR removed; a script missing or
+#       unreadable in Other counts as differing.
+#   Format-PqHarnessLine -Own <dir> -Session <dir or ''>
+#       the one `harness` line of pq doctor: PASS for one copy or equal scripts, NOTE otherwise.
 
 $script:PqStaleHoldPattern = '(?i)\bno\s+ticket\s+queue\b'
 
@@ -71,32 +79,18 @@ function Get-PqStaleHoldLines($Queue, $Registry) {
     return @($out.ToArray())
 }
 
+. (Join-Path $PSScriptRoot '..\..\..\lib\canon-digest.ps1')   # the digest itself: one implementation, shared with check-compliance.ps1
+
 function Get-PqCanonDigestInfo([string]$CanonRoot) {
     $res = @{ ok = $false; digest = $null; version = 'unknown'; error = $null }
     $rulesDir = Join-Path $CanonRoot 'rules'
     if (-not [IO.Directory]::Exists($rulesDir)) { $res.error = "no rules/ under $CanonRoot"; return $res }
     $vf = Join-Path $CanonRoot 'CANON_VERSION'
     if ([IO.File]::Exists($vf)) { $res.version = ([IO.File]::ReadAllText($vf)).Trim() }
-    $excluded = @('README.md', 'SPREAD_BACK_PROMPT.md')
-    $docs = @([IO.Directory]::GetFiles($rulesDir, '*.md') | Where-Object { $excluded -notcontains [IO.Path]::GetFileName($_) })
-    # Sort-Object Name in check-compliance.ps1 is culture-aware and case-insensitive; the same order here.
-    $docs = @($docs | Sort-Object { [IO.Path]::GetFileName($_) })
-    if ($docs.Count -eq 0) { $res.error = "no rule documents in $rulesDir"; return $res }
-    $sha = [Security.Cryptography.SHA256]::Create()
-    try {
-        $buffer = [IO.MemoryStream]::new()
-        foreach ($d in $docs) {
-            $text = ([IO.File]::ReadAllText($d)) -replace "`r`n", "`n"
-            $bytes = [Text.Encoding]::UTF8.GetBytes([IO.Path]::GetFileName($d) + "`n" + $text)
-            $buffer.Write($bytes, 0, $bytes.Length)
-        }
-        $buffer.Position = 0
-        $hash = $sha.ComputeHash($buffer)
-        $res.digest = 'sha256:' + (($hash | ForEach-Object { $_.ToString('x2') }) -join '')
-        $res.ok = $true
-    }
+    # The algorithm lives in tools/lib/canon-digest.ps1, the one copy check-compliance.ps1 uses too.
+    if (@(Get-SzaCanonRuleDocs $rulesDir).Count -eq 0) { $res.error = "no rule documents in $rulesDir"; return $res }
+    try { $res.digest = Get-SzaCanonCoreDigest $rulesDir; $res.ok = $true }
     catch { $res.error = $_.Exception.Message }
-    finally { $sha.Dispose() }
     return $res
 }
 
@@ -137,6 +131,53 @@ function Read-PqClaudeTrust([string]$Path) {
     }
     catch { $res.error = "$Path does not parse - $($_.Exception.Message)" }
     return $res
+}
+
+function Get-PqSessionHarnessRoot([string]$EnvRoot = $env:SZA_HARNESS_ROOT, [string]$CacheDir = '') {
+    if ($EnvRoot) { return [IO.Path]::GetFullPath($EnvRoot) }
+    if (-not $CacheDir) {
+        $userHome = if ($env:USERPROFILE) { $env:USERPROFILE } else { $env:HOME }
+        if (-not $userHome) { return $null }
+        $CacheDir = Join-Path $userHome '.claude/plugins/cache/sza-unified-rules/sza'
+    }
+    if (-not [IO.Directory]::Exists($CacheDir)) { return $null }
+    $best = $null
+    $bestVersion = $null
+    foreach ($d in [IO.Directory]::GetDirectories($CacheDir)) {
+        $v = $null
+        if (-not [version]::TryParse([IO.Path]::GetFileName($d), [ref]$v)) { continue }
+        if (-not [IO.Directory]::Exists((Join-Path $d 'tools/harness'))) { continue }
+        if ($null -eq $bestVersion -or $v -gt $bestVersion) { $bestVersion = $v; $best = $d }
+    }
+    if ($null -eq $best) { return $null }
+    return [IO.Path]::GetFullPath((Join-Path $best 'tools/harness'))
+}
+
+function Get-PqHarnessDiffCount([string]$Own, [string]$Other) {
+    $res = @{ differ = 0; total = 0 }
+    $ownFull = [IO.Path]::GetFullPath($Own).TrimEnd('\', '/')
+    foreach ($f in [IO.Directory]::GetFiles($ownFull, '*.ps1', [IO.SearchOption]::AllDirectories)) {
+        $res.total++
+        $twin = Join-Path $Other $f.Substring($ownFull.Length + 1)
+        try {
+            if (-not [IO.File]::Exists($twin)) { $res.differ++; continue }
+            $a = [IO.File]::ReadAllText($f).Replace("`r", '')
+            $b = [IO.File]::ReadAllText($twin).Replace("`r", '')
+            if ($a -cne $b) { $res.differ++ }
+        }
+        catch { $res.differ++ }
+    }
+    return $res
+}
+
+function Format-PqHarnessLine([string]$Own, [string]$Session) {
+    $ownFull = [IO.Path]::GetFullPath($Own).TrimEnd('\', '/')
+    if (-not $Session) { return "NOTE harness - robots run $ownFull; no installed plugin copy was found for attended sessions" }
+    $sessionFull = [IO.Path]::GetFullPath($Session).TrimEnd('\', '/')
+    if ([string]::Equals($ownFull, $sessionFull, [StringComparison]::OrdinalIgnoreCase)) { return "PASS harness - one copy: $ownFull" }
+    $diff = Get-PqHarnessDiffCount -Own $ownFull -Other $sessionFull
+    if ($diff.differ -eq 0) { return "PASS harness - robots run $ownFull; attended sessions run $sessionFull; all $($diff.total) scripts are the same" }
+    return "NOTE harness - robots run $ownFull; attended sessions run $sessionFull; $($diff.differ) of $($diff.total) scripts differ (a robot pass is given the first copy)"
 }
 
 function ConvertTo-PqTrustKey([string]$Path) {

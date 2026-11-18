@@ -40,3 +40,30 @@ function Read-SzaRegistryTables {
         [pscustomobject]@{ section = $section; line = $lineNumber; cells = $values }
     }
 }
+
+<# RULES.md section 4: the header block in the domain README is the one writer of a contract's version and status.
+   One object per block that carries a well-formed id, in folder order and then in block order. A block inside a
+   long document beside the README is not read: it binds nothing. #>
+function Read-SzaContractBlocks {
+    param([string]$CatalogRoot)
+    $domains = @(Get-ChildItem -LiteralPath $CatalogRoot -Directory |
+                 Where-Object { $_.Name -ne '_meta' -and -not $_.Name.StartsWith('.') } | Sort-Object Name)
+    foreach ($domain in $domains) {
+        $readme = Join-Path $domain.FullName 'README.md'
+        if (-not (Test-Path -LiteralPath $readme)) { continue }
+        $text = Get-Content -LiteralPath $readme -Raw
+        if (-not $text) { continue }
+        $title = if ($text -match '(?m)^#\s+(.+?)\s*$') { $Matches[1] } else { $domain.Name }
+        foreach ($block in [regex]::Matches($text, '(?ms)^```contract\r?\n(.*?)^```')) {
+            $kv = @{}
+            foreach ($row in ($block.Groups[1].Value -split "`r?`n")) {
+                if ($row -match '^\s*([a-z]+)\s*:\s*(.+?)\s*$') { $kv[$Matches[1]] = $Matches[2] }
+            }
+            if ($kv['id'] -notmatch '^[A-Z][A-Z0-9-]*$') { continue }
+            [pscustomobject]@{
+                id = $kv['id']; version = [string]$kv['version']; status = [string]$kv['status']
+                consumers = [string]$kv['consumers']; domain = $domain.Name; title = $title
+            }
+        }
+    }
+}

@@ -15,6 +15,7 @@ Checks:
   CTR-PROP    every PROPOSAL-*.md carries the status line of RULES.md section 7; the open ones are listed
   CTR-STALE   how many adoption rows are still unverified (informational)
   CTR-LAG     how many adoption rows are behind their contract, from tools/contract-lag.ps1 (informational)
+  CTR-NOTE    how many adoption rows carry a Notes cell above the size the registry states (informational)
 
 Exit codes: 0 = clean; 1 = violations found; 2 = internal error.
 
@@ -22,12 +23,18 @@ Usage:
   pwsh -File tools/check-contracts.ps1
   pwsh -File tools/check-contracts.ps1 -CatalogRoot P:\Contracts -Strict
   pwsh -File tools/check-contracts.ps1 -Json | ConvertFrom-Json
+  pwsh -File tools/check-contracts.ps1 -Render
+
+-Render writes instead of checking: the version and the status of every README header block go into REGISTRY.md
+section 1 (two cells per row, in place, never a lower version) and the root README table gets the Id cell of each
+row and one new row per domain that has none. Exit 0, or 1 when a row was refused. Copy REGISTRY.md aside first.
 #>
 [CmdletBinding()]
 param(
     [string]$CatalogRoot,
     [switch]$Strict,
-    [switch]$Json
+    [switch]$Json,
+    [switch]$Render
 )
 
 $ErrorActionPreference = 'Stop'
@@ -71,12 +78,121 @@ try {
         }
     }
 
+    # ------------------------------------------------------------------ -Render
+
+    # The header block in a domain README is the one writer of a contract's version and status (RULES.md
+    # section 4). -Render copies both into REGISTRY.md section 1 and keeps the root README table complete,
+    # then exits without running the checks. The registry is patched cell by cell: no line is added, removed
+    # or reordered, a version is never lowered, and a row whose id has no README block is left alone.
+    if ($Render) {
+        . (Join-Path $PSScriptRoot 'lib/registry-tables.ps1')
+        $utf8 = New-Object System.Text.UTF8Encoding($false)
+        $blocks = @(Read-SzaContractBlocks $CatalogRoot)
+        $byId = @{}
+        foreach ($b in $blocks) {
+            if ($b.version -match '^\d+\.\d+$' -and $b.status -and -not $byId.ContainsKey($b.id)) { $byId[$b.id] = $b }
+        }
+
+        $regFile = Join-Path $metaDir 'REGISTRY.md'
+        $regLines = [System.IO.File]::ReadAllText($regFile) -split "`n"
+        $inSection = $false; $col = $null; $regChanged = 0; $refused = 0
+        $extraIds = @{}      # folder -> ids with a registry row and no README block, in registry order
+        for ($i = 0; $i -lt $regLines.Count; $i++) {
+            $line = $regLines[$i]
+            if ($line -match '^##\s') { $inSection = $line -match '^##\s+(?:\d+\.\s*)?Contracts'; $col = $null; continue }
+            if (-not $inSection -or $line -notmatch '^\s*\|') { continue }
+            $raw = $line -split '(?<!\\)\|'
+            $names = @($raw | ForEach-Object { ($_ -replace '[*`]', '').Trim() })
+            if ($names -contains 'Id' -and $names -contains 'Folder') {
+                $col = @{}
+                foreach ($n in 'Id', 'Folder', 'Version', 'Status') {
+                    $col[$n] = [array]::IndexOf($names, $n)
+                    if ($col[$n] -lt 0) { throw "registry: missing '$n' column at line $($i + 1)" }
+                }
+                continue
+            }
+            if (-not $col -or $names[$col.Id] -notmatch '^[A-Z][A-Z0-9-]*$') { continue }
+            $id = $names[$col.Id]
+            if (-not $byId.ContainsKey($id)) {
+                if ($raw[$col.Folder] -match '\[`([^`/]+)/`\]') {
+                    $f = $Matches[1]
+                    if (-not $extraIds.ContainsKey($f)) { $extraIds[$f] = New-Object System.Collections.Generic.List[string] }
+                    $extraIds[$f].Add($id)
+                }
+                continue
+            }
+            $b = $byId[$id]
+            $old = $raw[$col.Version].Trim()
+            if ($old -match '^\d+\.\d+$' -and [version]$old -gt [version]$b.version) {
+                "refused ${id}: the registry says $old, the block in $($b.domain)/README.md says $($b.version) - a render never lowers a version; correct the block"
+                $refused++
+                continue
+            }
+            if ($old -ne $b.version) { $raw[$col.Version] = " $($b.version) "; $regChanged++ }
+            if ($raw[$col.Status].Trim() -ne $b.status) { $raw[$col.Status] = " $($b.status) "; $regChanged++ }
+            $regLines[$i] = $raw -join '|'
+        }
+        if ($regChanged -gt 0) { [System.IO.File]::WriteAllText($regFile, ($regLines -join "`n"), $utf8) }
+
+        # Root README, section "The catalog": the Id cell of every row, and one new row per domain that has none.
+        # The other cells of an existing row are hand prose and are never touched.
+        $rootFile = Join-Path $CatalogRoot 'README.md'
+        $rootLines = [System.IO.File]::ReadAllText($rootFile) -split "`n"
+        $cr = if ($rootLines[0].EndsWith("`r")) { "`r" } else { '' }
+        $inSection = $false; $col = $null; $canAdd = $false; $idChanged = 0; $added = 0; $lastRow = -1; $have = @{}
+        for ($i = 0; $i -lt $rootLines.Count; $i++) {
+            $line = $rootLines[$i]
+            if ($line -match '^##\s') { $inSection = $line -match '^##\s+The catalog\s*$'; continue }
+            if (-not $inSection -or $line -notmatch '^\s*\|') { continue }
+            $raw = $line -split '(?<!\\)\|'
+            $names = @($raw | ForEach-Object { ($_ -replace '[*`]', '').Trim() })
+            if ($names -contains 'Function' -and $names -contains 'Folder' -and $names -contains 'Id') {
+                $col = @{ Folder = [array]::IndexOf($names, 'Folder'); Id = [array]::IndexOf($names, 'Id') }
+                $canAdd = ($names -join '|') -eq '|Function|Folder|Id|What it decides|Who is bound|'
+                continue
+            }
+            if (-not $col -or $raw[$col.Folder] -notmatch '\[`([^`/]+)/`\]') { continue }
+            $folder = $Matches[1]; $have[$folder] = $true; $lastRow = $i
+            $ids = @(@($blocks | Where-Object { $_.domain -eq $folder } | ForEach-Object id) + @($extraIds[$folder] | Where-Object { $_ }))
+            if ($ids.Count -eq 0) { continue }
+            $cell = ' ' + (($ids | ForEach-Object { '`' + $_ + '`' }) -join ', ') + ' '
+            if ($raw[$col.Id] -ne $cell) { $raw[$col.Id] = $cell; $rootLines[$i] = $raw -join '|'; $idChanged++ }
+        }
+        if ($canAdd -and $lastRow -ge 0) {
+            $new = foreach ($domain in @($blocks | ForEach-Object domain | Select-Object -Unique)) {
+                if ($have.ContainsKey($domain)) { continue }
+                $own = @($blocks | Where-Object { $_.domain -eq $domain })
+                $fn, $decides = $own[0].title -split '\s+-\s+', 2
+                if (-not $decides) { $decides = 'see the domain README' }
+                $who = @($own | ForEach-Object consumers | Where-Object { $_ } | Select-Object -Unique) -join '; '
+                $ids = (@(@($own | ForEach-Object id) + @($extraIds[$domain] | Where-Object { $_ })) | ForEach-Object { '`' + $_ + '`' }) -join ', '
+                $added++
+                '| **{0}** | [`{1}/`]({1}/README.md) | {2} | {3} | {4} |{5}' -f $fn, $domain, $ids, ($decides -replace '\|', '/'), ($who -replace '\|', '/'), $cr
+            }
+            if ($added -gt 0) {
+                $tail = if ($lastRow + 1 -lt $rootLines.Count) { @($rootLines[($lastRow + 1)..($rootLines.Count - 1)]) } else { @() }
+                $rootLines = @($rootLines[0..$lastRow]) + @($new) + $tail
+            }
+        }
+        if ($idChanged -gt 0 -or $added -gt 0) { [System.IO.File]::WriteAllText($rootFile, ($rootLines -join "`n"), $utf8) }
+
+        "render: REGISTRY.md section 1 - $regChanged cell(s) rewritten, $refused row(s) refused"
+        "render: README.md catalog table - $idChanged id cell(s) rewritten, $added row(s) added"
+        if ($refused -gt 0) { exit 1 }
+        exit 0
+    }
+
     # ------------------------------------------------------------------ registry
 
     $registryPath = Join-Path $metaDir 'REGISTRY.md'
     $registry = @{}          # id -> @{ version; status; folder; line }
     $adoptionPending = 0
     $adoptionRows = 0
+    $noteCap = 300           # the size REGISTRY.md section 2 states for a Notes cell; its one copy in code
+    $noteRows = 0
+    $noteOver = 0
+    $noteMax = 0
+    $noteMaxRow = ''
     if (Test-Path -LiteralPath $registryPath) {
         . (Join-Path $PSScriptRoot 'lib/registry-tables.ps1')
         foreach ($row in Read-SzaRegistryTables $registryPath) {
@@ -92,6 +208,17 @@ try {
                     }
                 }
                 '^Adoption' {
+                    # CTR-NOTE: the cell is found by its header name, never by position. A legacy note with an
+                    # unescaped pipe is measured up to that pipe.
+                    if ($cells.ContainsKey('Notes')) {
+                        $noteRows++
+                        $noteLength = ([string]$cells['Notes']).Length
+                        if ($noteLength -gt $noteCap) { $noteOver++ }
+                        if ($noteLength -gt $noteMax) {
+                            $noteMax = $noteLength
+                            $noteMaxRow = "$($cells['Contract']) / $($cells['Product']), line $($row.line)"
+                        }
+                    }
                     $ids = @([regex]::Matches($cells['Contract'], '`([A-Z][A-Z0-9-]*)`') |
                         ForEach-Object { $_.Groups[1].Value })
                     foreach ($id in $ids) {
@@ -185,11 +312,11 @@ try {
                 $row = $registry[$id]
                 if ($kv['version'] -and $row.version -ne $kv['version']) {
                     Add-Finding -Id 'CTR-REG' -Severity 'error' -Path "$($domain.Name)/README.md" -Line $lineNo `
-                        -Message "version $($kv['version']) here, $($row.version) in the registry"
+                        -Message "version $($kv['version']) here, $($row.version) in the registry - the block is the writer: run check-contracts.ps1 -Render, or correct the block if the registry is right"
                 }
                 if ($kv['status'] -and $row.status -ne $kv['status']) {
                     Add-Finding -Id 'CTR-REG' -Severity 'error' -Path "$($domain.Name)/README.md" -Line $lineNo `
-                        -Message "status $($kv['status']) here, $($row.status) in the registry"
+                        -Message "status $($kv['status']) here, $($row.status) in the registry - the block is the writer: run check-contracts.ps1 -Render, or correct the block if the registry is right"
                 }
             }
         }
@@ -302,6 +429,13 @@ try {
             -Message "$adoptionPending of $adoptionRows adoption rows are still unverified"
     }
 
+    # CTR-NOTE is informational like CTR-STALE: one line for the whole table, never one per row.
+    if ($noteOver -gt 0) {
+        Add-Finding -Id 'CTR-NOTE' -Severity 'warn' -Path '_meta/REGISTRY.md' `
+            -Message ("$noteOver of $noteRows adoption rows carry a Notes cell above $noteCap characters " +
+                      "(largest: $noteMaxRow, $noteMax characters) - a row carries a one-line note, the evidence belongs in the product's own records")
+    }
+
     # CTR-LAG is informational like CTR-STALE: a product behind a contract is a spec to write, not a broken
     # catalog. The numbers come from contract-lag.ps1, the one program that reads the adoption cells.
     $lagScript = Join-Path $PSScriptRoot 'contract-lag.ps1'
@@ -316,11 +450,16 @@ try {
             $lagRows = @($lag.rows | Where-Object { $_.state -eq 'behind' -or ($_.state -eq 'partial' -and $_.synced -ne $_.current) })
             $partialAtCurrent = @($lag.rows | Where-Object { $_.state -eq 'partial' -and $_.synced -eq $_.current }).Count
             $behindCount = $lagRows.Count
+            # `unread` rows (clarifications only) are informational: they are named, and alone they raise nothing.
+            $breakingCount = @($lagRows | Where-Object { $_.lag -eq 'breaking' }).Count
+            $unreadCount = @($lag.rows | Where-Object { $_.state -eq 'unread' }).Count
             if ($behindCount -gt 0 -or $partialAtCurrent -gt 0 -or [int]$lag.counts.unparsed -gt 0) {
-                $products = @($lagRows | ForEach-Object { $_.product -replace '\s*\(.*$', '' } | Sort-Object -Unique).Count
+                $products = @($lagRows | ForEach-Object { if ($_.key) { $_.key } else { $_.product -replace '\s*\(.*$', '' } } | Sort-Object -Unique).Count
+                $noKey = if ($lag.keysKnown) { @($lag.rows | Where-Object { -not $_.key }).Count } else { 0 }
+                $noKeyText = if ($noKey -gt 0) { "; $noKey rows name no repository key" } else { '' }
                 Add-Finding -Id 'CTR-LAG' -Severity 'warn' -Path '_meta/REGISTRY.md' `
-                    -Message ("$behindCount adoption rows are behind their contract ($products products), $partialAtCurrent partial at the current version, $($lag.counts.unparsed) unreadable - " +
-                              'run tools/contract-lag.ps1; -Product <name> -EmitSpec writes the sync spec')
+                    -Message ("$behindCount adoption rows are behind their contract ($breakingCount by a breaking change; $products products), $unreadCount unread (clarifications only, nothing owed), $partialAtCurrent partial at the current version, $($lag.counts.unparsed) unreadable - " +
+                              "run tools/contract-lag.ps1; -Product <repository key> -EmitSpec writes the sync spec$noKeyText")
             }
         }
     }

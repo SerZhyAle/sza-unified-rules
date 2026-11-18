@@ -1,4 +1,4 @@
-# Fast fixture for S0037 (TASK-FLOW 0.20 rules 23 and 46): the built disclosure, transcript usage and its list-price
+# Fast fixture for S0037 (TASK-FLOW rules 23 and 46): transcript usage and its list-price
 # estimate, the fold over the launches of one portfolio pass, and the report figures. Files only, no child process.
 #
 #   pwsh -NoProfile -File tools/tests/portfolio-usage.tests.ps1
@@ -31,16 +31,7 @@ try {
         return ($rec | ConvertTo-Json -Compress -Depth 8)
     }
 
-    # 1. Disclosure: the exact sentence gives built=false; its absence is unknown, never true.
-    Check ((Get-PassBuiltFlag -Text 'Done. Not built, not tested until the release.') -eq $false) 'built=false on the disclosure sentence'
-    Check ($null -eq (Get-PassBuiltFlag -Text 'Compiled and tested.')) 'no sentence is unknown, not true'
-    Check ($null -eq (Get-PassBuiltFlag -Text '')) 'no text is unknown'
-    $long = ('x' * 9000) + ' not built, not tested until the release'
-    Check ((Get-PassBuiltFlag -Text (Get-PassFinalText -LogBody $long)) -eq $false) 'the log tail carries the disclosure'
-    $echo = ' not built, not tested until the release ' + ('x' * 9000)
-    Check ($null -eq (Get-PassBuiltFlag -Text (Get-PassFinalText -LogBody $echo))) 'a sentence far from the log end is not read'
-
-    # 2. Transcript usage: duplicates by requestId counted once, a subagent included, the final text read.
+    # 2. Transcript usage: duplicates by requestId counted once, a subagent included.
     $sid = 'aaaaaaaa-0000-0000-0000-000000000001'
     $main = Join-Path $work "$sid.jsonl"
     $lines = @(
@@ -61,7 +52,6 @@ try {
     Check ($u.usage.complete -eq $true -and $u.usage.session -eq $sid) 'complete and keyed by session'
     # opus 5.5: 15*4 + 150*20 + 1000*0.2 + 2000*8 = 19260; haiku 5.5: 1000*0.1 + 10*0.5 = 105 -> 19365 / 1e6
     Check ($u.costUsd -eq 0.0194 -and $u.priceAsOf -eq '2026-11-12') "list-price estimate (got $($u.costUsd))"
-    Check ((Get-PassBuiltFlag -Text (Get-PassFinalText -TranscriptPath $main)) -eq $false) 'final answer read from the transcript'
 
     # 3. Unknown price and unknown attribution are absent, never zero.
     $sid2 = 'aaaaaaaa-0000-0000-0000-000000000002'
@@ -84,24 +74,21 @@ try {
 
     # 4. The fold over the launches of a pass: a repeated session counted once, a launch without usage incomplete.
     $l1 = [pscustomobject]@{ id = 'S1'; usage = [pscustomobject]$u.usage; costUsd = 0.0194; priceAsOf = '2026-11-12' }
-    $l2 = [pscustomobject]@{ id = 'S1'; built = $false; usage = [pscustomobject]@{ model = 'claude-opus-5-5'; input = 1; output = 2; cacheRead = 3; cacheWrite = 4; requests = 1; complete = $true; session = 'other' }; costUsd = 0.0001; priceAsOf = '2026-11-01' }
+    $l2 = [pscustomobject]@{ id = 'S1'; usage = [pscustomobject]@{ model = 'claude-opus-5-5'; input = 1; output = 2; cacheRead = 3; cacheWrite = 4; requests = 1; complete = $true; session = 'other' }; costUsd = 0.0001; priceAsOf = '2026-11-01' }
     $f = Merge-PqPassUsage -Rows @($l1, $l1, $l2)
-    Check ($f.built -eq $false) 'built=false when any launch disclosed it'
     Check ($f.usage.requests -eq 4 -and $f.usage.input -eq 1016) "repeated session counted once (requests $($f.usage.requests))"
     Check ($f.costUsd -eq 0.0195 -and $f.priceAsOf -eq '2026-11-01') 'cost summed, oldest price date'
     $f2 = Merge-PqPassUsage -Rows @($l1, [pscustomobject]@{ id = 'S1'; outcome = 'ok' })
-    Check ($f2.usage.complete -eq $false -and $null -eq $f2.costUsd -and $null -eq $f2.built) 'a launch without usage makes the pass incomplete and unpriced'
+    Check ($f2.usage.complete -eq $false -and $null -eq $f2.costUsd) 'a launch without usage makes the pass incomplete and unpriced'
     $f3 = Merge-PqPassUsage -Rows @([pscustomobject]@{ id = 'S1'; outcome = 'ok' })
     Check ($null -eq $f3.usage -and $null -eq $f3.costUsd) 'old rows give no usage'
 
-    # 5. Report figures: closed unbuilt per repository, usage by repository / model / outcome, old rows kept.
+    # 5. Report figures: usage by repository / model / outcome, old rows kept.
     $runs = @(
         [pscustomobject]@{ repo = 'a'; statusAfter = 'Implemented'; built = $false; outcome = 'ok'; model = 'opus'; usage = [pscustomobject]@{ model = 'claude-opus-5-5'; input = 10; output = 20; cacheRead = 0; cacheWrite = 0; requests = 1; complete = $true }; costUsd = 1.5; priceAsOf = '2026-11-12' },
         [pscustomobject]@{ repo = 'a'; statusAfter = 'Verified'; outcome = 'ok'; model = 'gpt' },
         [pscustomobject]@{ repo = 'b'; statusAfter = 'BlockQuestions'; built = $false; outcome = 'no-progress'; usage = [pscustomobject]@{ model = 'claude-opus-5-5'; input = 1; output = 1; cacheRead = 0; cacheWrite = 0; requests = 1; complete = $false } }
     )
-    $b = Get-PqBuildFigures $runs
-    Check ($b.a.closing -eq 2 -and $b.a.unbuilt -eq 1 -and $b.a.unknown -eq 1 -and -not $b.Contains('b')) 'closed unbuilt counts only closing statuses'
     $g = Get-PqUsageFigures $runs
     Check ($g.total.passes -eq 3 -and $g.total.withUsage -eq 2 -and $g.total.incomplete -eq 1 -and $g.total.priced -eq 1 -and $g.total.unpriced -eq 1 -and $g.total.costUsd -eq 1.5) 'usage totals with unknowns counted'
     Check ($g.byModel['claude-opus-5-5'].passes -eq 2 -and $g.byModel.gpt.withUsage -eq 0 -and $g.byOutcome['no-progress'].input -eq 1 -and $g.byRepo.a.output -eq 20) 'usage by model, outcome and repository'

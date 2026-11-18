@@ -526,6 +526,32 @@ try {
         Assert-That ((Get-Content (Join-Path $p 'PLAN/RELEASE_QUEUE_DONE.md') -Raw) -match 'S0001_') 'archiving lost the record of what shipped'
     }
 
+    Test-Case 'rule 16: ship-package ships every numbered ready block up to the marker, moves the marker on and archives only the shipped Verified rows' {
+        $p = New-Project 'b-shippkg' @('one', 'two', 'three')
+        $queue = Join-Path $p 'PLAN/RELEASE_QUEUE.md'
+        $done = Join-Path $p 'PLAN/RELEASE_QUEUE_DONE.md'
+        Add-Content (Join-Path $p (Get-Row $p 'S0001').file) "`n## Last Audit`n`nChecked by hand for the fixture: the result covers the task.`n"
+        Move-Ticket $p 'S0001' 'Verified'
+        Move-Ticket $p 'S0002' 'Implemented'
+        $dry = Assert-Tool $p 'spec_catalog/ship-package.ps1' @('-Version', '1.0.0', '-DryRun')
+        Assert-That ($dry.output -match 'would archive 1 Verified ticket\(s\): S0001') "the dry run did not name S0001: $($dry.output)"
+        Assert-That ((Get-Content (Join-Path $p 'PLAN/RELEASE_READY.md') -Raw) -match 'S0001_' -and (Get-Row $p 'S0001')) 'the dry run changed the plan or the ledger'
+        Assert-Tool $p 'spec_catalog/ship-package.ps1' @('-Version', '1.0.0') | Out-Null
+        $doneText = Get-Content $done -Raw
+        Assert-That ($doneText -match 'S0001_' -and $doneText -match 'S0002_' -and $doneText -match 'v1\.0\.0') 'the ready block did not reach the done file with its version'
+        Assert-That ((Get-Content $queue -Raw) -match '(?m)^current-next-release:\s*2\s*$') 'the marker did not advance to 2'
+        Assert-That (-not (Get-Row $p 'S0001')) 'the shipped Verified ticket is still in the ledger'
+        Assert-That (@(Read-Jsonl (Join-Path $p 'PLAN/spec-catalog-archive.jsonl') | Where-Object id -eq 'S0001').Count -eq 1) 'the shipped Verified ticket is not in the archive file'
+        Assert-That ((Get-Row $p 'S0002').status -eq 'Implemented') 'a shipped Implemented ticket did not stay in the ledger'
+        # S0003 stayed in package 1 of the queue; finished after the ship, it rides the next release under its old number.
+        Move-Ticket $p 'S0003' 'Implemented'
+        Assert-Tool $p 'spec_catalog/ship-package.ps1' @('-Version', '1.0.1') | Out-Null
+        Assert-That ((Get-Content $done -Raw) -match 'S0003_') 'a row that finished after its package shipped was not shipped'
+        Assert-That ((Get-Content $queue -Raw) -match '(?m)^current-next-release:\s*3\s*$') 'the marker was not put on package 3'
+        $again = Assert-Tool $p 'spec_catalog/ship-package.ps1' @('-Version', '1.0.2')
+        Assert-That ($again.output -match 'nothing ready in package 3 or earlier') "a second run did not report nothing ready: $($again.output)"
+    }
+
     Test-Case 'rule 17: archiving is soft - the record moves, the spec file moves to PLAN/archive, nothing is deleted and the id stays spent' {
         $p = New-Project 'b-soft' @('one', 'two')
         $spec = Join-Path $p (Get-Row $p 'S0002').file
@@ -759,24 +785,25 @@ exit /b %ERRORLEVEL%
         }
     }
 
-    Test-Case 'S0015 R7: a template without the token still gets the line and the owner''s words keep a literal token' {
-        $p = New-Project 'f-cx-old-template' @()
-        # The pre-S0015 template is the shipped one less its Complexity line: a project-owned copy written before the
-        # change has no token. Taken from the tree, not from `git show HEAD:`, so the case survives the commit and a
-        # -SourceRoot copy without .git. Written with CRLF, to show the inserted line follows the template's line ending.
+    Test-Case 'S0015 R7: a project template keeps its line ending and the owner''s words keep a literal token; a template without the line gets none' {
+        $p = New-Project 'f-cx-own-template' @()
+        # A project-owned copy of the shipped form, written with CRLF: the spec follows the template's line ending.
+        # Taken from the tree, not from `git show HEAD:`, so the case survives a -SourceRoot copy without .git.
         $shipped = [IO.File]::ReadAllText((Join-Path $SourceRoot 'tools/harness/scaffold/templates/ticket-template.md'))
-        $old = ($shipped -replace '(?m)^\*\*Complexity:\*\*[^\r\n]*\r?\n', '') -replace '\r?\n', "`r`n"
-        Assert-That (-not $old.Contains('{{COMPLEXITY}}')) 'the pre-S0015 template still carries the token'
-        [IO.File]::WriteAllText((Join-Path $p 'PLAN/TICKET_TEMPLATE.md'), $old, [Text.UTF8Encoding]::new($false))
+        $own = $shipped -replace '\r?\n', "`r`n"
+        Assert-That ($own.Contains('**Complexity:** {{COMPLEXITY}}')) 'the shipped template lost its Complexity line'
+        $templateFile = Join-Path $p 'PLAN/TICKET_TEMPLATE.md'
+        [IO.File]::WriteAllText($templateFile, $own, [Text.UTF8Encoding]::new($false))
         $words = 'literal {{COMPLEXITY}} and $1 kept'
-        Assert-Tool $p 'spec_catalog/capture-draft.ps1' @('-Slug', 'task-old', '-Text', $words) | Out-Null
+        Assert-Tool $p 'spec_catalog/capture-draft.ps1' @('-Slug', 'task-own', '-Text', $words) | Out-Null
         $text = Get-SpecText $p 'S0001'
         $head = Get-HeaderLines $text
         $line = Get-LineIndex $head '^\*\*Complexity:\*\*\s+medium - not assessed at capture\s*$'
         $created = Get-LineIndex $head '^\*\*Created:\*\*'
         $owner = Get-LineIndex $head '^## 0\.'
-        Assert-That ($line -ge 0) "a token-less template got no Complexity line: $($head -join ' | ')"
+        Assert-That ($line -ge 0) "the project template's Complexity line was not filled: $($head -join ' | ')"
         Assert-That ($line -eq $created + 1 -and $line -lt $owner) "the line is at $line, not directly after Created ($created) and above '## 0.' ($owner)"
+        Assert-That (@($head | Where-Object { $_ -match '^\*\*Complexity:\*\*' }).Count -eq 1) 'the header holds more than one Complexity line'
         Assert-That ($text -notmatch '(?<!\r)\n') 'the CRLF template produced a spec with a bare LF line ending'
         $section = $text.Substring($text.IndexOf('## 0.'))
         Assert-That ($section.Contains($words)) "the owner's words were not kept byte for byte: $section"
@@ -786,6 +813,14 @@ exit /b %ERRORLEVEL%
         $after = Get-HeaderLines (Get-SpecText $p 'S0001')
         Assert-That ((Get-HeaderStatus (Get-SpecText $p 'S0001')) -eq 'Approved') 'the header was not synced to Approved'
         Assert-That (@($after | Where-Object { $_ -match '^\*\*Complexity:\*\*\s+medium - not assessed at capture\s*$' }).Count -eq 1) "the status rewrite dropped the Complexity line: $($after -join ' | ')"
+        # No compatibility insert: a template without the line yields a spec without it (an absent line is no
+        # declaration, TASK-FLOW rule 51), and the capture still succeeds.
+        $bare = $own -replace '(?m)^\*\*Complexity:\*\*[^\r\n]*\r\n', ''
+        Assert-That (-not $bare.Contains('Complexity')) 'the bare template still carries a Complexity line'
+        [IO.File]::WriteAllText($templateFile, $bare, [Text.UTF8Encoding]::new($false))
+        Assert-Tool $p 'spec_catalog/capture-draft.ps1' @('-Slug', 'task-bare', '-Text', 'bare words') | Out-Null
+        $bareHead = Get-HeaderLines (Get-SpecText $p 'S0002')
+        Assert-That (@($bareHead | Where-Object { $_ -match '^\*\*Complexity:\*\*' }).Count -eq 0) "a template without the line still got one: $($bareHead -join ' | ')"
     }
 
     Test-Case 'S0015 R7: validate warns on an Approved ticket still not assessed at capture, never fails' {
@@ -904,7 +939,15 @@ exit /b %ERRORLEVEL%
         }
     }
 
-    Test-Case 'S0015 R36: a new profile carries runner.promptTemplate and an existing profile is left alone' {
+    Test-Case 'S0015 R36: a new profile carries runner.promptTemplate only when -Prompt is passed, and an existing profile is left alone' {
+        # No -Prompt: the new profile holds exactly version and projectName, no runner block, and the output says which prompt each launcher sends.
+        $n = Join-Path $scratch 'g-profile-no-prompt'
+        New-Item -ItemType Directory -Path $n | Out-Null
+        $r = Assert-Tool $n 'scaffold/init-task-flow.ps1' @('-Root', $n)
+        $bare = Get-Content -LiteralPath (Join-Path $n '.sza-profile.json') -Raw | ConvertFrom-Json
+        Assert-That ((@($bare.PSObject.Properties.Name) -join ',') -eq 'version,projectName') "a profile created without -Prompt has the keys '$(@($bare.PSObject.Properties.Name) -join ',')', not exactly 'version,projectName'"
+        Assert-That ($r.output -match '(?m)^note: r0\.ps1 sends the one-step prompt; r1-r3 and the portfolio queue send the canon default') "a first run without -Prompt did not say which prompt each launcher sends: $($r.output)"
+
         $p = Join-Path $scratch 'g-profile-new'
         New-Item -ItemType Directory -Path $p | Out-Null
         $r = Assert-Tool $p 'scaffold/init-task-flow.ps1' @('-Root', $p, '-Prompt', 'work {id} now')

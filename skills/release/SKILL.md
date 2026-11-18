@@ -72,7 +72,7 @@ commit log as before; do not stand one up mid-release.
 Before acting, print one screen: project shape - version stamp shape and the computed candidate - the tag -
 the release script and its exact dry-run invocation - the ordered channel list with `[PAID]`/`[PUBLIC]` on each
 - the listing files that will be edited - the frozen anchors that will **not** change - the contract gate's
-verdict (Phase 3) - and the single irreversible command. Where there is a release package plan, add its two counts: what the package ships,
+verdict (Phase 3) - and the single irreversible command. Where there is a release package plan, add its package marker (the `current-next-release` number) and its two counts: what the package ships,
 and the unfinished lines that will **not** ship and stay for the owner to re-sort. Where the repo has a dry-run mode, run it first and use its output as the plan.
 
 ---
@@ -164,12 +164,19 @@ pointers, plus every row the shared registry holds for it. The catalog is wherev
 file says it is.
 
 **First, catch up since the last reconciliation - every release, not only one that touches a boundary.** Run
-`pwsh -File <root>/tools/contract-lag.ps1 -Product "<this product's registry name>" -EmitSpec -OutFile temp/contract-catchup.md`
-(`<root>` is the plugin root; the script reads the catalog from `SZA_CONTRACTS_ROOT` or the default) and read it:
-for each contract in scope, every document-log entry between the version the registry says this product is
-synchronized with and the current one is read against the code. A divergence is fixed or recorded as a dated
-exception; the product's own row then moves to the current version with today's verification date. A row that stays
-behind carries a dated reason that names the entries not taken (check 2). The checks below judge the result.
+`pwsh -File <root>/tools/contract-lag.ps1 -Product "<repository key>" -EmitSpec -OutFile temp/contract-catchup.md`
+(`<root>` is the plugin root. `<repository key>` is this repository's key in the portfolio registry, the word its rows
+in section 2 of the catalog registry start with; while those rows still carry the product's name instead, pass that
+name - the spec then opens with "Selected by text" and may miss a row spelled differently, so look for one by hand.
+The script reads the catalog from `SZA_CONTRACTS_ROOT` or the default) and read it:
+the rows below their contract's version are sorted by what the document log holds in between
+([CONTRACTS.md](../../rules/CONTRACTS.md) §6 item 6). `behind (breaking)`: every entry is read against the code, in
+every release. `behind (additive)`: the entries are read against the code when this release touches that contract's
+boundary (check 4) or adds a surface the contract governs; otherwise name the row in the release plan and leave it,
+its dated reason, written once, being that the boundary was not touched (check 2). `unread`: nothing is owed - list
+it, and move the row only if you read its entries. A divergence is fixed or recorded as a dated exception; a row
+whose entries were read moves to the current version with today's verification date. The checks below judge the
+result.
 
 1. **Every contract in scope has a registry row** with a verification date no older than the last release
    tag. A missing row is a **blocker**; a stale one is a blocker until it is re-verified against the code -
@@ -315,11 +322,18 @@ A release is not done until it is proven live.
   file. Note every credential with a fixed lifetime and its rotation date in the release doc (the Edge Add-ons API key
   lasts about 72 days; an expired key shows as HTTP 401 at the one-way step, so check it in Phase 2).
 - Reset state: `## [Unreleased]` empty again.
-- **Ship the release package, and ship it before any archive or cleanup sweep.** One operator command moves
-  the ready block into the history file (newest first, stamped with the version that shipped) and advances
-  the package marker. A sweep that flips finished tickets to an archived state runs **after** this, never
-  before - run it first and it drops those lines, and the record of what shipped goes with them. Then report
-  the unfinished lines; never auto-move them and never re-order the file.
+- **Ship the release package, and ship it before any archive or cleanup sweep.** Where the repository runs the
+  shared harness this is one script, `spec_catalog/ship-package` (the repository's
+  `tools/harness.ps1 spec_catalog/ship-package ..` or the plugin's `tools/harness/spec_catalog/ship-package.ps1`).
+  Run it with `-Release <N> -Version <v> -DryRun` first - `<N>` is the package marker the run plan printed,
+  `<v>` the version that shipped - read the counts, then run it again without `-DryRun`. It moves every numbered
+  ready block up to `<N>` into the history file (newest first, stamped with the version), puts the marker on
+  `<N>+1`, and only then archives the `Verified` tickets that are in neither plan file. A ticket shipped as
+  `Implemented` or awaiting the owner's test stays in the ticket store until it is verified. Skip the script
+  where the repository's own release script already shipped the package: a second run with the same
+  `-Release <N>` finds nothing ready and moves nothing. A repository with a plan tool of its own keeps the same
+  order - never run the sweep first: it drops those lines, and the record of what shipped goes with them. Then
+  report the unfinished lines and the rows the script says stay; never auto-move them and never re-order the file.
 - Record the release - the ledger's events carry the version, the date and the channels shipped; put the
   coverage-gate result into the note of the first one - and report to the owner with links and an honest list of
   what is still in review or still manual (`release-ledger show` prints it).

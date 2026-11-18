@@ -564,23 +564,9 @@ if (-not (Test-Path -LiteralPath $profileFile -PathType Leaf)) {
         if (Test-Path -LiteralPath $fileFull) { Stop-Draft 1 "the spec file already exists: $fileFull" }
 
         $body = $template.Replace('{{ID}}', $id).Replace('{{SLUG}}', $Slug).Replace('{{NAME}}', $Slug).Replace('{{DATE}}', (Get-Date -Format 'yyyy-MM-dd')).Replace('{{COMPLEXITY}}', $Complexity)
-        # A template written before the Complexity token existed: put the line in its header, before the owner's words
-        # go in, so neither a token nor a header-like line inside them can be mistaken for the header.
+        # The template's own line ending; the attachment block below follows it. The owner's words go in after the
+        # tokens, so a token inside them is never expanded.
         $eol = if ($body.Contains("`r`n")) { "`r`n" } else { "`n" }
-        $tplLines = [Collections.Generic.List[string]]::new([string[]]($body -split '\r?\n'))
-        $headLines = [Math]::Min(40, $tplLines.Count)
-        $hasComplexity = $false
-        for ($i = 0; $i -lt $headLines; $i++) { if ($tplLines[$i] -match '^\*\*Complexity:\*\*') { $hasComplexity = $true; break } }
-        if (-not $hasComplexity) {
-            $at = -1
-            foreach ($anchor in '^\*\*Created:\*\*', '^\*\*Status:\*\*') {
-                for ($i = 0; $i -lt $headLines; $i++) { if ($tplLines[$i] -match $anchor) { $at = $i + 1; break } }
-                if ($at -ge 0) { break }
-            }
-            if ($at -lt 0) { $at = [Math]::Min(2, $tplLines.Count) }
-            $tplLines.Insert($at, "**Complexity:** $Complexity")
-            $body = $tplLines -join $eol
-        }
         if (-not (Test-Path -LiteralPath $planDir -PathType Container)) { New-Item -ItemType Directory -Path $planDir -Force | Out-Null }
         try {
             $attachmentBlock = Copy-DraftAttachments -Paths $attachmentPaths -SpecPath $fileFull -Newline $eol

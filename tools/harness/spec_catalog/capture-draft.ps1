@@ -23,10 +23,11 @@
     ticket itself, and giving the project its own form stays init-task-flow's call (the owner's).
     Tokens: {{ID}}, {{SLUG}}, {{NAME}}, {{DATE}}, {{COMPLEXITY}}, {{TEXT}}.
 
-    Every ticket leaves here with a `**Complexity:** <level> - <reason>` header line (DEVELOPMENT.md
-    section 8): the -Complexity value, else `medium - not assessed at capture`, which the spec pass
-    rewrites. A project-owned template written before the token existed has no {{COMPLEXITY}}; the line
-    is then inserted after the `**Created:**` line (else after `**Status:**`, else as line 3).
+    The `**Complexity:** <level> - <reason>` header line (DEVELOPMENT.md section 8) comes from the
+    template's own `**Complexity:** {{COMPLEXITY}}` line: the token becomes the -Complexity value, else
+    `medium - not assessed at capture`, which the spec pass rewrites. The canon form carries that line. A
+    project-owned template without it yields a ticket without the line - nothing is inserted - and a
+    reader then treats the ticket as it treats any spec with no declaration.
 
     If the row was written and the file could not be, the row is left in place and named in the error:
     `delete.ps1 -Id <id> -Confirm` retires it, or the file can be written by hand. Nothing is removed
@@ -225,23 +226,9 @@ try {
     if (Test-Path -LiteralPath $filePath) { throw "the spec file already exists: $filePath" }
     $body = $template.Replace('{{ID}}', $id).Replace('{{SLUG}}', $Slug).Replace('{{NAME}}', $Name).Replace('{{DATE}}', (Get-Date -Format 'yyyy-MM-dd'))
     $body = $body.Replace('{{COMPLEXITY}}', $Complexity)
-    # A template the project wrote before the token existed: insert the line into the header block. Done before
-    # the owner's words go in, so neither a token nor a header-like line inside them can be mistaken for the header.
+    # The template's own line ending; the attachment block below follows it. The owner's words go in after the
+    # tokens, so a token inside them is never expanded.
     $eol = if ($body.Contains("`r`n")) { "`r`n" } else { "`n" }
-    $lines = [Collections.Generic.List[string]]::new([string[]]($body -split '\r?\n'))
-    $headLines = [Math]::Min(40, $lines.Count)
-    $has = $false
-    for ($i = 0; $i -lt $headLines; $i++) { if ($lines[$i] -match '^\*\*Complexity:\*\*') { $has = $true; break } }
-    if (-not $has) {
-        $at = -1
-        foreach ($anchor in '^\*\*Created:\*\*', '^\*\*Status:\*\*') {
-            for ($i = 0; $i -lt $headLines; $i++) { if ($lines[$i] -match $anchor) { $at = $i + 1; break } }
-            if ($at -ge 0) { break }
-        }
-        if ($at -lt 0) { $at = [Math]::Min(2, $lines.Count) }
-        $lines.Insert($at, "**Complexity:** $Complexity")
-        $body = $lines -join $eol
-    }
     $attachmentBlock = Copy-DraftAttachments -Paths $attachmentPaths -SpecPath $filePath -Newline $eol
     $body = $body.Replace('{{TEXT}}', ($Text + $attachmentBlock))
     [IO.File]::WriteAllText($filePath, $body, [Text.UTF8Encoding]::new($false))

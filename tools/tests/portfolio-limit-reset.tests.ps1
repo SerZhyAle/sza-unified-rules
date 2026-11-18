@@ -112,6 +112,19 @@ try {
     if ($null -ne $farAway) { throw "Expected null for a dated reset more than eight days ahead, got '$farAway'" }
     $sept = ConvertFrom-PqLimitText -Text "try again at Sept 19th, 2026 11:35 PM." -Offset "+00:00" -Now ([DateTimeOffset]::Parse("2026-09-17T12:00:00.000Z"))
     if ($sept -ne '2026-09-19T23:36:00.000Z') { throw "Expected 2026-09-19T23:36:00.000Z for a four-letter month, got '$sept'" }
+    # The same holds inside the ISO and the clock forms: a quoted older line comes first and the real message ends the
+    # log, so the LAST match counts. Taking the first read a quoted past time (null) and a quoted 2:38 AM (the next day).
+    $isoTwice = "fixture.ps1:86: Your limit will reset at 2026-11-11 00:34:51`nUsage limit reached for 5 hour. Your limit will reset at 2026-11-17 18:00:00"
+    $isoLast = ConvertFrom-PqLimitText -Text $isoTwice -Offset "+00:00" -Now $datedNow
+    if ($isoLast -ne '2026-11-17T18:01:00.000Z') { throw "Expected the ISO time that ends the log (2026-11-17T18:01:00.000Z), got '$isoLast'" }
+    $clockTwice = "tests.ps1:68: Try again at 2:38 AM.`nERROR: You've hit your usage limit. Try again at 11:35 PM."
+    $clockLast = ConvertFrom-PqLimitText -Text $clockTwice -Offset "+00:00" -Now $datedNow
+    if ($clockLast -ne '2026-11-17T23:36:00.000Z') { throw "Expected the clock time that ends the log (2026-11-17T23:36:00.000Z), got '$clockLast'" }
+    # The one reading of a provider's UTC offset the three forms share.
+    $zonePlus = ConvertTo-PqLimitZone '+08:00'
+    $zoneMinus = ConvertTo-PqLimitZone ' -05:30 '
+    if ($zonePlus -ne [timespan]::new(8, 0, 0) -or $zoneMinus -ne [timespan]::new(-5, -30, 0)) { throw "Expected +08:00 and -05:30 as timespans, got '$zonePlus' and '$zoneMinus'" }
+    if ($null -ne (ConvertTo-PqLimitZone '') -or $null -ne (ConvertTo-PqLimitZone 'Europe/Kyiv')) { throw "Expected `$null for an empty or unreadable offset" }
     Write-Host " PASS" -ForegroundColor Green
 
     # -----------------------------------------------------------------------------------------

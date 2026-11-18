@@ -43,6 +43,29 @@ function Get-PqReleases($Registry) {
     return [pscustomobject]@{ generatedAt = (Get-RlNow); repos = [object[]]$rows.ToArray() }
 }
 
+function Get-PqClosedUnbuilt {
+    # Closed without a build, per registered repository (S0135, TASK-FLOW 0.36), counted and never asked of a pass.
+    # -Releases: Get-PqReleases' result. -Tickets and -Skipped: rows and skipped of Get-PqInboxRows ("<key> - <why>").
+    param($Releases, $Tickets, $Skipped)
+    $out = [ordered]@{}
+    foreach ($x in @($Releases.repos)) {
+        $key = [string]$x.key
+        $entry = [ordered]@{ available = $false; why = ''; lastBuiltAt = ''; implemented = $null; sinceBuild = $null }
+        $out[$key] = $entry
+        if ($x.error) { $entry.why = "release ledger not read: $($x.error)"; continue }
+        if (-not $x.hasLedger) { $entry.why = 'no release ledger'; continue }
+        if (@(@($Skipped) | Where-Object { ([string]$_).StartsWith("$key - ", [StringComparison]::Ordinal) }).Count -gt 0) { $entry.why = 'ticket ledger not read'; continue }
+        $mine = [object[]]@(@($Tickets) | Where-Object { $null -ne $_ -and [string]$_.repo -ceq $key })
+        $f = Get-RlClosedSinceBuild -Builds ([object[]]@($x.builds)) -Tickets $mine
+        $entry.implemented = $f.atStatus
+        if (-not $f.lastBuiltAt) { $entry.why = 'no build recorded'; continue }
+        $entry.available = $true
+        $entry.lastBuiltAt = $f.lastBuiltAt
+        $entry.sinceBuild = $f.sinceBuild
+    }
+    return $out
+}
+
 function Format-PqReleaseChannel($C) {
     $parts = [System.Collections.Generic.List[string]]::new()
     if ($null -ne $C.live) { $parts.Add("live $($C.live.version) ($(Format-RlDay $C.live.at))") }

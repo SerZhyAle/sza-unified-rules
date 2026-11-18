@@ -6,8 +6,7 @@
 #
 #   Get-PqRank -Registry <obj> [-Queue <Read-PqQueueFile result>] -HeadProvider <sb param($Repo,$Exclude,$ForceId)>
 #              [-Exclude <repo:id[]>] [-SkipRepos <key[]>] [-Slots <int>] [-Busy <hashtable key->int>]
-#              [-Occupied <key[]>] [-Stopped <key[]>] [-TicketBlocked <hashtable 'repo:id'->'resource'|'deviceLevel'>]
-#              [-Fill depth|breadth] [-StopAfter <int>] [-NamedTicket <key:id>] [-OnlyRepo <key>] [-FirstHead]
+#              [-Occupied <key[]>] [-Stopped <key[]>]#              [-Fill depth|breadth] [-StopAfter <int>] [-NamedTicket <key:id>] [-OnlyRepo <key>] [-FirstHead]
 #
 #   -NamedTicket key:id (S0027, `pq start -Ticket`): only that repository is active and its single entry is exactly that
 #   ticket, whatever its rank; the queue file's rows are ignored and so are its hold lines for that repository (the whole-
@@ -112,7 +111,6 @@ function Get-PqNamedNotRunReason {
     if ($null -ne $xb -and $xb.ContainsKey($tk)) { return "it waits on a blocker in another project ($($xb[$tk].blocker))" }
     $tr = Get-PqRankValue $Marks 'transient'
     if ($null -ne $tr -and $tr.ContainsKey($tk)) {
-        if ([string]$tr[$tk].why -ceq 'deviceLevel') { return 'it needs real hardware (Verify: device) and robots never take it' }
         return 'it waits for a machine resource (build, emulator) that another pass holds'
     }
     $oc = Get-PqRankValue $Marks 'occupied'
@@ -156,7 +154,6 @@ function Get-PqRank {
         [hashtable]$Busy = @{},
         [string[]]$Occupied = @(),
         [string[]]$Stopped = @(),
-        [hashtable]$TicketBlocked = @{},
         [ValidateSet('', 'depth', 'breadth')][string]$Fill = '',
         [ValidateRange(0, [int]::MaxValue)][int]$StopAfter = 0,
         [string]$NamedTicket = '',
@@ -186,8 +183,10 @@ function Get-PqRank {
     $sw = [Diagnostics.Stopwatch]::StartNew()
     if (-not $Fill) { $Fill = [string](Get-PqRankValue $Registry 'fill' 'depth') }
     if ($Slots -lt 0) { $Slots = [int](Get-PqRankValue $Registry 'maxWorkers' 5) }
-    $excluded = [ordered]@{ blocked = 0; leased = 0; dropped = 0; held = 0; gated = 0; malformed = 0; idleHold = 0; xrepo = 0
-        settling = 0; levelNotAllowed = 0; occupied = 0; resource = 0; deviceLevel = 0 }
+    # Nine counts (TASK-FLOW, the EVENTS.md amendment "the counts of rank.result"): the five that had no writer are
+    # gone and the release wait has a count of its own.
+    $excluded = [ordered]@{ blocked = 0; leased = 0; held = 0; gated = 0; malformed = 0; idleHold = 0; awaitsRelease = 0
+        xrepo = 0; occupied = 0 }
     $autoSkip = [ordered]@{}
     $skipped = [Collections.Generic.List[object]]::new()
     $events = [Collections.Generic.List[object]]::new()
@@ -225,15 +224,6 @@ function Get-PqRank {
         if ($i -le 0) { continue }
         $k = $x.Substring(0, $i)
         if ($repoExclude.ContainsKey($k)) { $repoExclude[$k].Add($x.Substring($i + 1)) }
-    }
-    foreach ($tk in @($TicketBlocked.Keys)) {
-        $i = ([string]$tk).IndexOf(':')
-        if ($i -le 0) { continue }
-        $k = ([string]$tk).Substring(0, $i)
-        if (-not $repoExclude.ContainsKey($k)) { continue }
-        $repoExclude[$k].Add(([string]$tk).Substring($i + 1))
-        $why = [string]$TicketBlocked[$tk]
-        if ($why -ceq 'deviceLevel') { $excluded.deviceLevel++ } else { $excluded.resource++ }
     }
     $active = [ordered]@{}
     foreach ($k in $repos.Keys) {
@@ -281,9 +271,8 @@ function Get-PqRank {
                 if ($autoSkip.Contains($reason)) { $autoSkip[$reason]++ } else { $autoSkip[$reason] = 1 }
                 switch ($reason) {
                     'idle-hold' { $excluded.idleHold++ }
-                    # TASK-FLOW 0.24 rule 67: counted with the idle hold - both mean "another pass would
-                    # repeat the last one" - so the rank.result payload keeps its keys.
-                    'awaits-release' { $excluded.idleHold++ }
+                    # TASK-FLOW rule 67 as amended: counted apart from the idle hold (EVENTS.md, "the counts of rank.result").
+                    'awaits-release' { $excluded.awaitsRelease++ }
                     'owner-gate' { $excluded.gated++ }
                     default { $excluded.blocked++ }
                 }

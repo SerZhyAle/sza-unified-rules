@@ -48,8 +48,13 @@ and checks that the cache reached the version. A failure there only warns and pr
 run by hand; it never changes the exit code, because the commit is already on the remote. Open Claude
 sessions keep what they loaded - restart them.
 
-Exit codes: 0 = pushed, or nothing to push; 1 = gate failed, the version bump failed, or a git step
-failed; 2 = cannot verify (not a repo, gate script missing, no remote, version files unreadable).
+When the version was raised and this machine's plugin reached it, the deploy also ships the canon's own release
+package: tools/harness/spec_catalog/ship-package.ps1 moves the ready rows of the plan into the done file and
+archives the Verified tickets that shipped (TASK-FLOW rule 16). Best effort, like the release-ledger steps.
+
+Exit codes: 0 = pushed, or nothing to push; 1 = gate failed, the version bump failed, a git step
+failed, or a new path at the repo root (without -AllowNew); 2 = cannot verify (not a repo, gate script
+missing, no remote, version files unreadable).
 #>
 [CmdletBinding()]
 param(
@@ -117,7 +122,7 @@ if ($gateCode -ne 0) { Fail "the gate found violations (exit $gateCode) - nothin
 # The four fast gates (CLAUDE.md "Working here") are named at every deploy, so a red one cannot sit for
 # weeks as somebody else's problem (2026-10-28 .. 11-10: assert-portable and check-documents were red and
 # called "not mine" in 17 reports). The canon gate above already blocked on anything but 0; the other three
-# are advisory - the contracts catalog lives outside git and outside this repo, so a machine without
+# are advisory - the contracts catalog lives outside this repo, so a machine without
 # P:\Contracts must still be able to ship a rule fix - and a gate that cannot run is reported as
 # 'unavailable', never silently skipped. Nothing here changes the exit code.
 function Invoke-FastGateReport {
@@ -219,11 +224,12 @@ function Invoke-ReleaseLedgerStep {
         [Parameter(Mandatory)][string]$Root,
         [Parameter(Mandatory)][string[]]$Arguments,
         [string]$Pwsh = 'pwsh',
-        [string]$ScriptRel = 'tools\harness\releases\release-ledger.ps1'
+        [string]$ScriptRel = 'tools\harness\releases\release-ledger.ps1',
+        [string]$Label = 'release-ledger'
     )
     $script = Join-Path $Root $ScriptRel
     if (-not (Test-Path -LiteralPath $script -PathType Leaf)) {
-        Write-Host "deploy: release-ledger skipped ($ScriptRel not found)" -ForegroundColor Yellow
+        Write-Host "deploy: $Label skipped ($ScriptRel not found)" -ForegroundColor Yellow
         return 'missing'
     }
     $prevEap = $ErrorActionPreference
@@ -233,7 +239,7 @@ function Invoke-ReleaseLedgerStep {
         $code = $LASTEXITCODE
     }
     catch {
-        Write-Host "deploy: release-ledger failed - $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Host "deploy: $Label failed - $($_.Exception.Message)" -ForegroundColor Yellow
         return 'failed'
     }
     finally {
@@ -241,7 +247,7 @@ function Invoke-ReleaseLedgerStep {
     }
     if ($code -ne 0) {
         $detail = (@($out | ForEach-Object { "$_" } | Where-Object { $_.Trim() } | Select-Object -Last 2) -join '; ')
-        Write-Host "deploy: release-ledger exited $code$(if ($detail) { " - $detail" })" -ForegroundColor Yellow
+        Write-Host "deploy: $Label exited $code$(if ($detail) { " - $detail" })" -ForegroundColor Yellow
         return 'failed'
     }
     foreach ($line in @($out | ForEach-Object { "$_" } | Where-Object { $_.Trim() })) {
@@ -459,5 +465,15 @@ if ($bumpedVersion -and $cacheState -in @('updated', 'current')) {
         'publish', '-Key', 'marketplace', '-Version', $bumpedVersion, '-State', 'live',
         '-Ref', $sha, '-Url', 'https://github.com/SerZhyAle/sza-unified-rules/blob/main/.claude-plugin/plugin.json'
     )
+    # TASK-FLOW rule 16, steps 2 and 3: this deploy released everything finished in the tree, so the ready rows
+    # leave the plan and the verified tickets leave the ledger. Best effort like the ledger steps: a problem warns
+    # and never changes the exit code. The project root is pinned for the child, because the harness would
+    # otherwise take the first profile above the caller's working directory.
+    $prevProjectRoot = $env:SZA_PROJECT_ROOT
+    try {
+        $env:SZA_PROJECT_ROOT = $root
+        $null = Invoke-ReleaseLedgerStep -Root $root -Label 'ship-package' -ScriptRel 'tools\harness\spec_catalog\ship-package.ps1' -Arguments @('-Version', $bumpedVersion)
+    }
+    finally { $env:SZA_PROJECT_ROOT = $prevProjectRoot }
 }
 exit 0

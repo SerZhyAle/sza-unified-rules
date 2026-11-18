@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Contract | `CHECK-VERDICT` |
-| Version | 0.14, draft |
+| Version | 0.15, draft |
 | Home | Shared catalog, `automated-checks/`; resolution is in CLAUDE.md |
 | Role | Scoped producer: `tools/tests/contract-sync.tests.ps1` and `tools/tests/contract-reader.tests.ps1` only |
 

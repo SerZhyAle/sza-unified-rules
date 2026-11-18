@@ -83,11 +83,12 @@ live tree. This one file is what every other skill and the compliance gate read.
 - `schemaVersion` - `"1.0"`, REPO-STAMP's wire carrier. A missing carrier on an existing stamp
   selects the retained legacy reader; never require a carrier by silently invalidating old stamps.
 - `canon.version` - from `CANON_VERSION` at the plugin root.
-- `canon.coreDigest` - recompute it; do not copy one from another repo.
-  `pwsh -NoProfile -File "<plugin root>/tools/check-compliance.ps1" -PrintDigest`, with the plugin root
-  resolved in step 1.
+- `canon.coreDigest` and `canon.docDigests` - recompute both; do not copy them from another repo.
+  `pwsh -NoProfile -File "<plugin root>/tools/check-compliance.ps1" -PrintDigest -Json`, with the plugin root
+  resolved in step 1, prints `coreDigest` and the `docDigests` map (rule doc name to its digest). Write both into
+  the stamp exactly as printed: the map is what lets the next re-sync name the documents that changed.
 - `canon.adoptedOn` - the date of first adoption; a re-sync never moves it. `canon.reconciledOn` - the date
-  of the last reconciliation, written together with `version` and `coreDigest` on every re-sync.
+  of the last reconciliation, written together with `version`, `coreDigest` and `docDigests` on every re-sync.
 - `canon.model` - `reference` or `mirror`.
 - `overlay` - exactly one, unless the repo has editions, in which case declare them too.
 - `versionShape.tagRegex` - **take it from the release script's own validation regex or from CI**, never from
@@ -98,7 +99,8 @@ live tree. This one file is what every other skill and the compliance gate read.
 - `channels` - only channels with a committed manifest folder.
 - `site` - the tree Pages actually serves. Confirm with
   `gh api repos/<owner>/<repo>/pages`, never by assuming root and `docs/` match.
-- `exemptions` - each with a reason and, where it is temporary, an `until` date.
+- `exemptions` - each with a check id and a reason that says what closes it. An exemption stands until it is
+  removed from the stamp; write no `until` date - the gate does not read one (REPO-STAMP 0.14).
 
 ## Step 4 - Rewrite the repo's agent-rules file
 
@@ -258,15 +260,15 @@ forwarder exists.
 
 ## Step 7 - Re-sync (existing adoption, canon moved)
 
-The staleness ladder, from the compliance gate:
+Staleness, from the compliance gate (`SZA-CANON03`, always a warning - RULE-DELIVERY rule 5):
 
 - Digest equal -> nothing to do, the stamp included: a version moved without a digest change is not written
   by hand (REPO-STAMP rule 8).
-- Digest differs, last reconciliation within 180 days -> **warn**. Re-read the changed rule docs,
-  reconcile, then write `canon.version`, `canon.coreDigest` and `canon.reconciledOn` through this run.
-- Digest differs, last reconciliation older than 180 days or unknown -> **error**. Re-run this skill
-  in full. Use a parseable `reconciledOn`, else a parseable `adoptedOn`; neither parseable means unknown.
-  A version gap alone does not decide the rung (RULE-DELIVERY rule 5).
+- Digest differs -> **warn**, at any age. The finding ends with `changed rule docs: <names>`: re-read exactly
+  those documents and reconcile against them. Where it says `unknown` (a stamp written before `canon.docDigests`
+  existed), re-read every rule doc this once. Then write `canon.version`, `canon.coreDigest`, `canon.docDigests`
+  and `canon.reconciledOn` through this run (step 3), so the next re-sync is named.
+- Neither a version gap nor the stamp's age decides anything: the gate reports the age and judges the digest.
 
 When `CONTRACTS.md` is among the changed docs, the re-sync includes a `contract-sync` run - a change
 there changes what the repo owes the catalog, and reading it is not the same as doing it.

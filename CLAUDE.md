@@ -23,18 +23,22 @@ pwsh -NoProfile -File tools/check-contracts.ps1           # the contracts catalo
 python tools/docs/check-documents.py                      # both documentation corpora; writes nothing
 pwsh -NoProfile -File tools/harness/assert-portable.ps1   # no project value inside a shipped harness script
 pwsh -NoProfile -File tools/tests/<name>.tests.ps1        # one suite
+pwsh -NoProfile -File tools/tests/run-tier.ps1 -List      # every gate and suite: tier, seconds, date
 python tools/tests/documentation.tests.py                 # negative fixtures of check-documents
 pwsh -NoProfile -File hooks/tests/smoke-hooks.ps1         # hook verdicts - after a hook change
 pwsh -NoProfile -File hooks/tests/smoke-prefilters.ps1    # the hooks.json pre-filters, under Git Bash
 pwsh -File deploy.ps1 -DryRun                             # the gates + what would be committed and bumped
 ```
 
-- **The first four are the fast list**; which of the rest may run after an ordinary edit is decided by the 5 s
-  line under "Working here". A suite that is not in the measured list there is release tier until it is measured.
-- **There is no test runner and no case filter - "one test" is one file.** Each `tools/tests/*.tests.ps1` is a
-  standalone script that prints a PASS or FAIL line per case and exits 1 on any failure; its header comment lists
-  the cases and says what it touches (most build throwaway repositories and a throwaway portfolio root, and
-  take `-KeepScratch` to leave them for inspection).
+- **The tiers have one home: [tools/tests/tiers.json](tools/tests/tiers.json)** - one row per gate or suite with its tier
+  (`fast` is 5 s or less, `release` is above), the measured seconds, the date and what it covers. A suite with no row
+  is release tier, unmeasured. [tools/tests/run-tier.ps1](tools/tests/run-tier.ps1) reads it: `-List` prints every row
+  and every unlisted suite, `-Suite <name>` runs one fast suite and refuses any other, `-Tier fast` runs every fast row,
+  and `-Suite <name> -Measure` is the owner-named run that times a suite and writes its row.
+- **There is no case filter - "one test" is one file.** Each `tools/tests/*.tests.ps1` is a standalone script that
+  prints a PASS or FAIL line per case and exits 1 on any failure; its header comment lists the cases and says what it
+  touches (most build throwaway repositories and a throwaway portfolio root, and take `-KeepScratch` to leave them for
+  inspection). A header never states a tier or a time - the registry does.
 - **`tools/check-compliance.ps1` judges an adopting repository, not this one** - it is run from that repo
   (`-Strict`, `-Json`). Here the stamp's `role: canon-home` switches the surface and overlay checks off.
 - **`deploy.ps1` without `-DryRun` is the owner's tool.** It stages everything (`git add -A`), commits and pushes
@@ -47,13 +51,15 @@ pwsh -File deploy.ps1 -DryRun                             # the gates + what wou
   It validates internal links, section numbering, `§` references and the house text style.
 - **An ordinary edit gets checks of 5 seconds or less only** ([TESTING_AND_QA.md](rules/TESTING_AND_QA.md) §2). Do
   not run any test, suite or gate above 5 s after a normal modification - the owner switched them off on 2026-10-28
-  and set the 5 s line for the whole portfolio on 2026-10-29. Measured on 2026-10-29 (a timed call of each): fast -
-  `check-rules.ps1` 0.8 s, `check-contracts.ps1` 2.4 s, `check-documents.py` 0.6 s, `assert-portable.ps1` 1.1 s, and from 2026-11-15 `pq-holds-health.tests.ps1` 4.0 s, `instance-settings.tests.ps1` 3.5 s and `portfolio-profile-override.tests.ps1` 0.6 s, and from 2026-11-15 `inbox-packet.tests.ps1` (the ticket-packet vector replay, 50 cases) 2.3 s and `app-commands-list.tests.ps1` 1.8 s, and from 2026-11-15 `taskflow-ledger-conformance.tests.ps1` (rules 7, 9, 65, 66 and 68, 14 cases) 4.0 s, and from 2026-11-15 `inbox-incomplete-packets.tests.ps1` (S0085, the removal of manifest-less packet folders and the retry of a packet whose check hits an I/O error, 11 cases) 1.4 s, and `app-commands-awareness.tests.ps1` (SZA-CTR04, 7 cases) 3.47 s, and from 2026-11-17 `release-ledger.tests.ps1` (S0092, 10 cases) 2.7 s, and `deploy-release-ledger.tests.ps1` (S0095, 6 cases) 0.4 s, and from 2026-11-18 `idle-hold.tests.ps1` (S0104, the idle hold and its lift, 6 cases) 0.2 s, and from 2026-11-18 `ticket-source.tests.ps1` (S0108, the ledger field `source`, 6 cases) 1.7 s, and from 2026-11-18 `proposal-status.tests.ps1` (S0121, the proposal status line of CTR-PROP, 7 cases) 0.9 s, and from 2026-11-18 `complexity-grade.tests.ps1` (S0139-S0141, the grade 0-9, routes, rater, escalation, the parallel axis and the settings write, 11 cases) 2.6 s;
-  release tier - `layout-gate.tests.ps1` 26.5 s, `portfolio-events.tests.ps1` 20.4 s, `ticket-id-grammar.tests.ps1`
-  about 18 s, and from 2026-10-28 `ledger-rules.tests.ps1` 313 s, `portfolio-queue.tests.ps1` about 200-330 s,
-  `smoke-portfolio-runner.ps1` 120-300 s, `batch-runner.tests.ps1` 163 s, and from 2026-11-13 `block-links.tests.ps1` 19 s. What stays is the fast list and a direct call of
-  the function or script that was changed. A release-tier suite runs only when the owner asks for it by name. When a change
-  is not covered by a fast check, say so in the report instead of running a slow one.
+  and set the 5 s line for the whole portfolio on 2026-10-29. Which check is fast is recorded in
+  [tools/tests/tiers.json](tools/tests/tiers.json) and nowhere else; `pwsh -NoProfile -File tools/tests/run-tier.ps1 -List`
+  prints it. The line is per suite: `-Tier fast` runs every fast row in turn and its total is far above 5 s, so after an
+  edit the call is the rows that cover what changed (`-Suite <name>`). What stays is the fast rows and a direct call of
+  the function or script that was changed. A release-tier or unmeasured suite runs only when the owner names it, in chat
+  or in the ticket being worked, and that run is `-Suite <name> -Measure`, which records the time. This file holds no
+  time and no case count: a suite that a ticket adds gets its row from one such run in that ticket's pass, and a ticket
+  text that asks for a clause or a count in a list here edits nothing in this file. When a change is not covered by a
+  fast check, say so in the report instead of running a slow one.
 - **The deploy names all four fast checks** (from 2026-11-11): after `check-rules.ps1`, which blocks, it runs
   `check-contracts.ps1`, `check-documents.py` and `assert-portable.ps1` and prints each exit code, or `unavailable` with the
   reason when one cannot run. Those three are advisory and never change the exit code, so a red one is named at every deploy
@@ -80,13 +86,26 @@ pwsh -File deploy.ps1 -DryRun                             # the gates + what wou
   the catalog moves first and the code follows.
 - **Touching the catalog?** `pwsh -File tools/check-contracts.ps1` (exit 0 required) validates it: the
   governance pages, every domain's header block, the registry agreeing with it, the status line of every proposal, and
-  links. The catalog is outside git, so nothing else can catch a broken edit there - the deploy runs this
+  links. The catalog is outside this repo, so nothing here can catch a broken edit there - the deploy runs this
   advisory, never as a blocker, because a machine without the drive must still be able to ship a rule fix.
+- **The catalog has its own local git history, and a session of this repo is its only committer** (one branch `main`, no
+  remote, `.gitattributes` `* -text`, so no line ending is ever converted). Before the first catalog edit of a task:
+  `git -C P:\Contracts add -A`, then `git -C P:\Contracts commit -q -m "Before <task>: the catalog as found"` - it records
+  what the product sessions wrote since the last snapshot, and "nothing to commit" is a normal answer. After the last
+  edit and a green `check-contracts.ps1`: the same pair with `-m "<task>: <what changed>"`. This is a standing commit
+  flow, the one place a session of this repo commits without being asked, and it is never reported as tree state. When
+  git answers that `index.lock` exists, another session is taking its snapshot: run the pair once more, and never
+  delete the lock file. A consolidation round makes no backup copy, compares nothing by hand and audits no line
+  endings: between the two snapshots `git -C P:\Contracts status --short` and `git -C P:\Contracts diff --stat` name
+  every file the round changed, and a file whose line endings were converted shows every line changed.
+  Never run there: `reset --hard`, `checkout --`, `restore`, `clean`, `stash`, `rebase`, `commit --amend`, a second
+  branch, a remote, a push. A product session runs no git command in the catalog at all
+  ([rules/CONTRACTS.md](rules/CONTRACTS.md); the catalog's `_meta/RULES.md` section 6).
 - **Changing a rule doc changes the digest**, which marks every adopting repo stale. That is intended: a
-  differing digest is a warning that owes a reconciliation of the changed documents, and only the stamp's age (more
-  than 180 days since the last reconciliation, or since adoption when none is recorded, or no readable date at all)
-  turns it into an error that owes a full re-adoption - the version
-  number does not decide the rung (`RULE-DELIVERY` rule 5).
+  differing digest is a warning at any age, and the gate names the rule docs that changed since the stamp was
+  written (`canon.docDigests`), so a reconciliation re-reads those and nothing else - neither the version number
+  nor the stamp's age decides anything (`RULE-DELIVERY` rule 5). This repo, role `canon-home`, is never stale
+  against itself.
 - **The version pair is written by `deploy.ps1`, not by hand.** It calls
   [tools/bump-canon-version.ps1](tools/bump-canon-version.ps1) before staging, which is the only writer of
   [CANON_VERSION](CANON_VERSION) and of `.claude-plugin/plugin.json` `version`, derived from it:
@@ -109,6 +128,12 @@ pwsh -File deploy.ps1 -DryRun                             # the gates + what wou
   version, so `git log --grep` with a version number finds what that version holds. With a message, the subject
   is the message and the note is its first line.
   [tools/tests/deploy-release-ledger.tests.ps1](tools/tests/deploy-release-ledger.tests.ps1) covers it with stubs.
+- **The deploy also ships the canon's own release package** (from 2026-11-18, TASK-FLOW rule 16): right after
+  `publish -State live`, under the same guard, it runs `tools/harness/spec_catalog/ship-package.ps1 -Version <plugin
+  version>` with `SZA_PROJECT_ROOT` pinned to this checkout. The ready rows of `PLAN/RELEASE_READY.md` move into
+  `PLAN/RELEASE_QUEUE_DONE.md`, the marker advances, and the `Verified` tickets in neither plan file are archived;
+  `Implemented` and `BlockNeedUserTest` tickets stay in the ledger. A problem there warns and never changes the
+  exit code. Case 9 of the suite above covers the call site.
 - **The deploy also brings this machine's plugin to the pushed version** (from 2026-10-29): after the push, on `main`,
   when the cache is behind, it runs `claude plugin marketplace update sza-unified-rules` and `claude plugin update
   sza@sza-unified-rules` and checks that the cache reached the version. A failure only warns and prints the commands;
@@ -139,7 +164,11 @@ pwsh -File deploy.ps1 -DryRun                             # the gates + what wou
 - **One payload, four layers.** `rules/` (the reference), `skills/` (the procedures), `hooks/` (enforcement at
   the tool call, registered in `hooks/hooks.json`) and `tools/` (the gates and the harness) all ship in the
   plugin. A consumer runs them from its plugin cache (`~/.claude/plugins/cache/sza-unified-rules/sza/<version>/`),
-  never from this checkout - which is why nothing here exists for a consumer until the version moves.
+  not from this checkout - which is why nothing here exists for an attended session until the version moves. The
+  portfolio queue is the one exception: `pq` and every robot pass it starts run `tools/harness/` of this checkout,
+  and the pass carries that folder as `SZA_HARNESS_ROOT`, so a saved harness edit is live for robots at once
+  (a lib a worker already loaded - after that worker restarts) and absent for attended sessions until the deploy.
+  `pq doctor` prints both folders and how many scripts differ in its `harness` line.
 - **Two root files are the whole interface to a repository**, both contract-bound, both templated in
   [templates/](templates/README.md). `.sza-canon.json` is the stamp: what was adopted (canon version + the
   digest of `rules/*.md`), the role, overlay, channels and exemptions; `check-compliance.ps1` and the
@@ -163,7 +192,9 @@ pwsh -File deploy.ps1 -DryRun                             # the gates + what wou
   `.claude/commands/` forwarders. `tools/harness.ps1` - and the `r1`-`r3`, `rs`, `rw`, `rm` launchers that go
   through it - resolves the **newest installed plugin cache, not `tools/harness/` in this tree**. To exercise
   an edit, call the script under `tools/harness/` directly or set `SZA_HARNESS_ROOT` to that folder; a green
-  run through the forwarder proves the previous deploy.
+  run through the forwarder proves the previous deploy. Inside a robot pass started by `pq` the forwarder resolves
+  this tree instead, because the pass carries `SZA_HARNESS_ROOT`. Set that variable by hand for one command only,
+  never in the user environment: a folder without `.sza-profile.json` would then take this repo for its project root.
 - **Two documentation corpora, one checker** ([docs/DOCUMENTATION.md](docs/DOCUMENTATION.md)). The published
   one is declared by `docs/document-corpus.json` and `docs/DOCUMENT_REGISTRY.jsonl` and includes this file,
   so a link or a style slip here turns `check-documents.py` red; the local one under `dev/` is ignored by git.
@@ -181,8 +212,9 @@ pwsh -File deploy.ps1 -DryRun                             # the gates + what wou
   everything inside the tracked top-level folders (a new path at the repo root is refused instead). Local by design: `PLAN/` (this repo's tickets and ledger), `temp/`, the `dev/` registry files,
   the `PQ *.lnk` launchers and `/.sza-profile.json` - the harness looks for a profile above its own root, so a
   shipped one would become the project root of every consumer that has none.
-- [AGENTS.md](AGENTS.md) is the Codex entry point: it defers to this file and repeats only the command list,
-  so a command that changes here changes there too. `memory/` holds that agent's notes.
+- [AGENTS.md](AGENTS.md) is the Codex entry point: a delegating stub that sends the agent to this file, plus the
+  Codex-only routing bullets. It repeats no command, tier or style rule, so nothing here has a second copy to keep
+  in step. `memory/` holds that agent's notes.
 
 ## Language
 

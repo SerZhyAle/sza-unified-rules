@@ -512,6 +512,10 @@ function Invoke-PqPassChild {
     # A usage limit ends the pass instead of being waited out inside the runner: the worker holds that provider and
     # gives the ticket to the next one of agentOrder (rule 48).
     $psi.Environment['SZA_PQ_EXIT_ON_LIMIT'] = '1'
+    # One harness copy per pass (S0134): a repository's forwarder reads SZA_HARNESS_ROOT before the plugin cache, so
+    # the agent's own ledger and lease calls run the copy this worker and its runner run. Set for the pass child only,
+    # never in the user environment: a folder without a profile would then resolve this tree as its project root.
+    $psi.Environment['SZA_HARNESS_ROOT'] = (Get-PqHarnessRoot '')
     [void]$psi.Environment.Remove('SZA_PROFILE_PATH')
     Remove-PqAgentSessionEnv $psi.Environment
     $proc = $null
@@ -630,18 +634,16 @@ function Read-PqPassOutcome {
         exitCode = $agentExit
         launches = $rows.Count
         limits = $limits
-        built = $fold.built
         usage = $fold.usage
         costUsd = $fold.costUsd
         priceAsOf = $fold.priceAsOf
     }
 }
 
-# TASK-FLOW 0.20 rule 46 (S0037): rule 23's optional built / usage / costUsd / priceAsOf folded over every launch of a
-# pass. built=false when any launch disclosed it; usage summed, a launch whose usage.session repeats counted once,
+# TASK-FLOW 0.20 rule 46 (S0037): rule 23's optional usage / costUsd / priceAsOf folded over every launch of a pass
+# (an old row's built field, withdrawn in 0.36, is ignored). Usage summed, a launch whose usage.session repeats counted once,
 # complete=false when any launch has none; costUsd only when every launch has one, priceAsOf the oldest. $null = absent.
 function Merge-PqPassUsage($Rows) {
-    $built = $null
     $sum = [ordered]@{ model = ''; input = [int64]0; output = [int64]0; cacheRead = [int64]0; cacheWrite = [int64]0; requests = 0; complete = $true }
     $models = [Collections.Generic.List[string]]::new()
     $sessions = [Collections.Generic.HashSet[string]]::new()
@@ -651,8 +653,6 @@ function Merge-PqPassUsage($Rows) {
     $priceAsOf = $null
     foreach ($row in @($Rows)) {
         if ($null -eq $row) { continue }
-        $b = Get-PqValue $row 'built' $null
-        if ($b -is [bool] -and -not $b) { $built = $false }
         $u = Get-PqValue $row 'usage' $null
         if ($null -eq $u) { $sum.complete = $false; $costKnown = $false; continue }
         $session = [string](Get-PqValue $u 'session' '')
@@ -670,10 +670,10 @@ function Merge-PqPassUsage($Rows) {
             if ($asOf -and (-not $priceAsOf -or [string]::CompareOrdinal($asOf, $priceAsOf) -lt 0)) { $priceAsOf = $asOf }
         }
     }
-    if (-not $any) { return [ordered]@{ built = $built; usage = $null; costUsd = $null; priceAsOf = $null } }
+    if (-not $any) { return [ordered]@{ usage = $null; costUsd = $null; priceAsOf = $null } }
     $sum.model = $models -join '+'
     if (-not $costKnown) { $priceAsOf = $null }
-    return [ordered]@{ built = $built; usage = $sum; costUsd = $(if ($costKnown) { [Math]::Round($cost, 4) } else { $null }); priceAsOf = $priceAsOf }
+    return [ordered]@{ usage = $sum; costUsd = $(if ($costKnown) { [Math]::Round($cost, 4) } else { $null }); priceAsOf = $priceAsOf }
 }
 
 # The drop of rule 43 (S0016 R31): a ticket that came back unmoved stays out of the rank until its status, its `updated`
@@ -1979,7 +1979,6 @@ function Start-PqLoop {
                 # agentExit is optional (rule 46): written when the repository journal row carries one, absent otherwise.
                 $agentExitValue = Get-PqRunRowAgentExit $outcomeRes.exitCode
                 if ($null -ne $agentExitValue) { $runRow.agentExit = $agentExitValue }
-                if ($outcomeRes.built -is [bool]) { $runRow.built = $outcomeRes.built }
                 if ($null -ne $outcomeRes.usage) { $runRow.usage = $outcomeRes.usage }
                 if ($null -ne $outcomeRes.costUsd) { $runRow.costUsd = $outcomeRes.costUsd; $runRow.priceAsOf = $outcomeRes.priceAsOf }
                 $runsJsonl = Join-Path $root 'runs.jsonl'

@@ -23,8 +23,7 @@
       9. (S0087) The dev-monitor's last-write reader finds the spec and folder of a moved ticket - through the archive
          directory, and through a ledger row's own directory - and still reads an active ticket and its scratch dir.
 
-    Three pwsh children, 4.97 s measured on 2026-11-15 - at the 5-second line, so it is run by name and is not in the
-    fast list. -KeepScratch leaves the repository for inspection.
+    Three pwsh children. -KeepScratch leaves the repository for inspection.
 #>
 [CmdletBinding()]
 param([switch] $KeepScratch)

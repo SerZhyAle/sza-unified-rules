@@ -3,7 +3,7 @@
 .SYNOPSIS
     Cases for the idle hold of a ticket and its lift (TASK-FLOW rule 24): batch/_idle-runs.ps1.
 .DESCRIPTION
-    Fast tier. The library is loaded against a scratch project under the system temp directory. No runner, no child
+    The library is loaded against a scratch project under the system temp directory. No runner, no child
     process, no git; nothing outside the scratch directory is written. Cases: 1 two counted unmoved runs hold and a
     moved run ends the series; 2 limit-hit, claim-lost-before-launch and launch-failed neither count nor end a series;
     3 a spec file written more than 60 s after the newest counted run lifts the hold; 4 every doubt keeps the hold;

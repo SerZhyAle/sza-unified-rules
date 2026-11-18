@@ -32,4 +32,5 @@ place, what every other skill would otherwise have to re-derive by guessing:
 - **`byteIdenticalPairs`** - file pairs a repo maintains identical by hand, so the gate can enforce what was
   previously only prose.
 - **`vendorAllow`** - tracked binary paths that are vendored tooling rather than build output.
-- **`exemptions`** - each with a check id, a reason, and an `until` date where it is temporary.
+- **`exemptions`** - each with a check id and a reason that says what closes it. Nothing expires: an exemption
+  stands until it is removed, and an `until` date is not read.

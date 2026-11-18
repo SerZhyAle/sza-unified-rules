@@ -34,6 +34,10 @@ $sza = if ($env:CLAUDE_PLUGIN_ROOT) { $env:CLAUDE_PLUGIN_ROOT } else {
     ((Get-Content "$HOME/.claude/plugins/installed_plugins.json" -Raw | ConvertFrom-Json).plugins.'sza@sza-unified-rules' |
         Sort-Object lastUpdated -Descending | Select-Object -First 1).installPath
 }
+# A robot pass started by pq carries SZA_HARNESS_ROOT - the harness copy its runner runs. Use that copy's root.
+if ($env:SZA_HARNESS_ROOT -and (Test-Path -LiteralPath (Join-Path $env:SZA_HARNESS_ROOT '../../tools/harness/spec_catalog'))) {
+    $sza = (Resolve-Path -LiteralPath (Join-Path $env:SZA_HARNESS_ROOT '../..')).Path
+}
 "$sza"
 ```
 

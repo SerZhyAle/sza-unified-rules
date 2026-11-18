@@ -33,6 +33,8 @@ own corpus. Fenced and inline syntax examples are not navigable references. HTTP
 statically; the gate makes no network requests and cannot prove remote availability or permanence.
 Executable code and command examples keep their own syntax. The canon's house-style/reference gate
 remains `pwsh -NoProfile -File tools/check-rules.ps1`; it does not certify prose outside its rule corpus.
+A published document holds no control character except the line ends CR and LF - a tab included, so write
+spaces in code samples too; the local corpus, which keeps the owner's verbatim text, is exempt.
 
 Negative fixtures: `python tools/tests/documentation.tests.py`. The optional `generated` list in the corpus
 configuration declares entries with `pattern`, `generator` and `check` as non-empty strings; patterns match

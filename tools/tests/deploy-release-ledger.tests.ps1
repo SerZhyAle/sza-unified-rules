@@ -18,6 +18,7 @@
       7. Get-DeployChangeNote builds one line from the unpushed subjects, the changed rule documents and the
          per-folder counts; an explicit message replaces it; the deploy's own bookkeeping yields an empty line.
       8. Test-ShipsToConsumers ships a facts record under rules/contrib/ and exempts rules/contrib/history/.
+      9. The ship-package call follows publish, carries its own label and pins the project root for the child.
 #>
 [CmdletBinding()]
 param()
@@ -166,6 +167,19 @@ try {
         Assert-That (Test-ShipsToConsumers @('rules\contrib\TEMPLATE.md')) 'a backslash path must be normalized before the exemption test'
         Assert-That (-not (Test-ShipsToConsumers @('rules/contrib/history/sample.md'))) 'a history-only change should not bump the version'
         Assert-That (-not (Test-ShipsToConsumers @('rules\contrib\history\sample.md', 'docs/releases/history.jsonl'))) 'history beside the ledger should not bump the version'
+    }
+
+    Run-Case '9 ship-package runs after publish with its own label and a pinned project root' {
+        $pubSite = $deployText.Substring($deployText.IndexOf('$cacheState = Update-PluginCache'))
+        $shipAt = $pubSite.IndexOf("-Label 'ship-package'")
+        Assert-That ($shipAt -gt $pubSite.IndexOf("'publish'")) 'ship-package is not called after publish'
+        Assert-That ($pubSite.Contains('tools\harness\spec_catalog\ship-package.ps1') -and $pubSite.Contains("-Arguments @('-Version', `$bumpedVersion)")) 'the ship-package script or its version argument is missing'
+        Assert-That ($pubSite.Contains('$env:SZA_PROJECT_ROOT = $root') -and $pubSite.Contains('$env:SZA_PROJECT_ROOT = $prevProjectRoot')) 'the project root is not pinned and restored'
+        $script:calls = @()
+        $all = @(Invoke-ReleaseLedgerStep -Root $emptyRoot -Arguments @('-Version', '2026.1118.2') -Pwsh 'fake-ledger-pwsh' -Label 'ship-package' -ScriptRel 'tools\harness\spec_catalog\ship-package.ps1' 6>&1)
+        $text = (@($all | Where-Object { $_ -is [Management.Automation.InformationRecord] } | ForEach-Object { [string]$_.MessageData }) -join "`n")
+        Assert-That ((@($all | Where-Object { $_ -is [string] }) | Select-Object -Last 1) -eq 'missing') 'a missing ship-package.ps1 must return missing'
+        Assert-That ($text.Contains('deploy: ship-package skipped') -and -not $text.Contains('release-ledger')) "the label is not used: $text"
     }
 }
 finally {

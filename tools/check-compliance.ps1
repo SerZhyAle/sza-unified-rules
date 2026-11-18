@@ -22,12 +22,15 @@ Groups:
   STYLE  house text style in prose and user-visible UI text
 
 Exit codes: 0 = clean; 1 = violations; 2 = internal error, or could not verify (run under Windows PowerShell
-5.1, which misreads the BOM-less UTF-8 repo files - use pwsh 7+).
+5.1, which misreads the BOM-less UTF-8 repo files - use pwsh 7+; an id in -Only/-Skip that names no check of
+this script; -Only naming only FLOW checks without -CheckTaskFlow - each prints a line and verifies nothing).
 
 Usage:
   pwsh -File tools/check-compliance.ps1                      # target = repo at cwd
   pwsh -File tools/check-compliance.ps1 -RepoRoot P:\X -Strict
   pwsh -File tools/check-compliance.ps1 -Json | ConvertFrom-Json
+  pwsh -File tools/check-compliance.ps1 -Only SZA-CANON03,SZA-CTR04   # run just these checks (comma list)
+  pwsh -File tools/check-compliance.ps1 -Skip SZA-STYLE01             # run all but these (comma list)
   pwsh -File tools/check-compliance.ps1 -PrintDigest         # canon core digest, for a stamp
   pwsh -File tools/check-compliance.ps1 -IncludeUntracked    # also judge untracked, non-ignored files
   pwsh -File tools/check-compliance.ps1 -CheckTaskFlow       # also run group FLOW (off by default)
@@ -35,6 +38,10 @@ Usage:
 The git-scoped checks judge tracked files. A repo with no commit yet (adoption runs before the first one)
 is judged on its tracked and untracked, non-ignored files instead - what the first commit would hold - and
 the run says so; -IncludeUntracked asks for that set on any repo.
+
+-Json prints repo, canonVersion, canonDigest, fileSet, only, skip, errors, warnings and findings. `only` and
+`skip` are the -Only and -Skip lists as split and trimmed (empty arrays on a full run), so a consumer can tell
+a filtered run from a full one; the text run says the same in its verdict line.
 #>
 [CmdletBinding()]
 param(
@@ -92,35 +99,22 @@ try {
 
     # The core digest covers the RULE DOCS ONLY. README.md, the contrib records and templates are
     # excluded on purpose: a change to one project's own record must never mark every repo stale.
-    function Get-CanonCoreDigest {
-        param([string]$Dir)
-        $excluded = @('README.md', 'SPREAD_BACK_PROMPT.md')
-        $docs = Get-ChildItem -Path $Dir -Filter *.md -File |
-                Where-Object { $excluded -notcontains $_.Name } |
-                Sort-Object Name
-        $sha = [System.Security.Cryptography.SHA256]::Create()
-        try {
-            $buffer = New-Object System.IO.MemoryStream
-            foreach ($doc in $docs) {
-                $text = [System.IO.File]::ReadAllText($doc.FullName)
-                $text = $text -replace "`r`n", "`n"
-                $bytes = [System.Text.Encoding]::UTF8.GetBytes($doc.Name + "`n" + $text)
-                $buffer.Write($bytes, 0, $bytes.Length)
-            }
-            $buffer.Position = 0
-            $hash = $sha.ComputeHash($buffer)
-            return 'sha256:' + (($hash | ForEach-Object { $_.ToString('x2') }) -join '')
-        }
-        finally { $sha.Dispose() }
-    }
+    # One implementation, shared with the portfolio doctor (harness/portfolio/lib/health.ps1).
+    . (Join-Path $PSScriptRoot 'lib/canon-digest.ps1')
 
     $canonVersionFile = Join-Path $CanonRoot 'CANON_VERSION'
     $canonVersion = if (Test-Path -LiteralPath $canonVersionFile) {
         (Get-Content -LiteralPath $canonVersionFile -Raw).Trim()
     } else { 'unknown' }
-    $canonDigest = Get-CanonCoreDigest -Dir $rulesDir
+    $canonDigest = Get-SzaCanonCoreDigest $rulesDir
 
     if ($PrintDigest) {
+        if ($Json) {
+            # For the adoption run: the two values it writes into a stamp, machine-readable (REPO-STAMP 0.14).
+            [pscustomobject]@{ canonVersion = $canonVersion; coreDigest = $canonDigest; docDigests = (Get-SzaCanonDocDigests $rulesDir) } |
+                ConvertTo-Json -Depth 4
+            exit 0
+        }
         Write-Host "canon version: $canonVersion"
         Write-Host "coreDigest:    $canonDigest"
         exit 0
@@ -147,15 +141,11 @@ try {
         )
         if ($Only -and $Only -notcontains $Id) { return }
         if ($Skip -and $Skip -contains $Id) { return }
-        # A declared exemption suppresses the finding. It carries a reason, and where it is temporary an
-        # `until` date past which it stops applying - so an exemption cannot quietly become permanent.
+        # A declared exemption suppresses the finding for as long as it stands in the stamp. Nothing expires
+        # (REPO-STAMP rule 6 as amended 2026-11-18): an `until` date in it is history and is not read.
         foreach ($ex in $script:Exemptions) {
             if ($ex.id -ne $Id) { continue }
             if ($ex.path -and $Path -notlike $ex.path) { continue }
-            if ($ex.until) {
-                $untilDate = [datetime]::MinValue
-                if ([datetime]::TryParse($ex.until, [ref]$untilDate) -and (Get-Date) -gt $untilDate) { continue }
-            }
             return
         }
         $sev = if ($Strict -and $Severity -eq 'warn') { 'error' } else { $Severity }
@@ -223,6 +213,7 @@ try {
                 if ($Json) {
                     [pscustomobject]@{
                         repo = $RepoRoot; canonVersion = $canonVersion; canonDigest = $canonDigest; fileSet = $fileSet
+                        only = @($Only); skip = @($Skip)
                         errors = 1; warnings = 0; findings = $findings
                     } | ConvertTo-Json -Depth 6
                 } else { $_.Exception.Message }
@@ -255,7 +246,8 @@ try {
 
         # SZA-CANON03 - staleness ladder. The digest, not a git SHA: a SHA fires on every repo
         # whenever any contrib record changes, which is a 100% false-positive rate.
-        if ($stamp.canon.coreDigest -and $stamp.canon.coreDigest -ne $canonDigest) {
+        # The canon's own repository holds the rule set and is never stale against it (REPO-STAMP rule 5, 0.14).
+        if ($stamp.canon.coreDigest -and $stamp.canon.coreDigest -ne $canonDigest -and $stamp.role -ne 'canon-home') {
             # $adopted must already hold a [datetime] for the [ref] overload to bind - a $null seed makes
             # TryParse throw "cannot find an overload", and on this path only, so it survives every run
             # where the digest still matches.
@@ -274,17 +266,23 @@ try {
                     break
                 }
             }
-            $ageDays = if ($parsed) { ((Get-Date) - $adopted).Days } else { $null }
-            $sev = if (-not $parsed -or $ageDays -gt 180) { 'error' } else { 'warn' }
-            $ageDetail = if ($parsed) { "$ageDays days from $ageSource" } else { 'unknown age, treated as past 180 days' }
-            $remedy = if ($sev -eq 'error') {
-                'Run adopt-canon in full; the stamp is past the reconciliation window or its age is unknown.'
-            } else {
-                'Re-read the changed rule docs, reconcile, then update canon.version, canon.coreDigest and canon.reconciledOn through adopt-canon.'
+            # A differing digest is a warning at any age (RULE-DELIVERY rule 5, 0.13): the age is reported, never judged.
+            $ageDetail = if ($parsed) { "$(((Get-Date) - $adopted).Days) days from $ageSource" } else { 'unknown age' }
+            # canon.docDigests (REPO-STAMP 0.14) names what changed since the stamp was written. A stamp without
+            # the map, or with one that is not an object, says "unknown" and the whole rule set is re-read.
+            $changedDocs = 'unknown - the stamp has no canon.docDigests'
+            $stampDocs = $stamp.canon.PSObject.Properties['docDigests']
+            if ($null -ne $stampDocs -and $stampDocs.Value -is [System.Management.Automation.PSCustomObject]) {
+                $stampMap = @{}
+                foreach ($p in $stampDocs.Value.PSObject.Properties) { $stampMap[$p.Name] = [string]$p.Value }
+                $liveMap = Get-SzaCanonDocDigests $rulesDir
+                $names = @(@($liveMap.Keys) + @($stampMap.Keys) | Sort-Object -Unique)
+                $differing = @($names | Where-Object { [string]$liveMap[$_] -cne [string]$stampMap[$_] })
+                $changedDocs = if ($differing.Count -gt 0) { $differing -join ', ' } else { 'unknown - canon.docDigests names no difference' }
             }
-            Add-Finding -Id 'SZA-CANON03' -Severity $sev -Path '.sza-canon.json' `
-                -Message "adoption is stale: stamp digest $($stamp.canon.coreDigest) vs canon $canonDigest (canon $canonVersion; $ageDetail)" `
-                -Fix $remedy
+            Add-Finding -Id 'SZA-CANON03' -Severity 'warn' -Path '.sza-canon.json' `
+                -Message "adoption is stale: stamp digest $($stamp.canon.coreDigest) vs canon $canonDigest (canon $canonVersion; $ageDetail); changed rule docs: $changedDocs" `
+                -Fix 'Re-read the changed rule docs named above (every rule doc when unknown), reconcile, then update canon.version, canon.coreDigest, canon.docDigests and canon.reconciledOn through adopt-canon.'
         }
 
         # SZA-CANON07 - the stamp names a canon version NEWER than the canon's own. That is not
@@ -1328,6 +1326,7 @@ try {
     if ($Json) {
         [pscustomobject]@{
             repo = $RepoRoot; canonVersion = $canonVersion; canonDigest = $canonDigest; fileSet = $fileSet
+            only = @($Only); skip = @($Skip)
             errors = $errors.Count; warnings = $warns.Count; findings = $findings
         } | ConvertTo-Json -Depth 6
         exit ($(if ($errors.Count -gt 0) { 1 } else { 0 }))

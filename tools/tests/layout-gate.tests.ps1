@@ -244,7 +244,8 @@ $targets = [ordered]@{
         Assert-NoFinding $root 'FLOW' 'SZA-FLOW01' $flowOn
         Assert-Finding $root 'FLOW' 'SZA-FLOW02:warn' $flowOn
         $expired = @{ exemptions = @(@{ id = 'SZA-FLOW01'; reason = 'own scheme until the migration ticket'; until = '2000-01-01' }) }
-        Assert-Finding (New-Fixture 'f5-expired' $expired) 'FLOW' 'SZA-FLOW01:warn' $flowOn
+        # REPO-STAMP 0.14: nothing expires - a past `until` is history and the exemption still holds.
+        Assert-NoFinding (New-Fixture 'f5-expired' $expired) 'FLOW' 'SZA-FLOW01' $flowOn
     }
     Test-Case 'flow: an unstamped directory gets CANON01 and no FLOW finding' {
         $root = New-Fixture 'f6-unstamped' -NoStamp

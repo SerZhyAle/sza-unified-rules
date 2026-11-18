@@ -314,6 +314,9 @@ function Write-JsonlFile {
 # the catalog - that is what the AbandonedMutexException branch is for.
 
 $script:CatalogMutex = $null
+# S0144: a portfolio projection asked for while this process holds the lock is noted here and run by
+# Exit-CatalogLock once the lock is free (see Sync-PortfolioProjection).
+$script:ProjectionPending = $false
 
 function Get-CatalogMutexName {
     # Per-checkout, so two clones on one machine do not serialize against each other. Mutex names
@@ -356,6 +359,14 @@ function Exit-CatalogLock {
     try { $script:CatalogMutex.ReleaseMutex() } catch { }
     $script:CatalogMutex.Dispose()
     $script:CatalogMutex = $null
+    # S0144: the projection a write asked for under the lock runs now that the lock is free. Its `pq sync` child may
+    # start insert.ps1 or update.ps1 (TASK-FLOW rules 65 and 68), which take this mutex. Best effort, like the call
+    # in Write-Catalog it replaces: the journal write has landed and the projection is rebuildable on demand.
+    if ($script:ProjectionPending) {
+        $script:ProjectionPending = $false
+        try { Sync-PortfolioProjection }
+        catch { Write-Host ("  portfolio queue not refreshed: {0}; run pq sync -Path `"{1}`"" -f $_.Exception.Message, $script:RepoRoot) -ForegroundColor DarkYellow }
+    }
 }
 
 function Invoke-CatalogTransaction {
@@ -738,13 +749,26 @@ function Sync-PortfolioProjection {
     # A child of the queue sync itself (rule 65 insert, rule 68 relink) carries SZA_PQ_IN_SYNC: that sync refreshes
     # the projection after its children, and a nested one would start the next child again, one level deeper each row.
     if ($env:SZA_PQ_IN_SYNC -eq '1') { return }
+    # S0144: the projection is a `pq sync` child that may start insert.ps1 or update.ps1 (rules 65 and 68), and both
+    # take the catalog mutex. A process cannot win a lock its own parent holds, so every such grandchild waited the
+    # full 30 s of Enter-CatalogLock and failed. While this process holds the lock the request is only noted;
+    # Exit-CatalogLock runs it right after the release - the order _block-links-hook.ps1 keeps for the same reason.
+    if ($script:CatalogMutex) { $script:ProjectionPending = $true; return }
     $pqSync = Join-Path $libDir '../portfolio/sync-project.ps1'
     if (Test-Path -LiteralPath $pqSync) {
-        $syncOutput = & (Get-Process -Id $PID).Path -NoProfile -File $pqSync -ProjectRoot $script:RepoRoot 2>&1
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "  portfolio queue not refreshed: $($syncOutput -join ' '); restore and reconcile the local release queue if missing, then run pq sync -Path `"$script:RepoRoot`"" -ForegroundColor DarkYellow
+        $result = Invoke-PortfolioProjectionChild -ToolPath $pqSync
+        if ($result.code -ne 0) {
+            Write-Host "  portfolio queue not refreshed: $($result.out); restore and reconcile the local release queue if missing, then run pq sync -Path `"$script:RepoRoot`"" -ForegroundColor DarkYellow
         }
     }
+}
+
+function Invoke-PortfolioProjectionChild {
+    # The one place the projection child is started: a seam the lock-order case of
+    # tools/tests/taskflow-ledger-conformance.tests.ps1 replaces to see whether the lock is free at that moment.
+    param([Parameter(Mandatory)][string] $ToolPath)
+    $out = & (Get-Process -Id $PID).Path -NoProfile -File $ToolPath -ProjectRoot $script:RepoRoot 2>&1
+    return @{ code = $LASTEXITCODE; out = ($out -join ' ') }
 }
 
 function Sync-ReleaseQueue {
@@ -765,7 +789,15 @@ function Sync-ReleaseQueue {
     #   - never ADDS a ready ticket that is in neither file: it shipped in an earlier package,
     #   - keeps ONE line per ticket id across both files: the first occurrence wins its position
     #     and its `rel` column, every later one is dropped (S1698).
-    param([Parameter(Mandatory)][AllowEmptyCollection()][object[]] $Records)
+    #
+    # -SkipProjection leaves the portfolio projection (Sync-PortfolioProjection) to the caller. A caller that
+    # holds the catalog lock passes it and refreshes the projection after Exit-CatalogLock: that projection is
+    # a `pq sync` child, and the child may start insert.ps1 or update.ps1 (TASK-FLOW rules 65 and 68), which
+    # take the same mutex - a process cannot win a lock its own parent is holding.
+    param(
+        [Parameter(Mandatory)][AllowEmptyCollection()][object[]] $Records,
+        [switch] $SkipProjection
+    )
 
     if ((Get-SzaEnv 'SKIP_RELEASE_QUEUE')) { return }
     if (-not (Test-Path $script:ReleaseQueuePath)) {
@@ -775,7 +807,7 @@ function Sync-ReleaseQueue {
             $script:ReleaseQueueMissingNoted = $true
             Write-Host ("  release queue: no file at {0} (paths.releaseQueue) - nothing reconciled; work order is the ledger's. Not an error of this write." -f $script:ReleaseQueuePath) -ForegroundColor DarkYellow
         }
-        Sync-PortfolioProjection
+        if (-not $SkipProjection) { Sync-PortfolioProjection }
         return
     }
 
@@ -818,7 +850,7 @@ function Sync-ReleaseQueue {
     if (Test-Path $script:ReleaseReadyPath) {
         Write-ReleaseFile -Path $script:ReleaseReadyPath -Lines $keptReady
     }
-    Sync-PortfolioProjection
+    if (-not $SkipProjection) { Sync-PortfolioProjection }
 }
 
 function Select-ReleaseLines {

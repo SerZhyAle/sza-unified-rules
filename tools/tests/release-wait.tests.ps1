@@ -5,7 +5,7 @@
     release-tier work is not offered again on the same code tree.
 
 .DESCRIPTION
-    Fast tier. The library batch/_release-wait.ps1 is loaded against a scratch project with a real git
+    The library batch/_release-wait.ps1 is loaded against a scratch project with a real git
     repository in it; no runner starts, no child agent runs, and nothing outside the scratch directory
     is written. The wiring into the runner, the picker and the ranker is checked as text, because
     running them needs a whole ledger.
@@ -169,7 +169,7 @@ try {
         Assert-That ($pre -match "batch/_release-wait\.ps1'") 'the picker does not load the library'
         Assert-That ($pre -match "reason = 'awaits-release'") 'the picker does not name the reason'
         Assert-That ($pre -match 'Test-AwaitsRelease') 'the picker never asks'
-        Assert-That ($rank -match [regex]::Escape("'awaits-release' { `$excluded.idleHold++ }")) 'the ranker does not count the reason with idle-hold'
+        Assert-That ($rank -match [regex]::Escape("'awaits-release' { `$excluded.awaitsRelease++ }")) 'the ranker does not count the reason under awaitsRelease'
         Assert-That ($rank -match [regex]::Escape("'awaits-release' { return")) 'the ranker has no words for the reason'
     }
 }

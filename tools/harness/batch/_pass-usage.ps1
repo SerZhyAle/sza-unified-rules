@@ -1,48 +1,17 @@
-# What one launched child said about its build and what it used (S0037, TASK-FLOW 0.20 rule 23).
-#
-# Dot-sourced by run-spec-queue.ps1. Two questions, each answered from files on disk after the child is gone:
-#   - did the child's final answer disclose "not built, not tested until the release"? (Get-PassBuiltFlag)
-#   - how many tokens did its session and its subagents use, and what is that at list price? (Get-PassUsage)
-# Neither ever invents a value: an answer that cannot be read is $null (absent in the journal row), never
-# $true, zero or a guess.
+<#
+    What one launched child used (S0037, TASK-FLOW rule 23).
 
-$script:PassNotBuiltSentence = 'not built, not tested until the release'
+    Dot-sourced by run-spec-queue.ps1. One question, answered from files on disk after the child is gone: how many
+    tokens did its session and its subagents use, and what is that at list price? (Get-PassUsage)
+    It never invents a value: an answer that cannot be read is $null (absent in the journal row), never zero or a
+    guess. The built disclosure of TASK-FLOW 0.20 was withdrawn in 0.36 (S0135): pq report counts what was closed
+    without a build from the ledgers. #>
 
 function Get-PassJsonProperty($Object, [string] $Name) {
     if ($null -eq $Object) { return $null }
     $property = $Object.PSObject.Properties[$Name]
     if ($null -eq $property) { return $null }
     return $property.Value
-}
-
-function Get-PassFinalText {
-    <#
-        The child's final answer: the text of the last main-thread assistant record of its transcript, else
-        the tail of the -Quiet log. Only the tail of a log is read, because a CLI that echoes its tool output
-        (Codex prints the files it reads) would otherwise find the sentence in the skill text it was handed.
-    #>
-    param([string] $TranscriptPath, [string] $LogBody, [int] $LogTailChars = 4000)
-    if ($TranscriptPath -and (Test-Path -LiteralPath $TranscriptPath -PathType Leaf)) {
-        $record = Read-TranscriptLastAssistant -Path $TranscriptPath
-        $content = Get-PassJsonProperty (Get-PassJsonProperty $record 'message') 'content'
-        $parts = @(foreach ($block in @($content)) {
-                if ([string](Get-PassJsonProperty $block 'type') -eq 'text') { [string](Get-PassJsonProperty $block 'text') }
-            })
-        if ($parts.Count -gt 0) { return ($parts -join "`n") }
-    }
-    if (-not [string]::IsNullOrEmpty($LogBody)) {
-        if ($LogBody.Length -gt $LogTailChars) { return $LogBody.Substring($LogBody.Length - $LogTailChars) }
-        return $LogBody
-    }
-    return $null
-}
-
-function Get-PassBuiltFlag {
-    <# $false when the text holds the disclosure sentence, $null otherwise: a missing sentence proves no build. #>
-    param([string] $Text)
-    if ([string]::IsNullOrEmpty($Text)) { return $null }
-    if ($Text.IndexOf($script:PassNotBuiltSentence, [StringComparison]::OrdinalIgnoreCase) -ge 0) { return $false }
-    return $null
 }
 
 function Read-PassPriceSnapshot {

@@ -76,6 +76,13 @@ no language or toolchain. Exit codes: 0 report written, 1 error, 2 cannot verify
 empty). A project may wrap it in its own operator entry point; the wrapper must forward those codes
 rather than collapsing them.
 
+**What a pass is handed before it reads a line of the task** is measured by a second, read-only script,
+[measure-regulation-cost.ps1](../../tools/measure-regulation-cost.ps1): the default runner prompt, the
+session-start injection, the agent-rules files, the skill listing and the lifecycle skill by section, the
+sections agents write into closed tickets, and - from the portfolio run log - passes per closed ticket by
+model and the share of cached input that fixed text can account for. Run it before proposing to cut a
+rule text and again after the cut; `-PluginRoot` points it at another copy of the canon text.
+
 ## Step 3 - Record a baseline before changing anything
 
 Write the numbers down before the first edit, in the ticket or wherever the work is tracked. At

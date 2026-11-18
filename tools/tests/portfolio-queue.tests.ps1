@@ -1555,7 +1555,7 @@ Start-Sleep -Seconds 120
         Assert-That (@($r.candidates[5].alt).Count -eq 0) 'the last candidate has alternatives'
     }
 
-    Test-Case 'rank: the rank.result payload has heads, the excluded counts (occupied, resource and deviceLevel included), fill, ms, queueRows, queueBad and autoSkipReasons' {
+    Test-Case 'rank: the rank.result payload has heads, the nine excluded counts, fill, ms, queueRows, queueBad and autoSkipReasons' {
         . (Get-LibPath 'queue-file.ps1'); . (Get-LibPath 'rank.ps1')
         $reg = New-RankRegistry @((New-RankRepo 'a'), (New-RankRepo 'b'))
         $prov = New-FakeProvider @{ a = @('S0001:50', 'S0002:50', 'S0003:50'); b = @('S0001:50') } -Leased @{ b = @('S0009') } -AutoSkip @{ a = @{ S0001 = 'owner-gate'; S0002 = 'blocker-not-verified' } }
@@ -1565,7 +1565,7 @@ Start-Sleep -Seconds 120
         $d = $res[0].d
         Assert-That ((@($d.Keys) -join ',') -ceq 'heads,excluded,autoSkipReasons,fill,ms,queueRows,queueBad') "rank.result keys: $(@($d.Keys) -join ',')"
         $ex = (@($d.excluded.Keys) -join ',')
-        Assert-That ($ex -ceq 'blocked,leased,dropped,held,gated,malformed,idleHold,xrepo,settling,levelNotAllowed,occupied,resource,deviceLevel') "excluded keys: $ex"
+        Assert-That ($ex -ceq 'blocked,leased,held,gated,malformed,idleHold,awaitsRelease,xrepo,occupied') "excluded keys: $ex"
         Assert-That ($d.excluded.gated -eq 1 -and $d.excluded.blocked -eq 1 -and $d.excluded.leased -eq 1) "gated $($d.excluded.gated) blocked $($d.excluded.blocked) leased $($d.excluded.leased)"
         Assert-That ($d.autoSkipReasons['owner-gate'] -eq 1 -and $d.autoSkipReasons['blocker-not-verified'] -eq 1) "autoSkipReasons: $(ConvertTo-Json $d.autoSkipReasons -Compress)"
         Assert-That ($d.fill -ceq 'breadth' -and $d.queueRows -eq 2 -and $d.queueBad -eq 1 -and $d.ms -ge 0) "fill $($d.fill) queueRows $($d.queueRows) queueBad $($d.queueBad)"
@@ -1685,14 +1685,15 @@ Start-Sleep -Seconds 120
         }
     }
 
-    Test-Case 'rank: -Occupied repositories and -TicketBlocked tickets are skipped and counted under occupied, resource and deviceLevel' {
+    Test-Case 'rank: -Occupied repositories are skipped and counted under occupied; awaits-release is counted apart from idle-hold' {
         . (Get-LibPath 'queue-file.ps1'); . (Get-LibPath 'rank.ps1')
         $reg = New-RankRegistry @((New-RankRepo 'a'), (New-RankRepo 'b'), (New-RankRepo 'c'))
-        $prov = New-FakeProvider @{ a = @('S0001:50', 'S0002:50'); b = @('S0001:50'); c = @('S0001:50', 'S0002:50') }
-        $r = Get-PqRank -Registry $reg -HeadProvider $prov -Occupied @('b') -TicketBlocked @{ 'a:S0001' = 'resource'; 'c:S0001' = 'deviceLevel' }
-        Assert-That ((Get-CandidateKeys $r) -ceq 'a:S0002 c:S0002') "candidates '$(Get-CandidateKeys $r)'"
+        $prov = New-FakeProvider @{ a = @('S0001:50', 'S0002:50', 'S0003:50'); b = @('S0001:50'); c = @('S0001:50', 'S0002:50') } -AutoSkip @{ a = @{ S0001 = 'awaits-release'; S0002 = 'idle-hold' } }
+        $r = Get-PqRank -Registry $reg -HeadProvider $prov -Occupied @('b')
+        Assert-That ((Get-CandidateKeys $r) -ceq 'a:S0003 c:S0001') "candidates '$(Get-CandidateKeys $r)'"
         Assert-That ((@($r.skipped | ForEach-Object { "$($_.repo)=$($_.why)" }) -join ',') -ceq 'b=occupied') "skipped: $(@($r.skipped | ForEach-Object { "$($_.repo)=$($_.why)" }) -join ',')"
-        Assert-That ($r.excluded.occupied -eq 1 -and $r.excluded.resource -eq 1 -and $r.excluded.deviceLevel -eq 1) "occupied $($r.excluded.occupied) resource $($r.excluded.resource) deviceLevel $($r.excluded.deviceLevel)"
+        Assert-That ($r.excluded.occupied -eq 1 -and $r.excluded.awaitsRelease -eq 1 -and $r.excluded.idleHold -eq 1) "occupied $($r.excluded.occupied) awaitsRelease $($r.excluded.awaitsRelease) idleHold $($r.excluded.idleHold)"
+        Assert-That (-not (Get-Command Get-PqRank).Parameters.ContainsKey('TicketBlocked')) 'Get-PqRank still takes -TicketBlocked'
     }
 
     # ---------------------------------------------------------------- pq
@@ -1995,6 +1996,7 @@ Start-Sleep -Seconds 120
         $lines = @($r.stdout -split '\r?\n' | Where-Object { $_ })
         foreach ($c in 'path', 'stamp', 'profile', 'ledger', 'launcher') { Assert-That (@($lines | Where-Object { $_ -match "^PASS a $c - " }).Count -eq 1) "no 'PASS a $c' line" }
         Assert-That (@($lines | Where-Object { $_ -match '^PASS registry - ' }).Count -eq 1 -and @($lines | Where-Object { $_ -match '^PASS queue - ' }).Count -eq 1) 'no PASS registry or PASS queue line'
+        Assert-That (@($lines | Where-Object { $_ -match '^(PASS|NOTE) harness - ' }).Count -eq 1) "no single harness line: $($r.stdout)"
         Assert-That ($lines[-1] -ceq 'pq doctor: 1 repositories, 0 FAIL, 0 WARN') "last line '$($lines[-1])'"
     }
 

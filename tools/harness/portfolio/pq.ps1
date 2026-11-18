@@ -654,6 +654,9 @@ function Invoke-PqDoctor {
         $out.Add("PASS registry - $(@($read.registry.repos).Count) repositories")
         $repos = @(@($read.registry.repos) | Where-Object { $All -or $_.enabled -eq $true })
     }
+    # S0134: the harness copy the workers run and the copy a repository's forwarder resolves for an attended session.
+    # NOTE is neither counted nor a defect: two copies with differing scripts is the normal state before a deploy.
+    $out.Add((Format-PqHarnessLine -Own (Get-PqHarnessRoot '') -Session (Get-PqSessionHarnessRoot)))
     # Computed once: the canon digest of the tree this harness ships in, and the trust map (S0044).
     $canonInfo = Get-PqCanonDigestInfo ([IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\..')))
     $trust = Read-PqClaudeTrust $env:SZA_CLAUDE_CONFIG
@@ -1215,6 +1218,16 @@ function Invoke-PqReport {
         }
     }
     $r = Get-PqReport -Root (Get-PqRoot) -Days $d -Standalone @($sources) -Thresholds (Get-PqValue (Get-PqValue $reg 'analysis') 'thresholds')
+    # S0135 (TASK-FLOW 0.36): closed without a build is counted from the ticket ledgers and the release ledgers.
+    $r.closedUnbuilt = [ordered]@{}
+    $closedUnbuiltWhy = ''
+    if ($null -ne $reg) {
+        try {
+            $ledgerRows = Get-PqInboxRows $reg
+            $r.closedUnbuilt = Get-PqClosedUnbuilt -Releases (Get-PqReleases $reg) -Tickets $ledgerRows.rows -Skipped $ledgerRows.skipped
+        }
+        catch { $closedUnbuiltWhy = $_.Exception.Message }
+    }
     if ($Json) { ConvertTo-Json -InputObject $r -Depth 12; return 0 }
     "pq report - last $($r.window.days) day(s), since $($r.window.since)"
     $h = $r.headline
@@ -1233,9 +1246,14 @@ function Invoke-PqReport {
         $counts = $r.statuses.gates[$status]
         "  ${status}: $($counts.entered) / $($counts.left)"
     }
-    if ($r.built.Count -gt 0) {
-        'closed unbuilt (self-reported "not built, not tested until the release"; unknown = no disclosure, not a build):'
-        foreach ($k in $r.built.Keys) { $b = $r.built[$k]; "  {0,-18} closing {1}  unbuilt {2}  unknown {3}" -f $k, $b.closing, $b.unbuilt, $b.unknown }
+    if ($closedUnbuiltWhy) { "closed without a build: not available ($closedUnbuiltWhy)" }
+    elseif ($r.closedUnbuilt.Count -gt 0) {
+        'closed without a build (tickets at Implemented whose ledger row was written at or after the last build in the release ledger):'
+        foreach ($k in $r.closedUnbuilt.Keys) {
+            $b = $r.closedUnbuilt[$k]
+            if ($b.available) { '  {0,-18} {1} of {2} at Implemented  (last build {3})' -f $k, $b.sinceBuild, $b.implemented, (Format-RlDay $b.lastBuiltAt) }
+            else { '  {0,-18} not available ({1})' -f $k, $b.why }
+        }
     }
     $ut = $r.usage.total
     if ($ut.passes -gt 0) {

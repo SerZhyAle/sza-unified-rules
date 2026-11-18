@@ -446,6 +446,18 @@ function Get-PqRunnerLimitUntil {
     catch { return $null }
 }
 
+# A provider's UTC offset text (`+08:00`, `-05:30`, `3:00`) as a timespan, the one reading the ISO, the dated and the clock
+# forms of a limit text share. An empty or unreadable offset returns $null: the clock time is then this machine's own.
+function ConvertTo-PqLimitZone {
+    param([string]$Offset = '')
+    if ($Offset -match '^\s*([+-]?)(\d{1,2}):(\d{2})\s*$') {
+        $zone = [timespan]::new([int]$Matches[2], [int]$Matches[3], 0)
+        if ($Matches[1] -ceq '-') { $zone = $zone.Negate() }
+        return $zone
+    }
+    return $null
+}
+
 # The dated form of a limit that lifts on another day (Codex's weekly limit): "try again at Nov 19th, 2026 11:35 PM".
 # The caller hands over a whole pass log, and a log quotes limit texts (source lines, test fixtures), so the form counts
 # only when it is the LAST limit-shaped text of the log - the real message ends it - and only when the time lies within
@@ -453,7 +465,7 @@ function Get-PqRunnerLimitUntil {
 # and span forms are tried as before.
 function Get-PqDatedLimitTime {
     param([string]$Text, [string]$Offset = '', [DateTimeOffset]$Now = [DateTimeOffset]::UtcNow)
-    $all = [regex]::Matches($Text, '(?i)(?:try again|retry|resets?)\s+(?:at|on)\s+(?<mon>[a-z]{3,9})\.?\s+(?<day>\d{1,2})(?:st|nd|rd|th)?,?\s+(?<year>\d{4}),?\s+(?:at\s+)?(?<time>\d{1,2}:\d{2}(?::\d{2})?\s*(?:[ap]\.?m\.?)?)')
+    $all =[regex]::Matches($Text, '(?i)(?:try again|retry|resets?)\s+(?:at|on)\s+(?<mon>[a-z]{3,9})\.?\s+(?<day>\d{1,2})(?:st|nd|rd|th)?,?\s+(?<year>\d{4}),?\s+(?:at\s+)?(?<time>\d{1,2}:\d{2}(?::\d{2})?\s*(?:[ap]\.?m\.?)?)')
     if ($all.Count -eq 0) { return $null }
     $m = $all[$all.Count - 1]
     $other = [regex]::Matches($Text, '(?i)(?:try again|retry|resets?)\s+(?:at|on)\s+\d{1,2}:\d{2}|resets?\s+in\s+\d')
@@ -464,11 +476,7 @@ function Get-PqDatedLimitTime {
     $formats = [string[]]@('MMM d yyyy h:mm tt', 'MMM d yyyy h:mm:ss tt', 'MMM d yyyy H:mm', 'MMM d yyyy H:mm:ss')
     $parsed = [datetime]::MinValue
     if (-not [datetime]::TryParseExact($stamp, $formats, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref]$parsed)) { return $null }
-    $zone = $null
-    if ($Offset -match '^\s*([+-]?)(\d{1,2}):(\d{2})\s*$') {
-        $zone = [timespan]::new([int]$Matches[2], [int]$Matches[3], 0)
-        if ($Matches[1] -ceq '-') { $zone = $zone.Negate() }
-    }
+    $zone = ConvertTo-PqLimitZone $Offset
     $at = if ($null -ne $zone) { [DateTimeOffset]::new($parsed, $zone) } else { [DateTimeOffset]::new($parsed) }
     if ($at -gt $Now.AddDays(8)) { return $null }
     return $at
@@ -487,16 +495,16 @@ function ConvertFrom-PqLimitText {
     param([string]$Text, [string]$Offset = '', [DateTimeOffset]$Now = [DateTimeOffset]::UtcNow)
     if ([string]::IsNullOrWhiteSpace($Text)) { return $null }
     $at = $null
-    $m = [regex]::Match($Text, '(?i)reset(?:s)?\s+(?:at|on)\s+(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}(?::\d{2})?)')
-    if ($m.Success) {
+    # The caller hands over a whole pass log, and a log quotes limit texts (source lines, test fixtures): the real
+    # message ends it, so within one form the LAST match counts, never the first. Across forms the order stands
+    # as it was - ISO time, dated time, clock time, span - and the span form still reads its first match.
+    $isoAll = [regex]::Matches($Text, '(?i)reset(?:s)?\s+(?:at|on)\s+(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}(?::\d{2})?)')
+    if ($isoAll.Count -gt 0) {
+        $m = $isoAll[$isoAll.Count - 1]
         $stamp = "$($m.Groups[1].Value)T$($m.Groups[2].Value)"
         $parsed = [datetime]::MinValue
         if ([datetime]::TryParse($stamp, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref]$parsed)) {
-            $zone = $null
-            if ($Offset -match '^\s*([+-]?)(\d{1,2}):(\d{2})\s*$') {
-                $zone = [timespan]::new([int]$Matches[2], [int]$Matches[3], 0)
-                if ($Matches[1] -ceq '-') { $zone = $zone.Negate() }
-            }
+            $zone = ConvertTo-PqLimitZone $Offset
             $at = if ($null -ne $zone) { [DateTimeOffset]::new($parsed, $zone) } else { [DateTimeOffset]::new($parsed) }
         }
     }
@@ -505,16 +513,13 @@ function ConvertFrom-PqLimitText {
     }
     else {
         # S0035: Codex clock time format without date ("try again at 2:38 AM", "resets at 14:38")
-        $mCodex = [regex]::Match($Text, '(?i)(?:try again|retry|resets?)\s+(?:at|on)\s+(?<time>\d{1,2}:\d{2}(?::\d{2})?\s*(?:[ap]\.?m\.?)?)')
-        if ($mCodex.Success) {
+        $clockAll = [regex]::Matches($Text, '(?i)(?:try again|retry|resets?)\s+(?:at|on)\s+(?<time>\d{1,2}:\d{2}(?::\d{2})?\s*(?:[ap]\.?m\.?)?)')
+        if ($clockAll.Count -gt 0) {
+            $mCodex = $clockAll[$clockAll.Count - 1]
             $timeStr = ($mCodex.Groups['time'].Value -replace '\.', '').Trim()
             $parsed = [datetime]::MinValue
             if ([datetime]::TryParse($timeStr, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref]$parsed)) {
-                $zone = $null
-                if ($Offset -match '^\s*([+-]?)(\d{1,2}):(\d{2})\s*$') {
-                    $zone = [timespan]::new([int]$Matches[2], [int]$Matches[3], 0)
-                    if ($Matches[1] -ceq '-') { $zone = $zone.Negate() }
-                }
+                $zone = ConvertTo-PqLimitZone $Offset
                 $localNow = if ($null -ne $zone) { $Now.ToOffset($zone) } else { $Now.ToLocalTime() }
                 $targetDate = $localNow.Date
                 $candidate = [DateTimeOffset]::new($targetDate.Year, $targetDate.Month, $targetDate.Day, $parsed.Hour, $parsed.Minute, $parsed.Second, $localNow.Offset)

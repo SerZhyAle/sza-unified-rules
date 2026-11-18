@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Contract | `APP-COMMANDS` |
-| Version | 0.2, draft |
+| Version | 0.3, draft |
 | Home | the shared contracts catalog, domain `app-commands/` (the path is in [CLAUDE.md](../../CLAUDE.md)) |
 | Role | **reader of the discovery interface**: `tools/harness/portfolio/app-commands-list.ps1` lists what each registered product offers from its manifests. The owner is `shared` |
 

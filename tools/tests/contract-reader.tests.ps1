@@ -121,6 +121,7 @@ catch { Write-Output $_.Exception.Message; exit 2 }
             } else { Write-Json (Join-Path $root '.sza-profile.json') $case.input }
             if ($case.age) {
                 $stamp.canon.coreDigest = 'sha256:old'
+                $stamp.role = 'portfolio'   # canon-home owes no staleness finding (REPO-STAMP 0.14); the age cases need another role
                 if ($case.age -ne 'unknown') { $stamp.canon.adoptedOn = '2000-01-01' }
                 if ($case.age -eq 'reconciled') { $stamp.canon.reconciledOn = (Get-Date).ToString('yyyy-MM-dd') }
             }
@@ -142,7 +143,7 @@ catch { Write-Output $_.Exception.Message; exit 2 }
                 }
                 if ($case.age) {
                     $ageFinding = @($findings | Where-Object id -eq 'SZA-CANON03')
-                    $expected = if ($case.age -eq 'reconciled') { 'warn' } else { 'error' }
+                    $expected = 'warn'   # RULE-DELIVERY 0.13: a differing digest is a warning at any age
                     Assert-That ($ageFinding.Count -eq 1 -and $ageFinding[0].severity -eq $expected) $result.output
                 }
                 # The harness's stamp reader must refuse before deriving even an explicit path.
@@ -245,6 +246,25 @@ artifacts: none
                 }
             }
         }
+    }
+    Test-Case 'registry note size is one aggregated warning' {
+        $catalog = Join-Path $scratch "catalog-$run"
+        New-Item -ItemType Directory -Force (Join-Path $catalog '_meta'), (Join-Path $catalog 'fixture') | Out-Null
+        foreach ($name in @('RULES.md', 'VERSIONING.md', 'CONTRACT_TEMPLATE.md', 'PROJECT_PROMPT.md')) { 'Fixture' | Set-Content (Join-Path $catalog "_meta/$name") }
+        @('```contract', 'id: FIXTURE', 'version: 0.1', 'status: draft', 'owner: fixture', 'since: 2026-10-23', 'wire: none',
+            'consumers: fixture', 'artifacts: none', '```') | Set-Content (Join-Path $catalog 'fixture/README.md')
+        $tail = ' | `FIXTURE` | fixture | C | - | 0.1 | 2026-11-18 |'
+        # Notes is the FIRST column here: the check must find it by name. Two cells of 301, one of exactly 300.
+        @('## 1. Contracts', '', '| Id | Folder | Version | Status |', '| --- | --- | --- | --- |',
+            '| `FIXTURE` | [`fixture/`](../fixture/README.md) | 0.1 | draft |', '', '## 2. Adoption', '',
+            '| Notes | Contract | Product | Role | Implements | Reads | Verified |', '| --- | --- | --- | --- | --- | --- | --- |',
+            ('| ' + ('x' * 301) + $tail), ('| ' + ('y' * 301) + $tail), ('| ' + ('z' * 300) + $tail), '') |
+            Set-Content (Join-Path $catalog '_meta/REGISTRY.md')
+        $result = Invoke-Child (Join-Path $SourceRoot 'tools/check-contracts.ps1') @('-CatalogRoot', $catalog, '-Json')
+        Assert-That ($result.code -eq 0) $result.output
+        $notes = @(@($result.output | ConvertFrom-Json) | Where-Object id -eq 'CTR-NOTE')
+        Assert-That ($notes.Count -eq 1 -and $notes[0].severity -eq 'warn') $result.output
+        Assert-That ($notes[0].message -match '^2 of 3 adoption rows carry a Notes cell above 300 characters') $notes[0].message
     }
     if ($run -eq 0) { throw 'No cases executed' }
     if ($ExportDirectory -and $failed -eq 0) {

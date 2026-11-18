@@ -179,12 +179,12 @@ try {
     $old = (Get-Date).AddDays(-181).ToString('yyyy-MM-dd')
     $boundary = (Get-Date).AddDays(-180).ToString('yyyy-MM-dd')
     $dateCases = @(
-        @{ name = 'missing'; adopted = $null; reconciled = $null; severity = 'error' },
-        @{ name = 'invalid'; adopted = 'invalid'; reconciled = 'invalid'; severity = 'error' },
-        @{ name = 'invalid-reconciled-old-adopted'; adopted = $old; reconciled = 'invalid'; severity = 'error' },
+        @{ name = 'missing'; adopted = $null; reconciled = $null; severity = 'warn' },
+        @{ name = 'invalid'; adopted = 'invalid'; reconciled = 'invalid'; severity = 'warn' },
+        @{ name = 'invalid-reconciled-old-adopted'; adopted = $old; reconciled = 'invalid'; severity = 'warn' },
         @{ name = 'invalid-reconciled-recent-adopted'; adopted = $today; reconciled = 'invalid'; severity = 'warn' },
         @{ name = 'recent-reconciliation'; adopted = $old; reconciled = $today; severity = 'warn' },
-        @{ name = 'old-reconciliation'; adopted = $today; reconciled = $old; severity = 'error' },
+        @{ name = 'old-reconciliation'; adopted = $today; reconciled = $old; severity = 'warn' },
         @{ name = 'recent-adoption'; adopted = $today; reconciled = $null; severity = 'warn' },
         @{ name = 'boundary'; adopted = $boundary; reconciled = $null; severity = 'warn' }
     )
@@ -209,6 +209,22 @@ try {
                     Assert-That ($finding[0].fix -match $(if ($expectedCode) { 'in full' } else { 'reconcile' })) 'Wrong remedy'
                 }
             }
+        }
+    }
+
+    Test-Case 'a stale stamp names the changed documents; canon-home owes no staleness finding' {
+        $map = @{}
+        foreach ($p in (& pwsh -NoProfile -File $gate -PrintDigest -Json | Out-String | ConvertFrom-Json).docDigests.PSObject.Properties) { $map[$p.Name] = $p.Value }
+        $first = @($map.Keys | Sort-Object)[0]; $map[$first] = 'sha256:00'
+        foreach ($shape in @('named', 'unknown', 'home')) {
+            $root = Join-Path $scratch "docs-$shape"; New-Item -ItemType Directory -Path $root | Out-Null
+            $stamp = @{ canon = @{ version = '2026.01.01.1'; coreDigest = 'sha256:old'; model = 'reference' }; overlay = @(); ledgerShape = 'none' }
+            if ($shape -eq 'named') { $stamp.canon.docDigests = $map }
+            if ($shape -eq 'home') { $stamp.role = 'canon-home' }
+            Write-Json (Join-Path $root '.sza-canon.json') $stamp
+            $said = @(((Invoke-Child $gate @('-RepoRoot', $root, '-Only', 'SZA-CANON03', '-Json')).output | ConvertFrom-Json).findings | ForEach-Object message) -join ' / '
+            $want = @{ named = "changed rule docs: $([regex]::Escape($first))$"; unknown = 'changed rule docs: unknown'; home = '^$' }[$shape]
+            Assert-That ($said -match $want) "$shape - the gate said: $said"
         }
     }
 
@@ -243,6 +259,33 @@ try {
         }
         $onlyPending = Invoke-Child $lag @('-CatalogRoot', $catalog, '-Product', 'fixture pending', '-EmitSpec')
         Assert-That ($onlyPending.code -eq 0 -and $onlyPending.output -notmatch 'Every readable row is on') 'Pending row reported as current'
+    }
+
+    Test-Case 'product key selects its rows and a name falls back to text' {
+        $catalog = Join-Path $scratch 'keyed'
+        $portfolio = Join-Path $scratch 'keyed-portfolio'
+        New-Item -ItemType Directory -Path (Join-Path $catalog '_meta'), $portfolio | Out-Null
+        '{"repos":[{"key":"alpha"},{"key":"beta"}]}' | Set-Content (Join-Path $portfolio 'repos.json')
+        @(
+            '## 1. Contracts', '| Id | Folder | Version | Status |', '| --- | --- | --- | --- |',
+            '| `FIXTURE` | [`fixture/`](../fixture/README.md) | 0.2 | draft |',
+            '## 2. Adoption', '| Contract | Product | Role | Implements | Reads | Verified |', '| --- | --- | --- | --- | --- | --- |',
+            '| `FIXTURE` | alpha | C | - | 0.2 | 2026-10-01 |',
+            '| `FIXTURE` | alpha (site) | C | - | 0.1 | 2026-10-01 |',
+            '| `FIXTURE` | Alpha Legacy Name | C | - | 0.1 | 2026-10-01 |',
+            '| `FIXTURE` | gamma (tool) | C | - | 0.2 | 2026-10-01 |'
+        ) | Set-Content (Join-Path $catalog '_meta/REGISTRY.md')
+        $common = @('-CatalogRoot', $catalog, '-PortfolioRoot', $portfolio, '-Json')
+        $byKey = Invoke-Child $lag ($common + @('-Product', 'alpha'))
+        $report = $byKey.output | ConvertFrom-Json
+        Assert-That ($byKey.code -eq 0 -and $report.matchedBy -eq 'key' -and $report.rows.Count -eq 2) $byKey.output
+        $byName = Invoke-Child $lag ($common + @('-Product', 'Legacy'))
+        $report = $byName.output | ConvertFrom-Json
+        Assert-That ($byName.code -eq 0 -and $report.matchedBy -eq 'text' -and $report.rows.Count -eq 1) $byName.output
+        $none = Invoke-Child $lag ($common + @('-Product', 'beta'))
+        Assert-That ($none.code -eq 2 -and $none.output -match 'no adoption row matches') $none.output
+        $all = (Invoke-Child $lag $common).output | ConvertFrom-Json
+        Assert-That (@($all.rows | Where-Object { -not $_.key }).Count -eq 2) 'an unregistered key or a name was read as keyed'
     }
 
     if ($run -eq 0) { throw 'No test cases executed' }

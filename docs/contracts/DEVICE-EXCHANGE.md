@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Contract | `DEVICE-EXCHANGE` |
-| Version | 1.16, active |
+| Version | 1.17, active |
 | Home | the shared contracts catalog, domain `device-exchange/` (the path is in [CLAUDE.md](../../CLAUDE.md)) |
 | Role | **receiver of one packet kind, partial**: the phone-ticket transport reads the `TICKET` kind of the Drive packet queue (section 24, items CN, FC and FD) and writes what the phone reads back (`projects.json`, `result.json`, `reason.json`). The owner is FastMediaSorter Android; this repository holds no record, server wire, sealed content or any other part of the contract |
 

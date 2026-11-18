@@ -12,7 +12,9 @@
 # sequence itself is the owner's plan and stays untouched.
 #
 # Actions:
-#   -Reconcile            Force a sync against the catalog now (the automatic path, on demand).
+#   -Reconcile            Force a sync against the catalog now (the automatic path, on demand). It holds the
+#                         catalog lock for the read and the rewrite of both plan files, like every mutator;
+#                         the portfolio projection is refreshed after the lock is released.
 #   -Validate             Report drift: unknown tickets, duplicates, status mismatches. It compares
 #                         the file with the catalog, and the catalog does not know packages, so a
 #                         clean -Validate says nothing about package membership: a row moved to the
@@ -22,8 +24,10 @@
 #                         Print the queue, optionally one release block. -WithLeases marks each
 #                         taken row inline and appends the holder detail block.
 #   -SetCurrent N         Point the "current-release:" marker at package N. A label only: the queue
-#                         ranking reads package headings and line order, never this marker.
-#   -Ship -Release N      Move block N into PLAN/RELEASE_QUEUE_DONE.md and advance the marker.
+#                         ranking reads package headings and line order, never this marker. Holds the
+#                         catalog lock for the read and the rewrite, like -Reconcile (S0144).
+#   -Ship -Release N      Move block N into PLAN/RELEASE_QUEUE_DONE.md and advance the marker. Holds the
+#                         catalog lock from the first read to the last write (S0144).
 #         [-Version X]    Stamp the shipped block with the released version name.
 #         [-DryRun]       Show what -Ship would move, change nothing.
 #
@@ -107,14 +111,32 @@ function Get-ActiveTicketLeases {
 switch ($PSCmdlet.ParameterSetName) {
 
     'Reconcile' {
-        $records = Read-Catalog
-        $before = @(Get-QueueTickets -Lines (Read-ReleaseQueue)).Count
-        Sync-ReleaseQueue -Records $records
-        $after = @(Get-QueueTickets -Lines (Read-ReleaseQueue)).Count
+        # Under the catalog lock every mutator holds (S1437): the catalog read and the read-modify-write of both
+        # plan files are one critical section. Without it, a mutator that wrote the catalog and re-rendered the
+        # plan files between this read and this write would be overwritten by this older snapshot - the lost
+        # update the lock exists to stop. run-spec-queue.ps1 calls this branch after a forced lease release,
+        # while sibling instances keep writing the same catalog, so the race is real there.
+        #
+        # The portfolio projection is not part of the critical section: it is a `pq sync` child that may start
+        # insert.ps1 or update.ps1 (rules 65 and 68), and both take this mutex, which a child cannot win while
+        # its parent holds it. So the sync below is told to skip it, and it runs after Exit-CatalogLock - the
+        # order _block-links-hook.ps1 keeps for the same reason.
+        $before = 0
+        $after = 0
+        $dropped = 0
+        Enter-CatalogLock
+        try {
+            $records = Read-Catalog
+            $before = @(Get-QueueTickets -Lines (Read-ReleaseQueue)).Count
+            Sync-ReleaseQueue -Records $records -SkipProjection
+            $after = @(Get-QueueTickets -Lines (Read-ReleaseQueue)).Count
+            $dropped = Get-ReleaseQueueDuplicatesDropped
+        }
+        finally { Exit-CatalogLock }
+        Sync-PortfolioProjection
         Write-Output ("release-queue: reconciled - {0} ticket(s) before, {1} after" -f $before, $after)
         # The counts above cover the QUEUE file only, so a duplicate collapsed in the READY file
         # moves neither number - reporting it separately is the only proof the repair happened.
-        $dropped = Get-ReleaseQueueDuplicatesDropped
         if ($dropped -gt 0) {
             Write-Output ("release-queue: removed {0} duplicate line(s)" -f $dropped)
         }
@@ -171,6 +193,9 @@ switch ($PSCmdlet.ParameterSetName) {
     }
 
     'SetCurrent' {
+        # S0144: under the catalog lock like every other writer of the plan files. A mutator's Sync-ReleaseQueue
+        # re-renders this file from its own read, and an older snapshot written back here would undo that.
+        Enter-CatalogLock
         $lines = Read-ReleaseQueue
         $updated = $false
         foreach ($line in $lines) {
@@ -180,10 +205,12 @@ switch ($PSCmdlet.ParameterSetName) {
             }
         }
         if (-not $updated) {
+            Exit-CatalogLock
             Write-Error "No 'current-next-release:' marker in $queuePath" -ErrorAction Continue
             exit 1
         }
         Write-ReleaseQueue -Lines $lines
+        Exit-CatalogLock
         Write-Output "release-queue: current release -> $SetCurrent"
         # S3273: the marker labels, it does not order. The bare confirmation above read as "the queue
         # now starts at N", while the runner never reads it - declaring a package current with a lower
@@ -193,11 +220,15 @@ switch ($PSCmdlet.ParameterSetName) {
     }
 
     'Ship' {
+        # S0144: the read of both plan files and their rewrite are one critical section under the catalog lock, as in
+        # -Reconcile. No child is started in between, so the lock cannot starve one.
+        Enter-CatalogLock
         # The shipped content is the READY file - the queue holds what did NOT make it.
         $readyPath = Get-ReleaseReadyPath
         $lines = Read-ReleaseFile -Path $readyPath
         $shipping = @(Get-QueueTickets -Lines $lines | Where-Object { $_.Release -eq $Release })
         if ($shipping.Count -eq 0) {
+            Exit-CatalogLock
             Write-Error "Nothing ready for release $Release ($(Get-SzaPath 'releaseReady' -Relative))" -ErrorAction Continue
             exit 1
         }
@@ -211,6 +242,7 @@ switch ($PSCmdlet.ParameterSetName) {
         }
 
         if ($DryRun) {
+            Exit-CatalogLock
             Write-Output ("release-queue: DRY RUN - would move {0} ready ticket(s) out of release {1}" -f $shipping.Count, $Release)
             exit 0
         }
@@ -228,7 +260,11 @@ switch ($PSCmdlet.ParameterSetName) {
         $block.Add('')
 
         $donePath = Get-ReleaseQueueDonePath
-        $existing = if (Test-Path $donePath) { @(Get-Content -LiteralPath $donePath -Encoding UTF8) } else { @() }
+        # S0145: never `$x = if (..) { .. } else { .. }` - the if unrolls the array, so a missing
+        # file leaves $null and a one-line file leaves a [string], and `.Count` below throws under
+        # StrictMode. Each branch assigns its own array-wrapped value instead.
+        if (Test-Path $donePath) { $existing = @(Get-Content -LiteralPath $donePath -Encoding UTF8) }
+        else { $existing = @() }
         # Newest release on top: the head of the file is always the last thing shipped.
         $headerLen = 0
         while ($headerLen -lt $existing.Count -and $existing[$headerLen] -notmatch '^## release ') { $headerLen++ }
@@ -258,6 +294,7 @@ switch ($PSCmdlet.ParameterSetName) {
             }
         }
         Write-ReleaseQueue -Lines $queueLines
+        Exit-CatalogLock
 
         Write-Output ("release-queue: shipped release {0} - {1} ticket(s) moved to {2}" -f $Release, $shipping.Count, (Split-Path $donePath -Leaf))
         Write-Output ("release-queue: current release -> {0}" -f ([int]$Release + 1))

@@ -117,6 +117,32 @@ class Documents(unittest.TestCase):
         self.page.write_text("# Page\n`code...`\n```python\ncode...\n```\n")
         self.assertEqual(self.check()[0], [])
 
+    def test_published_document_refuses_control_characters(self):
+        # A form feed (0x0c) is a line end to str.splitlines(), so the rule searches the whole text; a tab is
+        # refused too, in prose and inside a code sample. The reported line counts only LF.
+        for label, text, line in (("form feed", "# Page\n\nbefore\x0cafter\n", 3),
+                                  ("tab in prose", "# Page\n\n\tindented\n", 3),
+                                  ("tab in a code sample", "# Page\n```\n\tcode\n```\n", 3)):
+            with self.subTest(label=label):
+                self.page.write_bytes(text.encode("utf-8"))
+                errors, _ = self.check()
+                wanted = f"docs/page.md:{line}: control character in a published document"
+                self.assertTrue(any(error.startswith(wanted) for error in errors), errors)
+        self.page.write_text("# Page\n\nclean text\n")
+        self.assertEqual(self.check()[0], [])
+
+    def test_registry_topic_that_is_a_frontmatter_delimiter(self):
+        registry = self.root / "docs/registry.jsonl"
+        records = DOCS.read_records(registry)
+        next(r for r in records if r["path"] == "docs/page.md")["topic"] = "---"
+        registry.write_text("".join(json.dumps(r) + "\n" for r in records))
+        self.assertFailure("registry topic is a frontmatter delimiter")
+        # the remedy the message names derives the topic again
+        self.assertEqual(self.check(register=True, render=True)[0], [])
+        healed = next(r for r in DOCS.read_records(registry) if r["path"] == "docs/page.md")
+        self.assertEqual(healed["topic"], "Page")
+        self.assertEqual(self.check()[0], [])
+
     def test_assets_missing_untracked_and_tracked(self):
         self.page.write_text("# Page\n![Image](image.svg)")
         self.assertFailure("missing target")

@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Contract | `TASK-FLOW` |
-| Version | 0.33, draft |
+| Version | 0.36, draft |
 | Home | the shared contracts catalog, domain `task-flow/` (the path is in [CLAUDE.md](../../CLAUDE.md)) |
 | Role | **shared implementation, partial**: `tools/harness/` supplies the ticket tools, repository runner and day-0 scaffold; `tools/harness/portfolio/` supplies the S0015 dispatcher, registry, queue, rank and event log. Remaining portfolio features belong to S0016. The owner is `shared`, so this repository edits the contract only through the canon session |
 
@@ -152,3 +152,24 @@
   the opt-in with `--append-system-prompt` (`Get-ParallelOptIn`) and keeps Workflow allowed under the context trial;
   `pass.launch` carries `parallel`; `registry.ps1` refuses another value or another agent. Case 10 of
   `complexity-grade.tests.ps1`. The live registry names no `parallel` yet.
+- 0.34 (2026-11-18, S0123): `rank.result` `excluded` carries nine counts (README section 14, `EVENTS.md` section 10).
+  `dropped`, `settling`, `levelNotAllowed`, `resource` and `deviceLevel` had no writer and are no longer written,
+  `Get-PqRank` lost its `-TicketBlocked` parameter (no caller), and `awaits-release` is counted under `awaitsRelease`
+  instead of `idleHold` (`portfolio/lib/rank.ps1`). Checked by a direct call of `Get-PqRank`; the three suites that
+  assert the count list (`portfolio-queue`, `portfolio-named-start`, `release-wait`) are release tier and were not run.
+- 0.35 (2026-11-18, S0130): inside a registered repository the order of tickets is the line order of its rows in
+  the portfolio queue file (rules 18 and 44). `spec_catalog/_portfolio-order.ps1` reads those rows without loading a
+  portfolio library, and `spec-next-preflight.ps1` ranks them first unless it runs as the dispatcher's picker
+  (`SZA_PQ_PICKER=1`), which walks the rows itself; the payload's `order_source` names the file. The repository's
+  plan files keep package, status and time, and their line order ranks only the tickets the queue file does not
+  name. Covered by `tools/tests/portfolio-order.tests.ps1` (4 cases, fast). Not built: the plan tool does not
+  re-lay the rows of the repository's own file in that order.
+- 0.36 (2026-11-18, S0135): the run row no longer carries `built` (rules 23 and 46). The runner no longer reads the
+  disclosure sentence; `pq report` counts "closed without a build" from the ticket ledgers against each repository's
+  release ledger (`Get-RlClosedSinceBuild`, `Get-PqClosedUnbuilt`; case 11 of `tools/tests/release-ledger.tests.ps1`).
+- Rule 16 steps 2 and 3 have a caller from 2026-11-18 (canon ticket S0131): `spec_catalog/ship-package.ps1` runs
+  `release-queue.ps1 -Ship` for every numbered ready block up to the marker, puts the marker on the next package
+  and then runs `archive.ps1` for the `Verified` rows in neither plan file. The release skill calls it in Phase 8
+  and `deploy.ps1` calls it for the canon after `publish -State live`. Rows under `--` are not shipped. Covered by
+  the `ship-package` case of `tools/tests/ledger-rules.tests.ps1` (release tier, not yet run) and by case 9 of
+  `tools/tests/deploy-release-ledger.tests.ps1`.

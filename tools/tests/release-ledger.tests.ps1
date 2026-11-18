@@ -19,6 +19,9 @@
          and a public page - no network.
      10. The CLI end to end with a probe stub: probe appends only what differs, a second probe writes nothing, an
          invalid state is exit 2.
+     11. Closed since the last build (S0135): tickets at Implemented written in or after the minute of the newest
+         build are counted, an unreadable date counts, no build gives no figure, and a repository with no ledger or
+         no build says why.
 
     Everything is a throwaway folder; no real repository, no network, three pwsh processes for case 10.
     Takes -KeepScratch to leave the throwaway folder for inspection.
@@ -53,6 +56,7 @@ $savedStub = $env:SZA_RELEASES_PROBE_STUB
 
 . (Join-Path $releases '_lib.ps1')
 . (Join-Path $releases '_probes.ps1')
+. (Join-Path $SourceRoot 'tools/harness/portfolio/lib/releases.ps1')
 
 $script:n = 0
 function New-Ledger([string]$Channels) {
@@ -153,6 +157,37 @@ try {
         Assert-That ($u.Count -eq 1 -and $u[0].version -ceq '2.0' -and $u[0].days -eq 3) "unpublished: $(($u | ForEach-Object { "$($_.package) $($_.version) $($_.days)" }) -join '; ')"
         Add-Line $d '{"at":"2026-11-08T10:00:00+02:00","key":"github","package":"app","version":"v2.0","state":"submitted","source":"release"}'
         Assert-That (@((Get-RlSnapshot $d).unpublished).Count -eq 0) 'a build carried in flight is still listed'
+    }
+
+    Test-Case 'closed since the last build: counted from ticket rows, no figure without a build' {
+        # No offset on purpose: builtAt and a ticket's updated are both read as local time, so this holds in any zone.
+        $builds = @(
+            [pscustomobject]@{ package = 'app'; flavor = 'x64'; kind = 'release'; version = '1.0'; builtAt = '2026-11-10T12:00:00' },
+            [pscustomobject]@{ package = 'app'; flavor = 'x64'; kind = 'debug'; version = '1.1'; builtAt = '2026-11-12T12:00:40' },
+            [pscustomobject]@{ package = 'tool'; flavor = 'default'; kind = 'release'; version = '5'; builtAt = 'not a date' }
+        )
+        $tickets = @(
+            [pscustomobject]@{ repo = 'a'; id = 'S1'; status = 'Implemented'; updated = '2026-11-12 11:59' },
+            [pscustomobject]@{ repo = 'a'; id = 'S2'; status = 'Implemented'; updated = '2026-11-12 12:00' },
+            [pscustomobject]@{ repo = 'a'; id = 'S3'; status = 'Implemented'; updated = '' },
+            [pscustomobject]@{ repo = 'a'; id = 'S4'; status = 'Verified'; updated = '2026-11-13 10:00' },
+            [pscustomobject]@{ repo = 'c'; id = 'S1'; status = 'Implemented'; updated = '2026-11-13 10:00' }
+        )
+        $f = Get-RlClosedSinceBuild -Builds $builds -Tickets @($tickets | Where-Object { $_.repo -ceq 'a' })
+        Assert-That ($f.lastBuiltAt -ceq '2026-11-12T12:00:40' -and $f.atStatus -eq 3 -and $f.sinceBuild -eq 2) "newest build of any kind, its minute counts, 2 of 3: $($f.lastBuiltAt) $($f.sinceBuild) of $($f.atStatus)"
+        $n = Get-RlClosedSinceBuild -Builds @() -Tickets $tickets
+        Assert-That ($n.lastBuiltAt -ceq '' -and $null -eq $n.sinceBuild -and $n.atStatus -eq 4) 'no build must give no figure, never zero'
+        $rel = [pscustomobject]@{ repos = @(
+                [pscustomobject]@{ key = 'a'; hasLedger = $true; error = $null; builds = $builds },
+                [pscustomobject]@{ key = 'b'; hasLedger = $false; error = $null; builds = @() },
+                [pscustomobject]@{ key = 'c'; hasLedger = $true; error = $null; builds = @() },
+                [pscustomobject]@{ key = 'e'; hasLedger = $true; error = $null; builds = $builds }
+            ) }
+        $c = Get-PqClosedUnbuilt -Releases $rel -Tickets $tickets -Skipped @('e - boom')
+        Assert-That ($c.a.available -and $c.a.sinceBuild -eq 2 -and $c.a.implemented -eq 3) "repository a: $($c.a.sinceBuild) of $($c.a.implemented)"
+        Assert-That (-not $c.b.available -and $c.b.why -ceq 'no release ledger') "repository b: $($c.b.why)"
+        Assert-That (-not $c.c.available -and $c.c.why -ceq 'no build recorded' -and $c.c.implemented -eq 1 -and $null -eq $c.c.sinceBuild) "repository c: $($c.c.why)"
+        Assert-That (-not $c.e.available -and $c.e.why -ceq 'ticket ledger not read') "repository e: $($c.e.why)"
     }
 
     Test-Case 'the render is deterministic, sectioned and holds no local path' {

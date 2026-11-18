@@ -23,6 +23,8 @@
     rule 68 - a row whose file is missing is repointed to the one same-named file of the other directory (both
               directions, and from a third place); two candidates or none leave the row; one real repoint goes
               through update.ps1 -File and changes `file` only
+    queue   - Read-PqTicketQueueRows does not return a BlockNeedUserTest row, from a .jsonl ledger or from a hand-kept
+              table (a ticket waiting for the owner's test has left the queue); the neighbouring rows are returned
   Exit 0 when every case passed, 1 on any failure. Expected wall time: under 5 s.
 #>
 [CmdletBinding()]
@@ -248,6 +250,31 @@ try {
         Assert-Equal $after.status 'Implemented' 'the status is untouched'
         Assert-Equal $after.name 'moved-out' 'the name is untouched'
         Assert-Equal @(Repair-PqTicketFileRefs -Repo $twoRepo -HarnessRoot $Harness -List).Count 0 'a second look finds nothing to do'
+    }
+
+    # ------------------------------------------------------------------ the queue read: a ticket waiting for the owner's test has left
+    Run-Case 'queue read: a .jsonl ledger row in BlockNeedUserTest is not returned, its neighbours are' {
+        $ledger = Join-Path $scratch 'queue-read\spec-catalog.jsonl'
+        $ledgerRows = @(
+            (New-Row 'S0001' 'waits-for-test' 'PLAN/S0001_waits-for-test.md' 'BlockNeedUserTest'),
+            (New-Row 'S0002' 'still-open' 'PLAN/S0002_still-open.md' 'Approved'),
+            (New-Row 'S0003' 'is-verified' 'PLAN/DONE/S0003_is-verified.md' 'Verified'),
+            (New-Row 'S0004' 'parked' 'PLAN/S0004_parked.md' 'BlockQuestions')
+        )
+        Write-Utf8 $ledger (($ledgerRows -join "`n") + "`n")
+        $read = @(Read-PqTicketQueueRows $ledger)
+        Assert-Equal (($read | ForEach-Object { $_.id }) -join ',') 'S0002,S0004' 'the ids read from the ledger (BlockNeedUserTest and Verified have left; a question block has not)'
+        Assert-That (-not (@($read | ForEach-Object { $_.id }) -contains 'S0001')) 'a BlockNeedUserTest ledger row was returned'
+    }
+    Run-Case 'queue read: a hand-kept table row whose status is BlockNeedUserTest is not returned, its neighbours are' {
+        $table = Join-Path $scratch 'queue-read-table\RELEASE_QUEUE.md'
+        Write-Utf8 $table ("# Release queue`n`n| Ticket | Status | Note |`n| --- | --- | --- |`n" +
+            "| S0001 | BlockNeedUserTest | waits for the device |`n" +
+            "| S0002 | Approved | still open |`n" +
+            "| S0003 | Verified | shipped |`n")
+        $read = @(Read-PqTicketQueueRows $table)
+        Assert-Equal (($read | ForEach-Object { $_.id }) -join ',') 'S0002' 'the ids read from the table (BlockNeedUserTest and Verified have left)'
+        Assert-That (-not (@($read | ForEach-Object { $_.id }) -contains 'S0001')) 'a BlockNeedUserTest table row was returned'
     }
 }
 finally {

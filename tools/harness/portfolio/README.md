@@ -61,7 +61,8 @@ fms-web:S0030           # a held ticket is skipped, the project's next one is ta
 
 ### The ticket queue
 
-Each repository keeps its own order in its own file, the same shape in every repository:
+Each repository keeps its own ticket queue file, the same shape in every repository. It says which package a ticket
+ships in, its status and when that last changed:
 
 ```
 current-next-release: 1
@@ -74,8 +75,11 @@ S0001_pq-first-run                                             26-10-28 10:09  I
 S0003_sandbox-three                                            26-10-28 10:20  Draft
 ```
 
-A bare number opens a package, `--` is work not yet scheduled, a row is the ticket. Inside a package the runner takes the
-rows in line order. Moving a line is the whole edit; the status and time columns are kept current by the repository's tools.
+A bare number opens a package, `--` is work not yet scheduled, a row is the ticket. The status and time columns are kept
+current by the repository's tools. For a registered project the order of work is not read from this file: the robots, `/sn`
+and the `r1`-`r3` launchers all take that project's `<key>:<id>` lines of `PORTFOLIO_QUEUE.md` in line order, and the line
+order here decides only among tickets that file does not name. In a project that is not registered, moving a line here is
+the whole edit.
 
 ### What to do with the two files
 
@@ -87,7 +91,7 @@ rows in line order. Moving a line is the whole edit; the status and time columns
 | one ticket done next in its project | `pq pin <key>:<id>`, or a `<key>:<id>` line at the top of that project's rows; to make it next in the whole portfolio, its project must also be first in the project order |
 | exactly one ticket of a project and nothing else | put its other ticket rows under `hold` and do not add a bare project row |
 | one ticket never taken | its `<key>:<id>` line under `hold` |
-| the tickets of a project in another order | move their rows in that project's ticket queue (**PQ Tickets `<key>`**) |
+| the tickets of a project in another order | move that project's `<key>:<id>` lines in `PORTFOLIO_QUEUE.md` (**Open Portfolio Queue**); the robots, `/sn` and the `r1`-`r3` launchers all follow that line order |
 | a ticket that must never run unattended | a one-way step (publication, release, store upload) belongs under `hold`, or in a project that is not enabled |
 
 `pq release` only removes the row from under `hold`: it does not return it to its old package, and the project then
@@ -131,6 +135,15 @@ Run it from the canon working tree, not from the plugin cache: the shortcuts poi
 the cache path changes with every plugin version. Run it again after a repository is registered or removed: it adds the
 `PQ Tickets` shortcut of the new one and drops the one of a repository that is gone. A file of the same name that is not one
 of ours is left alone.
+
+So the robots run the harness of the canon working tree, saved edits included, while an attended session in any
+repository runs the newest installed plugin copy through its `tools/harness.ps1`. A pass is given one of the two:
+`pq` starts every pass with `SZA_HARNESS_ROOT` set to its own `tools/harness`, which the forwarder and the spec-all
+skill read before the plugin cache, so the agent's ledger and lease calls run the copy the worker and its runner
+run. `pq doctor` prints one `harness` line with both folders: `PASS` when it is one copy or the scripts are the
+same, `NOTE` with the count of differing scripts otherwise - the normal state between a harness edit and the next
+deploy. The variable is set for the pass only: in the user environment a folder without `.sza-profile.json` would
+resolve the canon as its project root.
 
 | Shortcut | Runs | Use it to |
 | --- | --- | --- |
@@ -675,24 +688,26 @@ nothing to follow for a Codex or Gemini pass.
 | Command | Shows |
 | --- | --- |
 | `pq inbox [-Json]` | what waits for the owner across all projects: one line per kind (count, oldest age, the command that clears it), then the tickets with id, age and note; `BlockByOtherTask` as chain roots |
-| `pq report [-Days n]` | the last n days (7): passes, moved and ok shares, outcomes, ending statuses overall and by agent, entries and exits for owner-waiting statuses, closed unbuilt per repository, tokens and a list-price estimate by repository, model and outcome, the passes each registered repository's own R0 made outside pq (its `runs-mono.jsonl`, in the same window, counted apart from the pq figures, with any journal that could not be read named), the splits by agent, model, complexity and repository (only where n is at least 5), waiting, occupancy, resources, stops, robot-filed tickets, limits, log health and the open findings; `-Json` for the object |
+| `pq report [-Days n]` | the last n days (7): passes, moved and ok shares, outcomes, ending statuses overall and by agent, entries and exits for owner-waiting statuses, closed without a build per repository (counted from the ledgers), tokens and a list-price estimate by repository, model and outcome, the passes each registered repository's own R0 made outside pq (its `runs-mono.jsonl`, in the same window, counted apart from the pq figures, with any journal that could not be read named), the splits by agent, model, complexity and repository (only where n is at least 5), waiting, occupancy, resources, stops, robot-filed tickets, limits, log health and the open findings; `-Json` for the object |
 | `pq problems [-Days n]` | the open findings only, severity first, each with the events behind it: `PQ-RACE01` (a lost claim), `PQ-SAFE01` (a tripwire), `PQ-SAFE02` (the robot-filed cap), `PQ-LIMIT01` (a limit with no reset time), `PQ-THRASH01`, `PQ-RES03` (a token waited on for 30 minutes), `PQ-STALL01`, `PQ-XREPO01` (a blocker cycle), `PQ-DATA01` (a log gap or error), `PQ-COST02` (`light` that needed three passes), `PQ-ADOPT01` (a repository far below the median); and a `stale hold:` line for a whole-project hold row whose comment says the project has no ticket queue while it now has one. The registry's `analysis.thresholds`, named by finding id, moves the threshold of `PQ-THRASH01` (passes, 4), `PQ-RES03` (minutes, 30), `PQ-COST02` (percent, 30) and `PQ-ADOPT01` (points, 25); a value that is not a number is ignored |
 | `pq trace <key:id>` | every event of one ticket in time order, grouped by pass |
 | `pq export [-What runs|events] [-Format jsonl|csv] [-Days n]` | the run rows (default) or the events, to stdout |
 | `pq compare [-By canon|plugin|registryHash|profileHash|agent|model|complexity|repo] [-Days n]` | the run rows split by that field in the order its values first appear, with n, ok share, and a verdict between the last two values: `better` or `worse` at 15 points and n of at least 5 each, else `no evidence` |
 
-They only read `runs.jsonl` and the event files and compute each time; nothing is filed or written. The finding lifecycle
+They read `runs.jsonl` and the event files - `pq report` also the ticket ledgers and the release ledgers - and compute each time; nothing is filed or written. The finding lifecycle
 (`finding.open` and `finding.close`), the daily digest and the `from-telemetry` tickets are not built.
 
 Ending statuses count passes, not unique tickets. An unchanged status is neither an entry nor an exit;
 where either endpoint is missing, no transition is counted. Missing ending statuses and agents are shown as
 `(unknown)`. `Implemented` appears with the owner-waiting statuses because it waits for an audit.
 
-**Closed unbuilt** counts, per repository, the passes that ended in `Implemented`, `Verified` or `BlockNeedUserTest`
-and whose final answer said `not built, not tested until the release` (the run row's `built=false`, TASK-FLOW rule 23).
-`unknown` is a closing pass with no such sentence: no disclosure, which is not evidence that anything was built. The
-runner reads the sentence from the last main-thread answer of the Claude transcript, or from the last 4 000 characters
-of the `-Quiet` log for another CLI.
+**Closed without a build** counts, per repository, the tickets that stand at `Implemented` and whose ledger row was
+written at or after the minute of the newest build in the repository's release ledger (`builds.json`: any package,
+flavor or kind). It is counted at report time from the ticket ledgers and the release ledgers; no pass is asked and no
+run row is read (TASK-FLOW 0.36 withdrew the run row's `built`). A line reads `N of M at Implemented (last build
+<date>)`. A ticket whose row was written again after the build for another reason is counted too, so the figure errs
+high, never low. A repository prints `not available` with the reason (`no release ledger`, `no build recorded`,
+`ticket ledger not read`) until it keeps a release ledger and has recorded a build; `pq releases` shows which ones do.
 
 **Usage** is read once per launch from the Claude transcript the runner chose by session id, with every file under
 `<session>/subagents/`, each request counted once by its `requestId`; a pass sums its launches (context handoffs too)

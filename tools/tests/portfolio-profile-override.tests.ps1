@@ -18,6 +18,8 @@
       6. The shipped default tree declares the paths (rule 4) with $null values, so a profile that names
          nothing masks nothing; a profile's value merges over them through Get-SzaProfileValue; and the
          names the portfolio may read from a profile are exactly the names the tree declares.
+      7. HARNESS-PROFILE rule 15: the specs folder, the archive folder and the id pattern derive the eight
+         dependent defaults, an explicit key wins, and the shipped default tree is never written into.
 
     Everything is a throwaway folder and a direct call of the changed functions; no registry or profile of
     a real repository is read, and no process is spawned. Designed to stay well under the 5 s line.
@@ -160,6 +162,36 @@ try {
         Assert-That ((Get-SzaProfileValue 'portfolio.console.stallMinutes') -eq 40) 'the merged tree did not carry the profile stallMinutes'
         Assert-That ($null -eq (Get-SzaProfileValue 'portfolio.console.quietMinutes')) 'the merged tree invented a quietMinutes'
         Assert-That ((Get-SzaProfileValue 'portfolio.analysis.thresholds').stallRuns -eq 2) 'the merged tree did not carry the profile threshold'
+    }
+    Test-Case 'rule 15: the specs folder, the archive folder and the id pattern derive eight defaults, and an explicit key wins' {
+        . (Join-Path $harness '_profile.ps1')
+        $tree = $Script:SzaProfileDefaults
+        # The shipped tree derives to itself, so a repository with no profile reads what it always read.
+        $self = Get-SzaDerivedDefaults -SpecsDir $tree.paths.specsDir -SpecArchiveDir $tree.paths.specArchiveDir -TicketIdPattern $tree.grammar.ticketIdPattern
+        Assert-That (@($self.paths.Keys).Count -eq 6 -and @($self.grammar.Keys).Count -eq 2) "derived $(@($self.paths.Keys).Count) path keys and $(@($self.grammar.Keys).Count) grammar keys, expected 6 and 2"
+        foreach ($k in $self.paths.Keys) { Assert-That ($self.paths[$k] -ceq [string]$tree.paths[$k]) "paths.$k derives to '$($self.paths[$k])', the tree says '$($tree.paths[$k])'" }
+        foreach ($k in $self.grammar.Keys) { Assert-That ($self.grammar[$k] -ceq [string]$tree.grammar[$k]) "grammar.$k derives to '$($self.grammar[$k])', the tree says '$($tree.grammar[$k])'" }
+        # Three facts and nothing else: the eight keys follow them, the probe baseline does not.
+        $root = New-Repo @{ version = '1'; paths = @{ specsDir = 'tasks'; specArchiveDir = 'tasks/archive' }; grammar = @{ ticketIdPattern = '^TASK-\d{4}$' } }
+        $env:SZA_PROJECT_ROOT = $root; $Script:SzaProfileCache = $null; $Script:SzaProjectRootCache = $null
+        $want = [ordered]@{
+            'paths.journal' = 'tasks/spec-catalog.jsonl'; 'paths.journalArchive' = 'tasks/spec-catalog-archive.jsonl'
+            'paths.burnedIds' = 'tasks/spec-catalog-burned-ids.jsonl'; 'paths.releaseQueue' = 'tasks/RELEASE_QUEUE.md'
+            'paths.releaseReady' = 'tasks/RELEASE_READY.md'; 'paths.releaseQueueDone' = 'tasks/RELEASE_QUEUE_DONE.md'
+            'grammar.specFileTemplate' = 'tasks/{0}_{1}.md'; 'grammar.specFilePattern' = '^tasks/(archive/)?TASK-\d{4}_(?!spec_)'
+            'paths.probeBaseline' = 'PLAN/probe-baseline.txt'
+        }
+        foreach ($k in $want.Keys) { Assert-That ([string](Get-SzaProfileValue $k) -ceq $want[$k]) "$k is '$(Get-SzaProfileValue $k)', expected '$($want[$k])'" }
+        # An explicit key wins, whatever its letter case; a profile with no grammar object must not write into the shipped tree.
+        $root = New-Repo @{ version = '1'; paths = @{ specArchiveDir = 'PLAN/DONE'; Journal = 'data/ledger.jsonl' } }
+        $env:SZA_PROJECT_ROOT = $root; $Script:SzaProfileCache = $null; $Script:SzaProjectRootCache = $null
+        Assert-That ([string](Get-SzaProfileValue 'paths.journal') -ceq 'data/ledger.jsonl') 'an explicit paths.journal lost to the derived default'
+        Assert-That ([string](Get-SzaProfileValue 'grammar.specFilePattern') -ceq '^PLAN/(DONE/)?S\d{4}_(?!spec_)') "the pattern is '$(Get-SzaProfileValue 'grammar.specFilePattern')'"
+        Assert-That ([string]$Script:SzaProfileDefaults.grammar.specFilePattern -ceq '^PLAN/(archive/)?S\d{4}_(?!spec_)') 'the derivation wrote into the shipped default tree'
+        # Sibling folders, one folder for both, and no specs folder at all.
+        Assert-That ((Get-SzaDerivedDefaults -SpecsDir 'tickets' -SpecArchiveDir 'archive' -TicketIdPattern '^S\d{4}$').grammar.specFilePattern -ceq '^(?:tickets|archive)/S\d{4}_(?!spec_)') 'sibling folders gave another pattern'
+        Assert-That ((Get-SzaDerivedDefaults -SpecsDir 'PLAN' -SpecArchiveDir 'PLAN' -TicketIdPattern '^S\d{4}$').grammar.specFilePattern -ceq '^PLAN/S\d{4}_(?!spec_)') 'one folder for both gave another pattern'
+        Assert-That (@((Get-SzaDerivedDefaults -SpecsDir '' -SpecArchiveDir 'x' -TicketIdPattern '^S\d{4}$').paths.Keys).Count -eq 0) 'an empty specs folder derived a path'
     }
 } finally {
     $env:SZA_PORTFOLIO_ROOT = $savedPortfolio

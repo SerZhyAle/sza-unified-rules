@@ -44,10 +44,11 @@ the folder) -> print its `reason` in one line and **stop**.
 pwsh -NoProfile -WorkingDirectory "<project root>" -File "<root>/tools/harness/spec_catalog/spec-next-preflight.ps1" -Claim -Reason "spec-next"
 ```
 
-The pick and the lease are one call, so two sessions never take the same head. The queue order is the project's own
-(the one file its profile names as `paths.releaseQueue`, by default `PLAN/RELEASE_QUEUE.md`: release package, then
-line order; where that file does not exist the order is the ledger's priority, and the result's `order_source` names
-the file that was asked). Never re-derive the pick from priority and never skip the head for a more interesting ticket.
+The pick and the lease are one call, so two sessions never take the same head. The order is the payload's
+`order_source`: for a project registered with the portfolio queue, the line order of that project's rows in
+`PORTFOLIO_QUEUE.md`, then the project's own queue file (release package, then line order) for a ticket that file does
+not name; the ledger's priority is the last fallback. Never re-derive the pick from priority and never skip the head
+for a more interesting ticket.
 
 Read `selected` and `selected_none_reason` from the JSON:
 

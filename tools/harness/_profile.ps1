@@ -293,6 +293,64 @@ $Script:SzaProfileDefaults = [ordered]@{
     }
 }
 
+$Script:SzaDerivedPathKeys = @('journal', 'journalArchive', 'burnedIds', 'releaseQueue', 'releaseReady', 'releaseQueueDone')
+
+function Get-SzaDerivedDefaults {
+    <#
+    .SYNOPSIS
+        The defaults that follow a project's specs folder, archive folder and id pattern (HARNESS-PROFILE rule 15):
+        @{ paths = @{ <the six keys above> }; grammar = @{ specFileTemplate; specFilePattern } }.
+    .DESCRIPTION
+        A pure function of its arguments and the shipped default tree - no profile, no project root, no cache - so a
+        reader that parses a profile on its own may call it. A key it cannot derive (an empty specs folder, an empty
+        id pattern) is left out and the caller keeps the shipped literal. paths.probeBaseline is deliberately not
+        derived: a repository keeps that file where it already is.
+    #>
+    param([AllowEmptyString()][string]$SpecsDir, [AllowEmptyString()][string]$SpecArchiveDir, [AllowEmptyString()][string]$TicketIdPattern)
+    $out = [ordered]@{ paths = [ordered]@{}; grammar = [ordered]@{} }
+    $specs = ([string]$SpecsDir).Replace('\', '/').Trim().TrimEnd('/')
+    if (-not $specs) { return $out }
+    $shipped = ([string]$Script:SzaProfileDefaults.paths.specsDir) + '/'
+    foreach ($key in $Script:SzaDerivedPathKeys) {
+        $literal = [string]$Script:SzaProfileDefaults.paths[$key]
+        if ($literal.StartsWith($shipped, [System.StringComparison]::Ordinal)) { $out.paths[$key] = $specs + '/' + $literal.Substring($shipped.Length) }
+    }
+    $template = [string]$Script:SzaProfileDefaults.grammar.specFileTemplate
+    if ($template.StartsWith($shipped, [System.StringComparison]::Ordinal)) { $out.grammar['specFileTemplate'] = $specs + '/' + $template.Substring($shipped.Length) }
+    $core = (([string]$TicketIdPattern).Trim() -replace '^\^', '') -replace '\$$', ''
+    if ($core) {
+        $archive = ([string]$SpecArchiveDir).Replace('\', '/').Trim().TrimEnd('/')
+        $head = '^' + [regex]::Escape($specs) + '/'
+        if ($archive -and $archive.StartsWith($specs + '/', [System.StringComparison]::OrdinalIgnoreCase)) {
+            $head = '^' + [regex]::Escape($specs) + '/(' + [regex]::Escape($archive.Substring($specs.Length + 1)) + '/)?'
+        } elseif ($archive -and -not $archive.Equals($specs, [System.StringComparison]::OrdinalIgnoreCase)) {
+            $head = '^(?:' + [regex]::Escape($specs) + '|' + [regex]::Escape($archive) + ')/'
+        }
+        $out.grammar['specFilePattern'] = $head + $core + '_(?!spec_)'
+    }
+    return $out
+}
+
+function Add-SzaDerivedDefaults {
+    <# Fills, in the merged tree, the derived keys the profile file did not carry (rule 15). Both sections are copied
+       before they are written: a section the profile does not name is still the SAME object as the shipped default
+       tree, and writing into it would change the defaults for the rest of the process. #>
+    param($Merged, $Declared)
+    if (-not ($Merged -is [System.Collections.IDictionary])) { return }
+    if (-not ($Merged['paths'] -is [System.Collections.IDictionary]) -or -not ($Merged['grammar'] -is [System.Collections.IDictionary])) { return }
+    $derived = Get-SzaDerivedDefaults -SpecsDir ([string]$Merged['paths']['specsDir']) -SpecArchiveDir ([string]$Merged['paths']['specArchiveDir']) -TicketIdPattern ([string]$Merged['grammar']['ticketIdPattern'])
+    foreach ($section in 'paths', 'grammar') {
+        $own = $null
+        if (Test-SzaHasProperty -Object $Declared -Name $section) { $own = $Declared.$section }
+        $copy = [ordered]@{}
+        foreach ($k in @($Merged[$section].Keys)) { $copy[$k] = $Merged[$section][$k] }
+        foreach ($key in @($derived[$section].Keys)) {
+            if (-not (Test-SzaHasProperty -Object $own -Name $key)) { $copy[$key] = $derived[$section][$key] }
+        }
+        $Merged[$section] = $copy
+    }
+}
+
 function Get-SzaHarnessRoot { return $Script:SzaHarnessRoot }
 
 function Find-SzaMarkerUpward {
@@ -424,6 +482,7 @@ function Get-SzaProfile {
         }
         Assert-SzaSchemaCarrier $json 'version' 'HARNESS-PROFILE'
         $merged = Merge-SzaProfileNode -Default $merged -Override $json
+        Add-SzaDerivedDefaults -Merged $merged -Declared $json   # no profile file: nothing to do, the shipped tree derives to itself
     }
     $Script:SzaProfileCache = ConvertTo-SzaProfileObject $merged
     return $Script:SzaProfileCache

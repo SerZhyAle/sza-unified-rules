@@ -15,6 +15,9 @@
          each is 'unavailable' with a reason, and no other gate is skipped because of it.
       5. A non-zero canon code is reported red.
       6. The call site is advisory: it contains no Fail and no exit.
+      7. The new-path fence: Get-PendingPath and Get-StrayNewPath are lifted from the same syntax tree and replay twelve
+         porcelain lines (untracked, added, renamed, quoted paths holding an arrow, modified, deleted) against the roots
+         `tools` and `rules`; each line is stray or not as the repo-root rule says.
 #>
 [CmdletBinding()]
 param()
@@ -38,6 +41,13 @@ $parseErrors = $null
 $ast = [Management.Automation.Language.Parser]::ParseFile($deploy, [ref]$null, [ref]$parseErrors)
 $fn = @($ast.FindAll({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Invoke-FastGateReport' }, $true))
 if ($fn.Count -eq 1) { . ([scriptblock]::Create($fn[0].Extent.Text)) }
+# The two path helpers of the new-path fence (step 2b), lifted the same way.
+$pathFns = @{}
+foreach ($pathFnName in 'Get-PendingPath', 'Get-StrayNewPath') {
+    $found = @($ast.FindAll({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $pathFnName }, $true))
+    $pathFns[$pathFnName] = $found.Count
+    if ($found.Count -eq 1) { . ([scriptblock]::Create($found[0].Extent.Text)) }
+}
 
 $scratch = Join-Path ([IO.Path]::GetTempPath()) ('deploy-gates-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
 New-Item -ItemType Directory -Path $scratch | Out-Null
@@ -139,6 +149,34 @@ try {
         Assert-That ($start -ge 0 -and $end -gt $start) 'call site not found'
         $site = $deployText.Substring($start, $end - $start)
         Assert-That ($site -notmatch '\bFail\b|\bexit\b') "the call site blocks: $site"
+    }
+    Run-Case '7 the new-path fence: which porcelain lines are stray against the roots tools and rules' {
+        Assert-That ($pathFns['Get-PendingPath'] -eq 1 -and $pathFns['Get-StrayNewPath'] -eq 1) "definitions: $(($pathFns.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join ' ')"
+        $roots = @('tools', 'rules')
+        # line -> the stray path it must yield, or '' when the line must not be reported at all
+        $table = @(
+            @{ line = '?? history.json';                      stray = 'history.json' }
+            @{ line = '?? newdir/';                           stray = 'newdir/' }
+            @{ line = '?? rules/NEW.md';                      stray = '' }
+            @{ line = 'A  rootnew.json';                      stray = 'rootnew.json' }
+            @{ line = 'AM rootnew2.json';                     stray = 'rootnew2.json' }
+            @{ line = 'A  newroot/x.json';                    stray = 'newroot/x.json' }
+            @{ line = 'R  tools/a.ps1 -> a.ps1';              stray = 'a.ps1' }
+            @{ line = 'R  tools/a.ps1 -> tools/b.ps1';        stray = '' }
+            @{ line = '?? "stray -> tools/"';                 stray = 'stray -> tools/' }
+            @{ line = '?? "tools/a -> b.txt"';                stray = '' }
+            @{ line = ' M deploy.ps1';                        stray = '' }
+            @{ line = 'D  history.json';                      stray = '' }
+        )
+        foreach ($row in $table) {
+            $got = @(Get-StrayNewPath -Lines @($row.line) -TrackedRoots $roots)
+            $want = @(if ($row.stray) { $row.stray })
+            Assert-That ($got.Count -eq $want.Count -and (($got -join '|') -eq ($want -join '|'))) "line '$($row.line)': expected stray [$($want -join '|')] | actual [$($got -join '|')]"
+        }
+        # all lines at once: the order of the stray paths follows the order of the lines
+        $all = @(Get-StrayNewPath -Lines @($table | ForEach-Object { $_.line }) -TrackedRoots $roots)
+        $expectAll = @($table | Where-Object { $_.stray } | ForEach-Object { $_.stray })
+        Assert-That (($all -join '|') -eq ($expectAll -join '|')) "all lines: expected [$($expectAll -join '|')] | actual [$($all -join '|')]"
     }
 }
 finally {

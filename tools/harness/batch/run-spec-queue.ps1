@@ -1162,7 +1162,6 @@ function Add-RunRecord {
         $ExitCode,
         [int] $Minutes,
         [string] $Complexity = '',
-        $Built = $null,
         $Usage = $null,
         # TASK-FLOW 0.24 rule 67: the code-tree stamp of a pass that ended at Implemented with nothing
         # left but release work. Empty = not written; absent never reads as "nothing awaits".
@@ -1188,9 +1187,6 @@ function Add-RunRecord {
         minutes      = $Minutes
         finishedAt   = (Get-Date).ToString('s')
     }
-    # TASK-FLOW 0.20 rule 23 (S0037): optional, and absent when not known - an absent field is unknown,
-    # never a build, a zero or a free pass.
-    if ($Built -is [bool]) { Add-Member -InputObject $record -NotePropertyName 'built' -NotePropertyValue $Built }
     if (-not [string]::IsNullOrWhiteSpace($AwaitsRelease)) {
         Add-Member -InputObject $record -NotePropertyName 'awaitsRelease' -NotePropertyValue $AwaitsRelease
     }
@@ -2023,9 +2019,14 @@ while ($true) {
                 # repository: a ticket waiting for the owner's answer read as taken by a robot for hours. A missing
                 # plan file exits 2 there and changes nothing, which is fine.
                 #
-                # Only when the row still shows the marker, and in its own try: the reconcile reads and rewrites the
-                # plan files outside the catalog lock every mutator holds, so it is kept to the one case that needs
-                # it instead of running after every pass; a failure here is not a failed lease release.
+                # Only when the row still shows the marker, and in its own try: the reconcile is one more child process
+                # in the pass tail, so it is kept to the one case that needs it instead of running after every pass;
+                # a failure here is not a failed lease release. It takes the catalog lock every mutator holds (S0138:
+                # release-queue.ps1 -Reconcile reads the catalog and rewrites both plan files under it, then refreshes
+                # the portfolio projection after releasing it), so a sibling instance's write cannot be overwritten by
+                # this older snapshot; a busy catalog makes it wait up to 30 s and then exit 1, which the line below
+                # reports. Measured 2026-11-18 on this repository (8 queue rows): 0.83 s for the reconcile and 2.22 s
+                # with the projection - that is the cost this branch adds to a pass tail.
                 try {
                     $planFile = Get-SzaPath 'releaseQueue'
                     $rowTaken = $false
@@ -2183,17 +2184,14 @@ while ($true) {
         if (-not $moved) { $processed.Add($id) }
     }
 
-    # What the child said about its build and what its session used (S0037). Read once, after the child is
-    # gone; a failure to read is no answer, never a failed runner.
-    $passBuilt = $null
+    # What the child's session used (S0037). Read once, after the child is gone; a failure to read is no
+    # answer, never a failed runner.
     $passUsage = $null
     if ($outcome -notin @('launch-failed', 'claim-lost-before-launch')) {
         try {
             $passTranscript = if ($sessionId) { Find-ChildTranscript -SessionId $sessionId } else { $null }
-            $passBuilt = Get-PassBuiltFlag -Text (Get-PassFinalText -TranscriptPath $passTranscript -LogBody $logBody)
             $passUsage = Get-PassUsage -TranscriptPath $passTranscript -SessionId $sessionId
         } catch {
-            $passBuilt = $null
             $passUsage = $null
         }
     }
@@ -2214,7 +2212,7 @@ while ($true) {
 
     $runRecord = Add-RunRecord -Id $id -ChildModel $childModel -StatusBefore $statusBefore `
             -StatusAfter $statusAfter -Moved $moved -Outcome $outcome -ExitCode $exitCode `
-            -Minutes $elapsed -Complexity $childComplexity -Built $passBuilt -Usage $passUsage `
+            -Minutes $elapsed -Complexity $childComplexity -Usage $passUsage `
             -AwaitsRelease $passAwaitsRelease
 
     # Read AFTER the row is written, and forced fresh, so the series includes the run that just

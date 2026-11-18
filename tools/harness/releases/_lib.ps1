@@ -414,6 +414,36 @@ function Get-RlUnpublished {
     }
 }
 
+function Get-RlClosedSinceBuild {
+    # The tickets at -Status whose ledger row was written in or after the minute of the newest build of builds.json
+    # (any package, flavor or kind). `updated` is a row's last write and carries minutes only, so the build instant is
+    # cut to its minute, a row written again after the build is counted, and so is a row whose `updated` cannot be
+    # read: the figure errs high, never low. No readable builtAt = no figure (sinceBuild $null).
+    param(
+        [AllowEmptyCollection()][object[]]$Builds = @(),
+        [AllowEmptyCollection()][object[]]$Tickets = @(),
+        [string]$Status = 'Implemented'
+    )
+    $last = $null
+    $lastText = ''
+    foreach ($b in $Builds) {
+        $text = [string](Get-RlProp $b 'builtAt')
+        $t = ConvertTo-RlInstant $text
+        if ($null -ne $t -and ($null -eq $last -or $t -gt $last)) { $last = $t; $lastText = $text }
+    }
+    $floor = if ($null -ne $last) { $last.AddTicks(-($last.Ticks % [TimeSpan]::TicksPerMinute)) } else { $null }
+    $atStatus = 0
+    $since = 0
+    foreach ($row in $Tickets) {
+        if ([string](Get-RlProp $row 'status') -cne $Status) { continue }
+        $atStatus++
+        if ($null -eq $floor) { continue }
+        $u = ConvertTo-RlInstant ([string](Get-RlProp $row 'updated'))
+        if ($null -eq $u -or $u -ge $floor) { $since++ }
+    }
+    return [pscustomobject]@{ lastBuiltAt = $lastText; atStatus = $atStatus; sinceBuild = $(if ($null -ne $floor) { $since } else { $null }) }
+}
+
 function Get-RlSnapshot {
     # Everything a reader shows, from the three source files. History rows that name a key channels.json does
     # not declare are kept under that key as a manual channel: the history is never dropped for a config change.

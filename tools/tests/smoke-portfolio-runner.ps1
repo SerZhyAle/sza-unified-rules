@@ -863,6 +863,27 @@ $seen | ConvertTo-Json | Set-Content (Join-Path $RepoRoot 'temp/env-dump.json')
         }
     }
 
+    Run-SmokeCase 'V14c: a pass child is given the harness copy of the worker that starts it (SZA_HARNESS_ROOT)' {
+        Remove-Item -LiteralPath (Join-Path $portfolioRoot 'STOP') -Force -ErrorAction SilentlyContinue
+        $dumper = Join-Path $scratch 'harness-root-dumper.ps1'
+        @'
+param($RepoRoot, $Ids, $MaxTickets, $ModelPolicy, $Instance, $PermissionMode)
+[string][Environment]::GetEnvironmentVariable('SZA_HARNESS_ROOT') | Set-Content (Join-Path $RepoRoot 'temp/harness-root-dump.txt')
+'@ | Set-Content $dumper
+        $dump = Join-Path $repoADir 'temp/harness-root-dump.txt'
+        Remove-Item -LiteralPath $dump -ErrorAction SilentlyContinue
+        $saved = $env:SZA_HARNESS_ROOT
+        try {
+            $env:SZA_HARNESS_ROOT = Join-Path $scratch 'some-other-harness'
+            $r = Invoke-PqPassChild -Script $dumper -RepoPath $repoADir -TicketId 'S0001' -PermissionMode 'acceptEdits'
+        }
+        finally { $env:SZA_HARNESS_ROOT = $saved }
+        Assert-That ($r.code -eq 0 -and (Test-Path -LiteralPath $dump)) 'the dumping child did not run'
+        $seen = (Get-Content -Raw $dump).Trim()
+        $want = [IO.Path]::GetFullPath($harness)
+        Assert-That ([string]::Equals($seen, $want, [StringComparison]::OrdinalIgnoreCase)) "the child was given '$seen', expected '$want'"
+    }
+
     Run-SmokeCase 'V14b: a pass child starts in the repo as the agent CLI knows it - drive letter in upper case, whatever the registry spells' {
         Remove-Item -LiteralPath (Join-Path $portfolioRoot 'STOP') -Force -ErrorAction SilentlyContinue
         if ([IO.Path]::DirectorySeparatorChar -ne '\') { return }   # a drive letter exists on Windows only
