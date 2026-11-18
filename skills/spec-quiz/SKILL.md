@@ -7,9 +7,9 @@ description: Clear the tickets that wait for the owner's answers (status BlockQu
 
 A ticket enters `BlockQuestions` in one line and waits for an owner who is ready to answer. This skill is how it
 leaves, in **any** registered project: it resolves which tickets are waiting, then runs the canon's procedure -
-[spec-to-audit](../spec-to-audit/SKILL.md) "Quiz mode - draining the owner's questions", steps 1-8, which is the
-authority and is **not restated here**. What this skill adds is the part that is the same in every project: finding
-the tickets, naming the right project, and the mechanics of asking, writing back and moving.
+[Quiz mode](../spec-to-audit/references/quiz-mode.md) of the spec-to-audit skill, steps 1-8, which is the authority and
+is **not restated here**; read that file before the first question. What this skill adds is the part that is the same
+in every project: finding the tickets, naming the right project, and the mechanics of asking, writing back and moving.
 
 `/sq` is the same command, through the project's forwarder in `.claude/commands/`; the arguments are the same.
 

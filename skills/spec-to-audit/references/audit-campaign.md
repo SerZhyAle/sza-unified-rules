@@ -1,9 +1,19 @@
 # The audit campaign - auditing a tree too large for one pass
 
-Reference for the `spec-to-audit` skill, next to Sweep mode. A phase-boundary audit (Stage 3) judges one
+Reference for the `spec-to-audit` skill, next to [Sweep mode](sweep-mode.md). A phase-boundary audit (Stage 3) judges one
 change. A campaign judges code that did **not** change - the whole shipped tree before a major release - and
 it is a process with a script at both ends, not a long session. Five repos arrived at this shape
 independently; what follows is the common part, with no project's ticket scheme or language in it.
+
+## In one paragraph
+
+A tree too large for one pass, before a major release, is audited as a
+**campaign**: a script cuts the shipped code and the release path into risk-ordered slices (parity pairs kept
+together), a second script proves every file is in exactly one slice and exits non-zero until every slice is
+closed, slices are generated from one template, a live defect-class registry turns a second sighting into a
+tree-wide sweep, and every file changed after its slice closed is audited again - code written to close a
+finding has been read by nobody but its author. The campaign closes only on the roll-up's exit 0, and the
+owner's device tests are drained once afterwards, in [Sweep mode](sweep-mode.md). The sections below give the method and the measured yields.
 
 ## Where this was measured
 

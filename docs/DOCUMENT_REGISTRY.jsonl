@@ -88,6 +88,8 @@
 {"path": "skills/spec-to-audit/SKILL.md", "topic": "Spec to audit - the lifecycle and its gates", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "skills/spec-to-audit/references/audit-campaign.md", "topic": "The audit campaign - auditing a tree too large for one pass", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "skills/spec-to-audit/references/audit-verdict.md", "topic": "The audit verdict - vocabulary, scoring, and the output block", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "skills/spec-to-audit/references/quiz-mode.md", "topic": "Quiz mode - draining the owner's questions", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "skills/spec-to-audit/references/sweep-mode.md", "topic": "Sweep mode - draining the human gate", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "skills/spec-to-audit/references/ticket-lifecycle-traps.md", "topic": "Ticket lifecycle traps", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "skills/sq/SKILL.md", "topic": "sq - /spec-quiz, short", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "skills/store-publish/SKILL.md", "topic": "Store publishing - four channels, four one-way operations", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
