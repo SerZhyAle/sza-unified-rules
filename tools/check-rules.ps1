@@ -1,9 +1,9 @@
-<#
+﻿<#
 check-rules.ps1 - self-check gate for the canon's own text.
 
 Validates the canon; check-compliance.ps1 validates a project against it.
 
-Checks (core docs = rules/*.md; contrib/ gets link-check only, it is a historical record):
+Checks (core docs = rules/*.md; contrib/ and contrib/history/ get link-check only - a facts record and its dated history):
   1. Relative markdown links resolve to existing files.
   2. Numbered "## N." headings in each core doc are unique and gapless.
   3. Section references ("DOC.md §N", "DOC §N-M", bare "§N") point at existing headings.
@@ -20,6 +20,14 @@ try {
     $contribDocs = @()
     if (Test-Path -LiteralPath $contribDir) {
         $contribDocs = @(Get-ChildItem -Path $contribDir -Filter *.md -File)
+    }
+    # The dated history of each record sits one folder down (rules/contrib/history/<project>.md), is appended
+    # to and is read by no skill. It gets the same link check: a section moved there keeps a link only when
+    # the link gained one more '../'.
+    $historyDir = Join-Path $contribDir 'history'
+    $historyDocs = @()
+    if (Test-Path -LiteralPath $historyDir) {
+        $historyDocs = @(Get-ChildItem -Path $historyDir -Filter *.md -File)
     }
     $violations = New-Object System.Collections.Generic.List[string]
 
@@ -48,7 +56,8 @@ try {
     }
 
     # Check 1: relative markdown links resolve.
-    foreach ($doc in (@($coreDocs) + $contribDocs)) {
+    foreach ($doc in (@($coreDocs) + $contribDocs + $historyDocs)) {
+        $label = if ($doc.Directory.Name -eq 'history') { "history/$($doc.Name)" } else { $doc.Name }
         $lineNo = 0
         foreach ($line in (Get-Content -LiteralPath $doc.FullName)) {
             $lineNo++
@@ -57,7 +66,7 @@ try {
                 if ($target -match '^(https?|mailto):' -or $target.StartsWith('#')) { continue }
                 $file = ($target -split '#')[0]
                 if (-not (Test-Path -LiteralPath (Join-Path $doc.DirectoryName $file))) {
-                    $violations.Add("$($doc.Name):$($lineNo): broken link -> $target")
+                    $violations.Add("$($label):$($lineNo): broken link -> $target")
                 }
             }
         }
@@ -109,7 +118,7 @@ try {
         Write-Error "check-rules: $($violations.Count) violation(s)" -ErrorAction Continue
         exit 1
     }
-    Write-Host "check-rules: OK ($($coreDocs.Count) core docs, $($contribDocs.Count) contrib docs)"
+    Write-Host "check-rules: OK ($($coreDocs.Count) core docs, $($contribDocs.Count) contrib docs, $($historyDocs.Count) history docs)"
     exit 0
 }
 catch {

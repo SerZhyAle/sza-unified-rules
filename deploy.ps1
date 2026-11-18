@@ -29,6 +29,13 @@ nothing to a consumer.
   pwsh -File deploy.ps1 -NoPluginUpdate      # push, but leave this machine's plugin where it is
   pwsh -File deploy.ps1 -AllowNew            # accept a new file or folder at the repo root (see below)
 
+With no message the commit subject is generated, not a date: the subjects of the local commits not yet on
+the remote, then the changed rule documents by name, then a count of the other changed paths per top-level
+folder ('Add the inbox listener (S0046); rules: AUTHOR, TESTING_AND_QA; tools 2, skills 1'). The same line
+is the note of the release-ledger build row, and the commit body names the plugin version the commit
+raised. 'Canon update <date>' remains only for a change set that is nothing but the deploy's own
+bookkeeping (the version pair, docs/releases/).
+
 A NEW untracked path ships only when it lies inside a top-level folder that already holds tracked files
 (rules, skills, hooks, tools, templates, docs ..). A new file or folder at the repo root stops the deploy
 before anything is written: staging is `git add -A`, so a stray root file - another tool's history dump,
@@ -75,7 +82,9 @@ function Get-PendingPath([string]$line) {
 # being shipped, and forgetting to list it costs a harmless bump instead of an undelivered canon.
 function Test-ShipsToConsumers([string[]]$paths) {
     $exempt = @('README.md', 'LICENSE', 'CANON_VERSION', '.claude-plugin/plugin.json', '.gitignore')
-    $exemptDirs = @('rules/contrib/', 'docs/releases/')
+    # A facts record (rules/contrib/<project>.md) is read by skills from the plugin cache, so it ships and
+    # raises the version; only the dated history beside it, which no skill reads, is exempt.
+    $exemptDirs = @('rules/contrib/history/', 'docs/releases/')
     foreach ($path in $paths) {
         $normalized = $path -replace '\\', '/'
         if ($exempt -contains $normalized) { continue }
@@ -241,6 +250,55 @@ function Invoke-ReleaseLedgerStep {
     return 'ok'
 }
 
+function Get-DeployChangeNote {
+    # One line that says what this deploy carries, built from what the script already holds: the subjects of
+    # the local commits not yet on the remote (the ticket-bearing ones a session made), the rule documents
+    # that changed, and a count of the other changed paths per top-level folder. An explicit message replaces
+    # all of it. The line becomes the commit subject and the note of the release-ledger build row. The
+    # deploy's own bookkeeping (the version pair, docs/releases/) is not counted. Double quotes and a leading
+    # hyphen are removed because the line travels as one argument of `pwsh -File`, where a value that starts
+    # with a hyphen binds as a parameter name.
+    param(
+        [string]$Message = '',
+        [string[]]$Paths = @(),
+        [string[]]$Subjects = @(),
+        [int]$MaxSubjects = 4
+    )
+    $parts = [System.Collections.Generic.List[string]]::new()
+    if ($Message -and $Message.Trim()) {
+        $parts.Add((($Message.Trim() -split '\r?\n')[0]))
+    }
+    else {
+        $kept = @($Subjects | ForEach-Object { "$_".Trim() } | Where-Object { $_ -and $_ -notmatch '^Canon update \d{4}-\d{2}-\d{2}$' } | Select-Object -Unique)
+        $extra = $kept.Count - $MaxSubjects
+        if ($extra -gt 0) { $kept = @($kept | Select-Object -First $MaxSubjects) + "+$extra more" }
+        foreach ($subject in $kept) { $parts.Add($subject) }
+
+        $ruleDocs = [System.Collections.Generic.List[string]]::new()
+        $counts = @{}
+        foreach ($raw in $Paths) {
+            $path = ("$raw" -replace '\\', '/').Trim()
+            if (-not $path) { continue }
+            if ($path -eq 'CANON_VERSION' -or $path -eq '.claude-plugin/plugin.json' -or $path.StartsWith('docs/releases/')) { continue }
+            if ($path -match '^rules/([^/]+)\.md$') {
+                if (-not $ruleDocs.Contains($Matches[1])) { $ruleDocs.Add($Matches[1]) }
+                continue
+            }
+            $key = if ($path.StartsWith('rules/contrib/')) { 'contrib' } elseif ($path.Contains('/')) { ($path -split '/')[0] } else { 'root' }
+            $counts[$key] = 1 + [int]$counts[$key]
+        }
+        if ($ruleDocs.Count -gt 0) { $parts.Add('rules: ' + (@($ruleDocs | Sort-Object) -join ', ')) }
+        $countText = @($counts.GetEnumerator() | Sort-Object @{ Expression = 'Value'; Descending = $true }, @{ Expression = 'Key'; Descending = $false } | ForEach-Object { "$($_.Key) $($_.Value)" }) -join ', '
+        if ($countText) { $parts.Add($countText) }
+    }
+    $line = ($parts -join '; ') -replace '[\x00-\x1F\x7F]+', ' ' -replace '"', "'" -replace ' {2,}', ' '
+    return $line.Trim().TrimStart('-').Trim()
+}
+
+$unpushed = @(git -C $root log --reverse --format=%s "${remote}/${branch}..HEAD" 2>$null)
+if ($LASTEXITCODE -ne 0) { $unpushed = @() }   # a branch never pushed has no remote ref: git answers 128
+$changeNote = Get-DeployChangeNote -Message $Message -Paths @($pending | ForEach-Object { Get-PendingPath $_ }) -Subjects $unpushed
+
 # --- 2a. Raise the version pair, before staging, so both files ride in this commit. ----------------
 $bumpedVersion = $null
 $ships = Test-ShipsToConsumers (@($pending) | ForEach-Object { Get-PendingPath $_ })
@@ -259,12 +317,8 @@ if ($NoVersionBump) {
         $pluginText = Get-Content -LiteralPath (Join-Path $root '.claude-plugin/plugin.json') -Raw
         if ($pluginText -match '"version"\s*:\s*"([^"]+)"') { $bumpedVersion = $Matches[1] }
         if ($bumpedVersion) {
-            $canonPath = Join-Path $root 'CANON_VERSION'
             $ledgerArgs = @('build', '-Package', 'sza', '-Kind', 'release', '-Version', $bumpedVersion)
-            if (Test-Path -LiteralPath $canonPath -PathType Leaf) {
-                $canonNote = (Get-Content -LiteralPath $canonPath -Raw).Trim()
-                if ($canonNote) { $ledgerArgs += @('-Note', "CANON_VERSION $canonNote") }
-            }
+            if ($changeNote) { $ledgerArgs += @('-Note', $changeNote) }
             $null = Invoke-ReleaseLedgerStep -Root $root -Arguments $ledgerArgs
         }
     }
@@ -279,7 +333,22 @@ Write-Host "deploy: $($pending.Count) change(s) on '$branch' -> $remote" -Foregr
 $pending | ForEach-Object { Write-Host "  $_" }
 Write-Host ''
 
-if (-not $Message) { $Message = "Canon update $(Get-Date -Format 'yyyy-MM-dd')" }
+$commitBody = @()
+if (-not $Message) {
+    # No message given: the generated line is the subject. A line too long for a subject is cut there and
+    # carried whole in the body.
+    if ($changeNote) {
+        $Message = $changeNote
+        if ($Message.Length -gt 72) {
+            $Message = $changeNote.Substring(0, 70).TrimEnd() + '..'
+            $commitBody += $changeNote
+        }
+    }
+    else {
+        $Message = "Canon update $(Get-Date -Format 'yyyy-MM-dd')"
+    }
+}
+if ($bumpedVersion) { $commitBody += "Plugin version $bumpedVersion" }   # `git log --grep <version>` then finds the commit
 
 if ($DryRun) {
     Write-Host "deploy: DRY RUN - would commit with message: $Message" -ForegroundColor Yellow
@@ -309,7 +378,9 @@ if ($strayLate.Count -gt 0 -and -not $AllowNew) {
 git -C $root add -A
 if ($LASTEXITCODE -ne 0) { Fail 'git add failed' 1 }
 
-git -C $root commit -m $Message
+$commitArgs = @('-m', $Message)
+foreach ($paragraph in $commitBody) { $commitArgs += @('-m', $paragraph) }
+git -C $root commit @commitArgs
 if ($LASTEXITCODE -ne 0) { Fail 'git commit failed - staging left in place' 1 }
 
 git -C $root push $remote $branch

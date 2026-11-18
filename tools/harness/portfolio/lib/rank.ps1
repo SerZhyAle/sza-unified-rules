@@ -47,6 +47,27 @@ function Get-PqRankValue($Object, [string]$Name, $Default = $null) {
     return $p.Value
 }
 
+function Get-PqSkipWord([string]$Why) {
+    # The owner's word for one skipped[].why of Get-PqRank - console text only (S0103). held = the registry's
+    # hold flag or a hold row of the queue file; frozen = the repository's own stop file (an owner stop or a release
+    # freeze, rule 26); disabled = enabled is false in the registry. The why values and every event payload keep
+    # their names: excluded.held of rank.result still counts all three, held of wait.enter the first two.
+    switch -CaseSensitive ($Why) {
+        'hold' { return 'held' }
+        'heldByQueue' { return 'held' }
+        'stopped' { return 'frozen' }
+        default { return $Why }
+    }
+}
+
+function Get-PqRankTitle($Head) {
+    # What a ticket is called on screen and in dispatch.pick: the ledger's optional `title` (TASK-FLOW rule 3) when
+    # the head carries a non-blank one, else its `name`. A ticket is always addressed by its id, never by this text.
+    $t = ([string](Get-PqRankValue $Head 'title' '')).Trim()
+    if ($t) { return $t }
+    return [string](Get-PqRankValue $Head 'name' '')
+}
+
 function Get-PqRankIds($Items) {
     return @(foreach ($x in @($Items)) {
             if ($null -eq $x) { continue }
@@ -389,7 +410,7 @@ function Get-PqRank {
         $active[$Entry.repo].picks++
         $plan.Add([ordered]@{ slot = $plan.Count + 1; repo = $Entry.repo; id = $id; rule = $Entry.rule; source = $Entry.source
                 score = $Entry.score
-                priority = Get-PqRankValue $Head 'priority'; status = Get-PqRankValue $Head 'status'; title = Get-PqRankValue $Head 'name' })
+                priority = Get-PqRankValue $Head 'priority'; status = Get-PqRankValue $Head 'status'; title = Get-PqRankTitle $Head })
     }
     if ($Fill -ceq 'depth') {
         foreach ($e in $entries) {
@@ -450,7 +471,7 @@ function Get-PqRank {
         }
         $candidates.Add([ordered]@{ repo = $e.repo; id = $w.id; rule = $e.rule; source = $e.source; score = $e.score; package = $e.package
                 row = $e.row; priority = Get-PqRankValue $w.head 'priority'; status = Get-PqRankValue $w.head 'status'
-                title = Get-PqRankValue $w.head 'name'; alt = $alt.ToArray() })
+                title = Get-PqRankTitle $w.head; alt = $alt.ToArray() })
     }
     foreach ($k in $active.Keys) {
         $st = $active[$k]

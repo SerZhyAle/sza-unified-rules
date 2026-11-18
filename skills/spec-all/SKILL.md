@@ -10,7 +10,7 @@ part that is the same in every project and was missing outside FastMediaSorter_m
 its lease so two sessions never work it at once, picking the stage the ticket's status says it is at, and handing
 the lease back. One ticket, one pass, then stop - a loop over the queue is the portfolio runner (`pq`), not this.
 
-`/sa` is the same command (skill `sa`); the arguments are the same.
+`/sa` is the same command, through the project's forwarder in `.claude/commands/`; the arguments are the same.
 
 A project that ships its own `.claude/commands/spec-all.md` (FastMediaSorter_mob_v2) has its own pipeline with its
 own stages, paths and flags (`-m`); in that project that file is the command and this skill is not used.

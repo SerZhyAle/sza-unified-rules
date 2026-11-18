@@ -1,6 +1,6 @@
 ---
 name: spec-draft
-description: Capture a task description or a problem as a Draft ticket in any SZA project - the owner's words kept verbatim in the spec, the row added to the project's own ticket queue (PLAN/RELEASE_QUEUE.md), and a plain report of whether the portfolio queue (pq) will pick it up and when. Use on /spec-draft, "draft a spec", "park this task", "add a bug to pq", "put this in the queue of <project>", or on the Russian phrasings - "создай спеку", "спека для проекта", "закинь задачу в очередь", "добавь баг в pq", "задача для <проект>", "зафиксируй проблему в проекте". It also captures agent-noticed findings; it does not work the ticket or research it.
+description: Capture a task description or a problem as a Draft ticket in any SZA project - the owner's words kept verbatim in the spec, the row added to the project's own ticket queue (PLAN/RELEASE_QUEUE.md), and a plain report of whether the portfolio queue (pq) will pick it up and when. Use on /spec-draft, "draft a spec", "park this task", "add a bug to pq", "put this in the queue of <project>", or on the Russian phrasings - "создай спеку", "спека для проекта", "закинь задачу в очередь", "добавь баг в pq", "задача для <проект>", "зафиксируй проблему в проекте", "создай тикеты во всех проектах", "один тикет в несколько проектов". It also captures agent-noticed findings; it does not work the ticket or research it.
 ---
 
 # Spec draft - one task into a project's queue and the portfolio queue
@@ -25,6 +25,8 @@ This skill captures and reports. It does **not** research, approve, plan or buil
 /spec-draft <free-form description>              the project holding the current folder
 /spec-draft <project-key> <free-form description>  a key from `pq list`
 /spec-draft <slug>                                 an explicit kebab-case name for the ticket
+/spec-draft <key1>,<key2>,.. <free-form description>   the same ticket into each of those projects (a campaign)
+/spec-draft --all [--skip <key>,..] <free-form description>   every enabled project except the sandboxes
 ```
 
 Optional words in the request: `urgent`/`срочно` (hotfix - an urgent blocker, which `pq` works **first**: the script
@@ -89,6 +91,19 @@ when nothing is numbered yet), from the project's own `PLAN/TICKET_TEMPLATE.md` 
 queue row is written, so `pq` cannot work it - the result line says `pq=no-task-flow` and `priority=-`. `-Attach` works
 there too; `-DedupQuery` searches the ticket files' names and first lines.
 
+**One text for several projects is one call, not a loop.** In place of `-Project`, pass `-Projects <key1,key2,..>`
+(registered keys only) or `-AllEnabled [-Skip <key,..>]`: the same slug and text are captured into each target, then
+the portfolio queue is refreshed once and `pq` is asked once. The script prints one `drafted` line per ticket
+(`position=0/0` - the position is not computed in this form) and ends with `campaign <slug>: <n> drafted, <m> failed`.
+Exit 1 means at least one target was not filed; the line above the last names it, and a rerun takes `-Projects` with
+only those keys. `-AllEnabled` leaves out a project whose key contains `sandbox`; name it in `-Projects` to file
+there. Add `-Parent <key>:<id>` when an existing ticket must wait for all of them: one `Blocker: <key>:<id>` line per
+child is written into that ticket's spec and its status is left alone. `pq` already holds a ticket whose spec names
+an unreleased ticket of another project (TASK-FLOW rule 52); move it to `BlockByOtherTask` with that project's
+`update.ps1` when the wait should also show in its status. A campaign never pins (`-Pin` is refused and a `hotfix-`
+slug is not pinned), lifts no hold and enables nothing. It is a desk command: run it from a session the owner is in, not
+from an unattended robot pass.
+
 | Exit | Meaning | What to do |
 | --- | --- | --- |
 | 0 | the ticket exists | Step 4 |
@@ -134,3 +149,4 @@ only when the ticket records an actual question that needs the owner's answer.
 | Step 3 | an invalid slug (a bare `hotfix-` included), a missing or empty text file, an unknown project, a profile with no ledger, a missing, unreadable, folder or repeated `-Attach` path |
 | Step 3 | a dedup hit on a closed ticket without `-AllowClosedDuplicate` |
 | Step 3 | `-Pin` for a project `pq` will not dispatch |
+| Step 3 | a campaign with `-Pin`, with `-Project`, with both `-Projects` and `-AllEnabled`, with an unknown key in `-Projects` or `-Skip`, or with a `-Parent` that names no ticket or an archived one; `-Skip` or `-Parent` without a campaign |

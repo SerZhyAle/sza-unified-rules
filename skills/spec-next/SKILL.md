@@ -8,7 +8,7 @@ description: Work the next ticket of the project's queue without naming it - the
 `/spec-next` is [spec-all](../spec-all/SKILL.md) with the ticket chosen by the project's queue instead of by the
 owner. One ticket, one pass, then stop. A loop over the whole queue is the portfolio runner (`pq`), not this.
 
-`/sn` is the same command (skill `sn`). A ticket the owner names is `/spec-all <id>` (or `/spec-all <key>:<id>`), not this.
+`/sn` is the same command, through the project's forwarder in `.claude/commands/`. A ticket the owner names is `/spec-all <id>` (or `/spec-all <key>:<id>`), not this.
 
 ## Usage
 
@@ -45,8 +45,9 @@ pwsh -NoProfile -WorkingDirectory "<project root>" -File "<root>/tools/harness/s
 ```
 
 The pick and the lease are one call, so two sessions never take the same head. The queue order is the project's own
-(`PLAN/PQ_QUEUE.md` or `PLAN/RELEASE_QUEUE.md`, release package then line order; the ledger's priority is the
-fallback). Never re-derive the pick from priority and never skip the head for a more interesting ticket.
+(the one file its profile names as `paths.releaseQueue`, by default `PLAN/RELEASE_QUEUE.md`: release package, then
+line order; where that file does not exist the order is the ledger's priority, and the result's `order_source` names
+the file that was asked). Never re-derive the pick from priority and never skip the head for a more interesting ticket.
 
 Read `selected` and `selected_none_reason` from the JSON:
 

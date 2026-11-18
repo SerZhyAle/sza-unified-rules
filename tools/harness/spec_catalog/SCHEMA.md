@@ -6,13 +6,13 @@
 
 The two journals are JSONL (one JSON object per line, UTF-8 no BOM) and share the same record schema. See [Archive split](#archive-split) below.
 
-> **Read-only outside the CLI.** Direct edits to any of these files are forbidden by project policy. Use only `scripts/spec_catalog/{insert,update,select,delete,validate}.ps1`.
+> **Read-only outside the CLI.** Direct edits to any of these files are forbidden by project policy. Use only the scripts of this folder (`insert.ps1`, `update.ps1`, `select.ps1`, `delete.ps1`, `validate.ps1` and their siblings); a consuming repository calls them through its forwarder, `pwsh -NoProfile -File tools/harness.ps1 spec_catalog/<name>`.
 
 ## Record fields
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `id` | string | yes | Stable ticket id, format `^S\d{4}$`. Allocated once; never reused. |
+| `id` | string | yes | Stable ticket id, shaped by the profile's `grammar.ticketIdPattern` (default `^S\d{4}$`, see "The id grammar" below). Allocated once; never reused. |
 | `name` | string | yes | Slug - the post-prefix portion of the spec file name. Example: `decompose-giant-files`. No `spec_` prefix. |
 | `status` | string | yes | One of the values listed below. |
 | `priority` | integer | yes | 0..100. Higher = more urgent. See priority guide below. |
@@ -68,19 +68,12 @@ any active state <-> Block{ByOtherTask|NeedUserTest|Questions|External}
 any -> Archived  (soft-delete, never reused)
 ```
 
-## Staleness
-
-The CLI computes "days since `updated`" for the report (`a.ps1 ss`):
-
-- `>= 14d` and status not in `{Verified, Implemented, Archived}` → warn.
-- `>= 30d` under the same constraint → alert. Suggests `/spec-update <id>`.
-
 ## Invariants (validated by `validate.ps1`)
 
 1. Every line is a complete JSON object.
 2. Every record has every required field (including `priority`).
 3. `id` is unique across the journal (active and archived).
-4. `id` matches `^S\d{4}$`.
+4. `id` matches the profile's `grammar.ticketIdPattern` (default `^S\d{4}$`).
 5. `status` is in the enum above.
 6. `priority` is an integer in `0..100`.
 7. `file` is a relative path under `PLAN/`, starts with `PLAN/S\d{4}_`, contains no `_spec_` segment, no `..` components.
@@ -96,15 +89,14 @@ The CLI computes "days since `updated`" for the report (`a.ps1 ss`):
 
 ## Optional fields
 
-All fields below are optional. Absence in any record - old or new - is valid and passes `validate.ps1` without error.
+All fields below are optional. Absence in any record - old or new - is valid and passes `validate.ps1` without error. `title`, `tags` and `type` are read by `search.ps1` and written by no shipped tool.
 
-- `title` (string) - human-readable display name; free text; used by `search.ps1` for substring matching alongside `name` (`-Body` adds the spec file's text; the archive is searched only with `-IncludeArchived`).
+- `title` (string) - human-readable display name, one line of at most 80 characters; written by `update.ps1 -Title "<text>"` (`-Title ""` removes it) and shown by the portfolio queue in place of `name`; used by `search.ps1` for substring matching alongside `name` (`-Body` adds the spec file's text; the archive is searched only with `-IncludeArchived`).
 - `tags` (string array) - thematic labels, e.g. `["tooling","scripts"]`; filterable by `search.ps1 -Tag`.
 - `type` (string) - work kind; one of `feature`, `bugfix`, `tooling`, `research`; filterable by `search.ps1 -Type`.
-- `blocked_by` (string array) - ids of tickets this one depends on, e.g. `["S0099"]`; informational, not enforced by `validate.ps1`.
 - `closed_at` (string) - `YYYY-MM-DD` date of intentional finalization; written by `close.ps1`; absent until the ticket is closed.
-- `has_tactical` (boolean) - `true` when a `PLAN/Sxxxx_*/INDEX.md` tactical folder exists; written by `/spec-tech` during the Tactical status transition.
-- `statusNote` (string) - why the ticket is in its current status; written by `update.ps1 -StatusNote`, **required** on every `Block*` status (a parked ticket must say what it waits for) and removed again when the ticket leaves one. On `BlockQuestions` the note must carry either a literal `Q:` token whose text ends in `?` (S0039) or a literal `DO:` token for a pre-implementation owner action (S0042), and the entry gate refuses the transition without one. On `BlockByOtherTask` the note or section 10 / `**Depends on:**` must carry a machine-readable local (`Sxxxx`) or qualified (`<repoKey>:<id>`) blocker (S2581, S0042). Mirrored into the spec file as a `**Status note:**` header line.
+- `source` (string) - the path that created the ticket: `owner`, `robot`, `import`, `inbox` or `campaign` (TASK-FLOW rule 3). Written once by `insert.ps1` and never changed: its `-Source`, else `import` for the queue sync's own registration (rule 65), else the variable `SZA_TICKET_SOURCE` (the runner sets `robot` for the child of a pass, the inbox ingest sets `inbox`), else `owner`. A row older than the field has none, which is valid; `validate.ps1` warns on a value outside the list and never fails on it.
+- `statusNote` (string) - why the ticket is in its current status; written by `update.ps1 -StatusNote`, **required** on every `Block*` status (a parked ticket must say what it waits for) and removed again when the ticket leaves one. On `BlockQuestions` the note must carry either a literal `Q:` token whose text ends in `?` (S0039) or a literal `DO:` token for a pre-implementation owner action (S0042), and the entry gate refuses the transition without one. On `BlockByOtherTask` the note (a local or a qualified token), the spec file (a qualified token on any line; a local token only under a heading that begins `## 10.`, which the canon ticket form does not have) or the line `**Depends on:**` must carry a machine-readable local (`Sxxxx`) or qualified (`<repoKey>:<id>`) blocker (S2581, S0042). Mirrored into the spec file as a `**Status note:**` header line.
 
 ---
 
@@ -136,7 +128,7 @@ The id shape is the profile's `grammar.ticketIdPattern` (`TASK-FLOW` rule 2): a 
 
 ## Alternate-catalog runs
 
-`$env:FMS_SPEC_CATALOG_DIR` redirects all three journals - active, archive and burned ids - to that directory. `$script:RepoRoot` is deliberately not redirected, so spec `.md` files still resolve from the real `PLAN/` and a sandboxed run reads live spec bodies. A directory that does not exist is a hard error, never a silently created second catalog. Pair it with `$env:FMS_SKIP_RELEASE_QUEUE` so the run does not reconcile the real release plan.
+`$env:SZA_SPEC_CATALOG_DIR` (the name is `<envPrefix>_SPEC_CATALOG_DIR`; the profile's `envPrefix` defaults to `SZA`) redirects all three journals - active, archive and burned ids - to that directory. `$script:RepoRoot` is deliberately not redirected, so spec `.md` files still resolve from the real `PLAN/` and a sandboxed run reads live spec bodies. A directory that does not exist is a hard error, never a silently created second catalog. Pair it with `$env:SZA_SKIP_RELEASE_QUEUE` so the run does not reconcile the real release plan.
 
 `preview.tests/Run-Tests.ps1` is the reference consumer: it snapshots the journals into `temp/scratch/spec-catalog-sandbox-<pid>/`, runs every CLI child against the copy, and asserts against the real journals afterwards that nothing leaked. Before this existed the harness inserted probes into the production journal with real ids; soft delete left them in the archive for good, burning 21 spec ids and once racing a genuine insert into `Duplicate id`.
 
@@ -160,13 +152,28 @@ Shared mechanics:
 - Reading tolerates the pre-S2852 shape - a leading package column, a `yyyy-MM-dd` date with no time - so a half-migrated or stale copy still parses. Writing emits only the current shape, so the first write normalises whatever it read, and `Write-ReleaseFile` emits a missing heading whenever the package changes under it, which is what keeps read/write/read closed.
 - Selection authority: the queue also decides **what gets worked on next**. `spec-next-preflight.ps1` and `release-plan.ps1` rank by release package ascending, then the owner's line order inside the package, then the ready side (`Implemented` rows in `RELEASE_READY.md`, finished content awaiting its audit), then `--` parked lines, then anything in neither file. Catalog `priority` is a tiebreak for unlisted tickets only. With no queue file present the ranking degrades to the old priority order, so a fresh checkout still works.
 - Ownership split: the catalog owns `status`, these files own the package sections and line order. **A script may add a ticket, refresh its status/date, move a line to the sibling file, or drop one that left the active journal - it must never reorder lines or re-home a row into another package.** A ticket keeps its package when it crosses between files.
-- Reconciliation is automatic: `Write-Catalog` calls `Sync-ReleaseQueue`, so every mutation path (insert / update / complete / archive / delete / bulk-update) keeps both files current without any skill knowing they exist. Crossing the ready boundary moves the line - in either direction, so a failed device test or a reopened bug lands back in the queue. `$env:FMS_SKIP_RELEASE_QUEUE` disables the hook (tests, alternate-catalog runs); a missing queue file is a no-op, never an error.
+- Reconciliation is automatic: `Write-Catalog` calls `Sync-ReleaseQueue`, so every mutation path (insert / update / complete / archive / delete / bulk-update) keeps both files current without any skill knowing they exist. Crossing the ready boundary moves the line - in either direction, so a failed device test or a reopened bug lands back in the queue. `$env:SZA_SKIP_RELEASE_QUEUE` (`<envPrefix>_SKIP_RELEASE_QUEUE`) disables the hook (tests, alternate-catalog runs); a missing queue file is never an error: the journal write stands, nothing is reconciled, no file is created, and the first such write of a process prints one line naming the missing path.
 - After local reconciliation, registered projects refresh their rows in the portfolio queue. A failed refresh is reported without rolling back the authoritative catalog; repair with `pq sync -Path <repository>`. An unregistered project is left alone.
 - A ready ticket present in neither file is never auto-added: it shipped in an earlier package.
 - A new ticket is unfinished by definition, so it lands in the queue, at the end of the block named by the `current-next-release:` marker (falling back to the `DEBUG-v0NN` branch name, then `--`).
 - Operator CLI: `release-queue.ps1 -Reconcile | -Validate | -List [-Ready] [-Release N] | -SetCurrent N | -Ship -Release N [-Version X] [-DryRun]`.
-- Shipping: `-Ship` moves the READY block for that package to `PLAN/RELEASE_QUEUE_DONE.md` (newest first) and advances the marker. Unfinished queue lines still assigned to that package are reported, never shipped and never auto-moved - re-sorting them is the owner's call. `/skill-release` Step 12c runs the ship **before** the archive sweep: archiving first flips records to `Archived`, which drops those lines and loses the record of what shipped.
+- Shipping: `-Ship` moves the READY block for that package to `PLAN/RELEASE_QUEUE_DONE.md` (newest first) and advances the marker. Unfinished queue lines still assigned to that package are reported, never shipped and never auto-moved - re-sorting them is the owner's call. A release procedure runs the ship **before** any archive sweep: archiving first flips records to `Archived`, which drops those lines and loses the record of what shipped.
 - All three files live under gitignored `PLAN/`, like the journal itself: working artifacts of this checkout, not tracked documents.
+
+## What the tools do with a ticket
+
+The canon's rule doc ([DEVELOPMENT.md](../../../rules/DEVELOPMENT.md), "Ticket / spec lifecycle") keeps what an author decides: which `Block*` status fits a wait, what its note carries, when the Complexity line is rewritten. What the tools then do with the ticket is written on this page and in no rule doc, because this page ships with the code that does it. The binding text is the `TASK-FLOW` contract, cited here by rule number.
+
+**Waiting on another ticket (rules 52 and 69).** The back-link line and the release are described under `BlockByOtherTask` in "Status values" above. What that entry leaves out:
+
+- The back-link goes into the blocker's spec wherever the blocker lives: in this repository `<ref>` is the waiting ticket's id, in another registered repository it is `<repoKey>:<id>`.
+- The repository's own picker holds a `BlockByOtherTask` ticket whose blocker is a qualified `<repoKey>:<id>` token (auto-skip reason `blocker-cross-repo`, `_auto-skip.ps1`), so a local run never releases it early. The portfolio dispatcher resolves the token against the sibling repository's ledger (`portfolio/lib/xrepo.ps1`) and releases the waiting ticket when the blocker reaches a release-ready status.
+- The line of a released ticket is closed, not removed: it gains `| released: <date> -> <status>`.
+- `block-links.ps1 -Check -Id <waiting>` releases one waiting ticket of this repository that nothing holds any more; it is the call a session makes after removing a `Blocker:` token by hand. `-Sweep [-AllRepos]` writes the back-links that are missing and then checks every `BlockByOtherTask` ticket. `-DryRun` reports and changes nothing.
+
+**The portfolio projection (rule 44).** "Release plan" above describes the reconciliation that follows every ledger write. Central capture (`portfolio/spec-draft.ps1 -Project <key>`) writes the same project ledger and the same local plan as a capture run inside the project, then refreshes that project's rows in the portfolio queue. The refresh keeps a row's status current and the owner's comment with it; it never moves a line and never adds a row under a hold.
+
+**The Complexity line (rule 51).** Capture (`capture-draft.ps1`, `portfolio/spec-draft.ps1`) writes `**Complexity:** medium - not assessed at capture` when the caller names no level. `validate.ps1` reports every `Approved` ticket whose line still says so, as a warning and never as a failure; a spec with no line at all is not reported. The runner (`Get-TicketComplexity` in `batch/run-spec-queue.ps1`) reads the line from the first 40 lines of the spec file on disk at every launch and caches nothing: a revision takes effect at the ticket's next pass, and a child already running is never re-modelled. Under the `shape` model policy the statuses in the profile's `runner.alwaysStrongStatuses` are routed first; after them a recognised level picks the model through the profile's `complexityModels` map, in a `runner.cheapStatuses` status never above the cheap model. A spec without the line, or with a value the reader does not recognise, declares nothing: a cheap status takes the cheap model, every other pass launches on the runner's default model, and a Claude pass is asked to write the line before other ticket work.
 
 ## Why JSONL
 

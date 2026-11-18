@@ -74,17 +74,12 @@ apply (a CLI tool has no site, a single-locale app skips localization).
 
 - Set the git conventions ([GITHUB_INTERACTION.md](GITHUB_INTERACTION.md)): working-tree-is-truth,
   commit/PR shape, co-author/generator trailers, auth hygiene.
-- The first commit of an imported tree turns the gates that compare with HEAD from COULD NOT VERIFY into real checks:
-  run the product's fast gates again after that commit, not only before it (the Android order is in the
-  [Google Play reference](../skills/store-publish/references/google-play.md) section 1).
-- Before the first commit of a repository that `git init` created, check that HEAD names `main`: an unborn branch is named
-  `master` by default, and the Google Play reference pushes `main` (section 1, step 4 there has the check and the lock retry).
-- Before a repository's first public push, scan its history and its images, not only the working tree: an address
-  removed from a ticket stays in every earlier commit, and a screenshot can show an account name. The procedure is in
-  section 1 of the Google Play reference.
-- Before that push, hold the project in the portfolio queue (`pq hold <key>`) or state that the import takes whatever is
-  on disk: a robot writing into the tree during the import changes what gets published. Rerun the gates immediately
-  before `git add -A`.
+- **First commit and first public push** of a new or imported tree, on any platform: before the first commit check that
+  HEAD names `main` (`git init` leaves an unborn `master`); run the product's fast gates again after that commit, because
+  a gate that compares with HEAD reports COULD NOT VERIFY until one exists; before the first public push scan the history
+  and the images, not only the working tree; and hold the project in the portfolio queue (`pq hold <key>`) while the
+  import is prepared. The commands for each step are in sections 0 and 1 of the
+  [Google Play reference](../skills/store-publish/references/google-play.md).
 - Write the release runbook ([RELEASE_AND_DISTRIBUTION.md](RELEASE_AND_DISTRIBUTION.md)): the
   build/release boundary, the coverage-regression gate, the per-channel distribute list, post-release
   checks.
@@ -112,17 +107,9 @@ apply (a CLI tool has no site, a single-locale app skips localization).
   ([SITE_CONFIGURATION.md](SITE_CONFIGURATION.md)) and build pages from the web style kit + the SEO
   block. A site built from sources by a script gets the Pages workflow template
   ([templates/github-pages.yml](../templates/github-pages.yml)), whose check job keeps `core.autocrlf` off.
-- **Android store product (overlay B)?** Stand up its public presence in order, before any bundle: the GitHub
-  repository, the Pages site, the Play Console app with every App content declaration, the listing and the form
-  factors, then the notices to the family and the records. The steps, the five one-way points (the package name binds at
-  the create-app form) and the traps are in the
-  [Google Play reference](../skills/store-publish/references/google-play.md) of the `store-publish` skill; run it
-  with the owner's yes in chat at each one-way point. Before the first push, read the product's publication tickets and
-  ask their open owner inputs in one batch, and count the Play apps: a second package id (a watch face, a companion app)
-  is a second app with its own declarations. Search the account for an earlier app of the same product before the create-app
-  form: an app the store removed is read first (its Policy status and the original notice), and the one-way yes is asked again
-  with that fact in hand. Check the planned title and short description for price words the console flags, even when the
-  word is technical.
+- **Android store product (overlay B)?** Stand up its public presence before any bundle by running the
+  [Google Play reference](../skills/store-publish/references/google-play.md) of the `store-publish` skill from its
+  first line: it holds the order, the one-way points that each take the owner's yes in chat, and the traps.
 - **Support path**: wire the issue tracker + contact email and the diagnostic-log intake
   ([SUPPORT_AND_FEEDBACK.md](SUPPORT_AND_FEEDBACK.md)).
 - **Public product?** Open its promotion ticket before the first public release - positioning worksheet,
@@ -131,10 +118,9 @@ apply (a CLI tool has no site, a single-locale app skips localization).
 ## 8. Reserve the frozen anchors
 
 - Reserve the overlay's **frozen anchors** (package id / identity / signing key / module path) - unique
-  per product, never changed after first ship. Everything else can be reorganized later; these cannot. **On Google
-  Play the `applicationId` is bound when the console app is created**, so reserve it there - before the first upload and
-  before the create-app form is opened ([PLATFORM_OVERLAYS.md](PLATFORM_OVERLAYS.md) Overlay B). The console may bind the
-  decided id before the build carries it; the build switch then belongs to the release ticket that lifts the guard.
+  per product, never changed after first ship. Everything else can be reorganized later; these cannot. An anchor can
+  bind before the first upload; the overlay says when ([PLATFORM_OVERLAYS.md](PLATFORM_OVERLAYS.md) Overlay B for
+  Google Play).
 
 ## 9. First release dry-run
 

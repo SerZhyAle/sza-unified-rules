@@ -11,7 +11,7 @@ leaves, in **any** registered project: it resolves which tickets are waiting, th
 authority and is **not restated here**. What this skill adds is the part that is the same in every project: finding
 the tickets, naming the right project, and the mechanics of asking, writing back and moving.
 
-`/sq` is the same command (skill `sq`); the arguments are the same.
+`/sq` is the same command, through the project's forwarder in `.claude/commands/`; the arguments are the same.
 
 ## Usage
 
@@ -27,7 +27,7 @@ the tickets, naming the right project, and the mechanics of asking, writing back
 ```
 
 `--all` is the portfolio sitting, started from any folder - the `PQ Answer questions` shortcut and the PQShell button
-`Answer questions (N)` open a terminal in the canon checkout running `claude "/sza:sq --all"`.
+`Answer questions (N)` open a terminal in the canon checkout running `claude "/sza:spec-quiz --all"`.
 
 A project that ships its own `.claude/commands/spec-quiz.md` (FastMediaSorter_mob_v2) has its own implementation of
 the same procedure, with its own tool paths; in that project follow that file for the paths and this skill for the

@@ -399,11 +399,15 @@ foreach ($cand in $rankedLive) {
     # Tested BEFORE the verdict: a held ticket is already decided. The series is read from the run
     # journals, so it costs one cached file walk for the whole loop.
     $idleSeries = Get-IdleRunSeries -Id $cand.id
-    if ($idleSeries.Count -ge (Get-IdleRunPolicy).Threshold) {
+    # The hold and its lift are one test (Test-IdleRunHeld, TASK-FLOW rule 24): a ticket whose spec file was
+    # edited after its newest counted run is offered once more.
+    $idleSpecPath = ''
+    try { $idleSpecPath = Join-Path $projectRoot ([string]$cand.file) } catch { $idleSpecPath = '' }
+    if (Test-IdleRunHeld -Id ([string]$cand.id) -SpecPath $idleSpecPath) {
         $autoSkipped += [PSCustomObject]@{
             id     = $cand.id
             reason = 'idle-hold'
-            detail = ("{0} run(s) in a row did not move the status, last outcome '{1}' at {2} - held until the status moves; an explicit id is never held" -f `
+            detail = ("{0} run(s) in a row did not move the status, last outcome '{1}' at {2} - held until the spec file is edited or a run moves the status; an explicit id is never held" -f `
                     $idleSeries.Count, $idleSeries.LastOutcome, $idleSeries.LastFinishedAt)
         }
         continue
@@ -562,6 +566,7 @@ $rankedOut = @($rankedLive | ForEach-Object {
     [PSCustomObject]@{
         id       = $_.id
         name     = $_.name
+        title    = (Get-AutoSkipField $_ 'title')
         status   = $_.status
         priority = [int]$_.priority
         updated  = [string]$_.updated

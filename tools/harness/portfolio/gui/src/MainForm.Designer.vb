@@ -244,7 +244,7 @@ Partial Class MainForm
         Me.btnAnswer.MinimumSize = New Size(140, 36)
         Me.btnAnswer.AccessibleName = "Answer questions"
         Me.btnAnswer.AccessibleRole = AccessibleRole.PushButton
-        Me.tipMain.SetToolTip(Me.btnAnswer, "Opens a terminal in the canon checkout running claude ""/sza:sq --all"" - one sitting over the waiting questions of every project")
+        Me.tipMain.SetToolTip(Me.btnAnswer, "Opens a terminal in the canon checkout running claude ""/sza:spec-quiz --all"" - one sitting over the waiting questions of every project")
 
         ' Parameterized command with ellipsis per BUTTONS
         Me.btnNewSpec.Name = "btnNewSpec"

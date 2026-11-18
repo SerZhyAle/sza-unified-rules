@@ -60,22 +60,6 @@ $Script:SzaProfileDefaults = [ordered]@{
         # The release ledger's folder (RELEASE-LEDGER rule 1, HARNESS-PROFILE 0.18 rule 14): channels.json,
         # builds.json, history.jsonl and the rendered RELEASES.md, written by releases/release-ledger.ps1.
         releasesDir      = 'docs/releases'
-        # The fallback names of a repository's own ticket queue, tried in order by Get-PqTicketQueuePath
-        # (portfolio/lib/queue-file.ps1) when neither the registry record nor the repository's
-        # .sza-profile.json names one. Declared here rather than in that function's body because a path
-        # literal belongs in this file alone; a project replaces the whole list (arrays replace) when its
-        # repositories keep queues under other names, and an empty list means "no fallback names".
-        queueCandidates  = @(
-            'PLAN/RELEASE_QUEUE.md',
-            'PLAN/release-queue.md',
-            'DEV/plan/RELEASE_QUEUE.md',
-            'docs/specifications/RELEASE_QUEUE.md',
-            'PLAN/INDEX.md',
-            'PLAN/spec-catalog.jsonl',
-            'PLAN/README.md',
-            'tasks/README.md',
-            'tasks/INDEX.md'
-        )
         tempDir          = 'temp'
         locksDir         = 'temp'
         leasesDir        = 'temp/SPEC-TICKET.LEASES'
@@ -84,7 +68,6 @@ $Script:SzaProfileDefaults = [ordered]@{
         agentChatDir     = 'temp/AGENT-CHAT'
         queueRunsDir     = 'temp/spec-queue'
         queueStopFile    = 'temp/STOP-SPEC-QUEUE'
-        specAllQueueLock = 'temp/spec-all-queue.lock'
         skipCache        = 'temp/spec-next-skip-cache.json'
         migrateDoneDir   = 'temp/done'
         # Read by batch/dev-monitor-snapshot.ps1, written by the PROJECT - a gate-telemetry lib, a

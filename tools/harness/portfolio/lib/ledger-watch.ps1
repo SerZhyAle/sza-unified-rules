@@ -474,3 +474,44 @@ function Update-PqEnteredAt {
     }
     foreach ($id in @($EnteredAt.Keys)) { if (-not $now.Contains($id)) { $EnteredAt.Remove($id) } }
 }
+
+function Get-PqRobotFiled {
+    # The robot-filed tickets of one local day (TASK-FLOW rule 41, robotDraftCap): the rows of the ledger and of the
+    # archive whose `source` is `robot` and whose `created` is -Day (yyyy-MM-dd), ids in ordinal order. counted is
+    # every such id; capped is the ones past the first -Cap whose status still reads Draft. Nothing is kept between
+    # calls, and a row with another `source`, or with none, is never counted. Only a line that holds both the text
+    # "robot" and the day is parsed. ok is false when a file exists and cannot be read. Never written, never locked.
+    param([string]$RepoPath, [Parameter(Mandatory)][string]$Day, [int]$Cap = 20, $Paths)
+    $result = [pscustomobject][ordered]@{ day = $Day; ok = $true; counted = [string[]]@(); capped = [string[]]@() }
+    if ($null -eq $Paths) { $Paths = Get-PqRepoPaths -RepoPath $RepoPath }
+    $statusOf = [Collections.Generic.Dictionary[string, string]]::new([StringComparer]::Ordinal)
+    foreach ($isArchive in @($false, $true)) {
+        $path = if ($isArchive) { [string]$Paths.Archive } else { [string]$Paths.Ledger }
+        if (-not [IO.File]::Exists($path)) { continue }
+        $text = $null
+        try {
+            $fs = [IO.FileStream]::new($path, [IO.FileMode]::Open, [IO.FileAccess]::Read, ([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
+            try { $text = [IO.StreamReader]::new($fs, [Text.UTF8Encoding]::new($false)).ReadToEnd() } finally { $fs.Dispose() }
+        }
+        catch { $result.ok = $false; return $result }
+        foreach ($raw in $text.Split("`n")) {
+            if (-not ($raw.Contains('"robot"') -and $raw.Contains($Day))) { continue }
+            $row = $null
+            try { $row = ConvertFrom-Json -InputObject $raw.Trim().TrimStart([char]0xFEFF) -DateKind String -NoEnumerate } catch { continue }
+            if ($row -isnot [Management.Automation.PSCustomObject]) { continue }
+            $id = Get-PqLwText $row 'id'
+            if ([string]::IsNullOrEmpty($id) -or $statusOf.ContainsKey($id)) { continue }
+            if ((Get-PqLwText $row 'source') -cne 'robot' -or (Get-PqLwText $row 'created') -cne $Day) { continue }
+            $statusOf[$id] = $(if ($isArchive) { 'Archived' } else { [string](Get-PqLwText $row 'status') })
+        }
+    }
+    $ids = [string[]]@($statusOf.Keys)
+    [Array]::Sort($ids, [StringComparer]::Ordinal)
+    $capped = [Collections.Generic.List[string]]::new()
+    for ($i = [Math]::Max(0, $Cap); $i -lt $ids.Length; $i++) {
+        if ($statusOf[$ids[$i]] -ceq 'Draft') { $capped.Add($ids[$i]) }
+    }
+    $result.counted = $ids
+    $result.capped = [string[]]$capped.ToArray()
+    return $result
+}

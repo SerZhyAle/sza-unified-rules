@@ -1,4 +1,4 @@
-#requires -Version 7.0
+﻿#requires -Version 7.0
 # The inbox ingest (S0046): a claimed packet -> a real Draft ticket through the shared capture path, the result
 # written beside the manifest, the packet moved to done/ or failed/, and one event line per decision.
 #
@@ -277,6 +277,9 @@ function Invoke-InboxCapture {
     $psi.ArgumentList.Add($TextFile)
     if ($Attach) { $psi.ArgumentList.Add('-Attach'); $psi.ArgumentList.Add($Attach) }
     if ($DedupQuery) { $psi.ArgumentList.Add('-DedupQuery'); $psi.ArgumentList.Add($DedupQuery) }
+    <# TASK-FLOW rule 3: the row of a ticket filed from a phone packet says `inbox`. The variable reaches
+       insert.ps1 through spec-draft.ps1 and whichever capture script the project uses; no argument is added. #>
+    $psi.Environment['SZA_TICKET_SOURCE'] = 'inbox'
     $psi.UseShellExecute = $false
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true

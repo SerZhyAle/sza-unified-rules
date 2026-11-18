@@ -792,6 +792,16 @@ repo-b
         $again = & pwsh -NoProfile -File $installer -Desktop $desk -RootDir $root | Out-String
         Assert-That ($again -match '0 created, 0 updated, 16 unchanged, 0 removed, 1 foreign' -and $again -match '0 created, 0 updated, 17 unchanged, 0 removed, 0 foreign') "second run was not a no-op: $again"
 
+        # A quiz shortcut written before the command was renamed is still ours and is brought to the current command.
+        $quizPath = Join-Path $root 'PQ Answer questions.lnk'
+        $former = $shell.CreateShortcut($quizPath)
+        Assert-That ($former.Arguments -match "claude '/sza:spec-quiz --all'") "quiz shortcut arguments: $($former.Arguments)"
+        $former.Arguments = '-NoExit -Command "claude ''/sza:sq --all''"'
+        $former.Save()
+        $healed = & pwsh -NoProfile -File $installer -Where Root -RootDir $root | Out-String
+        Assert-That ($healed -match '0 created, 1 updated, \d+ unchanged, 0 removed, 0 foreign') "a former quiz shortcut was not updated: $healed"
+        Assert-That ($shell.CreateShortcut($quizPath).Arguments -match "claude '/sza:spec-quiz --all'") 'the former quiz shortcut kept the old command'
+
         $only = & pwsh -NoProfile -File $installer -Where Root -RootDir $root -DryRun | Out-String
         Assert-That ($only -notmatch 'desktop' -and $only -match '17 unchanged|would update') "-Where Root touched the desktop: $only"
 

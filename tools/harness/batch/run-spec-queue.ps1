@@ -1673,6 +1673,9 @@ while ($true) {
     } elseif ($psi.Environment.ContainsKey((Get-SzaEnvName 'AGENT_ID'))) {
         $psi.Environment.Remove((Get-SzaEnvName 'AGENT_ID'))
     }
+    <# TASK-FLOW rule 3: a ticket this child files is born inside an unattended pass, and insert.ps1 writes
+       source `robot` for it. Set for the child alone - never in this runner's own environment. #>
+    $psi.Environment['SZA_TICKET_SOURCE'] = 'robot'
     if ($trialContext -and $isClaudeChild -and (Test-ChildHelpLists '--strict-mcp-config')) {
         # The third trial control, and the only one that is an environment variable: five-minute
         # prompt caching, set into the CHILD's environment alone - never a repository's settings
@@ -2217,7 +2220,7 @@ while ($true) {
         Write-Host ("  {0} did not move - dropped for the rest of this run." -f $id) -ForegroundColor DarkYellow
     }
     if ($series.Count -ge (Get-IdleRunPolicy).Threshold) {
-        Write-Host ("  {0}: {1} run(s) in a row without a status move, last '{2}' - automatic ranking will pass it over until the status moves." -f `
+        Write-Host ("  {0}: {1} run(s) in a row without a status move, last '{2}' - automatic ranking will pass it over until its spec file is edited or a run moves the status." -f `
                 $id, $series.Count, $series.LastOutcome) -ForegroundColor DarkYellow
         Write-Host ("  it is marked [idle {0}, {1}] in {2}; run it by name to override." -f `
                 $series.Count, $series.LastOutcome, (Get-SzaPath 'releaseQueue' -Relative)) -ForegroundColor DarkGray

@@ -229,8 +229,15 @@ function Read-BlFile([string] $Path) {
 function Write-BlFile([string] $Path, $Doc, [string] $Text) {
     $tmp = "$Path.blocklinks.tmp"
     $bytes = [Text.UTF8Encoding]::new($Doc.bom).GetPreamble() + [Text.UTF8Encoding]::new($false).GetBytes($Text)
+    # A back-link is bookkeeping about ANOTHER ticket, not an edit of this one, so the file keeps its last write
+    # time: the readers that take a newer spec file for an edit (the idle hold's lift, TASK-FLOW rule 24; the
+    # portfolio drop, rule 43) must not spend a pass on it. Best effort - a time that cannot be read or set
+    # leaves the write as it always was.
+    $stamp = $null
+    try { if ([IO.File]::Exists($Path)) { $stamp = [IO.File]::GetLastWriteTimeUtc($Path) } } catch { $stamp = $null }
     [IO.File]::WriteAllBytes($tmp, [byte[]]$bytes)
     Move-ReplaceFile -Source $tmp -Destination $Path
+    if ($null -ne $stamp) { try { [IO.File]::SetLastWriteTimeUtc($Path, $stamp) } catch { } }
 }
 
 # The section's line range in a list of lines: @{ start (heading index); end (exclusive) } or $null.

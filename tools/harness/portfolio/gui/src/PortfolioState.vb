@@ -261,7 +261,7 @@ Public Class PortfolioState
     End Function
 
     ''' <summary>
-    ''' Resolves the ticket queue file for a repository (defaulting to PLAN/RELEASE_QUEUE.md or reading .sza-profile.json paths.releaseQueue).
+    ''' The ticket queue file of a repository: the path its .sza-profile.json names as paths.releaseQueue, else PLAN/RELEASE_QUEUE.md. The file may not exist - the caller says so; no other name is tried.
     ''' </summary>
     Public Shared Function GetTicketQueuePath(repo As RepoInfo) As String
         If repo Is Nothing OrElse String.IsNullOrWhiteSpace(repo.Path) Then Return ""
@@ -275,8 +275,7 @@ Public Class PortfolioState
                         If doc.RootElement.ValueKind = JsonValueKind.Object AndAlso doc.RootElement.TryGetProperty("paths", paths) Then
                             Dim customRel = Str(paths, "releaseQueue")
                             If Not String.IsNullOrWhiteSpace(customRel) Then
-                                Dim full = If(Path.IsPathFullyQualified(customRel), customRel, Path.Combine(repoPath, customRel))
-                                If File.Exists(full) Then Return full
+                                Return If(Path.IsPathFullyQualified(customRel), customRel, Path.Combine(repoPath, customRel))
                             End If
                         End If
                     End If
@@ -284,22 +283,6 @@ Public Class PortfolioState
             Catch
             End Try
         End If
-
-        Dim candidates = {
-            "PLAN\RELEASE_QUEUE.md",
-            "PLAN\release-queue.md",
-            "DEV\plan\RELEASE_QUEUE.md",
-            "docs\specifications\RELEASE_QUEUE.md",
-            "PLAN\INDEX.md",
-            "PLAN\spec-catalog.jsonl",
-            "PLAN\README.md",
-            "tasks\README.md",
-            "tasks\INDEX.md"
-        }
-        For Each cand In candidates
-            Dim full = Path.Combine(repoPath, cand)
-            If File.Exists(full) Then Return full
-        Next
 
         Return Path.Combine(repoPath, "PLAN\RELEASE_QUEUE.md")
     End Function
@@ -570,10 +553,13 @@ Public Class PortfolioState
 
     ' ---- idle-run series (the walk of batch/_idle-runs.ps1 Get-IdleRunMap) ----
 
-    ' Outcomes that count as idle when the repository's profile (runner.idleOutcomes) does not say, and the one that is
-    ' neutral: a run that ended on the account's usage limit says nothing about the ticket, so the walk steps over it.
-    Private Shared ReadOnly IdleDefaultOutcomes As String() = {"ok", "timeout", "claim-lost", "claim-lost-before-launch", "no-progress-or-claim-lost", "launch-failed"}
-    Private Shared ReadOnly IdleNeutralOutcomes As String() = {"limit-hit"}
+    ' Outcomes that count as idle when the repository's profile (runner.idleOutcomes) does not say, and the three that
+    ' are neutral: a run that ended on the account's usage limit, a claim lost before the launch and a failed launch say
+    ' nothing about the ticket, so the walk steps over them (TASK-FLOW rule 24). The picker also lifts a hold when the
+    ' spec file was edited after the newest counted run (_idle-runs.ps1 Test-IdleRunLifted); this copy does not apply
+    ' that lift yet, so a ticket can still show as held here after the picker offers it again.
+    Private Shared ReadOnly IdleDefaultOutcomes As String() = {"ok", "timeout", "claim-lost", "no-progress-or-claim-lost"}
+    Private Shared ReadOnly IdleNeutralOutcomes As String() = {"limit-hit", "claim-lost-before-launch", "launch-failed"}
 
     Private Class IdleRun
         Public At As DateTime

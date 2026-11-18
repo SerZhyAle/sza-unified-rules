@@ -128,6 +128,39 @@ function Get-PqWaitReasons {
     return $why
 }
 
+function Get-PqWaitWords {
+    # The counts of Get-PqWaitReasons in the owner's words, for the console only (S0103) - never for an event:
+    # wait.enter keeps the keys of -Why. The event's one 'held' is split into held and frozen (Get-PqSkipWord in
+    # rank.ps1), and a disabled repository, which the event does not count, is named; it replaces 'none'.
+    param($Rank, $Why)
+    $frozen = 0
+    $disabled = 0
+    if ($null -ne $Rank) {
+        foreach ($s in @($Rank.skipped)) {
+            if ($null -eq $s) { continue }
+            $word = Get-PqSkipWord ([string]$s.why)
+            if ($word -ceq 'frozen') { $frozen++ }
+            elseif ($word -ceq 'disabled') { $disabled++ }
+        }
+    }
+    $words = [ordered]@{}
+    if ($null -ne $Why) {
+        foreach ($k in @($Why.Keys)) {
+            $name = [string]$k
+            $n = [int]$Why[$k]
+            if ($name -ceq 'held') {
+                if (($n - $frozen) -gt 0) { $words['held'] = $n - $frozen }
+                if ($frozen -gt 0) { $words['frozen'] = $frozen }
+            }
+            elseif ($name -cne 'none' -or $disabled -eq 0) { $words[$name] = $n }
+        }
+    }
+    if ($frozen -gt 0 -and -not $words.Contains('frozen')) { $words['frozen'] = $frozen }
+    if ($disabled -gt 0) { $words['disabled'] = $disabled }
+    if ($words.Count -eq 0) { $words['none'] = 1 }
+    return $words
+}
+
 function Register-PqLift {
     param([Parameter(Mandatory)][hashtable]$Lifts, [Parameter(Mandatory)][string]$Key, [Parameter(Mandatory)][datetime]$Now, [int]$Max = 3, [int]$WindowMinutes = 60)
     $cut = $Now.AddMinutes(-$WindowMinutes)

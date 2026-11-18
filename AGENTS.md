@@ -31,7 +31,7 @@ Add or update smoke cases with every hook behavior or pre-filter change. Test bo
 
 ## Commit & Pull Request Guidelines
 
-Recent commits use short imperative subjects, for example `Canon update 2026-09-22` or `Reorganize the contracts catalog by function`. Keep commits focused. PRs should explain the rule or behavior changed, list validation run, link the relevant issue/spec when one exists, and include before/after output or screenshots for user-visible behavior. Land shared rule fixes here first; consuming repositories should receive them through the plugin release.
+Recent commits use short imperative subjects, for example `Canon update 2026-09-22` or `Reorganize the contracts catalog by function`. Keep commits focused. Commit on the checked-out branch (`main`) and do not create a branch for a commit unless the owner asks: a deploy pushed from another branch reaches no consumer, because the plugin follows `main`. This repository takes no pull requests. Land shared rule fixes here first; consuming repositories should receive them through the plugin release.
 
 ## Codex Operating Contract
 

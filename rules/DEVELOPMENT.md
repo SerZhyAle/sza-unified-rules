@@ -72,11 +72,13 @@ compile-only -> targeted tests -> minified release variant -> device) lives in
   keeping a scheme of its own; an existing repository's own scheme survives only as a **dated exception**
   in the shared contracts registry ([CONTRACTS.md](CONTRACTS.md) §4). The discipline is the same
   everywhere: one authoritative ticket record, mutated through its tool, status synced into the file.
-- **The portfolio queue follows the project ledger.** Register each project with `pq`; every ticket creation
-  and status transition reconciles its local release plan and then its portfolio projection. Central capture
-  writes the same project ledger and local plan. Implemented work leaves the active queue; reopened work returns.
-  Preserve the owner's ordering and holds. Report a failed projection and repair it with `pq sync -Path <project>`;
-  never claim that an unregistered or unreachable project is synchronized.
+- **What the tools do with a ticket is written beside the tools, not here.** The lines the status tools
+  write, the plan and portfolio-queue projection, who releases a waiting ticket, the spec file's move and the
+  runner's reading of the Complexity line are in [SCHEMA.md](../tools/harness/spec_catalog/SCHEMA.md)
+  (contract `TASK-FLOW`); this section keeps what an author decides. The line order and the holds of a
+  queue file are the owner's: a session does not rearrange them. When a tool reports a failed projection,
+  say so and repair it with `pq sync -Path <project>`; never claim that an unregistered or unreachable
+  project is synchronized.
 - **Out-of-scope findings are parked, not fixed inline** when they are unrelated, non-trivial, and need
   their own research: dedup by symptom first, capture the symptom/evidence in a fresh draft ticket,
   report it, and resume the original task. Never switch the active ticket for a parked finding. Trivial
@@ -89,23 +91,19 @@ compile-only -> targeted tests -> minified release variant -> device) lives in
   device, at the desk, or in an outside console account that must happen **before** implementation can proceed
   is not `BlockNeedUserTest`: record `- **DO:** <action>` under `### 3.3 Owner inputs (Approval gate)` and park
   the ticket in `BlockQuestions` with `DO: <action>` in `statusNote`, where `/sq` (`spec-quiz`) shows the `DO:`
-  line and takes the result as the owner input.
+  line and takes the result as the owner input. A question only the owner can answer parks the ticket in
+  `BlockQuestions` too, with a literal `Q: ..?` token in `statusNote`.
 - **Cross-repository waits inside the portfolio use `BlockByOtherTask`, never `BlockExternal`.** When a ticket
   waits on work in another registered repository (the canon included), file the needed ticket there with
-  `spec-draft.ps1 -Project <key>`, write `Blocker: <key>:<id>` in section 10 or `statusNote`, and set
-  `BlockByOtherTask`. The local picker holds a `BlockByOtherTask` ticket whose blocker is a qualified
-  `<key>:<id>` token so it is not released prematurely, while the portfolio dispatcher resolves `<key>:<id>`
-  against the sibling ledger and releases the waiting ticket when the blocker reaches a release-ready status.
-  `BlockExternal` is reserved for parties outside the portfolio (vendors, upstream maintainers, store reviews,
-  hardware shipment).
-- **A blocker carries a back-link to every ticket it holds, and the work that moves it frees them** (TASK-FLOW
-  rule 69). Entering `BlockByOtherTask` writes `- Blocks: <ref> | was: <status> | since: <date>` under
-  `## Blocked tickets` in each blocker's spec, in this repository or another registered one. Every status move
-  of the blocker checks those lines and returns each waiting ticket whose blockers are all released to its
-  `was` status, so the runners pick it up again without anyone remembering it. The status tools do this; a
-  session never edits the lines or unblocks by hand. When a dependency ends for a reason no status shows, the
-  session that knows it removes the `Blocker:` token from the waiting ticket and runs `block-links.ps1 -Check`
-  for it.
+  `spec-draft.ps1 -Project <key>`, write `Blocker: <key>:<id>` in `statusNote` (or bare on a line of its own
+  under `### 3.3 Owner inputs (Approval gate)` of the spec file), and set
+  `BlockByOtherTask`. `BlockExternal` is reserved for parties outside the portfolio (vendors, upstream
+  maintainers, store reviews, hardware shipment).
+- **A session never frees a waiting ticket by hand.** The status tools write the back-links into the blocker's
+  spec and return a waiting ticket to work when its blockers are released (`TASK-FLOW` rule 69); a session
+  neither edits a `Blocks:` line nor moves the waiting ticket itself. When a dependency ends for a reason no
+  status shows, the session that knows it removes the `Blocker:` token from the waiting ticket and runs
+  `block-links.ps1 -Check` for it.
 - **Where a machine must know direction, require a literal token - never infer it from prose.** A ticket's
   "related tickets" prose names blockers, successors, consumers and neighbours in the same breath, and it
   is equally happy to *deny* a relationship: measured on the reference corpus, **98 spec files yield a
@@ -148,19 +146,13 @@ compile-only -> targeted tests -> minified release variant -> device) lives in
   contains a decision (a new subsystem, a change across layers or modules, lifecycle, concurrency,
   persistence or a migration, a harness or canon mechanism, or a question research has not answered yet).
   In doubt, the higher level. It is never an estimate: no hours, no line count, no cost.
-- **Two checkpoints, and the capture default does not survive the first.** A capture tool writes
+- **Two checkpoints, and the capture default does not survive the first.** A captured ticket arrives reading
   `**Complexity:** medium - not assessed at capture`. Before `Draft -> Approved` - the spec pass - the
   author reads the level against what the research found and rewrites the Complexity line even when the
   level stands (`<level> - assessed at the spec pass: <what was found>`), because an untouched default
-  cannot be told apart from a confirmed one. A ticket past that point therefore never still reads "not
-  assessed at capture", and the ticket tool reports one that does, as a warning only. Before `Tactical` -
-  the plan pass - the author reads the level against the plan (files touched, decisions found, risks) and
-  rewrites the Complexity line only when the plan disagrees: `<new> - revised from <old>: <what was found>`.
-- **The Complexity line is read at every launch.** A runner maps the level to a model through its profile
-  and reads the spec as it is on disk each time it launches the ticket, so a revision takes effect at the
-  ticket's next pass and a child already running is never re-modelled. The owner overrules by editing the
-  line. A spec without a Complexity line, or with a value outside the three levels, keeps the runner's
-  earlier routing.
+  cannot be told apart from a confirmed one. Before `Tactical` - the plan pass - the author reads the level
+  against the plan (files touched, decisions found, risks) and rewrites the Complexity line only when the
+  plan disagrees: `<new> - revised from <old>: <what was found>`. The owner overrules by editing the line.
 
 ## 9. Dead-weight & AI-tell hygiene
 
@@ -385,7 +377,10 @@ The machinery that makes the hygiene rules (§9) and the parity gates (§12) run
   costs no more than per-change fixing. Keep it **per-change** when any one holds: later work builds on the
   defect (compilation, resource linking, a migration, a cross-module contract); the evidence exists only at
   the moment of the change (the author's intent, a ticket state a probe is bound to); or agents read the
-  artifact between releases, where staleness poisons decisions. Two corollaries. A relocation is **a script
+  artifact between releases, where staleness poisons decisions. Per-change placement does not lift the 5 s
+  line: a per-change gate that takes longer than 5 seconds is not run after an edit - it is written into the
+  ticket as a `RELEASE` item naming the command, and the declared compile-only run of an unattended pass is
+  the only exception ([TESTING_AND_QA.md](TESTING_AND_QA.md) §2). Two corollaries. A relocation is **a script
   with an exit code**, never a line of prose - gated rules hold at ~99% and prose rules at 1-8%, so moving a
   rule in prose changes its force rather than its stage. And **age is not the test**: "we were burned by this
   long ago" describes no gate in a repo whose gates are all months old. A new gate names its scope class at
@@ -401,12 +396,15 @@ The machinery that makes the hygiene rules (§9) and the parity gates (§12) run
   local (regenerate a derived file, register a new file) the closure performs it and says `REPAIRED`, while
   staying a pure check on the release path. A cached verdict's fingerprint covers everything the gate loads,
   including the libraries it dot-sources - else an edit to a library replays a stale PASS.
-- **The closure RUNS the ladder's rung; it does not merely ask for it.** When a change set carries an
-  artifact class whose only proof is a link, render or compile step that nothing else performs, the facade
-  must run that step, selected by artifact class. Otherwise the rung in §6 is a request, and a request is an
-  ungated rule. In the reference project nothing in the facade linked resources, and the compile-only check
-  compiles code without linking any - so a broken layout closed **green** and its ticket reached "install
-  this and test it" without the thing to be installed ever having been built.
+- **The closure RUNS the ladder's rung when it fits the 5 s line, and RECORDS it when it does not.** When a
+  change set carries an artifact class whose only proof is a link, render or compile step that nothing else
+  performs, the facade runs that step, selected by artifact class, when the step takes 5 seconds or less. A
+  slower step is not run after the change: it is written into the ticket as a `RELEASE` item naming the
+  command, and the declared compile-only run of an unattended pass is the only per-change exception
+  ([TESTING_AND_QA.md](TESTING_AND_QA.md) §2). A rung that is neither run nor recorded is a request, and a
+  request is an ungated rule. In the reference project nothing in the facade linked resources, and the
+  compile-only check compiles code without linking any - so a broken layout closed **green** and its ticket
+  reached "install this and test it" without the thing to be installed ever having been built.
 - **A project override that NARROWS a shipped default disables the mechanism, silently.** Where a
   shared layer merges a project's config over its own defaults, the two directions are not
   symmetrical: widening a list adds cases the mechanism then handles, while **narrowing one removes

@@ -1,0 +1,35 @@
+# History: deviceinfo_mob
+
+## Canon adoption 2026-11-14
+
+Re-sync of this repository (its own S0026) from stamp canon `2026.11.09.1` (core digest `sha256:9abe1d23..`, reconciled 2026-11-10) to canon `2026.11.13.8`, plugin `2026.1113.8`, core digest `sha256:75bd013b..`; reference model, overlay B. Supersedes the section "Canon state of this repository, 2026-11-13" below, which stays as the report that prompted it. All facts measured in that repository on 2026-11-14.
+
+- **Stamp:** `.sza-canon.json` carries canon `2026.11.13.8`, digest `sha256:75bd013b..` equal to the value `check-compliance.ps1 -PrintDigest` prints, `reconciledOn` 2026-11-14; `adoptedOn` 2026-11-10 unchanged. Compliance gate run from the installed plugin: exit 0, 0 errors, 1 warning (`SZA-CTR02`, a frozen file under `PLAN/archive/` that names the catalog by path; that repository's S0016). `SZA-CANON03` is gone.
+- **Documents read:** eleven rule documents changed between the stamped canon and the current one (`INVARIANTS`, `PLATFORM_OVERLAYS`, `CHANNEL_MATRIX`, `NEW_PROJECT_CHECKLIST`, `SITE_CONFIGURATION`, `REPOSITORY_LAYOUT`, `DOCUMENTATION_CONCEPT`, `LOCALIZATION`, `TESTING_AND_QA`, `DEVELOPMENT`, `AI_USAGE`). One divergence, exposed by `INVARIANTS` and `PLATFORM_OVERLAYS`; the other nine exposed none against the working tree.
+- **DIVERGE closed:** the product's own text said the application id freezes with the first shipped package. The canon says the `applicationId` is bound when the console app is created, and it was created on 2026-11-13 with `com.sza.deviceinfo`. The wording is corrected in `CLAUDE.md`, `docs/RELEASE.md`, `gradle.properties` and both module build scripts (comments only). The canon needs no change.
+- **Divergences recorded:** `REPOSITORY_LAYOUT` rule 3 (no type prefix on Markdown under `docs/`) as the dated exception E5 in the catalog registry, until 2026-12-31; `DOC-INTERNAL-QUALITY` declared `pending` with a dated exception until 2026-12-31. `TASK-FLOW` is declared `pending` without a rule-by-rule read. Whether the help pages make the product a publisher under `DOC-EXTERNAL-QUALITY` is undecided. All four items belong to that repository's draft S0034.
+- **Catalog:** 19 registry rows for DeviceInfo (`contract-lag.ps1 -Product DeviceInfo`: current 4, pending 15, unparsed 0). Six canon-layer rows were added by this re-sync (`REPO-STAMP`, `HARNESS-PROFILE`, `REPO-LAYOUT`, `RULE-DELIVERY`, `TASK-FLOW`, `DOC-INTERNAL-QUALITY`), with the pointers `RULE-ADOPTION.md`, `TASK-FLOW.md` and `DOC-INTERNAL-QUALITY.md` under that repository's `docs/contracts/`. `check-pointers.ps1` reports two mismatches, both in `ICONOGRAPHY.md` (ICON-SET 0.39 against 0.40, ICON-RENDER 0.24 against 0.25), owned by that repository's S0031.
+- **Candidates for "Deltas by document":** `CONTRACTS.md` - the product now consumes six more contracts and their rows are written, so no `contract-sync` run is owed. `REPOSITORY_LAYOUT.md` rule 3 - the one open layout divergence (E5). `TESTING_AND_QA.md` section 2 - unchanged, the repository declares no compile command.
+- **Compile and tests:** the re-sync edited comments in two build scripts and one properties file only; the repository declares no compile command, so nothing was built and nothing was tested until the release (`.\gradlew.bat :phone:assembleDebug :wear:assembleDebug`).
+- **Canon fixes found:** none.
+- **What remains:** that repository's S0034 closes E5 and the `DOC-INTERNAL-QUALITY` exception by 2026-12-31 and decides `DOC-EXTERNAL-QUALITY`.
+
+## Canon state of this repository, 2026-11-13
+
+`check-compliance` run from the repository reports `SZA-CANON03`: the stamp is at canon `2026.11.09.1` with core digest `sha256:9abe1d23..` (read from `.sza-canon.json`), the canon at the time of the report was `2026.11.12.9` with digest `af1470e6..`. The re-sync is that repository's own adopt-canon run; the canon does not write a stamp it does not own. A note for that run: S0057 changes `rules/SITE_CONFIGURATION.md` and `rules/PLATFORM_OVERLAYS.md`, so the digest moves again with the next deploy - reconcile against the version that deploy ships, not against `2026.11.12.9`.
+
+## Canon adoption 2026-11-10
+
+Completion of the bootstrap adoption against canon **2026.11.10.1** (stamp version `2026.11.09.1`, core digest `sha256:9abe1d23..` equal to the installed canon's, so no re-sync and no version write by hand per REPO-STAMP rule 8), reference model, overlay B. Kept as history; the facts it states about license, channels, remote, site and anchors were true that day and are superseded above.
+
+- **What changed in the repo:** `CLAUDE.md` rewritten from the bootstrap stub (canon pointer, catalog named once, upstream and parity as standing law, owner decisions taken and open, the release plan's six decisions, the layout, verification between releases); `AGENTS.md` replaced by the delegating stub; `.sza-canon.json` gained `schemaVersion`, `$comment`, `reconciledOn`, `contribRecord` and the LICENSE exemption; the day-0 scaffold wrote the plan files `RELEASE_READY.md`, `RELEASE_QUEUE_DONE.md`, `TICKET_TEMPLATE.md`, the empty archive and burned-ids stores, and the launchers `r0`-`r3`, `rs`, `rm`, `rw`; the eight spec command forwarders were written to `.claude/commands/`. `.gitignore` needed no change: the compliance gate reported no leak-glob finding.
+- **Owner decisions closed:** none that day; the distribution, identity and license decisions were closed on 2026-11-13 (that repository's S0008) and are recorded above.
+- **Ticket id scheme:** `Sxxxx`, the harness default, cited with the repository name across repositories.
+- **Divergences recorded:** `PLAN/` tracked (see the flag under RELEASE_AND_DISTRIBUTION above); `LICENSE` absent under a dated exemption (closed 2026-11-13).
+- **Catalog:** no registry rows written - the product holds no contract today; the first declared contract brings its rows and its `docs/contracts/` pointer.
+- **Compliance gate:** 3 error(s), 0 warning(s) before (`SZA-LAY01` LICENSE; `SZA-RULES02` in `AGENTS.md` and in `CLAUDE.md`); after, run from the installed plugin: 0 error(s), 1 warning(s), exit 0 - the warning was `SZA-CANON06` for this record, which that gate resolves under the installed plugin's `rules/`; run from the canon checkout (same core digest `9abe1d23..`, where this record exists): 0 error(s), 0 warning(s), exit 0.
+- **Verification:** see the repository's S0001 `## Last Audit`.
+
+## Record split 2026-11-18 (canon ticket S0120)
+
+Every section of this file dated before this one was moved here verbatim from [../deviceinfo_mob.md](../deviceinfo_mob.md) when the record was split into facts and history. A line number quoted inside such a section counts lines of the record as it was before the move; relative links were deepened by one `../`; nothing else changed.

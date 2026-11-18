@@ -19,6 +19,12 @@ documents, run `python tools/docs/check-documents.py --register --render`, then 
 metadata. Preserve more specific existing topics and triggers. Regenerate maps with `--render` after
 registry edits; map edits never become authoritative.
 
+A new record gets one default trigger from the registrar, `Changes to the documented interface or workflow`.
+The gate counts the records that still carry only that default and prints one `warning:` line per registry
+before the verdict line; the count changes neither the verdict nor the exit code. A specific trigger is
+written by whoever knows which change makes the document stale; a pass never rewrites triggers only to
+lower the count.
+
 Run `python tools/docs/check-documents.py` to check both declared corpora, or select a corpus with
 `--config docs/document-corpus.json`. The gate checks reverse coverage, record uniqueness, generated-map
 drift, relative Markdown/reference/HTML links and heading anchors, local assets, HTTPS references and

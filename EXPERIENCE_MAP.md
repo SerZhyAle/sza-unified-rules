@@ -265,7 +265,8 @@ Delivery failures worth remembering:
 ## 6. The return channel: project -> canon
 
 - **The rule.** Never edit the canon from a project session; fixes land here ([CLAUDE.md](CLAUDE.md)). A project
-  session may append its own record to `rules/contrib/<project>.md` and nothing else.
+  session may edit its own record - `rules/contrib/<project>.md` and `rules/contrib/history/<project>.md` - and
+  nothing else.
 - **Deviations on record.** 2026-08-02 (the guardrail bent), 2026-08-28 (the owner directed it explicitly after being
   shown the constraint), 2026-09-03 S2402 ("a recorded deviation, not a precedent"). The 2026-08-18 propagation was
   executed from a canon session and did not need to bend.

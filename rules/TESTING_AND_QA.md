@@ -72,7 +72,10 @@ private vocabulary beside them.
 
 ## 2. Evidence ladder - cheapest rung that matches the risk
 
-Don't over-test a typo or under-test a migration. Pick the rung the change actually needs:
+Don't over-test a typo or under-test a migration. Pick the rung the change actually needs; a rung that takes
+more than 5 seconds - the target build, a slow compile or test, the release-variant proof, the device pass -
+is a release rung, recorded between releases as a `RELEASE` item and run at the release (the line and its
+one exception are stated under the list):
 
 - **Docs / text**: grep for the content.
 - **Script**: run it, exit 0.
@@ -214,7 +217,7 @@ the date and where they were said, never as text the agent composed on the owner
 **A gate that has not run since the last release is itself unverified.** The smoke above had rotted:
 three independent defects sat in it at once because nothing had invoked it in months, and they were
 found by the release that needed it rather than before. Anything the release depends on runs on a
-cadence that does not wait for the release - in CI, in the periodic sweep, or on a schedule - or its
+cadence that does not wait for the release - in the periodic sweep or on a schedule - or its
 first run in months happens at the worst possible moment.
 
 **A gate's failure branches are the code that runs least and matters most.** Every gate ships a fixture

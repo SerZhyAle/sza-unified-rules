@@ -272,7 +272,7 @@ Public Class PqCli
     ' own CLAUDE.md, commands and hooks there, and no editor window opens. The user's PowerShell profile loads (no
     ' -NoProfile), so claude is found the way a terminal the owner opens finds it; when it is not, the window stays
     ' open (-NoExit) with the error on screen.
-    ' A prompt given (the portfolio quiz: "/sza:sq --all") starts the session on that command.
+    ' A prompt given (the portfolio quiz: "/sza:spec-quiz --all") starts the session on that command.
     Public Shared Function OpenClaudeSession(path As String, Optional prompt As String = Nothing) As String
         If Not Directory.Exists(path) Then Return $"not found: {path}"
         Dim psi As New ProcessStartInfo With {

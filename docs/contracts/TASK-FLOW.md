@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Contract | `TASK-FLOW` |
-| Version | 0.28, draft |
+| Version | 0.31, draft |
 | Home | the shared contracts catalog, domain `task-flow/` (the path is in [CLAUDE.md](../../CLAUDE.md)) |
 | Role | **shared implementation, partial**: `tools/harness/` supplies the ticket tools, repository runner and day-0 scaffold; `tools/harness/portfolio/` supplies the S0015 dispatcher, registry, queue, rank and event log. Remaining portfolio features belong to S0016. The owner is `shared`, so this repository edits the contract only through the canon session |
 
@@ -119,3 +119,21 @@
   `status-drift` -> `statusDrift` in rule 46's outcome table (`ConvertTo-PqPassEndOutcome` in `portfolio/lib/loop.ps1`
   maps it from 2026-11-16, checked by a direct call), and eight readings of the ledger rules. The row stays
   `partial`; its exceptions of 2026-11-15 are closed or narrowed in the registry as the evidence allows.
+- 0.29 (2026-11-18): rule 24 states the idle hold. `Test-IdleRunHeld` in `batch/_idle-runs.ps1` is the one test the
+  picker (`spec_catalog/spec-next-preflight.ps1`) and the plan-file marker (`spec_catalog/_lib.ps1`) ask: two counted
+  unmoved runs hold a ticket, `limit-hit`, `claim-lost-before-launch` and `launch-failed` are stepped over, and a spec
+  file written more than 60 seconds after the newest counted run lifts the hold for one pass.
+  `spec_catalog/block-links.ps1` keeps a blocker's spec file time when it writes a back-link. Covered by
+  `tools/tests/idle-hold.tests.ps1` (6 cases, fast); PQShell's own copy of the walk does not apply the lift yet.
+- 0.30 (2026-11-18, S0108): a ledger row records how the ticket was born (README section 10, `EVENTS.md` section 6).
+  `spec_catalog/insert.ps1` writes the optional field `source` (`owner`, `robot`, `import`, `inbox`, `campaign`), resolved
+  by `spec_catalog/_ticket-source.ps1`: its `-Source`, else `import` for the queue sync's own child, else the variable
+  `SZA_TICKET_SOURCE` (`batch/run-spec-queue.ps1` sets `robot` for the child of a pass, `portfolio/lib/inbox-ingest.ps1`
+  sets `inbox`), else `owner`. `validate.ps1` warns on a value outside the list. The dispatcher does not read the field
+  for `ticket.created` yet. Covered by `tools/tests/ticket-source.tests.ps1` and one assertion in
+  `taskflow-ledger-conformance.tests.ps1`.
+- 0.31 (2026-11-18): the cap on robot-filed tickets (rule 41, `robotDraftCap`) is counted per repository per local day
+  from the ledger (README section 11, canon ticket S0109). `Get-PqRobotFiled` in `portfolio/lib/ledger-watch.ps1`
+  reads the rows with `source` `robot` created on the day; `Get-PqIntakeCapped` in `portfolio/lib/loop.ps1` gives the
+  `Draft` rows past the cap to every rank as excluded, so no worker keeps a count. Covered by the robot-filed cap case
+  of `tools/tests/portfolio-limit-reset.tests.ps1` (fast).

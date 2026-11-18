@@ -1,0 +1,626 @@
+# History: universal_agent_kit
+
+## Spread-back applied 2026-07-23
+
+Scope run: alignment audit (A) + this contrib record (B); owner chose to skip the mechanical
+consumption steps (2-5 of the prompt) because this repo is a sibling distillation, not a consumer,
+and to defer the private dev-rules file (C).
+
+- **Pushed back once with evidence** that the standard spread-back does not apply: adding a canon
+  pointer would leak the private canon path/site-name into a public repo (grep confirmed the repo
+  carried zero canon/private references, only the deliberate public FastMediaSorter provenance), and
+  `kit/CLAUDE.md` is the shipped product, not this repo's dev-rules file. Owner confirmed A + B.
+- **Alignment: strong.** Every shared AI_USAGE.md rule is reflected (obfuscated) in `kit/`; no
+  contradiction found. In-flight working-tree edits are all house-style/alignment (en-dash -> hyphen,
+  provenance sentence, VALIDATION "Red flags" section), no drift, no leak.
+- **One recorded divergence:** AI_USAGE §6 doc-context loop is generalized into the kit's
+  ship-together manifest rule, JSONL registry omitted by design.
+- **No repo edits made** - the audit found nothing to fix. No canon pointer added (by design).
+- **Canon changes needed:** none applied from this session. Two PROPOSED core edits above (README
+  third consumption model; SPREAD_BACK note) await an owner canon-session.
+- Canon @ ed69f27; kit repo @ 7915751.
+
+## Questions closed
+
+- "Is universal-agent-kit an EXISTING or NEW consumer?" -> Neither: sibling distillation. Recorded.
+- "Does the public kit leak canon-private detail?" -> No (grep evidence above).
+- "Does the kit contradict the canon on any shared rule?" -> No; one legitimate DIVERGE recorded.
+
+## Remains
+
+- Owner decision on the private dev-rules file (C) and on canon §6 generalization.
+- Owner to apply the two PROPOSED canon edits in a canon session (then run tools/check-rules.ps1).
+
+## Canon adoption 2026-07-27 - deliberately none
+
+Confirmed out of scope and left without a `.sza-canon.json` stamp. This repo is a public, scrubbed **render**
+of the canon, spread into by alignment rather than consumption, and putting a canon pointer here would leak
+canon-private paths into a public repo - the objection recorded above still holds. It is not a gap in the
+rollout; it is the third consumption model this record already describes.
+
+## Canon adoption 2026-08-05 - the 2026-07-27 refusal reversed, on the owner's decision
+
+**The refusal above is superseded, and the reason it was written is gone.** The 2026-07-27 entry left this
+repo without a stamp because "putting a canon pointer here would leak canon-private paths into a public
+repo". The canon is now itself a **public** repo shipping a public plugin
+(`github.com/SerZhyAle/sza-unified-rules`, verified `visibility: PUBLIC`), so a pointer names a public
+marketplace and leaks nothing. The owner was shown that and chose to adopt with a **tracked** dev-rules file.
+
+The second objection from 2026-07-23 was real and survived on its own merits: `kit/CLAUDE.md` is the
+*shipped product*, a `<PLACEHOLDER>` template, so `adopt-canon` step 4 had no legitimate target. That is
+what deferred option C for two weeks. It is closed now by creating the missing file rather than by
+repurposing the payload.
+
+**The framing that dissolves the old contradiction.** This repo is two things at once, and the record kept
+trying to make it one:
+
+- it **consumes** the canon for its own development - root `CLAUDE.md`, `.sza-canon.json`, model
+  `reference`;
+- it **publishes** `kit/` as a scrubbed, stack-neutral sibling distillation of the shared method for an
+  outside audience.
+
+Those do not conflict. The scrub rule survives adoption intact and is now written down where it binds:
+the canon pointer lives in the root file, and `kit/` still must never name a product, a portfolio path, or
+a canon-internal doc.
+
+### What was created or changed in the repo
+
+| File | Change |
+| --- | --- |
+| `.sza-canon.json` | NEW. Canon 2026.08.05, digest `sha256:8d33fdab..`, model `reference`, `adoptedOn` 2026-08-05. `role: portfolio` because there is no product build and no platform overlay to declare - the only thing the gate reads `role` for - with the sibling-distillation relationship written into the stamp's `$comment`. `tagRegex: null` (0 tags), `ledgerShape: "none"` (rolling release), `channels: []`. `site` confirmed against the Pages API, not assumed: `source.branch main`, `path /`, `html_url https://serzhyale.github.io/universal-agent-kit/`. |
+| `CLAUDE.md` | NEW, tracked, at the repo root. The canon pointer plus the four things that are genuinely this repo's: `kit/` is payload and never governs work here; the scrub rule; the three render targets with the frozen anchors (zip extraction root `universal-agent-kit/`, the Pages domain, the repo name); the rolling-release DIVERGE. It restates no canon rule. |
+| `.gitignore` | Leak globs added (SZA-SEC02), and `!universal-agent-kit.zip` with a why-comment (SZA-SEC03) - the zip was already tracked deliberately, but the reason lived in a comment on the *staging* directory, where the gate could not attach it to the artifact. |
+
+### Alignment fixes applied to `kit/` - the reason this pass was worth running
+
+The audit against canon 2026.08.05 found the kit to be **upstream of finding 2 in every repo that imported
+it**, which is a stronger result than a normal reconcile produces:
+
+- `kit/CLAUDE.md` §4 shipped the ladder `/quick` -> `/fix` -> pipeline as **prose with nothing behind it**,
+  and `kit/.claude/settings.json` shipped **no `hooks` section at all**. EPUB_2_HTML's identical, ungated
+  ladder is a confirmed import of exactly this. Fixed at the source: §4 now carries the measurement (434
+  invocations, `/quick` 0, `/fix` 2, pipeline 150) and the prompt-submit remedy, and `settings.json` carries
+  a `//hooks-example` key in the file's own established pseudo-comment style. **Left as an example, not
+  wired** - a `hooks` entry pointing at a script the downstream user has not written yet would fail on every
+  prompt, which is a worse defect than the one being fixed.
+- `kit/docs/COST.md` argued context hygiene **on answer quality** ("answer quality degrades as it fills")
+  with no measurement behind it - precisely what the `agent-cost` skill's own guardrail forbids, since
+  attaching a real practice to an unprovable rationale is how the practice gets reverted. Rewritten to argue
+  it on cost, which is measurable, with the quality claim gated on having actually measured it.
+- COST.md gained a **"Measure before you rule"** section. Scope note, because it exceeds what was asked: the
+  owner approved propagating the *channel* rule, and all four corrections went in. Shipping the channel rule
+  alone would have published a method that still inflates token totals roughly threefold through the
+  request-id defect - a known-broken method in a public kit. Named here rather than done quietly.
+
+No SZA product name, portfolio path or canon-internal doc name entered `kit/` in any of these edits; the
+measurements travel as "a project" and "the reference corpus".
+
+**No saving is claimed anywhere in the kit text.** The hook shipped on 2026-08-05 with no post-change
+window behind it, and `skills/agent-cost` step 4 forbids presenting a carry-forward as an effect.
+
+### Verification
+
+`check-compliance.ps1 -RepoRoot P:\WEB\universal-agent-kit`: before **3 error(s), 1 warning(s)**
+(SZA-CANON01 no stamp, SZA-RULES01 no root agent-instructions file, SZA-SEC03 the tracked zip; SZA-SEC02
+missing leak globs) -> after **0 error(s), 0 warning(s)**, exit **0**. Both edited JSON files re-parsed
+clean. `check-rules.ps1` in the canon: exit **0** (19 core docs, 11 contrib docs).
+
+One mechanical detail worth recording, because it will bite the next adoption: SZA-RULES01 counts **tracked**
+files only, by design - a git-ignored rules file is one person's scratch copy. A brand-new root `CLAUDE.md`
+therefore does not clear the error until it is at least staged. That is also the concrete argument against
+the git-ignored variant of option C: it would have left this repo permanently failing SZA-RULES01.
+
+### Questions closed
+
+- "Private dev rules file (option C, deferred 2026-07-23)" -> **closed**: created, tracked, not git-ignored.
+- "Is this repo a consumer or a sibling distillation?" -> **both**, and the two roles are recorded
+  separately above.
+- "Does adopting leak canon-private detail into a public repo?" -> **no**: the canon repo is public.
+
+### Remains
+
+- **Not committed.** The working tree is staged and the gate is green against the staged index; the commit
+  and any push are the owner's to make.
+- The two PROPOSED canon edits from 2026-07-23 are still unapplied, and one now needs rewording:
+  `README.md`'s third consumption model can no longer be described as "never carries a canon pointer",
+  because this repo now does. The accurate shape is *a repo that consumes the canon for its own development
+  while publishing a scrubbed render of it as product*. `SPREAD_BACK_PROMPT.md` still exists in the canon
+  and its note is unwritten.
+- Canon §6 doc-context loop stays omitted from the public kit, unchanged from 2026-07-23 - still a
+  portfolio-specific mechanism, still correctly generalized into `kit/docs/VALIDATION.md`.
+- `role: sibling-distillation` does not exist in `check-compliance.ps1`; `portfolio` was used because it is
+  mechanically correct for the one thing `role` decides. A dedicated value would be more honest and is a
+  candidate canon edit, not a blocker.
+
+## Canon alignment 2026-08-18 - the five transferable additions of canon `2026.08.18.1`
+
+Second half of a two-session pass: a canon session read this repo on 2026-08-18, re-stamped it, and wrote
+a hand-authored work order into the repo's `temp/`. This entry records executing that order. **The stamp
+was ahead of the alignment until now**, which is exactly the condition `SZA-CANON03` exists to catch; it is
+closed by this pass. Stamp at the end: `2026.08.18.1` / `sha256:961c9c8a..` - and note that a *concurrent*
+canon session bumped both the canon HEAD and this repo's stamp mid-run (from `2026.08.18` /
+`sha256:03bc1c8c..`). The reconcile below was performed against the `9fea564..HEAD` diff, i.e. against
+`.1` content, so the stamp is truthful either way.
+
+The posture is unchanged and governs every line below: `kit/` is a scrubbed, stack-neutral distillation
+for an outside audience. No canon name, no product name, no portfolio path, no canon-internal doc name
+travels. Measurements travel **with their shape and their window, without their provenance**.
+
+### What changed, per target
+
+| Target | Change |
+| --- | --- |
+| `.gitignore` | `temp/` added. The canon's scratch-tree rule was unenforced here, and the work order itself was sitting in `temp/scratch/` untracked-but-committable. Done first, before anything else. |
+| `kit/.claude/agents/*.md` (4) | **The payload defect.** All four shipped `model: inherit`, so a kit that teaches tier routing for *skills* demonstrated the opposite for its own *agents* - and every downloader inherited it. Now pinned: `solution-researcher` light (read-only search), `implementer` and `doc-writer` mid, `rd-lead` strong. Each pin carries a one-line YAML comment saying the tier names are the harness's and a downloader on another runtime maps them. |
+| `kit/docs/COST.md` | Section retitled "Model-tier routing - per skill, and per spawn" and given the subagent half: the built-in general-purpose agent **cannot** carry a pin, so the remedy is naming the tier at the call site or routing through a pinned agent; every project-defined agent gets an explicit tier because *nobody audits an invisible default*. New section "Serializing a shared resource - a queue, not a refusal" with the eight transferable lock-queue rules. |
+| `kit/docs/SPEC_LIFECYCLE.md` | New section "Two literal tokens: direction, and the question that leaves with a closed ticket". Defines `Blocked-by` and `Carried-to` as mandatory header tokens, states which of the two is actually enforced and how, and carries the four gate mechanics (gate the transition not the state; never gate archive; an unfilled placeholder counts as unanswered; locate a section by heading text and wire the gate into every closing path). |
+| `kit/docs/HOOKS.md` | **New doc.** The kit used "hook" only to mean *a place to wire a gate*; a hook is a **verdict on an event**. Carries the seven-verb vocabulary, the preference order (correct the input; refuse only where no correct input exists), the per-verdict contracts, the turn-refusing shape, the hook inventory rule with its two anti-crying-wolf limits, and the pre-filter testing rule. |
+| `kit/docs/VALIDATION.md` | "A green can lie" gained the backgrounded-gate worked example - a gate that cannot run still reports success - plus "prefer making a name work over guarding it", both stripped of their OS specifics. |
+| `kit/docs/AUTHORING.md` | Fifth row in "Where each kind of directive lives": the event hook, pointing at `HOOKS.md`. The table previously had a hole exactly where an event hook belongs. |
+| `kit/CLAUDE.md` | Section 5 gains the two ticket tokens; section 4 points at `HOOKS.md`; section 12 gains the spawn-tier line and the lock-queue line. |
+| `kit/.claude/commands/spec.md` | Template header carries both tokens; the owner-inputs step and the Status-lifecycle paragraph now say prose is a mention and the token is the claim; Constraints make both tokens mandatory with `none` as a value. |
+| `kit/.claude/commands/spec-check.md` | New check row "Open questions closed" (locate the section by heading, template placeholder counts as unanswered), the scoring note that an unhanded open item refuses `Verified`, and a constraint to gate the **transition** and never the archive. This is the hard half. |
+| `kit/.claude/commands/backlog.md` | Reads `Blocked-by` and nothing else; a missing token is a ticket defect, treated as `none` and reported, never guessed from prose. Named explicitly as the **soft** half. |
+| `kit/README.md`, `README.md`, `merge-prompt.txt` | Doc lists updated for `HOOKS.md`. Root `README.md` was also missing `AUTHORING` in both its EN and RU trees - a pre-existing staleness, fixed in the same edit. `merge-prompt.txt` is inside the zip and lists every doc, so it needed the row too. |
+| `universal-agent-kit.zip` | Rebuilt: 42 entries, verified byte-identical to `kit/` + `merge-prompt.txt` by per-file SHA-256. Extraction root `universal-agent-kit/` unchanged. |
+
+### Deliberately not propagated
+
+- **The Windows / Git-Bash trap family** (a shell-specific cmdlet in command-head position, an interpreter
+  that resolves nowhere, a path-translating shell rewriting an argument). Stack-specific; a stack-neutral
+  kit has no business carrying it. Only the two generalizable sentences travelled, into `VALIDATION.md`.
+- **Every tuning constant in the lock queue** - windows, ceilings, grace periods, timeouts. None was
+  measured. The kit states the shape and says explicitly that the constants are per project. Verified
+  absent by grep.
+- **Any threshold in a hook.** Same reason.
+- **A lock implementation.** The kit is method; which file, which shell, which liveness API is a stack
+  decision, and shipping a script would make the kit non-neutral.
+- **`index.html`.** Section 8 of the work order asserted that a new doc "changes the doc list, so it
+  touches all of them", naming the page. That is wrong for this page: `index.html` is a narrative article
+  and enumerates no doc list at all - grepping it for `SPEC_LIFECYCLE`, `CODE_QUALITY`, `AGENT_MEMORY` or
+  `COST` returns nothing. Nothing on the page is now false, so nothing was hand-edited into it. Padding a
+  marketing article to satisfy a checklist is not what the ship-together rule asks for.
+- **The `//hooks-example` stance**, kept exactly as it was: left as an example, not wired. It is itself an
+  instance of the preference order.
+- **The provenance credit in `kit/README.md`.** The work order's scrub regex demanded that name come back
+  empty from `kit/`. It does not, and should not: the credit is deliberate, is published on the site in all
+  three locales, and predates every scrub rule. The scrub that matters - the canon's own name and any
+  absolute portfolio path - comes back empty. Flagged rather than silently deleted.
+
+### Honesty constraints held
+
+- **No effect data exists** for any of this as a kit rule. What is measured is the failure each rule was
+  built for, never the improvement it produced. Nothing here is presented as a saving; `COST.md`'s own
+  "Measure before you rule" section forbids it and the new tier paragraph says so in its own text.
+- **The five numbers that travelled**, each with its window: 479 seconds of one lock held across a phase;
+  381 blocks in a week with 31.8% answered by reading the whole file anyway; 134 of 1 506 closures carrying
+  an open question (8.9%); 98 files yielding an id against 15 carrying a direction; 182 spawns of an
+  unpinnable type in 14 days against an 82.8% expensive-tier output split - with the causal link labelled a
+  **deduction, not a measurement**, and the further caution that a tier split is an output figure while
+  cached input dominates the bill.
+- **One deviation from the work order's recommendation, argued rather than taken silently.**
+  `doc-writer` was proposed for the cheap tier; it is pinned mid. Its brief is about tone, warmth and
+  not-changing-meaning - a judgement call, not a lookup - and the kit's own routing rule reserves the cheap
+  tier for mechanical leaf work. `solution-researcher` remains the clear light-tier case and is pinned
+  there. The tier mapping was called "a proposal, not a law" in the order; this is the one place it was
+  overridden.
+- **Substance stated once.** The false-PASS rule lives in `VALIDATION.md` and `HOOKS.md` points at it,
+  rather than both carrying it - `AUTHORING.md` forbids pasting the same paragraph into three files.
+
+### Verification
+
+| Check | Expected | Actual |
+| --- | --- | --- |
+| `check-compliance.ps1` in the repo | exit 0, no errors | **0 error(s), 0 warning(s)**, exit **0** (canon 2026.08.18.1). Baseline before the pass was 0 errors / **1 warning** (SZA-CANON03 stale digest) |
+| Agent frontmatter still parses | four files, `model` resolves to a bare tier name | PyYAML: `sonnet`, `sonnet`, `opus`, `haiku`; the `tools` list on `solution-researcher` intact. The inline `#` comment is stripped, as the harness's own frontmatter reference documents |
+| No unpinned agent left | zero hits for `model: inherit` under `kit/.claude/agents/` | zero |
+| Accepted values for the `model` field | verified, not assumed | `inherit` / `sonnet` / `opus` / `haiku`, from the harness's own agent-development skill ("### model (required)") - which incidentally *recommends* `inherit`, so the pin is a deliberate departure on cost grounds |
+| Zip vs source | every `kit/` file byte-identical inside the archive | 41 kit files + `merge-prompt.txt` = **42 entries**, **0 mismatches** by per-file SHA-256 |
+| Tuning constants absent from `kit/` | no window / ceiling / timeout numbers | grep for `grace period of`, `timeout of N`, `ceiling of N`, `N ms/seconds window` - empty |
+| Scrub | no canon name, no absolute portfolio path | empty. The one provenance name is present once, deliberately, see above |
+| House style in the new prose | no em-dash, no three-dot ellipsis | grep across `kit/` for U+2013 / U+2014 / U+2026 and the literal three dots - only `go build ./...` inside code spans |
+| Every doc reference resolves | no dangling `docs/*.md` link | all resolve; the only unresolved names are `<PLACEHOLDER>` examples (`ARCHITECTURE.md`, `PARKED.md`) |
+
+### Remains
+
+- **Not committed.** The working tree carries every change and the gate is green against it; the commit and
+  any push are the owner's.
+- `.vscode/` sits untracked at the repo root and is neither ignored nor committed. Out of scope for this
+  pass, named so the next survey does not re-derive it.
+- The owner's per-project memory index for this repo points at three memory files that no longer exist.
+  Also out of scope, also named.
+- A candidate canon edit, unchanged from 2026-08-05: `role: sibling-distillation` still does not exist in
+  `check-compliance.ps1`; `portfolio` remains mechanically correct for the one thing `role` decides.
+- Canon @ 6906983 (moved mid-session by a concurrent canon session); kit repo @ 0880457 + working tree.
+
+## Canon re-sync 2026-09-03 - canon `2026.09.03.3`
+
+Pure re-sync, entered through `SZA-CANON03`: the stamp read `2026.08.18.1` / `sha256:961c9c8a..` against
+a canon at `2026.09.03.3` / `sha256:cdf49be6..`. Baseline gate **0 error(s), 1 warning(s)**, exit 0 - the
+warning being exactly that staleness and nothing else, so the alignment work from 2026-08-18 held.
+
+Five rule docs moved between the two versions (`AI_USAGE`, `DEVELOPMENT`, `DOCUMENTATION_CONCEPT`,
+`INVARIANTS`, `TESTING_AND_QA`), diffed against the still-cached `2026.818.2` plugin rather than re-read
+whole. All five carry transferable method; none needed a repo behaviour change; all five reached `kit/`.
+The posture is unchanged and governed every line: no canon name, no product name, no portfolio path, no
+canon-internal doc name travels, and measurements travel **with their shape and their window, without
+their provenance**.
+
+### What changed, per target
+
+| Target | Change |
+| --- | --- |
+| `.sza-canon.json` | Re-stamped to `2026.09.03.3` / `sha256:cdf49be6..`, `adoptedOn` 2026-09-03. Digest recomputed with `-PrintDigest`, not copied. Nothing else in the stamp moved: no product build appeared, no channel, no tag, so `role`, `overlay`, `versionShape`, `ledgerShape` and `site` are unchanged and still true. |
+| `kit/docs/COST.md` | Three additions. **Context hygiene** gains the process-boundary reset for unattended runs - a driver outside the session running each item in a fresh headless process, because a self-imposed halt depends on somebody noticing a threshold and an unattended run has nobody watching; carries the 83%-above-150k observation with an explicit note that the threshold is that machine's window and not a recommendation, plus the two things the boundary buys on top of the reset (per-item model choice, several instances at once). The **lock queue** gains the (kind, domain) rule with its three anti-deadlock clauses and the 12 s observation, and the abandoned-intent withdrawal rule with the one half of it that self-heals. |
+| `kit/docs/VALIDATION.md` | Four additions. A new rung note **"The top rung is often a human, and a human check has not happened yet"** - no failures plus an unobserved manual line scores *needs a human test*, not *verified*; carries the five-acceptance-criteria observation and points at `SPEC_LIFECYCLE.md` / `/spec-check`, which already own the mechanics. **Post-change discipline** now says *every surface and every authored locale*, with the release-boundary batching for the rest of the declared set and the continuously-published exception. **Composition** gains "the closure RUNS the rung; it does not merely ask for it", with the closed-green broken-layout failure. **Closing a change on a dirty tree** gains "Place a gate by its subject, not by how much it once hurt" - the four-part release-scope test, the three keep-per-change conditions, both corollaries, and the 68-of-191 / 33-minutes measurement. |
+| `kit/docs/AUTHORING.md` | The automated-gate row in "Where each kind of directive lives" now says a gate names its **scope class** at birth and that unnamed defaults to per-change. One clause, pointing at `VALIDATION.md` - the substance is stated there once. |
+| `kit/CLAUDE.md` | Section 10 gains the human-check line and the authored-locale nuance; section 12 gains the lock-domain sentence, the withdrawal sentence, and the unattended process-boundary bullet. |
+| `kit/.claude/commands/backlog.md` | A blockquote after Step 5: prefer looping the **process**, not the session. This is the payload defect the `AI_USAGE` addition exposed - the kit shipped an unattended drainer whose loop is explicitly in-session, so ticket 1 sits in context while ticket 9 runs. Says where the skip-cache and report buckets must live for the loop to survive a process boundary, and keeps the in-session shape as the fallback where no headless mode exists. |
+| `.gitignore` | `.vscode/` ignored, closing an item this record carried twice. Not an owner decision on inspection: the directory holds one `settings.json` containing only a personal editor colour scheme, which the file's own "OS / editor junk" section already covers. |
+| `universal-agent-kit.zip` | Rebuilt. 42 entries, 0 mismatches by per-entry SHA-256 against source. Extraction root `universal-agent-kit/` unchanged. |
+
+### Deliberately not propagated
+
+- **Every tuning constant.** The reservation window, the eviction ceiling, the sweep interval. None was
+  measured; the kit states the shape and says the constants are per project. The one number in the
+  withdrawal rule is a *behaviour* ("granted but not taken inside the window"), not a duration.
+- **The canon's own section numbers and doc names.** The kit's cross-references point at kit docs only.
+- **`index.html` and the READMEs.** No document was added or removed, so no doc list changed. The page is
+  a narrative article that enumerates no doc list - re-checked, not assumed - and nothing on it became
+  false, so it was not padded to satisfy a checklist. Both README trees still list ten `docs/*` files
+  correctly.
+- **The stamp's structural fields.** A re-sync is not an excuse to re-derive facts that did not move.
+
+### Honesty constraints held
+
+- **No effect is claimed for any of it.** Each addition names the failure it was authored against; none
+  names an improvement it produced, and `COST.md`'s "Measure before you rule" forbids the latter.
+- **The numbers that travelled, each with its window:** 83% of one machine's week above 150k of carried
+  context; two module checks running together in 12 s after a lock split; 68 of 191 red lines across 53
+  batch runs, and 33 minutes of closure time in a month for one finding; one ticket closed with an
+  unticked device line failing one of five acceptance criteria on real hardware; ten unauthored
+  translations per key against three authored. The 150k figure is explicitly labelled as that machine's
+  window rather than a recommended threshold.
+- **Substance stated once.** The gate-scope rule lives in `VALIDATION.md` and `AUTHORING.md` points at
+  it; the human-check rule lives in `VALIDATION.md` and defers its mechanics to `SPEC_LIFECYCLE.md`; the
+  1-8% prose-compliance figure is cited from `AUTHORING.md`, not restated.
+
+### Verification
+
+| Check | Expected | Actual |
+| --- | --- | --- |
+| `check-compliance.ps1` | exit 0, no errors, no warnings | **0 error(s), 0 warning(s)**, exit **0** (canon 2026.09.03.3). Baseline was 0 errors / **1 warning** (SZA-CANON03) |
+| `.sza-canon.json` re-parses | valid JSON, new version and digest | parsed; `2026.09.03.3` / `sha256:cdf49be6..` / `adoptedOn` 2026-09-03 |
+| Zip vs source | every file byte-identical inside the archive | 41 kit files + `merge-prompt.txt` = **42 entries**, **0 mismatches** by per-entry SHA-256 |
+| House style in the new prose | no en-dash, em-dash or three-dot ellipsis | only `go build ./...` inside code spans, unchanged from the previous pass |
+| Scrub | no canon name, no product name, no portfolio path, no canon doc name in `kit/` | empty. The one FastMediaSorter provenance credit in `kit/README.md` is present once, deliberately, as recorded on 2026-08-18 |
+| Doc lists still complete | ten `docs/*` entries in both READMEs | complete; no doc added or removed this pass |
+
+### Questions closed
+
+- "`.vscode/` untracked and neither ignored nor committed" (carried 2026-08-18) -> **closed**: ignored,
+  with the reason in the file.
+- "The owner's per-project memory index points at three memory files that no longer exist" (carried
+  2026-08-18) -> **closed** outside the repo: the index was rebuilt against what exists. One of the three
+  was recreated (an editorial standard, not derivable from any file), one was folded into the zip-rebuild
+  memory it duplicated, and one was dropped as a verbatim restatement of the global rules file.
+  Separately, the `reference-unified-rules` memory was **wrong** and is rewritten: it still asserted that
+  this repo carries no canon pointer because one would leak a private path - both halves untrue since
+  2026-08-05.
+
+### Remains
+
+- **A candidate canon edit, unchanged since 2026-08-05:** `role: sibling-distillation` still does not
+  exist in `check-compliance.ps1`; `portfolio` remains mechanically correct for the one thing `role`
+  decides, and the `$comment` still carries the real relationship.
+- **The two PROPOSED core edits from 2026-07-23** are still unapplied. The `README.md`
+  third-consumption-model wording still needs the correction noted on 2026-08-05 - it can no longer say
+  "never carries a canon pointer".
+- Canon @ ae5f37f (clean); kit repo committed this session, not pushed.
+
+## Canon re-sync 2026-09-11 - canon `2026.09.08.2`
+
+Re-sync entry entered through `SZA-CANON03`: stamp bumped from `2026.09.06.1` to `2026.09.08.2` (`sha256:cdf49be6..`). Baseline gate **0 error(s), 0 warning(s)**, exit 0.
+
+### Verification
+
+| Check | Expected | Actual |
+| --- | --- | --- |
+| `check-compliance.ps1` | exit 0, no errors, no warnings | **0 error(s), 0 warning(s)**, exit **0** (canon 2026.09.08.2). |
+| `.sza-canon.json` re-parses | valid JSON, new version and digest | parsed; `2026.09.08.2` / `sha256:cdf49be6..` / `adoptedOn` 2026-09-11 |
+| Zip vs source | archive rebuilt | **42 entries**, **0 mismatches** |
+
+## Product change 2026-09-21 - the kit stops assuming its projects are codebases
+
+A product pass on `kit/`, its two READMEs, `merge-prompt.txt`, the article and the zip. Driven by
+[EXPERIENCE_MAP.md](../../../EXPERIENCE_MAP.md) section 7's **audience gap** and its section 10 question,
+both of which the owner settled this session: widen fully, keep the numbers with their dates, and
+scrub the product name out of `kit/`. Not a canon re-sync - the stamp was deliberately left alone
+(see "What is owed").
+
+### 1. Audience: widened, in two tiers rather than by vagueness
+
+The gap was real: the README promised "a portable method for AI-assisted development" while the
+owner's stated goal is any specialist who runs "projects" with agents. Widening by deleting the word
+"code" would have produced a vaguer kit, so the method is instead stated as **five assumptions** - a
+workspace with history, artifacts, work items, checks, an agent that reads and writes the files -
+none of which is a compiler, and every generic noun is given a concrete instantiation per domain.
+
+- **New doc `kit/docs/PROJECT_SHAPES.md`** (the widening's load-bearing file): the five assumptions;
+  the method's vocabulary across five kinds of project (software, data, writing, legal, operations);
+  "we have no checks is almost always false" with the five shapes a check takes in work that never
+  compiles; what transfers unchanged, what needs a local equivalent, **what to delete outright**;
+  and three stated limits.
+- **Placeholders re-tiered.** Tier 1, ten, for any project; tier 2, six, the code layer, to be
+  deleted rather than filled when the project does not build. Renamed `<SRC_ROOT>` -> `<WORK_ROOT>`
+  and `<MAX_LOC>` -> `<SIZE_BUDGET>`; **added `<CHECK_CMD>`**, the generic proof step the four build
+  tokens are now specializations of. `REPLACES.md` / `REPLACES_RU.md` rewritten with non-code
+  columns and a migration table for anyone holding an earlier copy.
+- Code-only rules are now **labelled** `(code layer)` in place - `CLAUDE.md` sections 6 and 7,
+  `CODE_QUALITY.md`, `rd-lead`'s architecture block, `review`'s third dimension - instead of being
+  silently universal.
+
+### 2. Canon 2026-09-20 propagated into the kit
+
+Eight measured items from `bde2b01`, plus the four the experience map listed as "no match" in the
+kit. Each carries its number and its date in the kit's prose:
+
+| Lesson | Landed in |
+| --- | --- |
+| Count the population an event sees before wiring a hook to it (0 of 17 prompts; 69% headless) | `HOOKS.md` (new first section), `CLAUDE.md` section 4, `settings.json` |
+| A check has four answers; validate the instrument (5 of 5, 18 of 28 false) | `VALIDATION.md`, `CLAUDE.md` section 10, `/review` |
+| The absence of a verdict is not a pass; wire the gate into the shipping command (0 grep matches) | `VALIDATION.md` (new section), `CLAUDE.md` section 10 |
+| Retire a gate on demonstrated redundancy, not silence (291 of 291, 21.4%, 67.1 s vs 26.6 s) | `VALIDATION.md` |
+| Date every threshold and name its regenerating command (14.1 s vs 56.0 s, ~4x drift) | `VALIDATION.md` |
+| A point fix on a shared contract is half a fix (paid twice, third crashed 3 h after the release) | `CODE_QUALITY.md`, `CLAUDE.md` section 9, `implementer` |
+| A narrowing override disables the mechanism silently (52 of 54; one ticket re-issued 5x) | `CLAUDE.md` section 8 |
+| The prose ceiling is 22% | `AUTHORING.md`, both READMEs, the article |
+| Context is replayed, not read once (median 215k against a 28.7k floor; 29% past 300k) | `COST.md` |
+| Never fire-and-forget, never poll (~1,300 polling turns, 81 min of sleep in a month) | `COST.md` (new section), `CLAUDE.md` section 12, `rd-lead` |
+| Latency tracks output, not context (+0.681 vs +0.065; 76.5% hidden reasoning) | `COST.md`, `CLAUDE.md` section 12 |
+
+**The one correction worth naming.** The kit *recommended* a prompt-submit routing nudge, on the
+strength of the 434-invocations measurement. That hook's own window has now closed with a measured
+reach of **zero**, so the recommendation is withdrawn and the example is re-shipped as a worked
+case of the question nobody asks. Both READMEs and the article say so in the owner's own voice -
+keeping a refuted recommendation would have cost more than the rule ever bought.
+
+### 3. Scrub - reversing the 2026-08-18 exception
+
+The provenance credit naming the source product in `kit/README.md`, recorded on 2026-08-18 as
+"present once, deliberately", is **removed**: the owner chose to scrub `kit/` and keep the name
+outside it. `kit/` now reads "a real, mature mobile application"; the repo README, the article body
+and the site footer still name and link the product, which is where a reader who wants provenance
+looks anyway. `kit/` is now consistent with its own rule in the repo's `CLAUDE.md`.
+
+### 4. Render targets
+
+Both surfaces were regenerated in the same change, per the repo's own rule that a `kit/` change not
+reaching the zip and the page ships a kit whose download disagrees with its documentation.
+
+- **The article**: a new section **02 "What kind of project is yours"** in all three locales
+  (five project cards, the "we have no checks" note, what to delete, the honest limits); sections
+  02-12 renumbered to 03-13; hero lead, the "who it's for" list, a new "why there are numbers in
+  here" note, and the validation section's four-answers and irreversible-step paragraphs, all
+  authored in RU, EN and UK; six paste-prompts updated; meta, OG, Twitter and JSON-LD descriptions
+  widened.
+- **A factual defect fixed while there**: all seven copies of the unpack instruction said the
+  archive "extracts to a `universal-agent-kit/` folder **beside** a `merge-prompt.txt`". It does
+  not - `merge-prompt.txt` is *inside* that folder, and has been all along. Corrected, and the
+  prompts now reference `universal-agent-kit/merge-prompt.txt` by its real path.
+
+### Verification
+
+| Check | Expected | Actual |
+| --- | --- | --- |
+| `check-compliance.ps1` | exit 0, no errors, no warnings | **0 error(s), 0 warning(s)**, exit **0** (gate read the installed plugin, 2026.09.13.1) |
+| Zip vs source | every entry byte-identical to `kit/` + `merge-prompt.txt` | **45 entries**, **0 mismatches** by per-entry SHA-256 (was 42: +`PROJECT_SHAPES.md`, +one memory example, and the file count rose with them) |
+| Scrub | no product name, no canon name, no portfolio path, no canon doc name under `kit/` | grep for `fastmediasorter\|FMS\|sza\|unified.rules\|p:\\\|serzhyale` over `kit/` - **empty** |
+| Doc references | every `docs/*.md` named in the kit exists | 12 referenced, 12 present; the extra names are examples of a *reader's* own files |
+| Article structure | three locales, equal section counts, balanced tags | **42** sections (14 per locale), secnums `00..13` three times, `<details>` 48 open / 48 close |
+| House style | no em-dash, en-dash or three-dot ellipsis in the new prose | empty across `kit/`, both READMEs, `merge-prompt.txt`, `index.html`; the only `...` are inside `go build ./...` code spans |
+| Placeholder rename | no `<SRC_ROOT>` or `<MAX_LOC>` left behind | both replaced everywhere they occurred (8 files) |
+
+### What is owed
+
+- **The stamp was not bumped, on purpose.** This session propagated canon *content* into the kit
+  product; it did not run `adopt-canon` to reconcile this repo's own development rules against the
+  canon's 19 docs. Bumping `canon.version` to `2026.09.20.1` would have claimed a re-sync nobody
+  performed - and the installed plugin on this machine is still `2026.913.1`, two deploys behind the
+  canon head. A real re-sync is a separate session.
+- `.sza-canon.json` carries a **pre-existing uncommitted edit** from an earlier session
+  (`2026.09.06.1` -> `2026.09.08.2`, `adoptedOn` 2026-09-11) that this session did not author and
+  deliberately left untouched.
+- Nothing is owed to a canon session: no canon rule changed here. This entry is the record of a
+  product change, not a spread-back.
+
+
+## Canon re-sync 2026-09-23 - canon `2026.09.22.2`
+
+Re-sync entered through `SZA-CANON03` (stamp `2026.09.08.2` / `sha256:cdf49be6..`) together with the
+repository's shared-contracts alignment. Baseline gate (plugin `2026.922.2`): **1 error(s), 1 warning(s)**,
+exit 1 - the warning the staleness, the error `SZA-RULES02 AGENTS.md: no canon pointer` on a root
+`AGENTS.md` added that day as a companion to `CLAUDE.md`.
+
+Eleven rule docs moved since the stamp (`AI_USAGE`, `CONTRACTS` new, `DEVELOPMENT`,
+`DOCUMENTATION_CONCEPT`, `INVARIANTS`, `NEW_PROJECT_CHECKLIST`, `PLATFORM_OVERLAYS`, `README`,
+`RELEASE_AND_DISTRIBUTION`, `REPOSITORY_LAYOUT`, `TESTING_AND_QA`), diffed against the cached `2026.906.1`
+plugin. The transferable method (hook population reach, narrowing overrides, the four check answers,
+instrument validation, waivers, gate rot, point-fix sweeps, retirement by redundancy, dated thresholds,
+generate-commit-ship, fix-release haste) had already reached `kit/` in the 2026-09-21 product change, so
+`kit/` did not move. `CONTRACTS` is portfolio law and does not travel into `kit/`.
+
+### What changed, per target
+
+| Target | Change |
+| --- | --- |
+| `.sza-canon.json` | `2026.09.22.2` / `sha256:13abcb8a..`, `adoptedOn` 2026-09-23, from `-PrintDigest`. Nothing else moved. The canon checkout's head was already `2026.09.23.1`; the stamp follows the installed plugin. |
+| `AGENTS.md` (root) | Canon pointer added; names `CLAUDE.md` as authoritative, stricter wins. |
+| `CLAUDE.md` | "Shared contracts" rewritten to list every consumed and produced contract by id, catalog still named once; the root `AGENTS.md` acknowledged; gate command resolves the plugin root from the install record. |
+| `docs/contracts/` | Pointers for `PAGE-CONTENT`, `REPO-STAMP`, `REPO-LAYOUT`, `RULE-DELIVERY` added beside the page and icon ones; index rewritten. |
+| Catalog | Own registry rows for `REPO-STAMP`, `REPO-LAYOUT`, `RULE-DELIVERY`; `INSTALL-TRUST` note corrected; proposal `rule-adoption/PROPOSAL-2026-09-23-universal-agent-kit-adoption.md`. |
+
+### Verification
+
+| Check | Expected | Actual |
+| --- | --- | --- |
+| `check-compliance.ps1` | exit 0, no errors, no warnings | **0 error(s), 0 warning(s)**, exit **0** (canon 2026.09.22.2) |
+| `.sza-canon.json` re-parses | valid JSON | parsed |
+| Scrub | no canon or catalog name under `kit/` | grep over `kit/` - **empty** |
+
+### Candidate canon fixes (for a canon session)
+
+- The gate prints `overlay ?` for `role: portfolio` with an empty overlay; `overlay none` is the truth.
+- `REPO-LAYOUT` rule 1 is silent on payload rules files below the root and on two names at one root.
+
+## Re-sync owed 2026-10-02, and eight places the kit still addresses a programmer
+
+Read-only pass over `P:\WEB\universal-agent-kit` (clean tree). Re-measured 2026-10-02: `0 error(s), 1
+warning(s)`, the warning being `SZA-CANON03` (stamp `2026.09.22.2`, `adoptedOn` 2026-09-23). Six commits since
+2026-09-20, four of them titled "1" (contract pointers, `AGENTS.md`, `build-kit.ps1`, `verify.md` /
+`VALIDATION.md` deltas). This record is current to 2026-09-23, and that entry already recorded the `AGENTS.md`
+`SZA-RULES02` error and its fix. **The kit repo itself was not edited by this entry.**
+
+### Does the kit still match the canon's measured findings? Yes
+
+Every figure in `kit/` that has a canon home matches it: 99% against 1-8% and 22% (AI_USAGE); 434, 0 of 17 and
+64 of 93 (AI_USAGE); 52 of 54 (DEVELOPMENT); 5 of 5 and 18 of 28, 291 of 291, 21.4%, 67.1 s against 26.6 s,
+14.1 s against 56.0 s and the crash three hours after release (TESTING_AND_QA); the 215k median, 28.7k floor and
+29% (AI_USAGE). The COST figures (about 1,300 polling turns, 81 minutes of sleep, +0.681 against +0.065, 76.5% and
+5.6%) trace to the FastMediaSorter record (2026-08-28 entry) and not to a rule doc, which is fine because the kit
+dates them. The kit already carries the waiver rule (`VALIDATION.md:79-83`), the rotted-gate rule
+(`VALIDATION.md:194`) and the four verdicts (`verify.md`).
+
+### What the re-sync owes
+
+Only the 2026-09-23 and 2026-09-30 changes (DOCUMENTATION_CONCEPT §6, SECURITY_AND_PRIVACY §7, SUPPORT_AND_FEEDBACK
+§7, the tree-state stance): a stamp bump and a record line. One transferable item is not yet in the kit:
+DOCUMENTATION_CONCEPT §6 **reverse coverage** (a file sitting in the maintained area with no registry record fails
+the check) belongs in `kit/docs/RESEARCH_INDEX.md`, because for non-code projects the documents are the artifacts.
+**Not transferable**, as the 2026-09-23 entry already says (portfolio law): CONTRACTS, SECURITY §7, SUPPORT §7 and
+the GITHUB_INTERACTION tree stance (the owner's solo-git policy); the kit's `/git` command and "working tree is
+authority" line do not conflict with it. **Safe to commit: nothing pending.** A proposal to hold in mind
+(2026-10-02): the standard delegating `AGENTS.md` stub is wanted by the kit too, since its Codex-style
+`AGENTS.md` triggered the same `SZA-RULES02` error as FastMediaSorter_Lite's.
+
+### Owed to the kit - eight wording gaps for non-programmers
+
+The kit is already two-tier and `PROJECT_SHAPES.md` is good (the 2026-09-21 product change, see above). These are
+the lines that still address a programmer; the owner's model is that the kit also serves non-programmers
+(a lawyer, a translator, an analyst). Cap of eight; line numbers are from the reading of 2026-10-02 and will move:
+
+1. **Forced English artifacts.** `kit/CLAUDE.md:15` ("Artifacts - files, code, docs, logs, commits: English"),
+   `kit/README.md:141-142` and `kit/docs/REPLACES.md:23,46`. A lawyer, translator or analyst delivers in the
+   document's own language. Make it an `<ARTIFACT_LANGUAGE>` placeholder with English as the default for code
+   projects only.
+2. **Tone.** `kit/CLAUDE.md:17` "Tone: dry, concise, technical." - say "plain and concise"; "technical" tells a
+   non-technical user the agent will answer in jargon.
+3. **No path for "a folder of documents and no repository".** The import steps in `kit/README.md:90-102` say
+   "copy into your repo's `.claude/commands/`" and "merge into your repo root"; `kit/CLAUDE.md:58-61` talks about
+   `git log`, `blame` and `diff`; `PROJECT_SHAPES.md:18` assumes Git. Beyond one line ("copy the folder before a
+   big change") there is none.
+4. **Only git skills for version control.** `kit/CLAUDE.md:80` and `kit/.claude/commands/git.md` (the whole file:
+   branch model, staging, commit grouping) and `caveman-commit.md` ("Conventional Commit"); there is no "save a
+   restore point" or "what changed since last time" equivalent. `kit/.claude/settings.json` grants `Bash(git *)`
+   and lists npm / pnpm / make / gradlew / cargo / go as examples (`kit/README.md:213-218`).
+5. **Code items under a heading the intro calls generic.** `kit/CLAUDE.md:161-172`, section 9 "Anti-slop":
+   `Empty catch {}`, lifecycle-unsafe async collection, `print` / `console.log` / `System.out`,
+   `TODO()` / `NotImplementedError` are not labelled "(code layer)" like sections 6-7. Also `kit/CLAUDE.md:210-213`
+   ("modules, wired contracts, a passing compile") and `kit/CLAUDE.md:116-121`, where `BlockNeedUserTest` appears
+   undefined.
+6. **A default agent introduced as a software engineer.** `kit/.claude/agents/rd-lead.md:3` ("Default senior
+   engineer / orchestrator .. feature work, refactors, architecture questions .. code review"), `kit/README.md:52`
+   and `settings.json` `"agent": "rd-lead"`: a legal or writing project's default agent is introduced as a
+   developer. The same register in `rd-lead.md:83` and `solution-researcher.md:68` ("the codebase").
+7. **"Developer" as the reader.** `kit/.claude/commands/spec-tech.md:131` ("tactical, English, developer
+   handoff"), `:198` and `:213` ("Prompt for developer:"), `spec-dev.md:8`. The reader is an agent or whoever
+   executes; "developer" is the wrong noun for most audiences.
+8. **Git vocabulary in the template body and examples.** `kit/memory/MEMORY.md:14` and
+   `kit/memory/examples/feedback_pr_granularity.md` ("one bundled PR for a cohesive refactor"),
+   `kit/docs/AGENT_MEMORY.md:40,77` ("bundled PR"), `kit/docs/PARALLEL.md:64` and `kit/CLAUDE.md:263-267` (stash,
+   checkout, reset, a shared git directory - in the template body, not marked code layer). The example set has
+   one non-code entry (`feedback_figures_carry_source.md`) against four code-flavoured ones.
+
+## Promotion campaign (2026-10-09)
+
+- Spec `docs/specifications/SPECIFICATION_FREE_PROMOTION_CAMPAIGN.md` (new, shape K - package channels void); writing the positioning source is its first step; [PROMOTION](../../PROMOTION.md).
+- 2026-11-07, site audit: 0 HIGH, 22 MED (of 59 findings) recorded in ticket S0006 `docs/specifications/S0006_free-promotion-campaign.md` (Draft); the 2026-11-03 baseline re-measured: 8 open, 0 partial, 0 fixed (parts of 5 rows did not reproduce); criterion 14 added (numbered 15 in the ticket).
+
+## Canon re-sync 2026-10-09 - canon `2026.10.02.3`
+
+Re-sync plus contract-sync, carrying two rounds in one: the 2026-10-02 notice
+(`docs/specifications/SPECIFICATION_CANON_CONTRACTS_SYNC_NOTICE.md`) and the 2026-10-07 owner order
+(`docs/specifications/SPECIFICATION_CONTRACT_SYNC_2026_10_07.md`), because the catalog had moved past the
+notice's "now" column before the session ran and a version may not be pinned to a date the catalog left behind.
+
+- **Stamp.** `canon.version` `2026.10.02.3`, `canon.coreDigest` from the gate's `-PrintDigest`
+  (`sha256:410463a9..b81afa`), `canon.reconciledOn` `2026-10-09` - the three as one write; `adoptedOn`
+  stays `2026-09-23`. Gate before: `0 error(s), 1 warning(s)` (SZA-CANON03); after: `0 error(s), 0 warning(s)`, exit 0.
+- **Contracts.** Pointers, `CLAUDE.md` and the registry rows moved to `PAGE-CONTENT` 1.4, `PAGE-STYLE` 1.6,
+  `SITE-FAMILY-MAP` 1.4, `ICON-SET` 0.29, `ICON-RENDER` 0.18, `ICON-EXTERNAL` 0.12, `REPO-STAMP` 0.12,
+  `REPO-LAYOUT` 0.11, `RULE-DELIVERY` 0.12; `HARNESS-PROFILE` 0.11 declared not bound in a new pointer
+  (`docs/contracts/HARNESS-PROFILE.md`) and a registry row, per its rule 7.
+- **Kit.** `assets/sza-kit.css` re-vendored byte-identical to the 2026-10-07 reference (15661 bytes,
+  SHA-256 `27501a10..cef2895`); `tools/build-kit.ps1` PASS, 45 entries, 0 mismatches, stamped 2026-10-09.
+- **Site.** The owner's rulings closed the 2026-09-23 exception's items and the page follows: full width
+  (no page-layer cap), the copied state is the localized word beside the `action.copy` glyph (`status.ok`
+  withdrawn), the kit's `nav.expand` marker and labelled theme control (page-layer overrides dropped),
+  the hero opens with the full name in display type (docs variant: the name alone), the footer credit
+  name links the hub, and the footer grid carries the corrected `Tool` cells. The registry exception is
+  narrowed to the `?lang=` parameter name, until 2026-12-31.
+- **Not run.** No browser session: the `PAGE-STYLE` section 11 walk was against the source, and the
+  rendered walk of 2026-09-23 was not repeated. The section 5 URL check was run (9/9 HTTP 200).
+
+## In-app help (2026-10-16)
+
+- Ticket `docs/specifications/SPECIFICATION_IN_APP_HELP.md` (Draft), created by the canon session from the owner's request for F1 and a `?` button in every product ([UI_UX](../../UI_UX.md) §7, contract `CONTEXT-HELP` 0.1). The kit draws no user interface: slice A is the pointer and registry row, slice B is guidance for projects that have one, and `AUTHORING.md` requires an observed failure before any new rule.
+
+## Canon delivery reconciliation 2026-10-17 (S4307)
+
+- Installed plugin `2026.1017.1` from published canon `2026.10.17.1` (`d06a64a`). The harness counts Done and Skipped as finished and preserves the phase-counter suffix.
+- Re-read the changed canon guidance for delivery, documentation, localization, layout and sealed contracts. Existing product implementation and contract catch-up work remains owned by the recorded project tickets; this delivery check does not certify every product contract.
+- Re-stamped through `restamp-canon.ps1` against the installed plugin reader: version, freshly computed core digest and reconciledOn move together; adoptedOn and project-specific fields stay unchanged.
+- Compliance for universal-agent-kit: 0 error(s), 1 warning(s) before; 0 error(s), 0 warning(s) after; exit 0. Canon freshness findings cleared.
+
+## Canon re-sync 2026-10-21 - canon `2026.10.21.2`
+
+- Stamp moved from `2026.10.17.1` (digest `b467aefe..456fa`, confirmed equal to the canon tree at `a8d7416`) to `2026.10.21.2` (digest `a6899363..c5d35`, from the gate's `-PrintDigest`); `reconciledOn` `2026-10-21`; `adoptedOn` unchanged. The three fields were written in one edit.
+- Changed rule docs read (diff against `a8d7416`): `DOCUMENTATION_CONCEPT` section 5 (published text is a shipped fact - drives the promise sweep of the campaign), `INVARIANTS` 17 and 18 (same rule; the git-rewind clause is gone), `GITHUB_INTERACTION` section 1 (hook-based rewind refusal withdrawn), `PROMOTION` (optional-components paragraph - no component here, the kit is one artifact), `AUTHOR` (time-zone default - no product dates here), `CONTRACTS` (right to exceptions and recommendations - adds a route, not an obligation), `UI_UX` (buttons, sizing, settings navigation - the kit draws no user interface; only the stat and the cross-reference lines were read).
+- Not run: a `contract-sync` pass. `CONTRACTS.md` changed, but the change adds a route for exceptions and recommendations and no clause this repository must newly satisfy; the registry rows and the `docs/contracts/` pointers were left as they are. A full pass remains an open owner decision.
+- Gate: `check-compliance.ps1` `0 error(s), 1 warning(s)` (SZA-CANON03) before; `0 error(s), 0 warning(s)` after, exit 0.
+- Free-promotion campaign: this session continues the campaign specification (checkpoint, criteria audit, promise sweep, P6/P7 preparation); its outcome lives in `docs/specifications/SPECIFICATION_FREE_PROMOTION_CAMPAIGN.md` of this repository.
+
+## Test lab report (2026-10-23)
+
+- Specification `docs/specifications/SPECIFICATION_TEST_LAB_REPORT.md` (Draft; `docs/` is git-ignored), created by the canon session from the owner's order of 2026-10-23 to collect what every project knows about its hardware, emulators and test practice (contract `TEST-LAB` 0.1, draft). Documentation only: the product files one inventory report and a pointer; no code, test or harness changes. The kit has no equipment of its own; the open question is how a result names the machine it ran on. Reports to the owner of each platform it is used on.
+
+## Fast checks between releases (2026-10-29)
+
+- Specification `docs/specifications/SPECIFICATION_FAST_CHECKS_BETWEEN_RELEASES.md` (Approved; `docs/` is git-ignored and the repo has no queue or index, so its priority line is the order), created by the canon session from the owner's order of 2026-10-29 to switch off full builds and tests longer than 5 s between releases (canon TESTING_AND_QA section 2, highest priority). The kit repository moves its own rebuild, site gates, browser check and compliance gate to the publish pre-flight, and rewrites what the kit teaches (`<CHECK_CMD>` as the fast check with a release command beside it, the validation ladder, the skills that run checks, the cost guidance, the examples and the portal sources) so a consuming project learns the same 5 s line.
+
+## Canon re-sync 2026-11-11 - canon `2026.11.10.1`
+
+- Stamp moved from `2026.10.21.2` (digest `a6899363..c5d35`) to `2026.11.10.1` (digest `9abe1d23..af680`, from the gate's `-PrintDigest`); `reconciledOn` `2026-11-11`; `adoptedOn` unchanged; the three fields written in one edit. No restamp script ships in plugin `2026.1110.1`, so the edit was made by hand against the printed digest.
+- Changed rule docs read (diff `87eaf19..8cd7714` of the canon repo, rules only): `AI_USAGE`, `AUTHOR`, `DEVELOPMENT`, `DOCUMENTATION_CONCEPT`, `GITHUB_INTERACTION`, `INVARIANTS`, `NEW_PROJECT_CHECKLIST`, `PROMOTION`, `RELEASE_AND_DISTRIBUTION`, `SECURITY_AND_PRIVACY`, `SITE_CONFIGURATION`, `TESTING_AND_QA`, `UI_UX`. What each owes here: the 5 s line (TESTING_AND_QA 2, INVARIANTS) was already in `CLAUDE.md` "Gate" and is now measured there; the readiness-hedge ban (DOCUMENTATION_CONCEPT 5, UI_UX) - a search of every published page for the hedge words found only ordinary uses; build-time release facts (DOCUMENTATION_CONCEPT 4) - the only release fact on the page is the kit date, stamped by `tools/build-kit.ps1`; the public-address readback (RELEASE_AND_DISTRIBUTION) - done after the publish of this date; `CONTRACTS.md` unchanged, so no contract-sync pass is owed by the re-sync (one ran anyway for `PAGE-STYLE` 3.8, below).
+- Day 0 of the task flow completed: the ticket template and the three plan files under `docs/specifications/` (git-ignored) were missing - the capture tool refused a draft for want of the template. The launchers were **not** written to the root: the site is served from the repository root, so every tracked file there is public (SITE_CONFIGURATION, new rule); `r0.ps1` lives in the git-ignored `temp/` and `r1`-`r3`, `rs`, `rm`, `rw` and `tools/harness.ps1` are omitted (`-NoForwarder`); `pq` dispatches this repository without them. DIVERGE, recorded here. `pq register`: `already registered uak`; spec commands: `wrote 0, unchanged 8`; `spec_catalog/validate` exit 0 after three ledger rows were pointed at the files a session had moved to `DONE/` (S0001, S0002, S0007; status untouched).
+- `PAGE-STYLE` 3.8: `assets/sza-kit.css` re-vendored byte-identical (30698 bytes, SHA-256 `d490abf3..2fa5d`); the pointer and the `CLAUDE.md` line moved with it. 3.7 is the hub's per-locale option and owes nothing here.
+- Open, owner decision: SITE_CONFIGURATION's new rule says internal material stays git-ignored or outside the served root. This repository serves its root and tracks `CLAUDE.md`, `AGENTS.md`, `.sza-canon.json`, `PLAN/README.md`, the `docs/contracts/` pointers and one specification under `docs/specifications/`; they are published with the site. Untracking them removes them from the site and from every clone; left for the owner.
+- Gate: `check-compliance.ps1` `0 error(s), 1 warning(s)` (SZA-CANON03) before; `0 error(s), 0 warning(s)` after, exit 0.
+
+## Canon re-sync 2026-11-15 - canon `2026.11.13.8`
+
+- Stamp moved from `2026.11.10.1` (digest `9abe1d23..af680`) to `2026.11.13.8` (digest `75bd013b..0aafb`, from the gate's `-PrintDigest`); `reconciledOn` `2026-11-15`; `adoptedOn` unchanged; `schemaVersion` `1.0` added. Edited by hand against the printed digest, as on 2026-11-11 (no restamp script ships in plugin `2026.1113.8`). Run from the unattended pass of ticket S0006 (findings F53, F54).
+- Changed rule docs read (diff `8cd7714` against the installed plugin, rules only): `AI_USAGE`, `CHANNEL_MATRIX`, `DEVELOPMENT`, `DOCUMENTATION_CONCEPT`, `INVARIANTS`, `LOCALIZATION`, `NEW_PROJECT_CHECKLIST`, `PLATFORM_OVERLAYS`, `REPOSITORY_LAYOUT`, `SITE_CONFIGURATION`, `TESTING_AND_QA`. What each owes here: the canonical `og:locale` map (DOCUMENTATION_CONCEPT 3, LOCALIZATION 3) - the share card is static English on every page, so `og:locale` `en_US` was added to the landing head and to the portal generator's head; the unattended compile-check exception (TESTING_AND_QA 2) - this repository declares no `commands.compileCheck`; the `BlockByOtherTask` / `DO:` lifecycle wording (DEVELOPMENT, AI_USAGE) - process only; the rest (Play, Store channel, `*secret*` globs, Pages workflow template) - not applicable, no channel and no workflow. `CONTRACTS.md` unchanged, so no contract-sync pass is owed.
+- Site kind and ledger, owner decision of 2026-11-14 in S0006: `site.kind` `portfolio` -> `product` (the site offers a download and documentation), `privacy.carveOut` `zero-data` -> null (`privacy.html` exists), `ledgerShape` `none` -> `1` with `ledgerFile` `CHANGELOG.md`. DIVERGE, recorded as an `SZA-LAY02` exemption in the stamp: the ledger is one dated section per kit build, each item in EN, RU and UA, with no `[Unreleased]` block and no version numbers (rolling release), validated by `tools/build-portal.ps1` against `kit/VERSION`. Without the exemption the gate reports `SZA-LAY02` (checked). `role` stays `portfolio` (no platform overlay).
+- The open owner decision of 2026-11-11 (internal material in the served root) is closed: the owner answered on 2026-11-14 in S0006 that `CLAUDE.md`, `AGENTS.md`, `POSITIONING.md` and `docs/contracts/` stay tracked and served; only `PLAN/` was untracked and ignored.
+- Not yet in `site.pages`: `portal/whats-new.html` and `portal/support.html`, generated at the next portal build; listing them before they exist fails `SZA-SURF02`. A release item of S0006.
+- Gate: `check-compliance.ps1` `0 error(s), 1 warning(s)` (SZA-CANON03) before; `0 error(s), 0 warning(s)` after, exit 0.
+
+## Adoption stamp edit 2026-11-17 (S0006 release pass)
+
+- `site.pages` gained `portal/whats-new.html` and `portal/support.html`, the release item of the S0006 passes of 2026-11-15: `tools/build-portal.ps1` had written both pages this day (58 targets, 0 drifted, `-Check` exit 0), so listing them could no longer fail `SZA-SURF02`. Gate after the edit: `0 error(s), 2 warning(s)` - the two pre-existing warnings named in that ticket's audit (`SZA-CANON03`, stamp behind canon 2026.11.17.2; `SZA-CTR01`, the PAGE-STYLE pointer trim).
+- The release pre-flight was run stage by stage in the `check-release.ps1` order and everything passed except the browser gate: `python -I tools/ui-check/run.py` exits 1 on the working tree of this day - `assets/sza-kit.css` holds the 3.12 re-vendor (31966 bytes) against the catalog reference's same-day 3.13 (31950 bytes), and the 3.12 header floor puts the brand 5 px past the shared edge at touch/huge, which the check still refuses. Both causes sit outside S0006's diff and are parked as ticket S0023 there; the push of `main` was withheld by the standing go's own green condition.
+
+## Record split 2026-11-18 (canon ticket S0120)
+
+Every section of this file dated before this one was moved here verbatim from [../universal_agent_kit.md](../universal_agent_kit.md) when the record was split into facts and history. A line number quoted inside such a section counts lines of the record as it was before the move; relative links were deepened by one `../`; nothing else changed.

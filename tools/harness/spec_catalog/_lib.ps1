@@ -1,4 +1,4 @@
-# Shared helpers for spec_catalog scripts.
+﻿# Shared helpers for spec_catalog scripts.
 # Compatible with PowerShell 5.1 and 7+.
 
 . (Join-Path $PSScriptRoot '..\_profile.ps1')
@@ -73,6 +73,8 @@ $script:SpecsDirPath         = (Get-SzaPath 'specsDir')
 # release-queue.ps1 -Reconcile, because a silent repair of a line the owner can see is
 # indistinguishable from the reconcile having done nothing - which is what the defect looked like.
 $script:ReleaseQueueDuplicatesDropped = 0
+
+$script:ReleaseQueueMissingNoted = $false   # set once the missing-queue-file line was printed: one line per process
 
 $script:RequiredFields = @('id', 'name', 'status', 'priority', 'file', 'created', 'updated')
 # S2402: the vocabulary and the two grammars come from the project profile; the defaults in
@@ -474,8 +476,24 @@ function Get-ReleaseQueueIdleMap {
     }
     try {
         $threshold = (Get-IdleRunPolicy).Threshold
+        $specFiles = $null
         foreach ($series in (Get-IdleRunMap -Refresh:$Refresh).Values) {
             if ($series.Count -lt $threshold) { continue }
+            # The picker's own test, lift included, so the marker leaves the row when the hold does. The
+            # ledger is read once, and only when some ticket is at the threshold.
+            if ($null -eq $specFiles) {
+                $specFiles = @{}
+                foreach ($rec in (Read-Catalog)) {
+                    $idProp = $rec.PSObject.Properties['id']
+                    $fileProp = $rec.PSObject.Properties['file']
+                    if ($null -ne $idProp -and $null -ne $fileProp) { $specFiles[[string] $idProp.Value] = [string] $fileProp.Value }
+                }
+            }
+            $specPath = ''
+            if ($specFiles.ContainsKey([string] $series.Id) -and $specFiles[[string] $series.Id]) {
+                $specPath = Resolve-SpecPath -PathRef $specFiles[[string] $series.Id]
+            }
+            if (-not (Test-IdleRunHeld -Id ([string] $series.Id) -SpecPath $specPath)) { continue }
             $outcome = if ([string]::IsNullOrWhiteSpace([string] $series.LastOutcome)) { 'no outcome' } else { [string] $series.LastOutcome }
             $map[[string] $series.Id] = ('[idle {0}, {1}]' -f $series.Count, $outcome)
         }
@@ -750,7 +768,16 @@ function Sync-ReleaseQueue {
     param([Parameter(Mandatory)][AllowEmptyCollection()][object[]] $Records)
 
     if ((Get-SzaEnv 'SKIP_RELEASE_QUEUE')) { return }
-    if (-not (Test-Path $script:ReleaseQueuePath)) { Sync-PortfolioProjection; return }
+    if (-not (Test-Path $script:ReleaseQueuePath)) {
+        # S0102: still not an error - the journal write stands and no file is created - but it is said once
+        # per process, because a profile naming a file nobody created read exactly like a reconciled queue.
+        if (-not $script:ReleaseQueueMissingNoted) {
+            $script:ReleaseQueueMissingNoted = $true
+            Write-Host ("  release queue: no file at {0} (paths.releaseQueue) - nothing reconciled; work order is the ledger's. Not an error of this write." -f $script:ReleaseQueuePath) -ForegroundColor DarkYellow
+        }
+        Sync-PortfolioProjection
+        return
+    }
 
     $script:ReleaseQueueDuplicatesDropped = 0
 

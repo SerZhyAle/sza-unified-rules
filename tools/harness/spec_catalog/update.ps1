@@ -17,6 +17,7 @@ param(
     [string] $File,
     [int]    $Tier = -1,
     [int]    $Priority = -1,
+    [string] $Title,               # the optional `title` of the row (TASK-FLOW rule 3): a short display name, 80 characters at most; '' removes it; omitted: preserved
     [string] $StatusNote = $null,  # non-empty: set note; empty '': clear note; $null/omit: preserve - except that a status change to a non-Block* status clears it (S2796)
     [switch] $Help
 )
@@ -46,6 +47,11 @@ if ($PSBoundParameters.ContainsKey('Priority')) {
     if ($Priority -lt 0 -or $Priority -gt 100) {
         throw "Invalid -Priority '$Priority' (must be 0..100)."
     }
+}
+
+if ($PSBoundParameters.ContainsKey('Title')) {
+    if ($Title -match '[\x00-\x1f]') { throw 'Invalid -Title - it is one line, with no tab or other control character.' }
+    if ($Title.Trim().Length -gt 80) { throw "Invalid -Title - $($Title.Trim().Length) characters, 80 at most." }
 }
 
 # S1582: explicit acceptance-probe contracts are source-backed at write time.
@@ -117,6 +123,14 @@ if ($PSBoundParameters.ContainsKey('Status'))   { $updated.status   = $Status }
 if ($PSBoundParameters.ContainsKey('Name'))     { $updated.name     = $Name }
 if ($PSBoundParameters.ContainsKey('File'))     { $updated.file     = ($File -replace '\\','/') }
 if ($PSBoundParameters.ContainsKey('Priority')) { $updated.priority = $Priority }
+if ($PSBoundParameters.ContainsKey('Title')) {
+    $cleanTitle = $Title.Trim()
+    if ($cleanTitle -eq '') {
+        if ($updated.PSObject.Properties.Name -contains 'title') { $updated.PSObject.Properties.Remove('title') }
+    }
+    elseif ($updated.PSObject.Properties.Name -contains 'title') { $updated.title = $cleanTitle }
+    else { $updated | Add-Member -NotePropertyName 'title' -NotePropertyValue $cleanTitle }
+}
 
 # StatusNote: explicit non-null value updates the record; auto-clear on a status change that lands on a
 # non-Block* status without a new note. S2796: this used to fire only on the way OUT of a Block* status,

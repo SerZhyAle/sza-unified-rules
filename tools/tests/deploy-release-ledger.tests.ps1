@@ -1,7 +1,8 @@
 #requires -Version 7.0
 <#
 .SYNOPSIS
-    Cases for the release-ledger hooks in deploy.ps1 (Invoke-ReleaseLedgerStep, Test-ShipsToConsumers).
+    Cases for the release-ledger hooks in deploy.ps1 (Invoke-ReleaseLedgerStep, Test-ShipsToConsumers,
+    Get-DeployChangeNote).
 
 .DESCRIPTION
     The functions are lifted out of deploy.ps1 by its syntax tree and run against a scratch root and a stub `pwsh`
@@ -14,6 +15,9 @@
       4. A missing release-ledger.ps1 returns 'missing' without throwing.
       5. A non-zero exit (including stderr output) returns 'failed' with its warning and never fails the deploy.
       6. A throwing invocation returns 'failed' with its warning and never fails the deploy.
+      7. Get-DeployChangeNote builds one line from the unpushed subjects, the changed rule documents and the
+         per-folder counts; an explicit message replaces it; the deploy's own bookkeeping yields an empty line.
+      8. Test-ShipsToConsumers ships a facts record under rules/contrib/ and exempts rules/contrib/history/.
 #>
 [CmdletBinding()]
 param()
@@ -39,6 +43,8 @@ $fnStep = @($ast.FindAll({ param($n) $n -is [Management.Automation.Language.Func
 $fnShips = @($ast.FindAll({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Test-ShipsToConsumers' }, $true))
 if ($fnStep.Count -eq 1) { . ([scriptblock]::Create($fnStep[0].Extent.Text)) }
 if ($fnShips.Count -eq 1) { . ([scriptblock]::Create($fnShips[0].Extent.Text)) }
+$fnNote = @($ast.FindAll({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Get-DeployChangeNote' }, $true))
+if ($fnNote.Count -eq 1) { . ([scriptblock]::Create($fnNote[0].Extent.Text)) }
 
 $scratch = Join-Path ([IO.Path]::GetTempPath()) ('deploy-ledger-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
 $root = Join-Path $scratch 'repo'
@@ -84,6 +90,8 @@ try {
         $buildSite = $deployText.Substring($buildSiteStart, $buildSiteEnd - $buildSiteStart)
         Assert-That ($buildSite.Contains('Invoke-ReleaseLedgerStep') -and $buildSite.Contains("'build'") -and $buildSite.Contains("'sza'") -and $buildSite.Contains("'release'")) "unexpected build call site: $buildSite"
         Assert-That ($buildSite -notmatch '\bFail\b|\bexit\b') "build call site must not fail deploy: $buildSite"
+        Assert-That ($buildSite.Contains("@('-Note', `$changeNote)")) "build call site does not pass the change note: $buildSite"
+        Assert-That (-not $deployText.Contains('CANON_VERSION $canonNote')) 'the note that restates the version is still there'
 
         $pubSiteStart = $deployText.IndexOf('$cacheState = Update-PluginCache')
         Assert-That ($pubSiteStart -ge 0) 'publish call site not found'
@@ -99,11 +107,11 @@ try {
     }
 
     Run-Case '3 build and publish pass arguments and return ok' {
-        $b = Invoke-Step -TargetRoot $root -StepArgs @('build', '-Package', 'sza', '-Kind', 'release', '-Version', '2026.1117.3', '-Note', 'CANON_VERSION 2026.11.17.3')
+        $b = Invoke-Step -TargetRoot $root -StepArgs @('build', '-Package', 'sza', '-Kind', 'release', '-Version', '2026.1117.3', '-Note', 'rules: AUTHOR; tools 2')
         Assert-That ($b.result -eq 'ok') "build result: $($b.result)"
         Assert-That ($b.calls.Count -eq 1) "calls: $($b.calls.Count)"
         $bArgs = $b.calls[0] -join ' '
-        Assert-That ($bArgs.Contains("-File $ledgerScript build -Package sza -Kind release -Version 2026.1117.3 -Note CANON_VERSION 2026.11.17.3")) "build args: $bArgs"
+        Assert-That ($bArgs.Contains("-File $ledgerScript build -Package sza -Kind release -Version 2026.1117.3 -Note rules: AUTHOR; tools 2")) "build args: $bArgs"
 
         $p = Invoke-Step -TargetRoot $root -StepArgs @('publish', '-Key', 'marketplace', '-Version', '2026.1117.3', '-State', 'live', '-Ref', 'abc1234')
         Assert-That ($p.result -eq 'ok') "publish result: $($p.result)"
@@ -127,6 +135,37 @@ try {
         $t = Invoke-Step -TargetRoot $root -StepArgs @('build', '-Package', 'sza', '-Kind', 'release', '-Version', '2026.1117.3') -Mode 'throw'
         Assert-That ($t.result -eq 'failed') "result: $($t.result)"
         Assert-That ($t.text.Contains('release-ledger failed') -and $t.text.Contains('cannot launch pwsh')) "text: $($t.text)"
+    }
+
+    Run-Case '7 Get-DeployChangeNote builds one line from subjects, rule docs and folder counts' {
+        Assert-That ($fnNote.Count -eq 1) 'Get-DeployChangeNote is not defined exactly once'
+        $full = Get-DeployChangeNote -Paths @(
+            'rules/TESTING_AND_QA.md', 'rules/AUTHOR.md', 'rules/contrib/filedo.md', 'tools/a.ps1', 'tools\harness\b.ps1',
+            'skills/x/SKILL.md', 'deploy.ps1', 'docs/releases/history.jsonl', 'CANON_VERSION', '.claude-plugin/plugin.json'
+        ) -Subjects @('Add the inbox listener (S0046)', 'Canon update 2026-11-17', 'Add the inbox listener (S0046)')
+        Assert-That ($full -ceq 'Add the inbox listener (S0046); rules: AUTHOR, TESTING_AND_QA; tools 2, contrib 1, root 1, skills 1') "full: $full"
+
+        $explicit = Get-DeployChangeNote -Message "Fix the `"digest`"`nsecond line" -Paths @('tools/a.ps1') -Subjects @('ignored')
+        Assert-That ($explicit -ceq "Fix the 'digest'") "explicit: $explicit"
+
+        $own = Get-DeployChangeNote -Paths @('docs/releases/history.jsonl', 'docs/releases/RELEASES.md', 'CANON_VERSION')
+        Assert-That ($own -ceq '') "bookkeeping only: $own"
+
+        $many = Get-DeployChangeNote -Paths @('tools/a.ps1') -Subjects @('s1', 's2', 's3', 's4', 's5', 's6')
+        Assert-That ($many -ceq 's1; s2; s3; s4; +2 more; tools 1') "many: $many"
+
+        $dash = Get-DeployChangeNote -Subjects @('- leading dash subject')
+        Assert-That ($dash -ceq 'leading dash subject') "dash: $dash"
+
+        Assert-That ($deployText.Contains('$changeNote = Get-DeployChangeNote -Message $Message')) 'the note is never built'
+        Assert-That ($deployText.Contains('git -C $root commit @commitArgs')) 'the commit does not take the built arguments'
+    }
+
+    Run-Case '8 Test-ShipsToConsumers ships a facts record, exempts its history' {
+        Assert-That (Test-ShipsToConsumers @('rules/contrib/sample.md')) 'a facts record is read from the plugin cache and must bump the version'
+        Assert-That (Test-ShipsToConsumers @('rules\contrib\TEMPLATE.md')) 'a backslash path must be normalized before the exemption test'
+        Assert-That (-not (Test-ShipsToConsumers @('rules/contrib/history/sample.md'))) 'a history-only change should not bump the version'
+        Assert-That (-not (Test-ShipsToConsumers @('rules\contrib\history\sample.md', 'docs/releases/history.jsonl'))) 'history beside the ledger should not bump the version'
     }
 }
 finally {

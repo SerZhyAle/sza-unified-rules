@@ -6,6 +6,7 @@ param(
 . (Join-Path $PSScriptRoot '..\_profile.ps1')
 
 . (Join-Path $PSScriptRoot '_lib.ps1')
+. (Join-Path $PSScriptRoot '_ticket-source.ps1')
 
 Set-StrictMode -Version Latest
 
@@ -225,6 +226,21 @@ if ($unassessed.Count -gt 0) {
     Add-Result 'Complexity' 'WARN' ("Approved tickets still 'not assessed at capture': {0} - rewrite the line at the spec pass (DEVELOPMENT.md section 8)" -f ($unassessed -join ', '))
 } else {
     Add-Result 'Complexity' 'OK' 'no Approved ticket is still unassessed'
+}
+
+<# 11. Source (TASK-FLOW rule 3): an optional field. A row without it is valid - every row older than the
+       field has none. A value outside the list is WARN at most, never FAIL: a reader ignores a value it does not
+       know, so the ledger is not wrong, only less informative. #>
+$badSource = New-Object System.Collections.Generic.List[string]
+foreach ($r in $records) {
+    $sourceProp = $r.PSObject.Properties['source']
+    if ($null -eq $sourceProp) { continue }
+    if (-not (Test-TicketSourceValue ([string]$sourceProp.Value))) { $badSource.Add(('{0}: {1}' -f $r.id, $sourceProp.Value)) }
+}
+if ($badSource.Count -gt 0) {
+    Add-Result 'Source' 'WARN' ('source outside the known list ({0}): {1}' -f (@(Get-TicketSourceValues) -join ', '), ($badSource -join '; '))
+} else {
+    Add-Result 'Source' 'OK' 'every source is a known value (a row without the field is valid)'
 }
 
 # Render report

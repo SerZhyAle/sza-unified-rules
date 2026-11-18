@@ -627,7 +627,7 @@ Partial Class MainForm
 
     Private Sub OpenQuiz(target As String, description As String)
         Dim root = PqCli.CanonRoot
-        Dim prompt = $"/sza:sq {target}"
+        Dim prompt = $"/sza:spec-quiz {target}"
         LogConsole($"Opening the {description} quiz: a terminal running claude ""{prompt}"" in {root}")
         Dim err = PqCli.OpenClaudeSession(root, prompt)
         If err IsNot Nothing Then
@@ -916,7 +916,7 @@ Partial Class MainForm
         menu.ShowImageMargin = False
 
         Dim mQuiz As New ToolStripMenuItem("Answer questions (Quiz)") With {
-            .ToolTipText = $"Answer questions for '{r.Key}' in an interactive Claude session (/sza:sq {r.Key})"
+            .ToolTipText = $"Answer questions for '{r.Key}' in an interactive Claude session (/sza:spec-quiz {r.Key})"
         }
         AddHandler mQuiz.Click, Sub() OpenQuiz(r.Key, $"project '{r.Key}'")
 
@@ -959,7 +959,7 @@ Partial Class MainForm
             If err IsNot Nothing Then LogConsole($"Cannot open {queuePath}: {err}")
         Else
             LogConsole($"Ticket queue file missing for '{r.Key}': {queuePath}")
-            MessageBox.Show(Me, $"No ticket queue file found at:{Environment.NewLine}{queuePath}{Environment.NewLine}{Environment.NewLine}A ticket queue is created when the first ticket is drafted in this project.", "Ticket Queue Missing", MessageBoxButtons.OK, MessageBoxIcon.Information)
+            MessageBox.Show(Me, $"No ticket queue file found at:{Environment.NewLine}{queuePath}{Environment.NewLine}{Environment.NewLine}pq reads this project's tickets from its ledger until the file exists.", "Ticket Queue Missing", MessageBoxButtons.OK, MessageBoxIcon.Information)
         End If
     End Sub
 

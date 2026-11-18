@@ -53,7 +53,8 @@
     Kebab-case ticket name, [a-z0-9][a-z0-9_-]*, not starting with `spec_`, not ending in `-` or `_` (a bare
     `foo-` names nothing). A bug takes `bugfix-`, an urgent one `hotfix-`. Left out, or just `bugfix-` / `hotfix-`
     (what the New Specification dialog pre-fills), the name is made from the first words of the text, Cyrillic
-    transliterated, and printed; a caller that can write a better name passes it.
+    transliterated, and printed; a leading slash command (`/spec-draft ..`) and a registered project key right after
+    it are not part of the name. A caller that can write a better name passes it.
 
 .PARAMETER TextFile
     UTF-8 file holding the owner's text, written exactly as the owner gave it. The only way in: a command line
@@ -89,6 +90,25 @@
     Overall deadline in seconds for post-capture portfolio preview (default 10). If the check
     times out or fails, reports pq=unknown and refuses pinning.
 
+.PARAMETER Projects
+    The campaign form: comma-separated registered keys (no folders). The same slug and text are captured into each,
+    in the order given; one `pq sync` and one `pq dry-run` follow the last capture; one `drafted` line is printed per
+    ticket (position=0/0 - not computed here) and the last line is `campaign <slug>: <n> drafted, <m> failed`. Exit 1
+    when a target was not filed. A campaign never pins (-Pin is refused, a hotfix- slug is not pinned), lifts no hold
+    and enables nothing. The queue wait is 60 seconds here unless -QueueTimeoutSeconds is given.
+
+.PARAMETER AllEnabled
+    The campaign form over every enabled project of the registry, in its order, except the keys in -Skip (comma-
+    separated registered keys; -Skip is the alias of -SkipKeys) and any key that contains `sandbox` - a sandbox is
+    filed into only when -Projects names it.
+
+.PARAMETER Parent
+    <key>:<id> of an existing ticket that waits for the campaign: one `Blocker: <key>:<id>` line per child is written
+    into its spec file, before a closing Blocked-tickets or Last-Audit block. Its status is not changed.
+
+.PARAMETER NoQueueReport
+    Capture only: no sync, no queue check, the result line says pq=deferred. The campaign form passes it to its children.
+
 .PARAMETER Help
     Print this help.
 
@@ -116,6 +136,12 @@ param(
     [switch] $NoPin,
     [ValidateRange(1, 300)]
     [int]    $QueueTimeoutSeconds = 10,
+    [string] $Projects = '',
+    [switch] $AllEnabled,
+    [Alias('Skip')]
+    [string] $SkipKeys = '',
+    [string] $Parent = '',
+    [switch] $NoQueueReport,
     [switch] $Help
 )
 
@@ -186,7 +212,22 @@ function Invoke-Pq([string[]] $PqArgs, [int] $TimeoutSeconds = 0) {
 
 # The name a ticket gets when the owner gave none: the first words of the owner's text, Cyrillic transliterated.
 # ASCII-only source on purpose - the letters are code points, so the file reads the same under any encoding.
-function ConvertTo-SlugFromText([string] $Text) {
+function ConvertTo-SlugFromText([string] $Text, [string[]] $ProjectKeys = @()) {
+    # A request typed as a command ("/spec-draft <key> the grid is slow") is named from what follows it: a leading
+    # /command token is dropped, and after it one token that is a registered project key (any letter case, '_' read
+    # as '-', a trailing ':' or ',' ignored). A key with no command before it is an ordinary word and stays. Only the
+    # name is made from the shortened text - the ticket keeps the owner's words whole.
+    $cmd = [regex]::Match($Text, '^\s*/[A-Za-z][\w:-]*(?:\s+|$)')
+    if ($cmd.Success) {
+        $Text = $Text.Substring($cmd.Length)
+        $first = [regex]::Match($Text, '^(?<t>\S+)(?:\s+|$)')
+        if ($first.Success) {
+            $token = $first.Groups['t'].Value.TrimEnd(':', ',').Replace('_', '-')
+            if (@($ProjectKeys | Where-Object { $_ -and ([string]$_).Replace('_', '-') -ieq $token }).Count -gt 0) {
+                $Text = $Text.Substring($first.Length)
+            }
+        }
+    }
     # U+0430..U+044F in order (a b v g d e zh z i y k l m n o p r s t u f kh ts ch sh shch hard-sign y soft-sign e yu ya)
     $ru = @('a', 'b', 'v', 'g', 'd', 'e', 'zh', 'z', 'i', 'y', 'k', 'l', 'm', 'n', 'o', 'p', 'r', 's', 't', 'u', 'f', 'kh', 'ts', 'ch', 'sh', 'shch', '', 'y', '', 'e', 'yu', 'ya')
     $extra = @{ 0x0451 = 'yo'; 0x0456 = 'i'; 0x0457 = 'yi'; 0x0454 = 'ye'; 0x0491 = 'g' }
@@ -210,6 +251,57 @@ function ConvertTo-SlugFromText([string] $Text) {
     return ($kept -join '-')
 }
 
+function Get-DraftVerdict([string] $Reason) {
+    # The pq verdict for one project, from the reason the dry-run gave for skipping it ('' = not skipped).
+    switch ($Reason) {
+        ''            { return 'dispatchable' }
+        'occupied'    { return 'dispatchable' }
+        'heldByQueue' { return 'held-by-queue' }
+        'hold'        { return 'held' }
+        'disabled'    { return 'disabled' }
+        default       { return $Reason }
+    }
+}
+
+function Resolve-DraftParent([string] $Pair, $Repos) {
+    # -Parent <key>:<id> -> @{ pair; file }: the parent's spec file, found through its project's own ledger.
+    $m = [regex]::Match($Pair, '^(?<k>[A-Za-z][A-Za-z0-9-]*):(?<i>[A-Za-z][A-Za-z0-9_-]*\d[A-Za-z0-9_-]*)$')
+    if (-not $m.Success) { Stop-Draft 2 "invalid -Parent '$Pair' - expected <key>:<id> of an existing ticket" }
+    $rec = @($Repos | Where-Object { [string]$_.key -ieq $m.Groups['k'].Value }) | Select-Object -First 1
+    if (-not $rec) { Stop-Draft 2 "-Parent names project '$($m.Groups['k'].Value)', which is not registered" }
+    $id = $m.Groups['i'].Value
+    $snap = $null
+    try { $snap = Get-PqLedgerSnapshot -RepoPath ([string]$rec.path) }
+    catch { Stop-Draft 2 "-Parent: the ledger of $($rec.key) could not be read: $($_.Exception.Message)" }
+    if (-not $snap.ledgerRead -or -not $snap.tickets.Contains($id)) { Stop-Draft 2 "-Parent: $($rec.key) has no ticket $id in its ledger" }
+    if ([string]$snap.tickets[$id].status -ceq 'Archived') { Stop-Draft 2 "-Parent: $($rec.key):$id is archived and cannot wait for anything" }
+    $rel = [string]$snap.tickets[$id].file
+    $file = if ($rel) { Resolve-PqRepoPathValue $snap.root $rel } else { '' }
+    if (-not $file -or -not (Test-Path -LiteralPath $file -PathType Leaf)) { Stop-Draft 2 "-Parent: the spec file of $($rec.key):$id is missing ($rel)" }
+    return [pscustomobject]@{ pair = "$($rec.key):$id"; file = $file }
+}
+
+function Add-DraftParentBlockers([string] $File, [string[]] $Pairs, [string] $Name) {
+    # One `Blocker: <key>:<id>` line per child, inserted before a closing Blocked-tickets or Last-Audit block (they
+    # stay last, TASK-FLOW rule 69), else at the end. A pair the spec already names is not written twice. The BOM,
+    # the line ending and every byte outside the inserted block are kept. Returns the number of lines written.
+    $bytes = [IO.File]::ReadAllBytes($File)
+    $bom = $bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF
+    $skipBytes = if ($bom) { 3 } else { 0 }
+    $text = [Text.UTF8Encoding]::new($false).GetString($bytes, $skipBytes, $bytes.Length - $skipBytes)
+    $new = @($Pairs | Where-Object { $text -notmatch ('(?im)^[ \t]*Blocker:[ \t]*' + [regex]::Escape($_) + '[ \t]*\r?$') })
+    if ($new.Count -eq 0) { return 0 }
+    $eol = if ($text.Contains("`r`n")) { "`r`n" } else { "`n" }
+    $closing = [regex]::Match($text, '(?m)^##[ \t]+(?:Blocked tickets[ \t]*\r?$|(?:\d+\.[ \t]*)?Last Audit\b)')
+    $at = if ($closing.Success) { $closing.Index } else { $text.Length }
+    $before = $text.Substring(0, $at)
+    $lead = if ($before.Length -eq 0 -or $before -match '\n\r?\n\z') { '' } elseif ($before.EndsWith("`n")) { $eol } else { $eol + $eol }
+    $block = $lead + "Campaign '$Name' - children filed $(Get-Date -Format 'yyyy-MM-dd') by spec-draft.ps1; this ticket waits on each:" + $eol + $eol +
+        (@($new | ForEach-Object { "Blocker: $_" }) -join $eol) + $eol + $(if ($closing.Success) { $eol } else { '' })
+    [IO.File]::WriteAllText($File, $text.Insert($at, $block), [Text.UTF8Encoding]::new($bom))
+    return $new.Count
+}
+
 # ---- 1. the invocation, checked before anything is created ----
 if (-not $TextFile -or -not (Test-Path -LiteralPath $TextFile -PathType Leaf)) {
     Stop-Draft 2 "-TextFile '$TextFile' does not exist - write the owner's words to a UTF-8 file and pass it"
@@ -219,10 +311,21 @@ $ownerText = [IO.File]::ReadAllText($textFull, [Text.Encoding]::UTF8)
 if ([string]::IsNullOrWhiteSpace($ownerText)) {
     Stop-Draft 2 'the text is empty - a ticket with no words has nothing to be worked from'
 }
+$repos = @()   # the registry, read before the ticket is named: a derived name skips a registered key (section 2 uses it too)
+$registry = $null
+$list = Invoke-Pq @('list', '-Json')
+if ($list.code -eq 0) {
+    try {
+        $registry = ConvertFrom-Json -InputObject $list.text -DateKind String
+        $repos = @(Get-Prop $registry 'repos' @())
+    }
+    catch { $registry = $null; $repos = @() }
+}
+$keys = if ($repos.Count) { (@($repos | ForEach-Object { [string]$_.key }) -join ', ') } else { 'none registered' }
 # The New Specification dialog pre-fills the slug box with the type prefix and the owner types only the description, so
 # no slug at all and a bare bugfix-/hotfix- are both "name it from the text". Any other bare prefix is still refused.
 if ($Slug -cmatch '^(?<prefix>(bugfix-|hotfix-)?)$') {
-    $named = ConvertTo-SlugFromText $ownerText
+    $named = ConvertTo-SlugFromText $ownerText @($repos | ForEach-Object { [string]$_.key })
     if (-not $named) { $named = 'captured-' + (Get-Date -Format 'yyyyMMdd-HHmmss') }
     $Slug = $Matches['prefix'] + $named
     Write-Host "spec-draft: no ticket name given - named it '$Slug' from the text"
@@ -241,18 +344,106 @@ if ($Complexity -cmatch '^(light|medium|hard)$') {
     $Complexity = "$Complexity - " + $(if ($Complexity -ceq 'medium') { 'not assessed at capture' } else { 'level picked by the owner at capture' })
 }
 
-# ---- 2. the project ----
-$repos = @()
-$registry = $null
-$list = Invoke-Pq @('list', '-Json')
-if ($list.code -eq 0) {
-    try {
-        $registry = ConvertFrom-Json -InputObject $list.text -DateKind String
-        $repos = @(Get-Prop $registry 'repos' @())
-    }
-    catch { $registry = $null; $repos = @() }
+if (-not ($Projects -or $AllEnabled)) {
+    if ($SkipKeys) { Stop-Draft 2 '-Skip only narrows -AllEnabled' }
+    if ($Parent) { Stop-Draft 2 '-Parent belongs to the campaign form (-Projects or -AllEnabled)' }
 }
-$keys = if ($repos.Count) { (@($repos | ForEach-Object { [string]$_.key }) -join ', ') } else { 'none registered' }
+else {
+    # ---- 1b. the campaign form: the same ticket into several registered projects ----
+    # One child of this script per target does the capture; the queue is refreshed and asked ONCE, after the last
+    # child. A campaign never pins, lifts no hold and enables nothing: each target is reported as pq finds it.
+    if ($Projects -and $AllEnabled) { Stop-Draft 2 '-Projects and -AllEnabled contradict each other' }
+    if ($Project) { Stop-Draft 2 '-Project names one target; a campaign takes -Projects or -AllEnabled' }
+    if ($SkipKeys -and -not $AllEnabled) { Stop-Draft 2 '-Skip only narrows -AllEnabled' }
+    if ($PSBoundParameters.ContainsKey('Pin')) { Stop-Draft 2 'a campaign never pins - put one ticket first afterwards with pq pin <key>:<id>' }
+    if ($NoQueueReport) { Stop-Draft 2 '-NoQueueReport is for a single target' }
+    $attachFull = ''
+    if ($Attach) { try { $attachFull = @(Resolve-DraftAttachments $Attach) -join ';' } catch { Stop-Draft 2 $_.Exception.Message } }
+    $list = Invoke-Pq @('list', '-Json')
+    $repos = @()
+    if ($list.code -eq 0) { try { $repos = @(Get-Prop (ConvertFrom-Json -InputObject $list.text -DateKind String) 'repos' @()) } catch { $repos = @() } }
+    if ($repos.Count -eq 0) { Stop-Draft 2 'the portfolio registry could not be read or is empty - a campaign needs registered projects (pq list)' }
+    $known = @($repos | ForEach-Object { [string]$_.key })
+    $keysGiven = @($(if ($AllEnabled) { $SkipKeys } else { $Projects }) -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    $unknown = @($keysGiven | Where-Object { $known -inotcontains $_ })
+    if ($unknown.Count) { Stop-Draft 2 "unknown project key(s): $($unknown -join ', ') (registered: $($known -join ', '))" }
+    $targets = [Collections.Generic.List[string]]::new()
+    if ($AllEnabled) {
+        foreach ($r in $repos) {
+            $k = [string]$r.key
+            if ((Get-Prop $r 'enabled' $false) -ne $true -or $keysGiven -icontains $k) { continue }
+            if ($k -match 'sandbox') { Write-Host "spec-draft: left out $k - a sandbox is filed into only when -Projects names it"; continue }
+            $targets.Add($k)
+        }
+    }
+    else {
+        foreach ($n in $keysGiven) { $k = [string](@($known | Where-Object { $_ -ieq $n })[0]); if (-not $targets.Contains($k)) { $targets.Add($k) } }
+    }
+    if ($targets.Count -eq 0) { Stop-Draft 2 'the campaign has no target - every project was skipped, disabled or a sandbox' }
+    $parentRef = if ($Parent) { Resolve-DraftParent $Parent $repos } else { $null }
+    $childArgs = @('-NoProfile', '-File', $PSCommandPath, '-Slug', $Slug, '-TextFile', $textFull, '-NoPin', '-NoQueueReport')
+    if ($Priority -ge 0) { $childArgs += @('-Priority', "$Priority") }
+    if ($Complexity) { $childArgs += @('-Complexity', $Complexity) }
+    if ($DedupQuery) { $childArgs += @('-DedupQuery', $DedupQuery) }
+    if ($attachFull) { $childArgs += @('-Attach', $attachFull) }
+    if ($AllowClosedDuplicate) { $childArgs += '-AllowClosedDuplicate' }
+    if ($WhatIfPreference) { $childArgs += '-WhatIf' }
+    $rows = [Collections.Generic.List[object]]::new()
+    $failed = [Collections.Generic.List[string]]::new()
+    # The catalog writer refreshes the portfolio projection after every insert unless SZA_PQ_IN_SYNC is 1 (its guard
+    # against a nested sync); the one `pq sync` below does that for all targets together.
+    $savedInSync = $env:SZA_PQ_IN_SYNC
+    $env:SZA_PQ_IN_SYNC = '1'
+    try {
+        foreach ($k in $targets) {
+            $out = & $pwshExe @childArgs '-Project' $k 2>&1
+            $code = $LASTEXITCODE
+            $hit = $null
+            foreach ($l in @($out | ForEach-Object { "$_".TrimEnd() } | Where-Object { $_ })) {
+                $m = [regex]::Match($l, '^drafted\s+\S+?:(?<id>\S+)\s+file=(?<file>\S+)\s+priority=(?<pri>\S+)\s+pq=(?<pq>\S+)\s+position=\S+$')
+                if ($m.Success) { $hit = $m } else { Write-Host "[$k] $l" }
+            }
+            if ($code -ne 0) { $failed.Add("$k (exit $code)"); continue }
+            if ($hit) { $rows.Add([pscustomobject]@{ key = $k; id = $hit.Groups['id'].Value; file = $hit.Groups['file'].Value; pri = $hit.Groups['pri'].Value; pq = $hit.Groups['pq'].Value }) }
+            elseif (-not $WhatIfPreference) { $failed.Add("$k (no drafted line)") }
+        }
+    }
+    finally { $env:SZA_PQ_IN_SYNC = $savedInSync }
+    if ($WhatIfPreference) {
+        Write-Host "spec-draft: -WhatIf - $($targets.Count) target(s) checked ($($targets -join ', ')); nothing was created"
+        exit $(if ($failed.Count) { 1 } else { 0 })
+    }
+    $queueWait = if ($PSBoundParameters.ContainsKey('QueueTimeoutSeconds')) { $QueueTimeoutSeconds } else { 60 }
+    if (@($rows | Where-Object { $_.pq -ceq 'deferred' }).Count) {
+        $sync = Invoke-Pq @('sync') -TimeoutSeconds $queueWait
+        if ($sync.timedOut -or $sync.code -ne 0) { Write-Host "pq: the sync after the campaign reported a problem: $($sync.text.Trim()); repair with pq sync" }
+        $dry = Invoke-Pq @('dry-run', '-Json') -TimeoutSeconds $queueWait
+        $doc = $null
+        if (-not $dry.timedOut -and $dry.code -eq 0) { try { $doc = ConvertFrom-Json -InputObject $dry.text -DateKind String } catch { $doc = $null } }
+        if ($null -eq $doc) { Write-Host "pq: the queue check after the campaign failed or timed out (${queueWait}s); every verdict is unknown - run pq dry-run" }
+        foreach ($r in $rows) {
+            if ($r.pq -cne 'deferred') { continue }
+            if ($null -eq $doc) { $r.pq = 'unknown'; continue }
+            $skipRow = @(Get-Prop $doc 'skipped' @()) | Where-Object { [string]$_.repo -ceq $r.key } | Select-Object -First 1
+            $r.pq = Get-DraftVerdict $(if ($skipRow) { [string]$skipRow.why } else { '' })
+        }
+    }
+    if ($parentRef) {
+        $pairs = [string[]]@($rows | Where-Object { $_.pq -cne 'no-task-flow' } | ForEach-Object { "$($_.key):$($_.id)" })
+        foreach ($r in @($rows | Where-Object { $_.pq -ceq 'no-task-flow' })) { Write-Host "spec-draft: $($r.key):$($r.id) is a plain file with no ledger - not named as a blocker of $($parentRef.pair)" }
+        if ($pairs.Count) {
+            try { Write-Host "spec-draft: $(Add-DraftParentBlockers $parentRef.file $pairs $Slug) Blocker line(s) written into $($parentRef.pair) ($($parentRef.file)); its status is not changed" }
+            catch { $failed.Add("parent $($parentRef.pair) ($($_.Exception.Message))") }
+        }
+    }
+    foreach ($r in $rows) { Write-Host ("drafted {0}:{1} file={2} priority={3} pq={4} position=0/0" -f $r.key, $r.id, $r.file, $r.pri, $r.pq) }
+    if ($Slug -like 'hotfix-*') { Write-Host 'pq: a campaign is not pinned - pq pin <key>:<id> puts one ticket first' }
+    if ($failed.Count) { Write-Host "spec-draft: NOT done - $($failed -join '; '); once fixed, rerun with -Projects naming only the keys that failed" -ForegroundColor Red }
+    Write-Host ("campaign {0}: {1} drafted, {2} failed{3}" -f $Slug, $rows.Count, $failed.Count, $(if ($parentRef) { ", parent $($parentRef.pair)" } else { '' }))
+    exit $(if ($failed.Count) { 1 } else { 0 })
+}
+
+# ---- 2. the project ----
 
 $rec = $null
 $root = $null
@@ -458,6 +649,14 @@ if ($attachAfter) {
     catch { Stop-Draft 1 "ticket ${id} ($fileRel) was captured but its attachments were not linked: $($_.Exception.Message); copy the files into $([IO.Path]::GetFileNameWithoutExtension($fileRel))/attachments/ beside the spec and link them in section 0 by hand" }
 }
 
+if ($NoQueueReport) {
+    # The campaign form asks pq once for all its targets; this child only captures.
+    $label = if ($rec) { [string]$rec.key } else { Split-Path -Leaf $root }
+    Write-Host "spec-draft: captured ${label}:${id} ($fileShown), Draft, priority $Priority"
+    Write-Host ("drafted {0}:{1} file={2} priority={3} pq=deferred position=0/0" -f $label, $id, $fileShown, $Priority)
+    exit 0
+}
+
 # Project-owned capture tools may not use the shared catalog writer. Reconcile their result too.
 if ($rec) {
     $sync = Invoke-Pq @('sync', '-Path', $root) -TimeoutSeconds $QueueTimeoutSeconds
@@ -517,14 +716,7 @@ else {
         }
         else {
             $reason = if ($skip) { [string]$skip.why } else { '' }
-            $verdict = switch ($reason) {
-                ''            { 'dispatchable' }
-                'occupied'    { 'dispatchable' }
-                'heldByQueue' { 'held-by-queue' }
-                'hold'        { 'held' }
-                'disabled'    { 'disabled' }
-                default       { $reason }
-            }
+            $verdict = Get-DraftVerdict $reason
             switch ($verdict) {
                 'held-by-queue' { $notes.Add("pq: NOT dispatched - $label sits under 'hold' in PORTFOLIO_QUEUE.md. The ticket waits; lifting the hold is the owner's call (pq release $label)") }
                 'held'          { $notes.Add("pq: NOT dispatched - $label is on hold in the registry (pq release $label clears it). The ticket waits; that is the owner's call") }
@@ -547,7 +739,7 @@ else {
         }
         else {
             $pick = Invoke-PqPicker -RepoPath $root -TimeoutSeconds $pickRem
-            if ($pick.timedOut -or $pick.error -ceq 'PickerTimeout') {
+            if ($pick.error -ceq 'PickerTimeout') {
                 if ($verdict -ceq 'dispatchable') { $verdict = 'unknown' }
                 $notes.Add("pq: the picker timed out after ${QueueTimeoutSeconds}s - run pq dry-run or pq pin manually")
             }

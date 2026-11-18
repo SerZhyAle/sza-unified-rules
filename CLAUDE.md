@@ -48,7 +48,7 @@ pwsh -File deploy.ps1 -DryRun                             # the gates + what wou
 - **An ordinary edit gets checks of 5 seconds or less only** ([TESTING_AND_QA.md](rules/TESTING_AND_QA.md) §2). Do
   not run any test, suite or gate above 5 s after a normal modification - the owner switched them off on 2026-10-28
   and set the 5 s line for the whole portfolio on 2026-10-29. Measured on 2026-10-29 (a timed call of each): fast -
-  `check-rules.ps1` 0.8 s, `check-contracts.ps1` 2.4 s, `check-documents.py` 0.6 s, `assert-portable.ps1` 1.1 s, and from 2026-11-15 `pq-holds-health.tests.ps1` 4.0 s, `instance-settings.tests.ps1` 3.5 s and `portfolio-profile-override.tests.ps1` 0.6 s, and from 2026-11-15 `inbox-packet.tests.ps1` (the ticket-packet vector replay, 50 cases) 2.3 s and `app-commands-list.tests.ps1` 1.8 s, and from 2026-11-15 `taskflow-ledger-conformance.tests.ps1` (rules 7, 9, 65, 66 and 68, 12 cases) 4.0 s, and from 2026-11-15 `inbox-incomplete-packets.tests.ps1` (S0085, the removal of manifest-less packet folders and the retry of a packet whose check hits an I/O error, 11 cases) 1.4 s, and `app-commands-awareness.tests.ps1` (SZA-CTR04, 7 cases) 3.47 s, and from 2026-11-17 `release-ledger.tests.ps1` (S0092, 10 cases) 2.7 s, and `deploy-release-ledger.tests.ps1` (S0095, 6 cases) 0.4 s;
+  `check-rules.ps1` 0.8 s, `check-contracts.ps1` 2.4 s, `check-documents.py` 0.6 s, `assert-portable.ps1` 1.1 s, and from 2026-11-15 `pq-holds-health.tests.ps1` 4.0 s, `instance-settings.tests.ps1` 3.5 s and `portfolio-profile-override.tests.ps1` 0.6 s, and from 2026-11-15 `inbox-packet.tests.ps1` (the ticket-packet vector replay, 50 cases) 2.3 s and `app-commands-list.tests.ps1` 1.8 s, and from 2026-11-15 `taskflow-ledger-conformance.tests.ps1` (rules 7, 9, 65, 66 and 68, 14 cases) 4.0 s, and from 2026-11-15 `inbox-incomplete-packets.tests.ps1` (S0085, the removal of manifest-less packet folders and the retry of a packet whose check hits an I/O error, 11 cases) 1.4 s, and `app-commands-awareness.tests.ps1` (SZA-CTR04, 7 cases) 3.47 s, and from 2026-11-17 `release-ledger.tests.ps1` (S0092, 10 cases) 2.7 s, and `deploy-release-ledger.tests.ps1` (S0095, 6 cases) 0.4 s, and from 2026-11-18 `idle-hold.tests.ps1` (S0104, the idle hold and its lift, 6 cases) 0.2 s, and from 2026-11-18 `ticket-source.tests.ps1` (S0108, the ledger field `source`, 6 cases) 1.7 s;
   release tier - `layout-gate.tests.ps1` 26.5 s, `portfolio-events.tests.ps1` 20.4 s, `ticket-id-grammar.tests.ps1`
   about 18 s, and from 2026-10-28 `ledger-rules.tests.ps1` 313 s, `portfolio-queue.tests.ps1` about 200-330 s,
   `smoke-portfolio-runner.ps1` 120-300 s, `batch-runner.tests.ps1` 163 s, and from 2026-11-13 `block-links.tests.ps1` 19 s. What stays is the fast list and a direct call of
@@ -96,11 +96,18 @@ pwsh -File deploy.ps1 -DryRun                             # the gates + what wou
   without it leaves every consumer on the cached copy of the previous version while `update` reports
   "already at the latest version". `-NoVersionBump` is the way out for a commit that reaches no consumer;
   the deploy also skips the bump on its own when the whole change set is `README.md`, `LICENSE`,
-  `.gitignore`, `docs/releases/` or `rules/contrib/`.
+  `.gitignore`, `docs/releases/` or `rules/contrib/history/`. A facts record (`rules/contrib/<project>.md`) is
+  read by skills from the plugin cache, so its change raises the version like any other shipped file.
 - **The deploy also records the canon's own release ledger** ([docs/releases/RELEASES.md](docs/releases/RELEASES.md),
   package `sza`, channel `marketplace`, from 2026-11-17): after bumping the version pair it runs
   `release-ledger.ps1 build` (kind `release`) before staging, and after the plugin-cache check passes (`updated` or
   `current`) it runs `publish -State live` - warning on error and never failing the deploy.
+  When the deploy is run without a message, one generated line (`Get-DeployChangeNote` in `deploy.ps1`) is both
+  the commit subject and the note of that build row: the subjects of the local commits not yet on the remote,
+  the changed rule documents by name, and a count of the other changed paths per top-level folder. A line over
+  72 characters is cut in the subject and carried whole in the commit body. The body also names the plugin
+  version, so `git log --grep` with a version number finds what that version holds. With a message, the subject
+  is the message and the note is its first line.
   [tools/tests/deploy-release-ledger.tests.ps1](tools/tests/deploy-release-ledger.tests.ps1) covers it with stubs.
 - **The deploy also brings this machine's plugin to the pushed version** (from 2026-10-29): after the push, on `main`,
   when the cache is behind, it runs `claude plugin marketplace update sza-unified-rules` and `claude plugin update
@@ -123,8 +130,9 @@ pwsh -File deploy.ps1 -DryRun                             # the gates + what wou
 - **Editing `tools/check-compliance.ps1`**: a new check earns its place only if it is mechanically decidable
   in an arbitrary repo, offline, with a near-zero false-positive rate. Verify a candidate against the real
   repos before shipping it; a check that cries wolf gets disabled, and then nothing is enforced.
-- **`rules/contrib/<project>.md`** is the per-project record. A project session may append its own record
-  here and nothing else.
+- **`rules/contrib/<project>.md`** is the per-project facts record, edited in place; its dated sections are
+  appended to `rules/contrib/history/<project>.md`, which no skill reads. A project session may edit those two
+  files of its own project here and nothing else.
 
 ## How the pieces fit
 

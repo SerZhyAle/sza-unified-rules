@@ -30,6 +30,9 @@
          with a notice line, creates no project file besides the ticket, and a present project form still wins.
      16. A ticket template with no {{TEXT}} token refuses the capture before anything is created, with and
          without -Attach (S0099); a template given its token back captures as before.
+     17. The campaign form (S0107): -Projects files one text into each named project with one `pq sync` and one
+         `pq dry-run` for all of them and no pin; -Parent gets one Blocker line per child and keeps its status;
+         -AllEnabled leaves a sandbox out; an unknown key, -Pin, -Projects with -AllEnabled and a lone -Skip exit 2.
 
     -Only <regex> runs the cases whose name matches it (cases 2-4 build on case 1, so use it for 8 and 9 only).
 #>
@@ -377,11 +380,17 @@ exit 0
         $plain = Join-Path $scratch 'unnamed'; New-Item -ItemType Directory -Path $plain | Out-Null
         $ru = Write-Text 'owner13.txt' 'Не работает кнопка "следующий файл" в плеере'
         $none = Write-Text 'owner14.txt' '!!! ??? 12'
+        $cmdKey = Write-Text 'owner17.txt' '/spec-draft repo_a the grid is slow on first open'
+        $cmdOnly = Write-Text 'owner18.txt' '/sd unknown-key the grid is slow'
+        $keyOnly = Write-Text 'owner19.txt' 'repo-a grid is slow'
         $cases = @(
             @{ n = 'bare bugfix-'; a = @('-Slug', 'bugfix-', '-TextFile', $ru); m = "named it 'bugfix-rabotaet-knopka-sleduyushchiy-fayl-pleere'" },
             @{ n = 'bare hotfix-'; a = @('-Slug', 'hotfix-', '-TextFile', $ru); m = "named it 'hotfix-rabotaet-knopka-sleduyushchiy-fayl-pleere'" },
             @{ n = 'no slug at all'; a = @('-TextFile', $ru); m = "named it 'rabotaet-knopka-sleduyushchiy-fayl-pleere'" },
-            @{ n = 'no words to name it from'; a = @('-Slug', 'bugfix-', '-TextFile', $none); m = 'bugfix-captured-' }
+            @{ n = 'no words to name it from'; a = @('-Slug', 'bugfix-', '-TextFile', $none); m = 'bugfix-captured-' },
+            @{ n = 'a slash command and the key after it are skipped'; a = @('-TextFile', $cmdKey); m = "named it 'the-grid-slow-first-open'" },
+            @{ n = 'a word after the command that is no key stays'; a = @('-TextFile', $cmdOnly); m = "named it 'unknown-key-the-grid-slow'" },
+            @{ n = 'a key with no command before it stays'; a = @('-TextFile', $keyOnly); m = "named it 'repo-grid-slow'" }
         )
         foreach ($c in $cases) {
             $r = Invoke-Draft (@('-Project', $plain, '-WhatIf') + $c.a)
@@ -552,6 +561,47 @@ exit 0
         $r = Invoke-Draft @('-Project', $plainAtt, '-Slug', 'plain-files', '-TextFile', $f, '-Attach', "$shot;$log")
         Assert-That ($r.code -eq 0) "plain capture: $($r.output)"
         & $check $plainAtt 'PLAN\S0001_plain-files.md'
+    }
+
+    Run-Case '17 the campaign form: one text into several projects, one sync and one dry-run, Blocker lines in the parent' {
+        foreach ($n in 'camp-one', 'camp-two', 'camp-sandbox', 'camp-parent') {
+            $reg = Invoke-PqCli @('register', '-Path', (New-Repo $n), '-Key', $n, '-Enable', '-PermissionMode', 'bypassPermissions')
+            Assert-That ($reg.code -eq 0) "register ${n}: $($reg.output)"
+        }
+        $f = Write-Text 'owner17.txt' 'One text for several projects.'
+        $r = Invoke-Draft @('-Project', 'camp-parent', '-Slug', 'campaign-parent', '-TextFile', $f)
+        Assert-That ($r.code -eq 0 -and $r.last -match '^drafted camp-parent:S0001 ') "parent: $($r.output)"
+        $countPq = Join-Path $scratch 'count-pq.ps1'
+        $verbLog = Join-Path $scratch 'count-pq.log'
+        $stub = @(
+            "[IO.File]::AppendAllText('$($verbLog.Replace("'", "''"))', [string]`$args[0] + [Environment]::NewLine)",
+            "& (Get-Process -Id `$PID).Path -NoProfile -File '$($pqScript.Replace("'", "''"))' @args",
+            'exit $LASTEXITCODE') -join "`n"
+        [IO.File]::WriteAllText($countPq, $stub)
+        $r = Invoke-Draft @('-Projects', 'camp-one,CAMP-TWO', '-Slug', 'campaign-item', '-TextFile', $f, '-Parent', 'camp-parent:S0001') $scratch @{ SZA_PQ_SCRIPT = $countPq }
+        Assert-That ($r.code -eq 0) "exit $($r.code): $($r.output)"
+        foreach ($k in 'camp-one', 'camp-two') {
+            Assert-That ($r.stdout -match "(?m)^drafted ${k}:S0001 file=PLAN/S0001_campaign-item\.md priority=50 pq=dispatchable position=0/0\r?$") "no drafted line for ${k}: $($r.stdout)"
+            Assert-That ((Get-Content $queueFile -Raw) -match "${k}:S0001_campaign-item") "no portfolio row for $k"
+        }
+        Assert-That ($r.last -ceq 'campaign campaign-item: 2 drafted, 0 failed, parent camp-parent:S0001') "last line: $($r.last)"
+        $verbs = @(Get-Content -LiteralPath $verbLog)
+        Assert-That (@($verbs -ceq 'sync').Count -eq 1 -and @($verbs -ceq 'dry-run').Count -eq 1 -and @($verbs -ceq 'pin').Count -eq 0) "pq verbs: $($verbs -join ' ')"
+        $parentSpec = [IO.File]::ReadAllText((Join-Path $scratch 'camp-parent\PLAN\S0001_campaign-parent.md'))
+        foreach ($k in 'camp-one', 'camp-two') { Assert-That ($parentSpec -match ('(?m)^Blocker:[ ]' + $k + ':S0001\r?$')) "the parent spec has no Blocker line for $k" }
+        Assert-That ($parentSpec -match '(?m)^\*\*Status:\*\* Draft') 'the parent status changed'
+        $r = Invoke-Draft @('-AllEnabled', '-Slug', 'campaign-all', '-TextFile', $f, '-WhatIf')
+        Assert-That ($r.stdout -match 'left out camp-sandbox' -and $r.stdout -match 'target\(s\) checked \([^)]*camp-one' -and $r.stdout -notmatch '\[camp-sandbox\]') "-AllEnabled -WhatIf: $($r.output)"
+        Assert-That (-not (Test-Path (Join-Path $scratch 'camp-sandbox\PLAN\S0001_campaign-all.md'))) 'the sandbox received a ticket'
+        foreach ($c in @(
+                @{ a = @('-Projects', 'camp-one,no-such'); m = 'unknown project key(s): no-such' },
+                @{ a = @('-Projects', 'camp-one', '-Pin'); m = 'never pins' },
+                @{ a = @('-Projects', 'camp-one', '-AllEnabled'); m = 'contradict' },
+                @{ a = @('-Skip', 'camp-one'); m = '-Skip only narrows' })) {
+            $r = Invoke-Draft (@('-Slug', 'campaign-refused', '-TextFile', $f) + $c.a)
+            Assert-That ($r.code -eq 2 -and $r.output -match [regex]::Escape($c.m)) "refusal '$($c.m)': exit $($r.code): $($r.output)"
+        }
+        Assert-That (-not (Test-Path (Join-Path $scratch 'camp-one\PLAN\S0002_campaign-refused.md'))) 'a refused campaign wrote a ticket'
     }
 }
 finally {

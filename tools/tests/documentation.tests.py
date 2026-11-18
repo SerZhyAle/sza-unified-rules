@@ -1,5 +1,7 @@
 """Positive/negative documentation checks in independent throwaway Git corpora."""
+import contextlib
 import importlib.util
+import io
 import json
 import subprocess
 import sys
@@ -159,6 +161,29 @@ class Documents(unittest.TestCase):
         (self.root / "dev/note.md").write_text("# Note\n![Image](../docs/image.svg)")
         (self.root / "docs/image.svg").write_text("<svg/>")
         self.assertFailure("asset outside local corpus")
+
+    def test_default_update_trigger_is_counted_not_failed(self):
+        registry = self.root / "docs/registry.jsonl"
+        records = DOCS.read_records(registry)
+        next(r for r in records if r["path"] == "docs/page.md")["update_triggers"] = ["The page layout changes"]
+        registry.write_text("".join(json.dumps(r) + "\n" for r in records))
+        out, argv = io.StringIO(), sys.argv
+        sys.argv = ["check-documents.py", "--root", str(self.root), "--config", "docs/corpus.json"]
+        try:
+            with contextlib.redirect_stdout(out):
+                code = DOCS.main()
+        finally:
+            sys.argv = argv
+        warning = ("docs/registry.jsonl: warning: 1 of 2 registry rows carry the default update trigger"
+                   " - a default trigger declares nothing")
+        self.assertEqual(code, 0, out.getvalue())
+        self.assertEqual(out.getvalue().splitlines(), [warning, "documents: PASS (corpora=1 files=2 errors=0)"])
+        for record in records:
+            record["update_triggers"] = ["A specific trigger", DOCS.DEFAULT_TRIGGER]
+        registry.write_text("".join(json.dumps(r) + "\n" for r in records))
+        notes = []
+        self.assertEqual(self.check(warnings=notes)[0], [])
+        self.assertEqual(notes, [])
 
     def test_init_local_leaves_ticket_files_to_the_ledger(self):
         (self.root / ".gitignore").write_text("dev/\nPLAN/\n")

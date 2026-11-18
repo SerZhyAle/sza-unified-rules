@@ -21,17 +21,22 @@
 # read here has to survive its absence or this library would break them the moment it loads.
 $script:IdleRunDefaultThreshold = 2
 $script:IdleRunDefaultOutcomes = @(
-    'ok', 'timeout', 'claim-lost', 'claim-lost-before-launch', 'no-progress-or-claim-lost', 'launch-failed'
+    'ok', 'timeout', 'claim-lost', 'no-progress-or-claim-lost'
 )
 
-# The third class (S4265). A run is one of: one that COUNTS (an idle outcome, below), one that ENDS
-# the series (any other outcome, or a status move), and one that is NEUTRAL - it says nothing about
-# the ticket, so the walk steps over it and neither grows nor cuts the series. The only member is a
-# run that ended on the account's usage limit: the cause was never the ticket, so listing it as idle
-# would hold a healthy ticket out of the queue, and leaving it out of the idle list would end a real
-# series of two. Not configurable on purpose - it is the canon's statement about a cause, and a
-# project that listed it in runner.idleOutcomes would otherwise change what the word means.
-$script:IdleRunNeutralOutcomes = @('limit-hit')
+# The third class (S4265). A run is one of: one that COUNTS (an idle outcome), one that ENDS the
+# series (any other outcome, or a status move), and one that is NEUTRAL - it says nothing about the
+# ticket, so the walk steps over it and neither grows nor cuts the series. Three members: a run that
+# ended on the account's usage limit, and the two outcomes written when no child worked the ticket at
+# all - a sibling took the claim before the launch, or the launch itself failed (TASK-FLOW rule 24).
+# Not configurable on purpose: the walk tests this list BEFORE the project's own, so a profile that
+# still names one of them in runner.idleOutcomes cannot change what the word means.
+$script:IdleRunNeutralOutcomes = @('limit-hit', 'claim-lost-before-launch', 'launch-failed')
+
+# The lift (TASK-FLOW rule 24). A held ticket whose spec file was written after its newest counted
+# run ended has been edited since, and is offered once more. finishedAt is cut to whole seconds, so
+# without the grace a write in the same second as the journal row would read as an edit.
+$script:IdleRunLiftGraceSeconds = 60
 
 $script:IdleRunMap = $null
 
@@ -177,14 +182,35 @@ function Get-IdleRunSeries {
     return [pscustomobject]@{ Id = $Id; Count = 0; LastOutcome = ''; LastFinishedAt = ''; LastAwaitsRelease = '' }
 }
 
+function Test-IdleRunLifted {
+    <#
+    .SYNOPSIS
+        True when the ticket's spec file was last written more than the grace after its newest counted
+        run ended: the ticket was edited since, so the hold steps aside for one pass. Every doubt
+        answers $false - no path, no file, an unreadable time. -SpecPath is an absolute path.
+    #>
+    param([Parameter(Mandatory)] $Series, [string] $SpecPath = '')
+    if ([string]::IsNullOrWhiteSpace($SpecPath)) { return $false }
+    $finished = ConvertTo-IdleRunDate $Series.LastFinishedAt
+    if ($finished -eq [datetime]::MinValue) { return $false }
+    try {
+        if (-not (Test-Path -LiteralPath $SpecPath -PathType Leaf)) { return $false }
+        $written = (Get-Item -LiteralPath $SpecPath -ErrorAction Stop).LastWriteTime
+        return ($written -gt $finished.AddSeconds($script:IdleRunLiftGraceSeconds))
+    } catch {
+        return $false
+    }
+}
+
 function Test-IdleRunHeld {
     <#
     .SYNOPSIS
         True when this ticket has reached the project's threshold and automatic ranking must pass
         it over. The comparison lives here so the ranker, the queue renderer and the runner cannot
-        disagree about where the line is.
+        disagree about where the line is. With -SpecPath the lift applies (TASK-FLOW rule 24).
     #>
-    param([Parameter(Mandatory)][string] $Id, [switch] $Refresh)
+    param([Parameter(Mandatory)][string] $Id, [string] $SpecPath = '', [switch] $Refresh)
     $series = Get-IdleRunSeries -Id $Id -Refresh:$Refresh
-    return ($series.Count -ge (Get-IdleRunPolicy).Threshold)
+    if ($series.Count -lt (Get-IdleRunPolicy).Threshold) { return $false }
+    return (-not (Test-IdleRunLifted -Series $series -SpecPath $SpecPath))
 }

@@ -57,8 +57,8 @@ Ordered by cost of violation. The pointer after each line is the doc that expand
     already implemented; what was not ordered is not mentioned. The owner is told the plain truth in chat,
     including what is not built or not proven.
     ([DOCUMENTATION_CONCEPT](DOCUMENTATION_CONCEPT.md) §5, [LOCALIZATION](LOCALIZATION.md))
-18. **Commit or push only when asked**, never casually on the default branch (the site-publish flow is the one
-    named exception), never `--no-verify` / `--force` / bypassed signing; agent commits carry the co-author
+18. **Commit or push only when asked**, and on the checked-out branch - never create one for a commit unless
+    the owner asks; never `--no-verify` / `--force` / bypassed signing; agent commits carry the co-author
     trailer. ([GITHUB_INTERACTION](GITHUB_INTERACTION.md) §2-3)
 19. **Chat in Russian; write every artifact in English** - files, code, comments, script and console output,
     commit messages, PR titles and bodies. ([AUTHOR](AUTHOR.md) "Language", [DEVELOPMENT](DEVELOPMENT.md) §4)

@@ -944,6 +944,14 @@ function Invoke-PqStatus {
     try { $lastBuilds = @(Get-PqLastDeliveries) } catch { }
     $targetStops = @(Get-PqStopFiles | Where-Object { $_.kind -cne 'all' })
     $paused = Test-PqPaused
+    # S0103: the two other reasons a project is not worked, each under its own word. frozen = an enabled project
+    # whose own queue stop file exists (an owner stop or a release freeze, rule 26); disabled = enabled is false.
+    $frozen = @()
+    $disabled = @()
+    if ($null -ne $reg) {
+        try { $frozen = @(Get-PqStoppedRepos $reg) } catch { $frozen = @() }
+        $disabled = @(@($reg.repos) | Where-Object { $_.enabled -ne $true } | ForEach-Object { [string]$_.key })
+    }
     # S0044: every held project and who holds it - the registry flag (true), a queue-file hold row (queue) or both.
     $holds = [Collections.Generic.List[object]]::new()
     if ($null -ne $reg) {
@@ -960,6 +968,8 @@ function Invoke-PqStatus {
             targetStops = @($targetStops | ForEach-Object { [ordered]@{ kind = $_.kind; target = $_.target; level = $_.level } })
             paused = $paused
             holds = @($holds)
+            frozen = @($frozen)
+            disabled = @($disabled)
             workers = $workers
             passesToday = $passesToday
             next = $nextCandidate
@@ -977,6 +987,8 @@ function Invoke-PqStatus {
     foreach ($ts in $targetStops) { "STOP of $($ts.kind) $($ts.target): level=$($ts.level)" }
     if ($paused) { 'Paused: yes (pq resume continues)' }
     if ($holds.Count -gt 0) { "Held: $((@($holds) | ForEach-Object { "$($_.repo) hold=$($_.hold)" }) -join ', ')" }
+    if ($frozen.Count -gt 0) { "Frozen: $($frozen -join ', ') - the project's own queue stop file exists (an owner stop or a release freeze)" }
+    if ($disabled.Count -gt 0) { "Disabled: $($disabled -join ', ') - enabled is false in the registry" }
     if ($workers.Count -eq 0) {
         "Workers: none active"
     }
@@ -1041,6 +1053,26 @@ function Invoke-PqInbox {
     }
     catch { }
     $inbox = Get-PqInbox -Registry $registry -Held $held
+    # S0105: the tickets every picker passes over on an idle-run hold - a working status, yet no robot takes them. Read
+    # from the marker the queue file already carries (no rank). No ledger status, so not a kind: out of counts and total.
+    $stalledRows = @()
+    try { $stalledRows = @(Get-PqQueueIdleRows (Get-PqQueuePath $registry)) } catch { }
+    $stalledOldest = $null
+    $stalledTickets = @(foreach ($sr in $stalledRows) {
+        $age = $null
+        $at = [DateTime]::MinValue
+        if ($sr.changed -and [DateTime]::TryParseExact([string]$sr.changed, 'yy-MM-dd HH:mm', [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref]$at)) {
+            $age = [long][Math]::Max(0, [Math]::Floor(([DateTime]::Now - $at).TotalSeconds))
+            if ($null -eq $stalledOldest -or $age -gt $stalledOldest) { $stalledOldest = $age }
+        }
+        [ordered]@{ repo = $sr.repo; id = $sr.id; idle = $sr.idle; outcome = $sr.outcome; ageSeconds = $age; age = (ConvertTo-PqInboxAgeText $age) }
+    })
+    $inbox['stalled'] = [ordered]@{
+        label = 'stalled'; count = $stalledTickets.Count; oldestSeconds = $stalledOldest
+        oldestAge = $(if ($null -eq $stalledOldest) { 'none' } else { ConvertTo-PqInboxAgeText $stalledOldest })
+        clear = '/sa <key>:<id> in a session (pq start -Ticket does not pass the idle-run hold)'
+        tickets = $stalledTickets
+    }
     if ($Json) {
         ConvertTo-Json -InputObject $inbox -Depth 12
         return 0
@@ -1062,6 +1094,9 @@ function Invoke-PqInbox {
             '  {0}:{1}  p{2}  age {3}{4}' -f $t.repo, $t.id, $t.priority, $t.age, $note
         }
     }
+    $st = $inbox['stalled']
+    '{0,-8} {1,4}  oldest {2,-6}  clear: {3}' -f 'stalled', $st['count'], $st['oldestAge'], $st['clear']
+    foreach ($t in @($st['tickets'])) { '  {0}:{1}  idle {2}, {3}  age {4}' -f $t.repo, $t.id, $t.idle, $t.outcome, $t.age }
     foreach ($s in @($inbox.skipped)) { [Console]::Error.WriteLine("pq inbox: skipped $s") }
     "pq inbox: {0} waiting across {1} project(s)" -f $inbox.total, $inbox.projects
     return 0

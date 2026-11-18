@@ -11,6 +11,10 @@
     rule 9  - the qualified token is read in the spec file and in the note, and a quoted example is not read
     rule 7  - the Q: and DO: tokens of a BlockQuestions note are literal: "need to do: x" and a lowercase "q:" are
               prose and refused; `Q: ..?` and `DO: <action>` pass (check-block-note.ps1 as a child process)
+    rule 3  - update.ps1 -Title writes the optional `title` of a row, trimmed, and changes neither name nor status
+    rule 9  - the BlockByOtherTask refusal names the channels of the canon ticket form: the note for a local
+              token, the note or the spec file for a qualified one, and no "section 10" (a text match on
+              check-block-note.ps1)
     rule 66 - a start that finds no free worker slot is a valid start that did not run: the loop returns 3, not 2
     rule 65 - a file '<id>_<slug>.md' in the specs directory with no row is listed with its header status (else
               Draft) and a lowercase-hyphen name; a file whose id is in the journal, the archive or the burned list,
@@ -116,6 +120,28 @@ try {
         Assert-Equal (Test-QuestionsNote 'q: which package number?') 1 'lowercase "q:" is prose'
     }
 
+    Run-Case 'rule 9: the BlockByOtherTask refusal names the note and the spec file, not a section 10' {
+        $text = [IO.File]::ReadAllText($gate)
+        Assert-That ($text -match 'records no blocker in a directional channel') 'the refusal headline is gone'
+        Assert-That ($text -match 'a local token, in the note \(-StatusNote\)') 'the local channel does not name the note'
+        Assert-That ($text -match 'a cross-repo token, in the note or the spec file') 'the qualified channel does not name the spec file'
+        Assert-That ($text -notmatch 'in section 10') 'the refusal still sends the reader to section 10'
+    }
+
+    # ------------------------------------------------------------------ rule 3
+    Run-Case 'rule 3: update.ps1 -Title writes the optional title, trimmed, and changes neither name nor status' {
+        # SZA_PQ_IN_SYNC keeps the catalog write from starting the portfolio sync child: one process, not two.
+        $savedInSync = $env:SZA_PQ_IN_SYNC
+        $env:SZA_PQ_IN_SYNC = '1'
+        try { $r = Invoke-Tool $gateRoot (Join-Path $Harness 'spec_catalog\update.ps1') @('-Id', 'S0001', '-Title', '  Gate fixture ticket  ') }
+        finally { $env:SZA_PQ_IN_SYNC = $savedInSync }
+        Assert-Equal $r.code 0 "update.ps1 -Title: $($r.out)"
+        $row = Get-Content -LiteralPath (Join-Path $gateRoot 'PLAN\spec-catalog.jsonl') -Encoding UTF8 | Where-Object { $_.Trim() } | ForEach-Object { $_ | ConvertFrom-Json } | Select-Object -First 1
+        Assert-Equal $row.title 'Gate fixture ticket' 'the title, trimmed'
+        Assert-Equal $row.name 'gate' 'the name is untouched'
+        Assert-Equal $row.status 'Draft' 'the status is untouched'
+    }
+
     # ------------------------------------------------------------------ rule 66
     Run-Case 'rule 66: no free worker slot is a valid start that did not run - exit 3, not 2' {
         $loop = [IO.File]::ReadAllText((Join-Path $Lib 'loop.ps1'))
@@ -177,6 +203,8 @@ try {
         Assert-Equal $row.name 'new-thing' 'the slug lowercased, joined by hyphens'
         Assert-Equal $row.status 'Approved' 'the status of the header'
         Assert-Equal ($row.file -replace '\\', '/') 'PLAN/S0010_New_Thing.md' 'the file it names'
+        $sourceProp = $row.PSObject.Properties['source']
+        Assert-That ($null -ne $sourceProp -and [string]$sourceProp.Value -ceq 'import') 'the row does not say source import (TASK-FLOW rule 3)'
         Assert-Equal @(Register-PqTicketFiles -Repo ([pscustomobject]@{ key = 'one'; path = $one }) -HarnessRoot $Harness -List).Count 0 'a second run finds nothing'
     }
     Run-Case 'rule 65: a repository with no profile or no ledger is not given one' {

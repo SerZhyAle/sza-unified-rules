@@ -55,13 +55,10 @@ workspace files from the Git index with `git rm --cached`, keeping their working
 alone does not untrack them. Check both `git check-ignore --no-index` and `git ls-files` for the configured
 paths. The existing Git history is not rewritten by this change. Keep any desired backup outside Git.
 
-**Finished specifications move with their status.** On entry into `Implemented`, `Verified` or
-`BlockNeedUserTest`, the status tool moves the spec file and its matching ticket folder into the configured
-archive (`DONE/` or `archive/`), and records the new path; configure that archive separately from the active
-specification directory. Reopening moves the files back. The status and its
-meaning do not change merely because a file moves. Existing ready tickets can be reconciled with
-`spec_catalog/reconcile-spec-homes.ps1` (dry run first, then `-Apply`); it reports missing files, collisions
-and leases without overwriting them. The detailed lifecycle is `TASK-FLOW` rules 17 and 70.
+**Finished specifications move with their status.** The status tool moves a finished ticket's spec file and
+its folder into the configured archive (`DONE/` or `archive/`) and back on reopening; configure that archive
+as a directory distinct from the active one. The mechanics and the reconcile command are in
+[SCHEMA.md](../tools/harness/spec_catalog/SCHEMA.md), "Where the spec file lives" (`TASK-FLOW` rules 17 and 70).
 
 **Root stays minimal.** Only what a *user* or a *first-time contributor* expects at eye level lives at
 root: the README(s), LICENSE, the agent rules, the launcher and the toolchain's own build files, the

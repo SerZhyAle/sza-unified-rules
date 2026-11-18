@@ -11,6 +11,12 @@ Filler for Android: the local-storage Filler of FastMediaSorter (upstream ticket
 
 Public presence since 2026-11-13: a public GitHub repository, a GitHub Pages privacy site and a Google Play Console app, all created on the owner's order; nothing is published on Google Play. The product's one channel is Google Play, with the phone app and the watch app under one application id and one listing.
 
+> **Keep this note in the record.** Current facts, edited in place. Never append a dated section to this file:
+> what happened and when goes to the file of the same name under `history/`
+> ([the rules of that folder](history/README.md)), which is not reading for a task. A delta the core absorbed,
+> a candidate that was applied or refused and a question that was answered are deleted here; the history
+> section of that day says what became of them.
+
 ## Overlay facts (verified against this repo, 2026-11-10; refreshed 2026-11-13 where marked)
 
 - **Source root & release-mechanics.** Gradle module `phone` and the root Gradle files (`build.gradle.kts`, `settings.gradle.kts`, `gradle/`, `buildSrc/`) are on `main` (2026-11-13, measured on the remote tree); the 2026-11-10 statement that no `build.gradle.kts` was tracked is history. Specs in `PLAN/Sxxxx_<slug>.md`, harness run from the plugin through `tools/harness.ps1`; root launchers `r0.ps1`, `r1`-`r3`, `rs`, `rm`, `rw` rendered by the scaffold on 2026-11-10 (evidence: `.sza-profile.json`, `tools/harness.ps1`, root listing). Portfolio entry: key `filler-mob`, rank 120, registry `permissionMode` `bypassPermissions` (evidence: `pq list -Json`, 2026-11-10).
@@ -41,10 +47,6 @@ Recorded as the owner's session reported it; what the canon session measured its
 - **A removed app on the same account.** The account also holds "Filler" `ua.od.sza.filler` (2018), removed by Google for a policy violation. The owner confirmed `com.sza.filler` is its new version; the 2018 notice is read before the first review (filler-mob:S0022 step 2).
 - **Not published.** Nothing is published on Google Play (owner's report). The report names no bundle upload, no review submission and no release. Nothing here claims an upload.
 - **Still before publication (owner's report, not canon work):** filler-mob:S0022; the family notices `hub:S0012` and one footer-grid ticket per map consumer. The runbook lessons this run found are this repository's S0065.
-
-## Canon state of this repository, 2026-11-13
-
-The remote stamp declares canon `2026.11.09.1` with core digest `sha256:9abe1d23..` (adopted 2026-11-09, reconciled 2026-11-10, read from the remote `.sza-canon.json`). The canon at the time of this refresh is `2026.11.13.4` (this repository's `CANON_VERSION`, the same as the installed plugin `2026.1113.4`), so the stamp is behind it. The owner's report compared it with `2026.11.13.2` and names it as warning `SZA-CANON03`. The re-sync is that repository's own adopt-canon run. This record does not write a stamp it does not own, and it did not run `check-compliance` from that repository.
 
 ## Deltas by document
 
@@ -83,15 +85,3 @@ Decided on 2026-11-13 and therefore closed here: the application id, the signing
 - **Still before publication (the product's own steps, not decided here):** the switch from the provisional id and its release guard (filler-mob:S0007), the creation of the app signing key and the upload key (the owner's step), the 2018 notice and the console review steps (filler-mob:S0022), and the family notices (`hub:S0012`, one footer-grid ticket per map consumer).
 - **Form of the parity inventory against S4521** - decided in the plan pass of S0003, after the upstream has been re-inventoried (carried from 2026-11-10, unchanged).
 
-## Canon adoption 2026-11-10
-
-Completion of the bootstrap adoption against canon **2026.11.10.1** (stamp version `2026.11.09.1`, core digest `sha256:9abe1d23..` equal to the installed canon's, so no re-sync and no version write by hand per REPO-STAMP rule 8), reference model, overlay B.
-
-- **What changed in the repo:** `CLAUDE.md` rewritten from the bootstrap stub (canon pointer, catalog named once, upstream and parity as standing law, owner decisions taken and open, the release plan's six decisions, the layout, verification between releases); `AGENTS.md` replaced by the delegating stub; `.sza-canon.json` gained `schemaVersion`, `reconciledOn`, `contribRecord` and the LICENSE exemption; `.gitignore` gained the missing leak globs; the day-0 scaffold wrote the plan files `RELEASE_READY.md`, `RELEASE_QUEUE_DONE.md`, `TICKET_TEMPLATE.md`, the empty archive and burned-ids stores, and the launchers `r0`-`r3`, `rs`, `rm`, `rw`; the eight spec command forwarders were written to `.claude/commands/`.
-- **Owner decisions closed:** none - the ticket forbids closing them by assumption; they are listed above.
-- **Ticket id scheme:** `Sxxxx`, the harness default, cited with the repository name across repositories.
-- **Divergences recorded:** `PLAN/` tracked; `LICENSE` absent under a dated exemption.
-- **Catalog:** no registry rows written - the product holds no contract today; the first declared contract brings its rows and its `docs/contracts/` pointer.
-- **Compliance gate:** 3 error(s), 1 warning(s) before; after, run from the installed plugin: 0 error(s), 1 warning(s), exit 0 - the warning is `SZA-CANON06` for this record, which that gate resolves under the installed plugin's `rules/`; run from the canon checkout (same core digest `9abe1d23..`, where this record exists): 0 error(s), 0 warning(s), exit 0. The installed-plugin warning clears when the canon repository publishes this record.
-- **Remains:** S0002-S0007 as ticketed; the open owner decisions above.
-- **Verification:** see the repository's S0001 `## Last Audit`.

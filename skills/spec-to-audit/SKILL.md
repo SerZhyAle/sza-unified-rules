@@ -93,6 +93,14 @@ is the contract the audit later checks the build against.
   it no longer reads `not assessed at capture` (see [DEVELOPMENT.md](../../rules/DEVELOPMENT.md) section
   8). A primitive-spec rung skips this item - it has three sections and no pipeline.
 
+**Title.** The spec pass - on every rung, the primitive one included - also gives the ticket a short English
+`title`: 3 to 8 words that say what the ticket is about, one line, 80 characters at most, with no id and no
+status in it. It goes into the ledger through the catalog tool - `update.ps1 -Id <id> -Title "<title>"` - and
+is what `pq status` and PQShell show beside the id. The file name and the ledger `name` are never renamed: a
+ticket captured without a name keeps the first words of the request, transliterated, and other tickets
+address it by id. A catalog tool that refuses `-Title` (a project's own copy, a harness older than this rule)
+means no title is written - say so in the report and go on. A later pass rewrites a title only when it is wrong.
+
 Status vocabulary, identical across the portfolio:
 `Draft -> Approved -> Tactical -> In Progress -> Implemented -> Verified`, plus `Partial`, `Broken`,
 `Archived`, and the `Block*` family (`BlockNeedUserTest`, `BlockByOtherTask`, `BlockQuestions`,
@@ -108,7 +116,9 @@ record ([adopt-canon](../adopt-canon/SKILL.md)), so a ticket that says "record i
 by a canon session" is not blocked: write the record, with the re-sync it belongs to. Where a ticket genuinely
 waits on another registered repository in the portfolio (the canon included when a rule, skill or contract
 must change first), file the needed ticket there with `spec-draft.ps1 -Project <key>`, record
-`Blocker: <key>:<id>` in section 10 or `statusNote`, and park the waiting ticket in `BlockByOtherTask`
+`Blocker: <key>:<id>` in `statusNote` (the `-StatusNote` of the status move; the same token written bare on a
+line of its own under `### 3.3 Owner inputs (Approval gate)` is read as well), and park the waiting ticket in
+`BlockByOtherTask`
 (TASK-FLOW rule 52, S0042). Where an owner action on a device, at the desk, or in an outside console account
 must happen **before** implementation can proceed, write `- **DO:** <action>` under
 `### 3.3 Owner inputs (Approval gate)` and park the ticket in `BlockQuestions` with `DO: <action>` in
@@ -215,7 +225,8 @@ the plan and rewritten its `**Complexity:**` line where the plan disagrees (see
   park *candidates* to its caller.
 - A finding belonging to another registered project is captured there with `spec-draft.ps1 -Project <key>`,
   with its evidence in the ticket; the reply names the drafted `<key>:<id>`. If that other project's ticket
-  must land before the current ticket can proceed, record `Blocker: <key>:<id>` in section 10 or `statusNote`
+  must land before the current ticket can proceed, record `Blocker: <key>:<id>` in `statusNote` (or on a line
+  of its own under `### 3.3 Owner inputs (Approval gate)`)
   and move the current ticket to `BlockByOtherTask` (never `BlockExternal`).
 - **Scratch goes to `temp/<ticket>/`** (or `temp/scratch/`), never the repo root. On Windows a short
   repo-local temp path is a **correctness** constraint, not tidiness - MAX_PATH silently breaks a
@@ -369,9 +380,10 @@ a ticket wrongly at least once.
 in-flight edit; confirm the failure is inside your diff first. The working tree, not git history, is the
 authority for current state.
 
-**Git boundary**: commit or push only when asked or when a commit flow calls for it. Never casually on the
-default branch. Never `--no-verify`, force-push, or bypassed signing. English imperative subject naming the
-**user-visible change**, not the mechanism; ticket id where one exists; agent co-author trailer.
+**Git boundary**: commit or push only when asked or when a commit flow calls for it, and only on the
+checked-out branch - no new branch unless the owner asks. Never `--no-verify`, force-push, or bypassed
+signing. English imperative subject naming the **user-visible change**, not the mechanism; ticket id where
+one exists; agent co-author trailer.
 
 ---
 

@@ -102,6 +102,7 @@ function Get-SpecPreview {
     return [PSCustomObject]@{
         id                       = (Get-AutoSkipField $Record 'id')
         name                     = (Get-AutoSkipField $Record 'name')
+        title                    = (Get-AutoSkipField $Record 'title')
         status                   = (Get-AutoSkipField $Record 'status')
         priority                 = (Get-AutoSkipField $Record 'priority')
         tier                     = $verdict.Tier

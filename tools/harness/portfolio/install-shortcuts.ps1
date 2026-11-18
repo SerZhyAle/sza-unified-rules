@@ -34,7 +34,7 @@
       PQ Report           pq report                 the last seven days in numbers, with the open findings
       PQ Doctor           pq doctor                 check the enabled repositories and the queue file
       PQ Repos            pq list                   the registered repositories
-      PQ Answer questions claude "/sza:sq --all"    an interactive Claude session in the canon checkout that answers
+      PQ Answer questions claude "/sza:spec-quiz --all"    an interactive Claude session in the canon checkout that answers
                                                     the waiting questions of every project in one sitting (S0026)
       PQ Guide           README.md of this folder  the operator's instruction
 
@@ -143,7 +143,7 @@ $set.Add(@{ Name = 'PQ Resume'; Pq = 'resume'; Text = 'Portfolio queue: undo PQ 
 $set.Add(@{ Name = 'PQ Report'; Pq = 'report'; Text = 'Portfolio queue: the last seven days in numbers, with the open findings' })
 $set.Add(@{ Name = 'PQ Doctor'; Pq = 'doctor'; Text = 'Portfolio queue: check the enabled repositories and the queue file' })
 $set.Add(@{ Name = 'PQ Repos'; Pq = 'list'; Text = 'Portfolio queue: the registered repositories' })
-$set.Add(@{ Name = 'PQ Answer questions'; Quiz = $true; Text = 'Portfolio queue: answer the waiting questions of every project in one sitting - claude /sza:sq --all in the canon checkout' })
+$set.Add(@{ Name = 'PQ Answer questions'; Quiz = $true; Text = 'Portfolio queue: answer the waiting questions of every project in one sitting - claude /sza:spec-quiz --all in the canon checkout' })
 $set.Add(@{ Name = 'PQ Guide'; Guide = $true; Text = 'Portfolio queue: the operator''s instruction' })
 
 try { $shell = New-Object -ComObject WScript.Shell }
@@ -153,12 +153,13 @@ catch {
 }
 
 # A shortcut already on disk is ours when it runs this pq.ps1, the portfolio quiz, or opens the guide.
-$quizCommand = "claude '/sza:sq --all'"
+$quizCommand = "claude '/sza:spec-quiz --all'"
+$quizCommandFormer = "claude '/sza:sq --all'"   # written until 2026-11-18; still ours, so a re-run replaces it
 function Test-Ours([string]$LnkPath) {
     $l = $shell.CreateShortcut($LnkPath)
     $arg = [string]$l.Arguments
     $tgt = [string]$l.TargetPath
-    return ($arg -match '(?i)portfolio[\\/]pq\.ps1') -or $arg.Contains($quizCommand) -or ($tgt -ieq $guide)
+    return ($arg -match '(?i)portfolio[\\/]pq\.ps1') -or $arg.Contains($quizCommand) -or $arg.Contains($quizCommandFormer) -or ($tgt -ieq $guide)
 }
 
 foreach ($folder in $folders) {

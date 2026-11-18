@@ -14,6 +14,11 @@
       6. Trust: the key is the upper-case-drive, forward-slash path; trusted, untrusted, lower-case-drive-only and
          missing entries; an unreadable file is not ok; the check applies only with .claude/settings.json or hooks.
       7. pq list and pq status print hold=queue, hold=true and hold=true+queue (registry and queue at once).
+         pq status also prints Frozen: (an enabled project whose own stop file exists) and Disabled:.
+      8. The ticket queue path is the profile's paths.releaseQueue when that file exists, else the ledger, else the
+         default name; a file under another name is never adopted and the default tree has no paths.queueCandidates.
+      9. The wait words: the one 'held' count of the event splits into held and frozen, a disabled project is
+         named and replaces 'none', every other count passes through, and the event counts are not touched.
 
     Touches: a scratch folder under the system temp directory only (removed unless -KeepScratch). Fast tier.
 #>
@@ -24,6 +29,8 @@ $SourceRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $lib = Join-Path $SourceRoot 'tools/harness/portfolio/lib'
 . (Join-Path $lib 'queue-file.ps1')
 . (Join-Path $lib 'health.ps1')
+. (Join-Path $lib 'rank.ps1')
+. (Join-Path $lib 'waiting.ps1')
 $pq = Join-Path $SourceRoot 'tools/harness/portfolio/pq.ps1'
 
 $scratch = Join-Path ([IO.Path]::GetTempPath()) ("pq-holds-" + [Guid]::NewGuid().ToString('N').Substring(0, 8))
@@ -108,12 +115,33 @@ try {
         Assert-That ((Test-PqTrustNeeded $s) -and (Test-PqTrustNeeded $h) -and -not (Test-PqTrustNeeded $c)) 'trust scope'
     }
 
+    Test-Case 'the ticket queue path is the profile path, else the ledger, else the default - no other name is tried' {
+        Assert-That (-not (Get-PqProfileDefaults).paths.Contains('queueCandidates')) 'the default profile tree still declares paths.queueCandidates'
+        $bare = New-Repo 'path-bare'
+        Write-Text (Join-Path $bare 'tasks/README.md') "# tasks`n"
+        Write-Text (Join-Path $bare 'docs/specifications/RELEASE_QUEUE.md') "# a hand file`n"
+        $want = [IO.Path]::GetFullPath((Join-Path $bare (Get-PqDefaultReleaseQueue)))
+        $got = Get-PqTicketQueuePath ([pscustomobject]@{ key = 'bare'; path = $bare })
+        Assert-That ($got -ceq $want -and -not [IO.File]::Exists($got)) "no profile: '$got', expected the missing default '$want'"
+        $led = New-Repo 'path-ledger'
+        Write-Text (Join-Path $led '.sza-profile.json') '{"paths":{"releaseQueue":"PLAN/PQ_QUEUE.md"}}'
+        Write-Text (Join-Path $led 'PLAN/spec-catalog.jsonl') "`n"
+        Write-Text (Join-Path $led 'PLAN/RELEASE_QUEUE.md') "# a hand table beside the named file`n"
+        $rec = [pscustomobject]@{ key = 'led'; path = $led }
+        $got = Get-PqTicketQueuePath $rec
+        Assert-That ($got -ceq [IO.Path]::GetFullPath((Join-Path $led 'PLAN/spec-catalog.jsonl'))) "a profile naming a missing file: '$got', expected the ledger"
+        Write-Text (Join-Path $led 'PLAN/PQ_QUEUE.md') "# queue`n"
+        $got = Get-PqTicketQueuePath $rec
+        Assert-That ($got -ceq [IO.Path]::GetFullPath((Join-Path $led 'PLAN/PQ_QUEUE.md'))) "a profile naming an existing file: '$got'"
+    }
+
     Test-Case 'pq list and pq status print hold=queue, hold=true and hold=true+queue' {
         $root = Join-Path $scratch 'portfolio'
         $null = New-Item -ItemType Directory -Path $root -Force
-        $repos = @(foreach ($k in 'free', 'qonly', 'ronly', 'both') {
+        $repos = @(foreach ($k in 'free', 'qonly', 'ronly', 'both', 'frz', 'off') {
                 $d = New-Repo "list-$k"
-                [ordered]@{ key = $k; path = $d; enabled = $true; hold = ($k -in 'ronly', 'both') }
+                if ($k -in 'frz', 'off') { Write-Text (Join-Path $d ([string](Get-PqProfileDefaults).paths['queueStopFile'])) "stop`n" }
+                [ordered]@{ key = $k; path = $d; enabled = ($k -cne 'off'); hold = ($k -in 'ronly', 'both') }
             })
         Write-Text (Join-Path $root 'repos.json') (ConvertTo-Json -Depth 8 ([ordered]@{ schemaVersion = '1.0'; repos = $repos }))
         Write-Text (Join-Path $root 'PORTFOLIO_QUEUE.md') ("1`nfree`n`nhold`nqonly  # owner pause`nboth`nfree:S0009`n")
@@ -128,6 +156,24 @@ try {
             Assert-That ($list.Contains($want)) "pq list has no '$want': $list"
         }
         Assert-That ($status -match '(?m)^Held: qonly hold=queue, ronly hold=true, both hold=true\+queue\r?$') "pq status: $status"
+        Assert-That ($status -match '(?m)^Frozen: frz - ') "pq status has no Frozen line naming frz alone: $status"
+        Assert-That ($status -match '(?m)^Disabled: off - ') "pq status has no Disabled line naming off alone: $status"
+    }
+
+    Test-Case 'the wait words name held, frozen and disabled' {
+        $rank = @{ skipped = @(@{ repo = 'a'; why = 'hold' }, @{ repo = 'b'; why = 'heldByQueue' }, @{ repo = 'c'; why = 'stopped' }, @{ repo = 'd'; why = 'disabled' }, @{ repo = 'e'; why = 'occupied' }) }
+        $counts = [ordered]@{ held = 3; occupied = 1; dropped = 2 }
+        $w = Get-PqWaitWords -Rank $rank -Why $counts
+        $line = (@($w.Keys | ForEach-Object { "$_ $($w[$_])" }) -join ', ')
+        Assert-That ($line -ceq 'held 2, frozen 1, occupied 1, dropped 2, disabled 1') "words: $line"
+        Assert-That ($counts['held'] -eq 3 -and -not $counts.Contains('frozen') -and -not $counts.Contains('disabled')) 'the event counts were changed'
+        $only = Get-PqWaitWords -Rank @{ skipped = @(@{ repo = 'c'; why = 'stopped' }) } -Why ([ordered]@{ held = 1 })
+        Assert-That ($only.Count -eq 1 -and $only['frozen'] -eq 1) "a frozen project alone: $(ConvertTo-Json $only -Compress)"
+        $off = Get-PqWaitWords -Rank @{ skipped = @(@{ repo = 'd'; why = 'disabled' }) } -Why ([ordered]@{ none = 1 })
+        Assert-That ($off.Count -eq 1 -and $off['disabled'] -eq 1) "a disabled project alone: $(ConvertTo-Json $off -Compress)"
+        $idle = Get-PqWaitWords -Rank @{ skipped = @() } -Why ([ordered]@{ none = 1 })
+        Assert-That ($idle.Count -eq 1 -and $idle['none'] -eq 1) "nothing held back: $(ConvertTo-Json $idle -Compress)"
+        Assert-That ((Get-PqSkipWord 'hold') -ceq 'held' -and (Get-PqSkipWord 'heldByQueue') -ceq 'held' -and (Get-PqSkipWord 'stopped') -ceq 'frozen' -and (Get-PqSkipWord 'disabled') -ceq 'disabled' -and (Get-PqSkipWord 'occupied') -ceq 'occupied') 'the skip words'
     }
 }
 finally {

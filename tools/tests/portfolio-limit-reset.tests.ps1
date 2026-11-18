@@ -245,8 +245,82 @@ try {
     if ($evSkip.d.agent -ne 'codex') { throw "Expected agent 'codex'" }
     Write-Host " PASS" -ForegroundColor Green
 
+    # Case 6: Get-PqCarriedDrops - the drops a worker restarted for a code change inherits (S0105)
+    Write-Host "Case 6: Get-PqCarriedDrops walks the chain of code-change restarts..." -NoNewline
+    $carryLog = Join-Path $scratch 'carry-log'
+    $null = [IO.Directory]::CreateDirectory($carryLog)
+    $carryLine = {
+        param([string]$Run, [string]$Ev, [string]$Id, $D)
+        ConvertTo-Json -Compress -InputObject ([ordered]@{ v = 1; ts = '2026-11-18T10:00:00.000Z'; seq = 1; wr = 'w7'; run = $Run; ev = $Ev; repo = $(if ($Id) { 'demo' } else { $null }); id = $(if ($Id) { $Id } else { $null }); pass = $null; worker = 7; agent = $null; model = $null; cx = $null; d = $D })
+    }
+    $markA = [ordered]@{ statusAt = 'In Progress'; updatedAt = '2026-11-17 10:00'; specMtime = '2026-11-17T09:00:00.0000000Z'; after = 1 }
+    $markB = [ordered]@{ statusAt = 'Draft'; updatedAt = '2026-11-18 08:00'; specMtime = ''; after = 1 }
+    $noMark = [ordered]@{ statusAt = $null; updatedAt = $null; specMtime = $null; after = 1 }
+    $day1 = @(
+        (& $carryLine 'R0' 'run.start' '' ([ordered]@{ pid = 1 })), (& $carryLine 'R0' 'ticket.dropped' 'S0009' $markB), (& $carryLine 'R0' 'run.end' '' ([ordered]@{ exit = 0 })),
+        (& $carryLine 'RA' 'run.start' '' ([ordered]@{ pid = 2 })), (& $carryLine 'RA' 'ticket.dropped' 'S0001' $markA), (& $carryLine 'RA' 'ticket.dropped' 'S0002' $markB),
+        (& $carryLine 'RA' 'ticket.dropped' 'S0004' $noMark), (& $carryLine 'RA' 'run.codeChanged' '' ([ordered]@{ action = 'restart' })),
+        (& $carryLine 'RA' 'run.end' '' ([ordered]@{ exit = 75 })), (& $carryLine 'RA' 'poll.summary' '' ([ordered]@{ polls = 1 })))
+    $day2 = @(
+        (& $carryLine 'RB' 'run.start' '' ([ordered]@{ pid = 3 })), (& $carryLine 'RB' 'ticket.dropLifted' 'S0002' ([ordered]@{ changed = 'status' })),
+        (& $carryLine 'RB' 'ticket.dropped' 'S0003' $markB), (& $carryLine 'RB' 'run.end' '' ([ordered]@{ exit = 75 })),
+        (& $carryLine 'RB' 'poll.summary' '' ([ordered]@{ polls = 1 })), (& $carryLine 'RC' 'run.start' '' ([ordered]@{ pid = 4 })))
+    [IO.File]::WriteAllText((Join-Path $carryLog 'events-2026-11-17.w7.jsonl'), (($day1 -join "`n") + "`n"), [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText((Join-Path $carryLog 'events-2026-11-18.w7.jsonl'), (($day2 -join "`n") + "`n"), [Text.UTF8Encoding]::new($false))
+    $carried = Get-PqCarriedDrops -LogDir $carryLog -Writer 'w7' -SkipRun 'RC'
+    $carriedKeys = @($carried.Keys | Sort-Object) -join ','
+    if ($carriedKeys -ne 'demo:S0001,demo:S0003') { throw "Expected demo:S0001,demo:S0003 carried (S0002 lifted, S0004 no mark, S0009 before the chain), got '$carriedKeys'" }
+    $m1 = $carried['demo:S0001'].mark
+    if ($m1.specMtime -isnot [string] -or $m1.specMtime -cne '2026-11-17T09:00:00.0000000Z') { throw "Expected specMtime kept as the event's string, got '$($m1.specMtime)'" }
+    if ($null -ne (Get-PqDropChange $m1 ([ordered]@{ status = 'In Progress'; updated = '2026-11-17 10:00'; specMtime = '2026-11-17T09:00:00.0000000Z'; specFile = '' }))) { throw 'Expected an unchanged ticket to stay dropped' }
+    if ((Get-PqDropChange $m1 ([ordered]@{ status = 'Broken'; updated = '2026-11-17 10:00'; specMtime = '2026-11-17T09:00:00.0000000Z'; specFile = '' })) -cne 'status') { throw 'Expected a status change to lift the carried drop' }
+    if ((Get-PqCarriedDrops -LogDir $carryLog -Writer 'w7').Count -ne 0) { throw 'Expected nothing carried when the newest run has not ended with the restart code' }
+    if ((Get-PqCarriedDrops -LogDir $carryLog -Writer 'w8').Count -ne 0) { throw 'Expected nothing carried from another writer' }
+    Write-Host " PASS" -ForegroundColor Green
+
+    # Case 7: the robot-filed cap is counted from the ledger rows of one local day (TASK-FLOW rule 41, robotDraftCap)
+    Write-Host "Case 7: robot-filed cap counted from the ledger rows of one day..." -NoNewline
+    $capRepo = Join-Path $scratch 'capRepo'
+    $null = [IO.Directory]::CreateDirectory((Join-Path $capRepo 'PLAN'))
+    [IO.File]::WriteAllText((Join-Path $capRepo '.sza-profile.json'), '{}', [Text.UTF8Encoding]::new($false))
+    $capRow = {
+        param([string]$Id, [string]$Source, [string]$Created = '2026-11-18', [string]$Status = 'Draft')
+        $o = [ordered]@{ id = $Id; name = "t-$Id".ToLowerInvariant(); status = $Status; priority = 50; file = "PLAN/${Id}_t.md"; created = $Created; updated = "$Created 10:00" }
+        if ($Source) { $o.source = $Source }
+        ($o | ConvertTo-Json -Compress)
+    }
+    $capRows = @(
+        (& $capRow 'S0001' 'owner'), (& $capRow 'S0002' 'robot'), (& $capRow 'S0003' ''),
+        (& $capRow 'S0004' 'robot' '2026-11-17'), (& $capRow 'S0005' 'robot'),
+        (& $capRow 'S0006' 'robot' '2026-11-18' 'Approved'), (& $capRow 'S0007' 'robot'), (& $capRow 'S0008' 'inbox')
+    )
+    [IO.File]::WriteAllText((Join-Path $capRepo 'PLAN/spec-catalog.jsonl'), (($capRows -join "`n") + "`n"), [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText((Join-Path $capRepo 'PLAN/spec-catalog-archive.jsonl'), ((& $capRow 'S0000' 'robot' '2026-11-18' 'Verified') + "`n"), [Text.UTF8Encoding]::new($false))
+    # 6a: only source robot rows of the day count, ids in ordinal order, the archive included; past the cap only a Draft is held.
+    $cap2 = Get-PqRobotFiled -RepoPath $capRepo -Day '2026-11-18' -Cap 2
+    if (($cap2.counted -join ',') -cne 'S0000,S0002,S0005,S0006,S0007') { throw "Expected counted S0000,S0002,S0005,S0006,S0007, got '$($cap2.counted -join ',')'" }
+    if (($cap2.capped -join ',') -cne 'S0005,S0007') { throw "Expected capped S0005,S0007 at cap 2, got '$($cap2.capped -join ',')'" }
+    # 6b: under the cap nothing is held, a cap of 0 holds every robot-filed Draft of the day, another day counts nothing.
+    if (@((Get-PqRobotFiled -RepoPath $capRepo -Day '2026-11-18' -Cap 20).capped).Count -ne 0) { throw "Expected nothing held at cap 20" }
+    $cap0 = Get-PqRobotFiled -RepoPath $capRepo -Day '2026-11-18' -Cap 0
+    if (($cap0.capped -join ',') -cne 'S0002,S0005,S0007') { throw "Expected capped S0002,S0005,S0007 at cap 0, got '$($cap0.capped -join ',')'" }
+    if (@((Get-PqRobotFiled -RepoPath $capRepo -Day '2026-11-19' -Cap 0).counted).Count -ne 0) { throw "Expected the next day to count nothing" }
+    # 6c: the rank's exclude list - 'key:id' over the enabled repositories, nothing remembered between calls.
+    $capRegistry = [ordered]@{ robotDraftCap = 2; repos = @([pscustomobject]@{ key = 'demo'; path = $capRepo; enabled = $true }, [pscustomobject]@{ key = 'off'; path = $capRepo; enabled = $false }, [pscustomobject]@{ key = 'gone'; path = (Join-Path $scratch 'no-such-repo'); enabled = $true }) }
+    $heldKeys = @(Get-PqIntakeCapped $capRegistry '2026-11-18')
+    if (($heldKeys -join ',') -cne 'demo:S0005,demo:S0007') { throw "Expected demo:S0005,demo:S0007, got '$($heldKeys -join ',')'" }
+    if (@(Get-PqIntakeCapped $capRegistry '2026-11-19').Count -ne 0) { throw "Expected no held ticket on the next day" }
+    $capRegistry.Remove('robotDraftCap')
+    if (@(Get-PqIntakeCapped $capRegistry '2026-11-18').Count -ne 0) { throw "Expected the default cap of 20 to hold nothing here" }
+    if ((Get-PqLocalDay ([datetime]'2026-11-18T23:59:00')) -cne '2026-11-18') { throw "Expected Get-PqLocalDay to give the local date" }
+    # 6d: the loop keeps no count of its own, and every rank excludes the held tickets.
+    $loopSrc = [IO.File]::ReadAllText((Join-Path $pqLib 'loop.ps1'))
+    if ($loopSrc.Contains('$robotDrafts')) { throw 'loop.ps1 still keeps the robot-filed count in process memory' }
+    if (-not $loopSrc.Contains('if (-not $NamedTicket) { $Exclude = [string[]]@(@($Exclude) + @(Get-PqIntakeCapped $Registry)) }')) { throw 'Get-PqNextRank does not exclude the robot-filed tickets past the cap' }
+    Write-Host " PASS" -ForegroundColor Green
+
     Write-Host ""
-    Write-Host "All 5 test cases passed successfully." -ForegroundColor Green
+    Write-Host "All 7 test cases passed successfully." -ForegroundColor Green
 }
 finally {
     $env:SZA_PORTFOLIO_ROOT = $origEnv

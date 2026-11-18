@@ -2,6 +2,7 @@
 
 --register inventories documents; --render regenerates only declared documentation maps.
 Normal validation never writes a registry, derivative or document.
+A line containing `: warning: ` is information: it changes neither the verdict line nor the exit code.
 """
 
 import argparse
@@ -21,6 +22,11 @@ LOCAL_IGNORE = [
      "reason": "Ticket records belong to the ledger (PLAN/spec-catalog.jsonl), written by every capture and status "
                "move; a registry row would repeat it and go stale the day a ticket is captured."},
 ]
+
+
+# What --register writes as the update trigger of a record that has none. A record that still carries exactly
+# this one-item list declares nothing, so the gate counts such records and reports the count as a warning.
+DEFAULT_TRIGGER = "Changes to the documented interface or workflow"
 
 
 def prose(text):
@@ -124,7 +130,7 @@ def derive_topic(lines, name):
     return Path(name).stem
 
 
-def check_corpus(root, config_path, register=False, render=False):
+def check_corpus(root, config_path, register=False, render=False, warnings=None):
     config = json.loads(config_path.read_text(encoding="utf-8-sig"))
     generated = config.get("generated", [])
     if not isinstance(generated, list):
@@ -154,12 +160,16 @@ def check_corpus(root, config_path, register=False, render=False):
             # A stored topic that is only a frontmatter delimiter was written by the older extractor: derive it again.
             records.append({"path": name, "topic": stored if stored.strip().strip("-") else topic,
                             "area": record.get("area", name.split("/")[0] if "/" in name else "repository"),
-                            "update_triggers": record.get("update_triggers", ["Changes to the documented interface or workflow"]),
+                            "update_triggers": record.get("update_triggers", [DEFAULT_TRIGGER]),
                             "role": "render" if name == config["map"] or is_generated(name) else "source"})
         registry.parent.mkdir(parents=True, exist_ok=True)
         registry.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in records), encoding="utf-8")
     records = read_records(registry)
     errors, declared = [], set()
+    default_rows = sum(1 for record in records if record.get("update_triggers") == [DEFAULT_TRIGGER])
+    if warnings is not None and default_rows:
+        warnings.append(f"{config['registry']}: warning: {default_rows} of {len(records)} registry rows carry "
+                        "the default update trigger - a default trigger declares nothing")
     tracked = subprocess.run(["git", "-C", str(root), "ls-files", "-z"], capture_output=True, check=True).stdout.decode().split("\0")
     ignored = subprocess.run(["git", "-C", str(root), "ls-files", "--others", "--ignored", "--exclude-standard", "-z"], capture_output=True, check=True).stdout.decode().split("\0")
     ignored = set(ignored)
@@ -271,11 +281,14 @@ def main():
         configs = args.config or [Path("docs/document-corpus.json")]
         if args.config is None and local_config.exists():
             configs.append(Path("dev/document-corpus.json"))
-        errors, count = [], 0
+        errors, warnings, count = [], [], 0
         for config in configs:
-            findings, inspected = check_corpus(root, root / config, args.register, args.render)
+            findings, inspected = check_corpus(root, root / config, args.register, args.render, warnings)
             errors.extend(findings)
             count += inspected
+        # Warnings print first: the deploy shows the last three lines of a red gate, and those stay errors and the verdict.
+        for warning in warnings:
+            print(warning)
         for error in errors:
             print(error)
         print(f"documents: {'FAIL' if errors else 'PASS'} (corpora={len(configs)} files={count} errors={len(errors)})")

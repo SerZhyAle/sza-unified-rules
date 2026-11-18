@@ -9,7 +9,8 @@ One repo per run. This replaces the old copy-paste spread-back prompt: the canon
 as a plugin, so nothing is copied and nothing can drift silently.
 
 The canon is **read-only** from this session, with exactly one exception: the repo's own record under
-`rules/contrib/`. Rule fixes go back to the canon repo in their own session.
+`rules/contrib/` - the facts file `<repo>.md` and its history file `history/<repo>.md`. Rule fixes go back to
+the canon repo in their own session.
 
 Canon: [README.md](../../rules/README.md) (consumption model),
 [NEW_PROJECT_CHECKLIST.md](../../rules/NEW_PROJECT_CHECKLIST.md) (the new-repo front door),
@@ -21,8 +22,9 @@ Canon: [README.md](../../rules/README.md) (consumption model),
 
 ## Step 0 - Mode
 
-- **`rules/contrib/<repo>.md` exists** -> this is an **existing** repo. Read that record first: overlay facts,
-  channel rows, open questions, recorded divergences.
+- **`rules/contrib/<repo>.md` exists** -> this is an **existing** repo. Read that facts record first: overlay
+  facts, channel rows, open questions, recorded divergences. Do not read `rules/contrib/history/<repo>.md` -
+  it is the dated account of earlier runs and decides nothing.
 - **No record** -> this is a **new** repo. Follow
   [NEW_PROJECT_CHECKLIST.md](../../rules/NEW_PROJECT_CHECKLIST.md) top to bottom in place of steps 2-4, then
   continue from step 5, creating the record from `rules/contrib/TEMPLATE.md`. Step 6a is not skippable.
@@ -282,8 +284,11 @@ Re-run the compliance gate and show the before/after counts.
 
 ## Step 9 - Record and commit
 
-- Append a dated `## Canon adoption <YY-MM-DD HH:mm>` section to `rules/contrib/<repo>.md`: what changed, which
-  questions closed, which divergences are now recorded, what remains.
+- Update `rules/contrib/<repo>.md` in place: rewrite every fact, channel row, delta and open question this run
+  changed, and delete the ones it settled. Never append a dated section to that file.
+- Append a dated `## Canon adoption <YY-MM-DD HH:mm>` section to `rules/contrib/history/<repo>.md` (when the
+  file is absent, create it with the first line `# History: <repo>`): what changed, which questions closed,
+  which divergences are now recorded, what remains.
 - Commit **in the target repo** per its conventions - English message, co-author trailer. Push only if the
   repo's flow requires it.
 - Report the canon fixes you found so they can be applied in a canon session.
@@ -305,13 +310,13 @@ Re-run the compliance gate and show the before/after counts.
       records its builds, `import` and `probe` ran and their outputs are in the report.
 - [ ] The repo's own gates pass, with exit codes cited.
 - [ ] The compliance gate's error count is zero, or every remaining error has a recorded exemption.
-- [ ] The contrib record carries a dated adoption section.
+- [ ] The facts record is current, and `rules/contrib/history/<repo>.md` carries a dated adoption section.
 - [ ] Needed canon fixes are listed in the report, and the canon itself was not edited.
 
 ## Guardrails
 
 - One repo per run. Never batch several - each has its own gates and its own commit.
-- The canon is read-only here, except this repo's contrib record.
+- The canon is read-only here, except this repo's contrib record and its history file.
 - Never invent a fact for the stamp. A tag regex comes from the release script; the site root comes from the
   Pages API. An unknown value is asked about once, then written down.
 - Adding a product to the hub is an owner decision, not a consequence of adopting the canon.

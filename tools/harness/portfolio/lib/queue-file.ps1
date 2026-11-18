@@ -39,7 +39,7 @@
 #   Get-PqTicketQueuePath -Repo <registry record>
 #       a repository's own ticket queue file: its registry record's releaseQueue, else its profile's
 #       paths.releaseQueue or its ledger (paths.journal) when it has a profile, else the harness default's
-#       paths.queueCandidates in order, else the harness default's paths.releaseQueue.
+#       paths.releaseQueue. No other file name is tried: a queue kept under another name is named in the profile.
 #   Register-PqTicketFiles -Repo <registry record> [-HarnessRoot] [-List]
 #       file -> ledger (rule 65): every '<id>_<slug>.md' of the specs directory with no row is inserted through the
 #       repository's insert.ps1. @{ repo; id; file; status; ok; err } per file tried; -List only names them (ok
@@ -208,6 +208,33 @@ function Read-PqQueueFile {
     $result.held = $held.ToArray()
     $result.bad = $bad.ToArray()
     return $result
+}
+
+$script:PqQueueIdleMarker = [regex]::new('\[idle\s+(?<n>\d+),\s*(?<o>[^\]]+)\]', [Text.RegularExpressions.RegexOptions]::CultureInvariant)
+
+function Get-PqQueueIdleRows([string]$Path) {
+    # S0105: the active ticket rows that carry the marker a repository's plan tool puts on a ticket that idle runs in a
+    # row have parked (spec_catalog/_lib.ps1), as the sync copies it here: file order, each @{ repo; id; idle; outcome;
+    # changed } (changed: the row's 'yy-MM-dd HH:mm' column, else ''). Rows under hold are left out. Read from the raw
+    # line - a row's `text` from Read-PqQueueFile is cut at 80 characters, short of the marker. Never writes; an absent
+    # or unreadable file is an empty list. Callers wrap the call in @().
+    $out = [Collections.Generic.List[object]]::new()
+    if (-not $Path -or -not [IO.File]::Exists($Path)) { return $out.ToArray() }
+    try { $lines = (Split-PqQueueText (Read-PqQueueBytes $Path)).lines } catch { return $out.ToArray() }
+    $inHold = $false
+    foreach ($line in $lines) {
+        $p = Get-PqQueueLine $line
+        if ($p.type -eq 'heading') { $inHold = $false; continue }
+        if ($p.type -eq 'hold') { $inHold = $true; continue }
+        if ($p.type -ne 'row' -or $p.kind -ne 'ticket' -or $inHold) { continue }
+        $hash = $line.IndexOf('#')
+        $body = if ($hash -ge 0) { $line.Substring(0, $hash) } else { $line }
+        $m = $script:PqQueueIdleMarker.Match($body)
+        if (-not $m.Success) { continue }
+        $c = [regex]::Match($body, '\s(?<d>\d{2}-\d{2}-\d{2} \d{2}:\d{2})\s')
+        $out.Add([ordered]@{ repo = $p.repo; id = $p.id; idle = [int]$m.Groups['n'].Value; outcome = $m.Groups['o'].Value.Trim(); changed = $(if ($c.Success) { $c.Groups['d'].Value } else { '' }) })
+    }
+    return $out.ToArray()
 }
 
 # ---- writers ----
@@ -474,7 +501,7 @@ function Initialize-PqQueueFile {
 
 # ---- the repositories' own ticket queues, and the sync from them ----
 
-# The shipped defaults of paths.releaseQueue and paths.queueCandidates, read from the harness profile in an isolated
+# The shipped profile defaults (paths.releaseQueue and every other key), read from the harness profile in an isolated
 # module (that script caches one project root, so it is never dot-sourced here) and kept for the life of the process.
 function Get-PqProfileDefaults {
     if ($null -eq $script:PqProfileDefaults) {
@@ -488,8 +515,6 @@ function Get-PqProfileDefaults {
 }
 
 function Get-PqDefaultReleaseQueue { return [string](Get-PqProfileDefaults).paths['releaseQueue'] }
-
-function Get-PqDefaultQueueCandidates { return @((Get-PqProfileDefaults).paths['queueCandidates']) }
 
 # A repository's .sza-profile.json, parsed, or $null when it has none or it cannot be read.
 function Read-PqRepoProfile([string]$RepoPath) {
@@ -531,13 +556,8 @@ function Get-PqTicketQueuePath($Repo) {
         $journal = Get-PqRepoProfilePath -RepoPath $repoPath -Key 'journal'
         if ([IO.File]::Exists($journal)) { return $journal }
     }
-    # The fallback names are the harness default's paths.queueCandidates, not literals here: a shipped script
-    # names no product path (assert-portable), and a project replaces the list in its own defaults.
-    $candidates = Get-PqDefaultQueueCandidates
-    foreach ($cand in $candidates) {
-        $full = Join-Path $repoPath $cand
-        if ([IO.File]::Exists($full)) { return [IO.Path]::GetFullPath($full) }
-    }
+    # No other file name is guessed: a repository that keeps its queue under another name says so in its profile
+    # (paths.releaseQueue), so pq and the repository's own tools read the same file.
     $rel = Get-PqDefaultReleaseQueue
     return [IO.Path]::GetFullPath((Join-Path $repoPath $rel))
 }

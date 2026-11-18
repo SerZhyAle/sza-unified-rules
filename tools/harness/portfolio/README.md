@@ -140,7 +140,7 @@ of ours is left alone.
 | PQ Start | `pq start` | run one worker; it waits when nothing is ranked |
 | PQ Start 1 ticket | `pq start -MaxTickets 1` | do exactly one pass and stop - the attended first run |
 | PQ Start Drain | `pq start -Drain` | work until nothing is ranked, then end |
-| PQ Status | `pq status` | see workers, today's (local-day) passes, what waits for you, whether `STOP` is set, a `Held:` line naming each held project with the same `hold=` as `pq list`; `pq status -Next` also runs the rank and prints the next ticket |
+| PQ Status | `pq status` | see workers, today's (local-day) passes, what waits for you, whether `STOP` is set, a `Held:` line naming each held project with the same `hold=` as `pq list`, a `Frozen:` line naming each enabled project whose own queue stop file exists, a `Disabled:` line naming each project with `enabled` false; `pq status -Next` also runs the rank and prints the next ticket |
 | PQ Log | `pq log -Last 60` | read the last 60 events across all writers |
 | PQ Stop | `pq stop` | let every worker finish the pass it is on, then end |
 | PQ Stop Kill | `pq stop -Kill` | end now: runner children are terminated and the ticket in flight is abandoned |
@@ -179,7 +179,7 @@ runs every change through `pq.ps1`, so it never writes a file of its own.
 | the project list (**Projects** tab) | in project order; **▲ / ▼** move the selected project (`pq rank -Order ..`), **Arrange** runs `pq arrange` |
 | Ask / Test / Outside / Chain / Unbuilt | per project, what waits for you, from `pq inbox -Json` (read on start, by Refresh and every minute): your answers (`BlockQuestions`), your manual test (`BlockNeedUserTest`), someone outside (`BlockExternal`), another ticket (`BlockByOtherTask`, counted in the project the waiting ticket belongs to, whatever project its blocker is in), the audit (`Implemented`); a click lists the tickets in the console with what clears them; `?` means the count is unknown and the tooltip says why |
 | Last build / GitHub | per project on the **Projects** tab, from `pq releases -Json` (read on start, by Refresh and every minute): the last recorded build and the live/in-flight GitHub publication version with the same state colours as the **Releases** tab (amber build when unpublished; green/amber/red GitHub); blank when no ledger or GitHub channel is declared, `?` before the first read |
-| Actions / Answer questions | **Actions** on a project row (or right-clicking the row) opens a menu of all six per-project actions: **Answer questions (Quiz)** (`/sza:sq <project>`, returning eligible answered tickets to the runner subject to holds), **New spec..** (`spec-draft.ps1`), **Open ticket queue**, **Open in VS Code**, **Open Claude session** (a terminal in the project folder running `claude`, no VS Code window), and **Start worker here** (`pq start -Repo <project>`); the top-bar **Answer questions** button opens `/sza:sq --all` for the portfolio |
+| Actions / Answer questions | **Actions** on a project row (or right-clicking the row) opens a menu of all six per-project actions: **Answer questions (Quiz)** (`/sza:spec-quiz <project>`, returning eligible answered tickets to the runner subject to holds), **New spec..** (`spec-draft.ps1`), **Open ticket queue**, **Open in VS Code**, **Open Claude session** (a terminal in the project folder running `claude`, no VS Code window), and **Start worker here** (`pq start -Repo <project>`); the top-bar **Answer questions** button opens `/sza:spec-quiz --all` for the portfolio |
 | **Queue** tab | the ticket rows of `PORTFOLIO_QUEUE.md` in the order the runner reads them, held rows last |
 | **Releases** tab | every project's release ledger from `pq releases -Json` (read when the tab opens and every minute while it is open): the last build, then one column per channel kind - GitHub, winget, MS Store, Play, Chrome, Edge, VS Code, Other - with the live version and what is in flight, green live, amber in review, red blocked or rejected; the build cell turns amber when a release build is not published anywhere; a double-click opens the project's `RELEASES.md`. Read-only: the ledger is written in each project by `releases/release-ledger.ps1` |
 | Ticket / Project box | `pq pin`, `pq hold`, `pq release` on what it holds; a click on a project or a double-click on a worker, a pass or a Queue row fills it |
@@ -216,6 +216,12 @@ the `Blocker:` tokens with the same release test the picker uses. A local token 
 project's `grammar.ticketIdPattern` (default `^S\d{4}$`); other words are prose. `-Json` gives the same records to the GUI.
 `quiz-list.ps1 -Status <name[,name]>` lists any other statuses through the same reader (default `BlockQuestions`).
 `pq status` ends with the same five counts and points at `pq inbox`.
+Under the five kinds `pq inbox` prints one more line, `stalled`: the active rows of `PORTFOLIO_QUEUE.md` that carry the
+picker's `[idle N, <last outcome>]` marker - tickets in a working status that automatic ranking passes over, because N
+passes in a row did not move them. `pq start -Ticket <key>:<id>` does not pass that hold (the picker's gates apply to a
+named start too), so the line names the way out: a session that works the ticket by name, `/sa <key>:<id>`. The line is
+as fresh as the last sync of the queue file; it is not one of the five counts and not part of the total; `-Json`
+carries it as `stalled`.
 
 The phone inbox listener files incoming packets as Draft tickets. `install-inbox-watcher.ps1` registers the
 listener and a separate drain every 10 minutes; `drain-inbox.ps1` also runs manually. Each drain ingests
@@ -356,9 +362,12 @@ empty: wait, see Waiting
 - **`concurrent` and `fill`.** A `concurrent` repository takes at most its `maxWorkers` workers at once. With `fill`
   `breadth` in the registry, a repository that already has a worker waits for the projects that have none; `depth` (the
   default) lets the project at the top take every worker it may have first.
-- **Robot-filed tickets.** A ticket that is new in a repository after a pass is one the pass filed. The first
-  `robotDraftCap` of them (20, per repository per run) are worked like any other; each one beyond is kept out of the rank,
-  and a console line tells you (`pq report` counts them, and `PQ-SAFE02` appears in `pq problems`).
+- **Robot-filed tickets.** A ticket a pass files carries `source` `robot` on its ledger row. The first
+  `robotDraftCap` of them (20, per repository per local day, counted from the ledger rows created that day) are worked
+  like any other; each `Draft` beyond is kept out of the rank until the day ends or until you move it off `Draft`, and
+  a console line tells you (`pq report` counts them, and `PQ-SAFE02` appears in `pq problems`). The count is read from
+  the ledger at every rank, so every worker gives the same answer and a restart changes nothing; a ticket you file
+  yourself is never counted, and `pq start -Ticket` runs a held one at once.
 
 - For Claude the model is not chosen by `pq`. The runner reads the ticket's `**Complexity:** <light|medium|hard> - <why>`
   line at every launch: `light` is haiku, `medium` sonnet, `hard` opus. A spec without the line keeps the runner's earlier
@@ -367,6 +376,9 @@ empty: wait, see Waiting
   ticket. The drop remembers the ticket's status, its `updated` time and its spec file's time as they were when the pass
   ended; when any of the three changes - you tested it and set `Broken`, answered its questions, edited its spec - the next
   turn offers it again (`ticket <key>:<id> changed (status) - offered again`). The pass's own writes never lift its drop.
+  A worker that starts again after a change of its own code (exit 75) keeps the drops of the run it continues: it reads
+  them back from its own `ticket.dropped` events and prints `carried N dropped ticket(s) over the code-change restart`,
+  and the same three marks lift them. A worker you start after a stop, or after its window was closed, begins with none.
 - A usage-limit stop is not a failure and is the only thing that moves a ticket to the next provider (see Model
   providers): the provider is held machine-wide until its limit lifts, the ticket is offered to the next provider of the
   order at once, and when every provider is spent the worker says so once and checks again every 30 seconds.
@@ -543,8 +555,13 @@ registry, `PORTFOLIO_QUEUE.md`, the folder of provider holds and the resource to
 quiet poll (you who just captured a Draft may still be editing it), so a ticket is taken within about two polls of its
 change. With no change a rank still runs every tenth poll, because some eligibility is a matter of time (a provider's limit,
 your occupancy window), and every poll while the worker itself holds something back for a moment. The worker says why it
-waits, once per change: `waiting for tickets (poll 60s) - nothing offerable: occupied 1, dropped 2`. `wait.enter` carries
-the same counts, `poll.change` names what changed, and one `poll.summary` per hour counts the polls, the changes, the
+waits, once per change: `waiting for tickets (poll 60s) - nothing offerable: held 2, frozen 1, occupied 1, dropped 2`. Three
+of those words say why a whole project is not worked: `held` - the registry's `hold` flag or a row under `hold` in
+`PORTFOLIO_QUEUE.md` (`pq list` says which, `pq release <key>` lifts it); `frozen` - the project's own queue stop file
+exists (`PQ Dry-run` prints it as `skip <key> - stopped`); `disabled` - `enabled` is false in `repos.json`.
+`wait.enter` carries the counts under the event catalog's names, where `held` also covers the frozen projects and a
+disabled one is not counted; `poll.change` names what changed, and one `poll.summary` per hour counts the polls, the
+changes, the
 ranks skipped as unchanged and every rank of the hour with its time (`pickerCalls`, `pickerMsAvg`, `pickerMsMax`).
 
 ## Stopping
@@ -676,7 +693,7 @@ environment values or keys.
 | refuses unattended work | the repository has no `permissionMode` - register it again with `-PermissionMode`, or set it in `repos.json` |
 | `TicketQueueMissing` from `pq tickets` | there is no ticket queue file at the path the message prints; restore it, or point the profile's `paths.releaseQueue` at the right file |
 | a worker window was closed by force | its state files stay; the next start reclaims files whose process is gone. If only the worker process ended and its runner ran on, the repository stays `occupied` until that pass ends |
-| `skip <key> - stopped`, or `repository <key> is stopped` in the worker's console | that repository's own queue stop file exists (its `rs`, or a release freeze) - see Stopping. A freeze that expired while nobody opened the repository leaves its stop in place for good, because the freeze clears itself only when something reads it and a skipped repository is never read: run the repository's own freeze Status (FMS_A: `scripts/utils/release-freeze.ps1 -Verb Status -Scope wear`, or `-Scope phone`), which removes the expired marker and the stop it asked for, or delete the file |
+| `skip <key> - stopped`, `frozen` in the worker's wait line, a `Frozen:` line of `pq status`, or `repository <key> is stopped` in the worker's console | that repository's own queue stop file exists (its `rs`, or a release freeze) - see Stopping. A freeze that expired while nobody opened the repository leaves its stop in place for good, because the freeze clears itself only when something reads it and a skipped repository is never read: run the repository's own freeze Status (FMS_A: `scripts/utils/release-freeze.ps1 -Verb Status -Scope wear`, or `-Scope phone`), which removes the expired marker and the stop it asked for, or delete the file |
 | `repository <key> is occupied` | a session of yours wrote a transcript there within `occupiedMinutes`, or holds a live lease: the robot goes past it to the next repository and looks again when the window can have run out (never sooner than half a minute); a session that ended is seen as gone after the window |
 | `waits for the build resource` | `resources.build` tokens are all held (or `emulator`); the ticket is skipped for a minute. A `Verify: device` ticket takes no token, so it never waits here |
 | `pq stop` says `no worker is running` | exit 3, nothing is written; a worker window may have been closed by force, see its state files in `run\` |

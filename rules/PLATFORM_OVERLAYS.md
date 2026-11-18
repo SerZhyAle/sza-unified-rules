@@ -134,13 +134,9 @@ channel":** flavors that are never co-published to the *same* store may delibera
 flavor) - no collision, because they never meet on one store.
 
 **First public presence, before any bundle.** An Android product's repository, Pages site and Play Console app exist
-before its first upload, in that order: the console wants the hosted privacy policy URL and the landing as the store
-website, and the family notices wait until those URLs answer. The console app carries every App content declaration, the
-store settings, the listing in each shipped locale and each secondary form factor, all from the product's own listing
-sources; five steps in it are one-way and each takes the owner's yes in chat at that moment (the package name, Free, the
-legal declarations, the IARC terms, the Wear OS opt-in). The step list, the traps and the Pages workflow template are the
-[store-publish skill's Google Play reference](../skills/store-publish/references/google-play.md); the product's own
-`docs/play/` files stay the single sources of the texts.
+before its first upload. The order, the one-way steps that each take the owner's yes in chat, the traps and the Pages
+workflow template have one home: the
+[store-publish skill's Google Play reference](../skills/store-publish/references/google-play.md).
 
 **Play-specific gates worth carrying in the release checklist:** no distribution-reach regression
 (countries / min-API / device count), foreground-service and permission declarations must match

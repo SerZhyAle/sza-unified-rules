@@ -185,11 +185,13 @@ if ($blockers.Count -eq 0 -and $qualified.Count -eq 0) {
     Write-Output "The note is present, but nothing in it or in the spec says WHICH ticket blocks this"
     Write-Output "one in a form the tooling can read. Three channels are accepted:"
     Write-Output ""
-    Write-Output ("  1. a local token, in the note or in section 10:      Blocker: Sxxxx")
-    Write-Output ("  2. a cross-repo token, in the note or in section 10: Blocker: <repoKey>:<id>")
+    Write-Output ("  1. a local token, in the note (-StatusNote):         Blocker: Sxxxx")
+    Write-Output ("  2. a cross-repo token, in the note or the spec file: Blocker: <repoKey>:<id>")
     Write-Output ("  3. a line in the spec file:                          **Depends on:** Sxxxx")
     Write-Output ""
-    Write-Output "Naming the ticket in section 10 prose is not enough. That section records consumers,"
+    Write-Output "A local token written in the spec file is read only under a heading that begins '## 10.';"
+    Write-Output "the canon ticket form ends at 3.3 and has no such section, so there use the note or channel 3."
+    Write-Output "Naming the ticket in prose is not enough. A 'related tickets' list records consumers,"
     Write-Output "successors and neighbours beside blockers, and of its lines that mention blocking most"
     Write-Output "DENY the dependency ('не блокирует', 'зависимость снята') - so a bare id there would"
     Write-Output "invert the arrow exactly where the author took care to say there is none (S1482)."

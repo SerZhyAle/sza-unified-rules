@@ -42,13 +42,13 @@
   "exemptions": [
     {
       "id": "SZA-STYLE01",
-      "path": "rules/contrib/*",
-      "reason": "Contrib records are frozen historical accounts of a survey, not living prose. check-rules.ps1 excludes them from the style check for the same reason; fixing their typography would rewrite a record of what was found."
+      "path": "rules/contrib/history/*",
+      "reason": "The dated history of a project record keeps the words of the day it was written (rules/contrib/history/README.md); fixing its typography would rewrite a record of what was found. The facts records one folder up are living prose and are checked."
     },
     {
       "id": "SZA-STYLE02",
-      "path": "rules/contrib/*",
-      "reason": "Same as SZA-STYLE01: contrib records are frozen."
+      "path": "rules/contrib/history/*",
+      "reason": "Same as SZA-STYLE01: the dated history is not restyled."
     }
   ]
 }

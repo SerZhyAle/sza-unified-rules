@@ -491,6 +491,10 @@ try {
         Remove-Item -LiteralPath (Join-Path $p 'PLAN/RELEASE_QUEUE.md'), (Join-Path $p 'PLAN/RELEASE_READY.md')
         Move-Ticket $p 'S0001' 'Approved'
         Assert-That (-not (Test-Path (Join-Path $p 'PLAN/RELEASE_QUEUE.md'))) 'a ledger write re-created a plan file the project had removed'
+        # .. and the write says so, once, naming the file (S0102).
+        $r = Assert-Tool $p 'spec_catalog/update.ps1' @('-Id', 'S0003', '-Status', 'Approved')
+        $said = @($r.output -split "`r?`n" | Where-Object { $_ -match 'release queue: no file at .*RELEASE_QUEUE\.md' })
+        Assert-That ($said.Count -eq 1) "a ledger write over a missing plan file printed $($said.Count) notice line(s), expected 1: $($r.output)"
     }
 
     Test-Case 'rule 16: crossing into Implemented moves the row to the ready file and reopening moves it back' {

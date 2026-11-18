@@ -37,26 +37,29 @@ the portfolio; per-project records in `contrib/`.
 
 - **Commit or push only when the user asks**, or when a release/commit flow calls for it. Routine edits
   are left uncommitted for the owner to batch.
-- **Never commit on the default branch** casually - branch first if a commit is needed and you're on
-  `main`/`master`. **The one named exception is a site publish**: a Pages-served site deploys *from* the
-  default branch, so its publish flow stages, commits with a dated auto-message, and pushes `main` by design
-  ([SITE_CONFIGURATION.md](SITE_CONFIGURATION.md) §4). That carve-out covers the site publish only, not
-  ordinary edits in a site repo.
+- **Commits go on the checked-out branch** - in these repos the default branch, or the working branch
+  where a repo keeps one beside its trunk. Do not create a branch for a commit unless the owner asks: there
+  are no feature branches and no merges here (section 1), so nobody merges a side branch - a canon release
+  pushed from one reached no session until `main` was fast-forwarded. This replaces an agent tool's
+  built-in "if on the default branch, branch first".
 - **Never** skip hooks (`--no-verify`), bypass signing, or force-push unless the user explicitly asks.
   If a hook fails, fix the underlying issue rather than bypassing it.
 
 ## 3. Commit & PR conventions
 
-- **Language: English** for all commit messages, PR titles, and PR bodies (chat stays in the owner's
-  language; see [AUTHOR.md](AUTHOR.md)).
+- **Language: English** for all commit messages, and for the title and body of a pull request to someone
+  else's repository (chat stays in the owner's language; see [AUTHOR.md](AUTHOR.md)).
 - **Message shape:** a terse, imperative subject that says the user-visible change, not the mechanism.
   In a project with a ticket system, reference the ticket id.
 - **Agent-authored commits carry a co-author trailer** so authorship is honest:
   ```
   Co-Authored-By: <agent> <noreply@…>
   ```
-- **PR bodies carry the generator trailer** when opened by an agent (e.g. the "Generated with Claude
-  Code" line). Keep bodies factual - what changed and why, honest caveats, no marketing.
+- **A pull request goes only to someone else's repository** - a winget submission to
+  `microsoft/winget-pkgs`, an entry in a directory or a list. Inside the owner's repositories none is opened:
+  commits go straight on the checked-out branch (section 2). A PR body opened by an agent carries the
+  generator trailer (e.g. the "Generated with Claude Code" line). Keep bodies factual - what changed and
+  why, honest caveats, no marketing.
 - Use the `gh` CLI for GitHub operations (PRs, issues, API); it reads the ambient auth at call time.
 
 ## 4. Releases vs site pushes vs plain commits

@@ -24,6 +24,9 @@ param(
     # Alternative to -File: build PLAN/Sxxxx_<slug>.md after id allocation,
     # collapsing the old next-id.ps1 + insert.ps1 two-step into one call.
     [string] $Slug,
+    <# How the ticket was born (TASK-FLOW rule 3): owner, robot, import, inbox or campaign. Left out, it is
+       resolved by Resolve-TicketSource: the queue sync's child, then SZA_TICKET_SOURCE, then owner. #>
+    [string] $Source = '',
     [switch] $Help
 )
 
@@ -46,6 +49,7 @@ trap {
 }
 
 . (Join-Path $PSScriptRoot '_lib.ps1')
+. (Join-Path $PSScriptRoot '_ticket-source.ps1')
 
 # -File and -Slug are mutually exclusive; exactly one supplies the spec path.
 # Validated up front so a bad call shape fails before New-CatalogId burns an id.
@@ -57,6 +61,10 @@ if ($Slug) {
     }
     if ($Slug -match '^spec_') { throw "Invalid -Slug '$Slug' - must not start with 'spec_'." }
 }
+
+<# TASK-FLOW rule 3. Resolved before the lock: a value outside the list throws here, the trap above exits 1,
+   and no id is allocated. #>
+$ticketSource = Resolve-TicketSource -Explicit $Source
 
 # S1437: the read, the id allocation, the duplicate check and the write are one critical section.
 # New-CatalogId is "max + 1" with no reservation, so two concurrent inserts outside this lock can
@@ -105,6 +113,7 @@ if ($Tier -ge 0) {
     $record | Add-Member -NotePropertyName 'tier' -NotePropertyValue $Tier
 }
 
+$record | Add-Member -NotePropertyName 'source' -NotePropertyValue $ticketSource
 Assert-Record -Record $record
 
 $list = [System.Collections.Generic.List[object]]::new()

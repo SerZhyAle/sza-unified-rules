@@ -25,7 +25,6 @@
     "agentChatDir": "temp/AGENT-CHAT",
     "queueRunsDir": "temp/spec-queue",
     "queueStopFile": "temp/STOP-SPEC-QUEUE",
-    "specAllQueueLock": "temp/spec-all-queue.lock",
     "skipCache": "temp/spec-next-skip-cache.json",
     "changelog": "dev/CHANGELOG.md",
     "documentRegistry": "docs/DOCUMENT_REGISTRY.jsonl",

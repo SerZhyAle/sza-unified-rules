@@ -85,7 +85,7 @@ $repos = foreach ($p in @(@('alpha', $alpha), @('beta', $beta), @('gamma', $gamm
 $registryFile = Join-Path $portfolio 'repos.json'
 [IO.File]::WriteAllText($registryFile, (ConvertTo-Json -InputObject ([ordered]@{ schemaVersion = '1.0'; repos = @($repos) }) -Depth 5))
 [IO.File]::WriteAllText((Join-Path $portfolio 'PORTFOLIO_QUEUE.md'),
-    "# portfolio queue`n`n## 1`n`nalpha:S0031  some text`nbeta  # role: product`n`nhold`n`nbeta:S0021  held by owner`n")
+    "# portfolio queue`n`n## 1`n`nalpha:S0031  some text`nbeta  # role: product`ngamma:S0053_x  26-11-09 10:00  In Progress  [idle 2, ok]`n`nhold`n`nbeta:S0021  held by owner`n")
 
 # Event files for the local-day count: the files stay named by UTC date (rule 54), the events carry their own ts.
 $logDir = Join-Path $portfolio 'log'
@@ -155,6 +155,8 @@ try {
         Assert-That (@($r.lines | Where-Object { $_ -match '^  gamma:S0053 \(being worked\) frees 1$' }).Count -eq 1) 'local-blocker root line'
         Assert-That (@($r.lines | Where-Object { $_ -match '^  gamma:S0051\s+p40\s+age \d+[dhm]\s+stale: blocker released$' }).Count -eq 1) 'released-blocker ticket prints as a ticket'
         Assert-That (@($r.lines | Where-Object { $_ -match '^  alpha:S0031\s+p80\s+age \d+[dhm]\s+owner call: name and remote$' }).Count -eq 1) 'question ticket with age and note'
+        Assert-That (@($r.lines | Where-Object { $_ -match '^stalled\s+1\s+oldest \d+[dhm]\s+clear: /sa <key>:<id> in a session ' }).Count -eq 1) "stalled line: $($r.text)"
+        Assert-That (@($r.lines | Where-Object { $_ -match '^  gamma:S0053\s+idle 2, ok\s+age \d+[dhm]$' }).Count -eq 1) 'stalled ticket line'
         Assert-That ($r.last -eq 'pq inbox: 9 waiting across 3 project(s)') "total line: $($r.last)"
     }
     Run-Case '2 pq inbox -Json' {
@@ -169,6 +171,7 @@ try {
         Assert-That ($root.held -eq $true -and $root.freesCount -eq 2 -and $root.status -eq 'BlockQuestions') "root: $($root | ConvertTo-Json -Compress)"
         Assert-That (@($root.frees) -contains 'alpha:S0040' -and @($root.frees) -contains 'gamma:S0050') 'frees list'
         Assert-That (@($j.kinds.chain.tickets | Where-Object { $_.id -eq 'S0051' })[0].note -eq 'stale: blocker released') 'loose ticket with full note'
+        Assert-That (@($j.stalled.tickets).Count -eq 1 -and @($j.stalled.tickets)[0].id -eq 'S0053' -and @($j.stalled.tickets)[0].idle -eq 2) "stalled in json: $($j.stalled | ConvertTo-Json -Compress -Depth 4)"
         Assert-That (@($j.kinds.questions.tickets | Where-Object { $_.id -eq 'S0031' })[0].note -eq 'owner call: name and remote') 'question note full in json'
     }
     Run-Case '3 pq status waiting line, no rank without -Next' {

@@ -1,4 +1,4 @@
-<#
+﻿<#
 check-compliance.ps1 - canon compliance gate. Runs INSIDE a target project repo and returns non-zero
 when that repo violates the canon.
 
@@ -435,7 +435,6 @@ try {
     $canonPhrases = @(
         @{ id = 'GI1';   home = 'GITHUB_INTERACTION';   re = '(?i)working tree is (the )?(source of truth|the authority|truth|authoritative)' }
         @{ id = 'GI2a';  home = 'GITHUB_INTERACTION';   re = '(?i)(commit|push)[^.\n]{0,40}only when the user (asks|requests)' }
-        @{ id = 'GI2b';  home = 'GITHUB_INTERACTION';   re = '(?i)never commit (on|to) the (default|main) branch' }
         @{ id = 'GI2c';  home = 'GITHUB_INTERACTION';   re = '(?i)(--no-verify|skip hooks|bypass signing)' }
         @{ id = 'GI3a';  home = 'GITHUB_INTERACTION';   re = '(?i)co-authored-by' }
         @{ id = 'GI3b';  home = 'GITHUB_INTERACTION';   re = '(?i)commit(s| messages)?[^.\n]{0,60}\bEnglish\b' }

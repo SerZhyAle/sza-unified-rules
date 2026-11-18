@@ -14,8 +14,11 @@
          up in the shared map - the fallback is by field, as for effortByModel.
       4. The runner itself obeys the chain: a dry run for instance `b` prints that instance's prompt and
          routes a `hard` ticket to that instance's model, and `-PromptTemplate` still outranks the profile.
+      5. A profile that still declares a path key the shipped defaults have dropped (`paths.specAllQueueLock`,
+         retired together with its only reader) loads and keeps the value, and the defaults no longer carry
+         the key - readers accept unknown keys (HARNESS-PROFILE amendment 2026-10-23).
 
-    Cases 1-3 call the changed functions directly; case 4 runs run-spec-queue.ps1 -DryRun once per
+    Cases 1-3 and 5 call the changed functions directly; case 4 runs run-spec-queue.ps1 -DryRun once per
     assertion against a throwaway project with a hand-written ledger row. Nothing launches a child and
     nothing touches a real project. The suite is designed to stay under the 5 s line; it takes -KeepScratch
     to leave the throwaway folders for inspection.
@@ -140,6 +143,17 @@ try {
         $out = & pwsh -NoProfile -File $runner -RepoRoot $root -Ids 'S0001' -DryRun -ModelPolicy shape -Instance b -PromptTemplate 'explicit-prompt {id}' 2>&1 | Out-String
         Assert-That ($LASTEXITCODE -eq 0) "the explicit-prompt dry run exited $($LASTEXITCODE): $out"
         Assert-That ($out -match '(?m)^\s*prompt\s*:\s*explicit-prompt \{id\}\s*$') "-PromptTemplate did not outrank the profile: $out"
+    }
+
+    Test-Case 'a profile that still declares the retired paths.specAllQueueLock loads and keeps it; the shipped defaults no longer carry it' {
+        [void](Use-Profile @{ version = '1'; paths = @{ specAllQueueLock = 'temp/kept-by-the-project.lock' } })
+        $kept = [string](Get-SzaProfileValue 'paths.specAllQueueLock')
+        Assert-That ($kept -ceq 'temp/kept-by-the-project.lock') "a declared key the defaults do not carry read '$kept'"
+        Assert-That ((Get-SzaPath 'journal' -Relative) -ceq 'PLAN/spec-catalog.jsonl') 'a default beside the undeclared key was lost in the merge'
+        [void](Use-Profile @{ version = '1' })
+        $absent = $false
+        try { [void](Get-SzaProfileValue 'paths.specAllQueueLock') } catch { $absent = $true }
+        Assert-That $absent 'the shipped defaults still declare paths.specAllQueueLock'
     }
 } finally {
     $env:SZA_PROJECT_ROOT = $savedRoot

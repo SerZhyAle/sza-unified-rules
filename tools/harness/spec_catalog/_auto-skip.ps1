@@ -229,8 +229,8 @@ function Get-SpecAutoSkip {
         if ($dependsOn.Count -eq 0 -and $qualifiedBlockers.Count -eq 0) {
             $autoSkip = 'blocker-unresolvable'
             $autoSkipReason = 'Status is BlockByOtherTask but no blocker is recorded in a directional ' +
-            'channel: a `**Depends on:**` line, or a `Blocker: Sxxxx` / `Blocker: <repoKey>:<id>` token in section 10 or in the ' +
-            'statusNote. Naming the ticket in section 10 prose is not enough - that section records ' +
+            'channel: a `**Depends on:**` line, or a `Blocker: Sxxxx` / `Blocker: <repoKey>:<id>` token in the ' +
+            'statusNote (a qualified token is also read in the spec file). Naming the ticket in prose is not enough - a related-tickets list records ' +
             'neighbours and consumers too, so it cannot state which way the dependency points'
         }
         elseif ($qualifiedBlockers.Count -gt 0 -and $env:SZA_PQ_PICKER -cne '1') {
