@@ -46,18 +46,18 @@
 {"path": "rules/TESTING_AND_QA.md", "topic": "Testing & QA - how a project proves it works", "area": "rules", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "rules/UI_UX.md", "topic": "UI & UX - one family: the same room, the same buttons, the same voice", "area": "rules", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "rules/WINDOWS_PACKAGING.md", "topic": "Windows Packaging - the delivery-shape decision guide", "area": "rules", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
-{"path": "skills/adopt-canon/SKILL.md", "topic": "---", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
-{"path": "skills/agent-cost/SKILL.md", "topic": "---", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "skills/adopt-canon/SKILL.md", "topic": "Adopt the canon in this repository", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "skills/agent-cost/SKILL.md", "topic": "Agent cost - measure before you rule", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "skills/app-commands/SKILL.md", "topic": "Discover and use product commands", "area": "skills", "update_triggers": ["Changes to product command discovery or the agent risk policy"], "role": "source"}
-{"path": "skills/caveman/SKILL.md", "topic": "---", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
-{"path": "skills/contract-sync/SKILL.md", "topic": "---", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
-{"path": "skills/feature-to-site/SKILL.md", "topic": "---", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
-{"path": "skills/portfolio-queue/SKILL.md", "topic": "---", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
-{"path": "skills/promote/SKILL.md", "topic": "---", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
-{"path": "skills/release/SKILL.md", "topic": "---", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
-{"path": "skills/sa/SKILL.md", "topic": "---", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
-{"path": "skills/sd/SKILL.md", "topic": "---", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
-{"path": "skills/site-audit/SKILL.md", "topic": "---", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "skills/caveman/SKILL.md", "topic": "Caveman - terse mode", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "skills/contract-sync/SKILL.md", "topic": "Contract sync - align this repo with the shared catalog", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "skills/feature-to-site/SKILL.md", "topic": "Feature to site - the ship-together fan-out", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "skills/portfolio-queue/SKILL.md", "topic": "Portfolio queue - the robots over all projects", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "skills/promote/SKILL.md", "topic": "Promote - make a finished product findable without spending money", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "skills/release/SKILL.md", "topic": "Release - the one-way operation", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "skills/sa/SKILL.md", "topic": "sa - /spec-all, short", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "skills/sd/SKILL.md", "topic": "sd - /spec-draft, short", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "skills/site-audit/SKILL.md", "topic": "Site audit - what a robot and a visitor meet on a published site", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "skills/site-audit/references/conventions.md", "topic": "Site audit conventions - what every lens shares", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "skills/site-audit/references/docs.md", "topic": "docs lens - can a visitor learn the product, reach support and read its privacy promise on its own site?", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "skills/site-audit/references/i18n.md", "topic": "i18n lens - does every language have its own URL with reciprocal `hreflang`, or hide in one DOM?", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
@@ -66,22 +66,22 @@
 {"path": "skills/site-audit/references/robot.md", "topic": "robot lens - what does a crawler without JavaScript see, and is it indexable?", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "skills/site-audit/references/structured-data.md", "topic": "structured-data lens - do the JSON-LD and the share card state true facts a parser can read?", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "skills/site-audit/references/ux.md", "topic": "ux lens - can a first-time visitor tell what this is, get it and learn it, on a laptop and on a phone?", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
-{"path": "skills/sn/SKILL.md", "topic": "---", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
-{"path": "skills/spec-all/SKILL.md", "topic": "---", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
-{"path": "skills/spec-draft/SKILL.md", "topic": "---", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
-{"path": "skills/spec-next/SKILL.md", "topic": "---", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
-{"path": "skills/spec-quiz/SKILL.md", "topic": "---", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
-{"path": "skills/spec-to-audit/SKILL.md", "topic": "---", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "skills/sn/SKILL.md", "topic": "sn - /spec-next, short", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "skills/spec-all/SKILL.md", "topic": "Spec all - one ticket, end to end", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "skills/spec-draft/SKILL.md", "topic": "Spec draft - one task into a project's queue and the portfolio queue", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "skills/spec-next/SKILL.md", "topic": "Spec next - /spec-all on the head of the queue", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "skills/spec-quiz/SKILL.md", "topic": "Spec quiz - drain the owner's questions in any project", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "skills/spec-to-audit/SKILL.md", "topic": "Spec to audit - the lifecycle and its gates", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "skills/spec-to-audit/references/audit-campaign.md", "topic": "The audit campaign - auditing a tree too large for one pass", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "skills/spec-to-audit/references/audit-verdict.md", "topic": "The audit verdict - vocabulary, scoring, and the output block", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "skills/spec-to-audit/references/ticket-lifecycle-traps.md", "topic": "Ticket lifecycle traps", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
-{"path": "skills/sq/SKILL.md", "topic": "---", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
-{"path": "skills/store-publish/SKILL.md", "topic": "---", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "skills/sq/SKILL.md", "topic": "sq - /spec-quiz, short", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "skills/store-publish/SKILL.md", "topic": "Store publishing - four channels, four one-way operations", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "skills/store-publish/references/google-play.md", "topic": "Google Play - the first public presence of an Android product", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "skills/store-publish/references/msix-store.md", "topic": "MSIX and the Microsoft Store - the full payload", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "skills/store-publish/references/store-machine-channel.md", "topic": "Microsoft Store machine channel", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "skills/store-publish/references/winget.md", "topic": "winget - the full payload", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
-{"path": "skills/task-flow-init/SKILL.md", "topic": "---", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "skills/task-flow-init/SKILL.md", "topic": "Task flow init - day 0 of a project's tickets and its R0 runner", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "templates/README.md", "topic": "templates", "area": "templates", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "templates/agent-rules.md", "topic": "Agent-rules snippet for a product command line", "area": "templates", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "tools/harness/README.md", "topic": "SZA harness - the development-process layer, shipped", "area": "tools", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}

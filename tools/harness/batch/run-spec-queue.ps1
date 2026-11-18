@@ -1989,6 +1989,34 @@ while ($true) {
             if ($LASTEXITCODE -ne 0) {
                 Write-Host ("  run-spec-queue: could not release the lease for {0} - it expires on its own." -f $id) -ForegroundColor DarkYellow
             }
+            else {
+                # The plan file renders `[taken ..]` on a row from the lease store, but only when the ledger is
+                # written - and releasing a lease is not a ledger write. The pass wrote its last status while it
+                # still held the lease, so without this the row kept the marker until some later write in this
+                # repository: a ticket waiting for the owner's answer read as taken by a robot for hours. A missing
+                # plan file exits 2 there and changes nothing, which is fine.
+                #
+                # Only when the row still shows the marker, and in its own try: the reconcile reads and rewrites the
+                # plan files outside the catalog lock every mutator holds, so it is kept to the one case that needs
+                # it instead of running after every pass; a failure here is not a failed lease release.
+                try {
+                    $planFile = Get-SzaPath 'releaseQueue'
+                    $rowTaken = $false
+                    if ($planFile -and [IO.File]::Exists($planFile)) {
+                        foreach ($planLine in [IO.File]::ReadAllLines($planFile)) {
+                            if ($planLine.StartsWith($id) -and $planLine.Contains('[taken')) { $rowTaken = $true; break }
+                        }
+                    }
+                    if ($rowTaken) {
+                        & pwsh -NoProfile -File (Get-SzaHarnessScript 'spec_catalog/release-queue.ps1') -Reconcile *> $null
+                        if ($LASTEXITCODE -eq 1) {
+                            Write-Host ("  run-spec-queue: the plan file still shows {0} as taken - run release-queue.ps1 -Reconcile." -f $id) -ForegroundColor DarkYellow
+                        }
+                    }
+                } catch {
+                    Write-Host ("  run-spec-queue: plan file not re-rendered after the lease release for {0} - {1}" -f $id, $_.Exception.Message) -ForegroundColor DarkYellow
+                }
+            }
         } catch {
             Write-Host ("  run-spec-queue: lease release for {0} failed - {1}" -f $id, $_.Exception.Message) -ForegroundColor DarkYellow
         }

@@ -1,10 +1,10 @@
 <#
-deploy.ps1 - stage everything in this repo, commit, push, then update this machine's plugin.
+deploy.ps1 - stage everything in this repo (`git add -A`), commit, push, then update this machine's plugin.
 
 Operator tool: the owner runs it. An agent does not run it on its own initiative - committing and
 pushing happen only when asked (INVARIANTS 18).
 
-The repo's own gate runs first and there is no flag to skip it: `git add .` would otherwise sweep a
+The repo's own gate runs first and there is no flag to skip it: `git add -A` would otherwise sweep a
 broken rules edit past tools/check-rules.ps1, which is the one thing CLAUDE.md requires before
 anything under rules/ is committed. -Yes skips the confirmation prompt, never the gate
 (INVARIANTS 9).
@@ -27,6 +27,13 @@ nothing to a consumer.
   pwsh -File deploy.ps1 -Yes                 # no prompt (for a scheduled or piped run)
   pwsh -File deploy.ps1 -NoVersionBump       # commit without raising the version
   pwsh -File deploy.ps1 -NoPluginUpdate      # push, but leave this machine's plugin where it is
+  pwsh -File deploy.ps1 -AllowNew            # accept a new file or folder at the repo root (see below)
+
+A NEW untracked path ships only when it lies inside a top-level folder that already holds tracked files
+(rules, skills, hooks, tools, templates, docs ..). A new file or folder at the repo root stops the deploy
+before anything is written: staging is `git add -A`, so a stray root file - another tool's history dump,
+a scratch script - used to ride into the plugin payload of every consumer. Add it to .gitignore, or pass
+-AllowNew when it is meant to ship. Modified tracked files and new files inside those folders stage as before.
 
 After the push, on main and when this machine's plugin cache is behind the pushed version, it runs
 `claude plugin marketplace update sza-unified-rules` and `claude plugin update sza@sza-unified-rules`
@@ -43,7 +50,8 @@ param(
     [switch]$DryRun,
     [switch]$Yes,
     [switch]$NoVersionBump,
-    [switch]$NoPluginUpdate
+    [switch]$NoPluginUpdate,
+    [switch]$AllowNew
 )
 
 $ErrorActionPreference = 'Stop'
@@ -67,7 +75,7 @@ function Get-PendingPath([string]$line) {
 # being shipped, and forgetting to list it costs a harmless bump instead of an undelivered canon.
 function Test-ShipsToConsumers([string[]]$paths) {
     $exempt = @('README.md', 'LICENSE', 'CANON_VERSION', '.claude-plugin/plugin.json', '.gitignore')
-    $exemptDirs = @('rules/contrib/', 'tools/__pycache__/', 'docs/releases/')
+    $exemptDirs = @('rules/contrib/', 'docs/releases/')
     foreach ($path in $paths) {
         $normalized = $path -replace '\\', '/'
         if ($exempt -contains $normalized) { continue }
@@ -168,6 +176,34 @@ if ($pending.Count -eq 0) {
     exit 0
 }
 
+# --- 2b. A new path outside the payload folders does not ship by accident. ------------------------
+# Untracked paths ('??') whose first segment is not a top-level folder that already holds tracked files.
+# Everything inside such a folder still defaults to shipped (the reason Test-ShipsToConsumers names), so a
+# new shipped directory under rules/, skills/, tools/ .. is never left out; only the repo root is fenced.
+function Get-StrayNewPath {
+    param([string[]]$Lines, [string[]]$TrackedRoots)
+    foreach ($line in $Lines) {
+        if ($line.Length -lt 4) { continue }
+        # A new path is an untracked one ('??') or one already in the index as added, renamed or copied - an
+        # editor's stage-all must not carry a stray root file past this check. An untracked line never holds a
+        # rename arrow, so its path is taken as written.
+        $untracked = $line.StartsWith('??')
+        if (-not $untracked -and 'ARC'.IndexOf($line[0]) -lt 0 -and 'ARC'.IndexOf($line[1]) -lt 0) { continue }
+        $path = if ($untracked) { $line.Substring(3).Trim().Trim('"') } else { Get-PendingPath $line }
+        $path = $path -replace '\\', '/'
+        $first = ($path -split '/')[0]
+        if ($path.Contains('/') -and $TrackedRoots -contains $first) { continue }
+        $path
+    }
+}
+# The folders of the last commit, not of the index: one staged file under a brand-new root folder must not make
+# that folder a payload root. An unborn branch has none, which fences everything.
+$trackedRoots = @(git -C $root ls-tree -d --name-only HEAD 2>$null | ForEach-Object { "$_".Trim('"') } | Where-Object { $_ })
+$strayNew = @(Get-StrayNewPath -Lines $pending -TrackedRoots $trackedRoots)
+if ($strayNew.Count -gt 0 -and -not $AllowNew) {
+    Fail "new path(s) outside the payload folders: $($strayNew -join ', ') - add each to .gitignore, or pass -AllowNew if it is meant to ship. Nothing was staged or bumped." 1
+}
+
 # Best-effort release-ledger step: missing script, non-zero exit, or exception warns and never fails the deploy.
 function Invoke-ReleaseLedgerStep {
     param(
@@ -264,6 +300,12 @@ if (-not $Yes) {
 }
 
 # --- 4. Stage, commit, push. ----------------------------------------------------------------------
+# The same fence once more, on a fresh status: the bump, the ledger step and the prompt took time, and the file
+# this guards against is written by another program whenever it starts.
+$strayLate = @(Get-StrayNewPath -Lines @(git -C $root status --porcelain) -TrackedRoots $trackedRoots)
+if ($strayLate.Count -gt 0 -and -not $AllowNew) {
+    Fail "new path(s) outside the payload folders appeared after the first check: $($strayLate -join ', ') - nothing was staged; the version pair is already raised, so ignore the path and run the deploy again." 1
+}
 git -C $root add -A
 if ($LASTEXITCODE -ne 0) { Fail 'git add failed' 1 }
 

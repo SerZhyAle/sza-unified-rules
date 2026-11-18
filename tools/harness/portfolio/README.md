@@ -229,12 +229,12 @@ repeat starts, and `result.json` records each outcome; an interrupted start is n
 ## Remote delivery - build-deliver
 
 After a pass changed a project, `build-deliver.ps1` (S0048) builds a fresh version and puts it where the owner
-can test it from the phone: the synced Drive folder `C:\GD	c\SZA\_APP` (the `SZA_DELIVERY_ROOT` variable or
+can test it from the phone: the synced Drive folder `C:\GD\tc\SZA\_APP` (the `SZA_DELIVERY_ROOT` variable or
 `-DeliveryRoot` overrides it). No new channel: the Drive sync is the transport, the Store is never touched.
 
 ```
-<root>\<key>\<version>pp.exe          the artifact, delivered
-<root>\<key>\<version>pp.exe.sha256   "<hash>  <name>" (the GitHub sidecar shape)
+<root>\<key>\<version>\app.exe          the artifact, delivered
+<root>\<key>\<version>\app.exe.sha256   "<hash>  <name>" (the GitHub sidecar shape)
 <root>\<key>\LATEST                     names the newest delivered version; the phone/WEB side reads it
 ```
 
@@ -418,7 +418,7 @@ nothing is written into it: run `task-flow-init` there, which ends in `pq regist
 
 ## Model providers
 
-You choose who spends tokens, and in what order. Four providers are known:
+You choose who spends tokens, and in what order. Five providers are known:
 
 | Provider | Agent record | Needs |
 | --- | --- | --- |

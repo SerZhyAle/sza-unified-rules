@@ -5,9 +5,9 @@
       "package": "sza",
       "flavor": "default",
       "kind": "release",
-      "version": "2026.1118.1",
-      "builtAt": "2026-11-18T12:20:25+01:00",
-      "note": "CANON_VERSION 2026.11.18.1"
+      "version": "2026.1118.2",
+      "builtAt": "2026-11-18T14:45:03+01:00",
+      "note": "CANON_VERSION 2026.11.18.2"
     }
   ]
 }

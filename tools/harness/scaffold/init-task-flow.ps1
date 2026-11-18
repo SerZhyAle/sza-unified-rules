@@ -14,8 +14,10 @@
 
     What it writes, relative to -Root:
       .sza-profile.json          only when absent, and minimal: a key nothing reads goes stale unseen.
-                                 It carries runner.promptTemplate (-Prompt, the placeholder spelled
-                                 {Id}), which the full runner behind r1-r3 reads; an existing profile is
+                                 It carries runner.promptTemplate (the placeholder spelled {Id}) only
+                                 when -Prompt was passed: a profile that omits the key keeps the canon
+                                 default, which r1-r3 and the portfolio queue send and which receives
+                                 every later change of the unattended rules. An existing profile is
                                  never touched, and a note says when it leaves that key at the default
       the specs directory        and its archive directory, and the temp directory
       the ledger, its archive    empty files, so the first read finds a store and not a path error
@@ -47,9 +49,13 @@
 
 .PARAMETER Prompt
     What R0 tells each child, `{id}` standing for the ticket id. The default points the agent at the
-    lifecycle skill; a project that already has a pipeline command passes it here, for example
-    `/spec-all {id}`. A profile this run creates gets it as runner.promptTemplate, so r1-r3 send the
-    same prompt.
+    lifecycle skill for one step of one ticket, which is R0's own loop; a project that already has a
+    pipeline command passes it here, for example `/spec-all {id}`. Only a prompt passed here is written
+    to a profile this run creates, as runner.promptTemplate, so r1-r3 send the same thing. Left out, the
+    new profile carries no runner block and r1-r3 and the portfolio queue send the canon default (the
+    whole-ticket unattended prompt): the one-step text written there by default made every pass of such
+    a repository a single status step - about 2.7 times the passes per closed ticket, measured
+    2026-11-16..18 - and cut it off from every later fix of the default.
 
 .PARAMETER PermissionMode
     The permission mode R0 and r1-r3 start each child with. The default matches the harness's own queue
@@ -146,13 +152,17 @@ function ConvertTo-Literal([string] $Value) { return "'" + $Value.Replace("'", "
 $profileCreated = $false
 if (-not (Test-Path -LiteralPath $profilePath -PathType Leaf)) {
     if (-not $ProjectName) { $ProjectName = Split-Path -Leaf $Root }
-    # The full runner behind r1-r3 reads runner.promptTemplate; R0's one-step prompt goes there, spelled with the
-    # profile's {Id}, so r1-r3 and R0 send the same thing.
+    # The full runner behind r1-r3 reads runner.promptTemplate. Only a prompt the caller passed goes there, spelled
+    # with the profile's {Id}; R0's own one-step default stays in the rendered launcher and never becomes the
+    # profile's prompt, so a new repository keeps the canon default for r1-r3 and the portfolio queue.
     $minimal = [ordered]@{
         version     = '1'
         projectName = $ProjectName
-        runner      = [ordered]@{ promptTemplate = $Prompt.Replace('{id}', '{Id}') }
-    } | ConvertTo-Json
+    }
+    if ($PSBoundParameters.ContainsKey('Prompt')) {
+        $minimal.runner = [ordered]@{ promptTemplate = $Prompt.Replace('{id}', '{Id}') }
+    }
+    $minimal = $minimal | ConvertTo-Json
     $profileCreated = $true
     if ($PSCmdlet.ShouldProcess($profilePath, 'write file')) { Write-Utf8 $profilePath ($minimal + "`n") }
     Note 'created' '.sza-profile.json'

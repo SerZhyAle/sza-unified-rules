@@ -114,7 +114,7 @@ try {
 
         $state = if (-not $c -or -not $curVer) { 'unparsed' }
                  elseif ($r.verified -eq 'pending') { 'pending' }
-                 elseif ($isPartial) { 'partial' }
+                 elseif ($isPartial -and $implVer) { 'partial' }
                  elseif ($implNone -and $readsNone) { 'n/a' }
                  elseif (-not $synced) { 'unparsed' }
                  elseif ($synced -lt $curVer) { 'behind' }
@@ -145,7 +145,10 @@ try {
             if (-not $inLog) { continue }
             if ($l -notmatch '^\|') { $inLog = $false; continue }
             if ($l -match '^\|\s*-+') { continue }
-            if ($l -match '^\|\s*(\d{4}-\d{2}-\d{2})\s*\|\s*([^|]*?)\s*\|\s*([^|]*?)\s*\|\s*(.*?)\s*\|?\s*$') {
+            # The date cell may carry a suffix after the date ('2026-11-15, owner order'): 61 of 499 log rows did on
+            # 2026-11-18, and a reader that wanted a bare date dropped them, so the spec said "no entry between these
+            # versions" for the fastest-moving contracts. Log rows are append-only, so the reader tolerates the cell.
+            if ($l -match '^\|\s*(\d{4}-\d{2}-\d{2})[^|]*\|\s*([^|]*?)\s*\|\s*([^|]*?)\s*\|\s*(.*?)\s*\|?\s*$') {
                 $entries.Add([pscustomobject]@{
                     date = $Matches[1]; version = $Matches[2]; kind = $Matches[3]; what = $Matches[4]
                 })
@@ -167,11 +170,19 @@ try {
 
     function Get-Owed {
         param([string]$Kind)
-        switch -Regex ($Kind.Trim().ToLower()) {
-            '^breaking'                                  { return 'MUST adapt or declare a justified scoped exception - the older implementation disagrees with this contract' }
-            '^(additive|amendment|artifact|adoption)'    { return 'Review - adopt it, or record a dated exception saying why not' }
-            default                                      { return 'Read - code changes only if it relied on the older wording' }
-        }
+        # The Kind cell is free text in practice (49 distinct spellings on 2026-11-18: 'additive + breaking (draft)',
+        # 'minor (clarification)', 'format (draft move; major ..)'), so each word is looked for anywhere in the cell and
+        # the strictest reading wins: breaking, then additive, then the read-only kinds, then a bare 'minor', whose
+        # content is unknown and is therefore reviewed.
+        $k = $Kind.Trim().ToLower()
+        $must = 'MUST adapt or declare a justified scoped exception - the older implementation disagrees with this contract'
+        $review = 'Review - adopt it, or record a dated exception saying why not'
+        $read = 'Read - code changes only if it relied on the older wording'
+        if ($k -match '(?<!non-|not |no )breaking|(?<!no )\bmajor\b|^format\b') { return $must }
+        if ($k -match 'additive|addition|amendment|artifact|adoption') { return $review }
+        if ($k -match 'clarification|correcti|editorial') { return $read }
+        if ($k -match '\bminor\b') { return $review }
+        return $read
     }
 
     function Limit-Text {
@@ -213,7 +224,11 @@ try {
         }
         $null = $sb.AppendLine()
 
+        # A partial row already at the current version has no log range to show: it gets one line in the list below
+        # instead of an empty 'X to X' section with a "no entry" notice (142 of 245 partial rows on 2026-11-18).
+        $partialAtCurrent = @($behind | Where-Object { $_.state -eq 'partial' -and $_.synced -and $_.synced -eq $_.current })
         foreach ($b in ($behind | Sort-Object contract, product)) {
+            if ($partialAtCurrent -contains $b) { continue }
             $c = $contracts[$b.contract]
             $null = $sb.AppendLine(('## `{0}` - {1} to {2}  ({3})' -f $b.contract, $b.synced, $b.current, $b.product))
             $null = $sb.AppendLine()
@@ -237,6 +252,18 @@ try {
             if ($b.state -eq 'partial') {
                 $null = $sb.AppendLine()
                 $null = $sb.AppendLine('The row says `partial`: close the gap, or list each missing rule as a dated exception.')
+            }
+            $null = $sb.AppendLine()
+        }
+
+        if ($partialAtCurrent.Count -gt 0) {
+            $null = $sb.AppendLine('## Partial at the current version')
+            $null = $sb.AppendLine()
+            $null = $sb.AppendLine('These rows say `partial` at the contract''s current version, so no log range applies: close the gap, or list')
+            $null = $sb.AppendLine('each missing rule as a dated exception.')
+            $null = $sb.AppendLine()
+            foreach ($p in ($partialAtCurrent | Sort-Object contract, product)) {
+                $null = $sb.AppendLine(('- `{0}` ({1}), partial {2}' -f $p.contract, $p.product, $p.current))
             }
             $null = $sb.AppendLine()
         }

@@ -92,6 +92,26 @@ try {
     $spanText = "Individual quota reached. Resets in 2h30m."
     $spanIso = ConvertFrom-PqLimitText -Text $spanText -Now $refNow
     if ($null -eq $spanIso) { throw "Expected parsed ISO for relative span" }
+
+    # The dated form of a limit that lifts on another day - the real Codex line of 2026-11-17 (typographic apostrophe
+    # kept): the clock-only pattern cannot match it, so the hold had no time and the provider was probed by real passes.
+    $datedText = "ERROR: You$([char]0x2019)ve hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/settings/usage to purchase more credits or try again at Nov 19th, 2026 11:35 PM."
+    $datedIso = ConvertFrom-PqLimitText -Text $datedText -Offset "+01:00" -Now ([DateTimeOffset]::Parse("2026-11-17T12:00:00.000Z"))
+    if ($datedIso -ne '2026-11-19T22:36:00.000Z') { throw "Expected 2026-11-19T22:36:00.000Z for the dated Codex form, got '$datedIso'" }
+    $datedPast = ConvertFrom-PqLimitText -Text $datedText -Offset "+01:00" -Now ([DateTimeOffset]::Parse("2026-11-20T12:00:00.000Z"))
+    if ($null -ne $datedPast) { throw "Expected null for a dated reset already past, got '$datedPast'" }
+    $datedNow = [DateTimeOffset]::Parse("2026-11-17T12:00:00.000Z")
+    $datedLong = ConvertFrom-PqLimitText -Text "Limit reached. Resets on November 19, 2026 at 9:05 am" -Offset "+00:00" -Now $datedNow
+    if ($datedLong -ne '2026-11-19T09:06:00.000Z') { throw "Expected 2026-11-19T09:06:00.000Z for the long-month form, got '$datedLong'" }
+    # A pass log quotes limit texts (this file among them): a dated text counts only as the last limit-shaped text of
+    # the log and only within eight days, so a quoted fixture never outranks the real message that ends the log.
+    $quotedThenReal = "tests.ps1:98: or try again at Nov 19th, 2026 11:35 PM.`nERROR: You've hit your usage limit. Try again at 2:38 PM."
+    $realIso = ConvertFrom-PqLimitText -Text $quotedThenReal -Offset "+00:00" -Now $datedNow
+    if ($realIso -ne '2026-11-17T14:39:00.000Z') { throw "Expected the clock form that ends the log (2026-11-17T14:39:00.000Z), got '$realIso'" }
+    $farAway = ConvertFrom-PqLimitText -Text "try again at Nov 19th, 2027 11:35 PM." -Offset "+00:00" -Now $datedNow
+    if ($null -ne $farAway) { throw "Expected null for a dated reset more than eight days ahead, got '$farAway'" }
+    $sept = ConvertFrom-PqLimitText -Text "try again at Sept 19th, 2026 11:35 PM." -Offset "+00:00" -Now ([DateTimeOffset]::Parse("2026-09-17T12:00:00.000Z"))
+    if ($sept -ne '2026-09-19T23:36:00.000Z') { throw "Expected 2026-09-19T23:36:00.000Z for a four-letter month, got '$sept'" }
     Write-Host " PASS" -ForegroundColor Green
 
     # -----------------------------------------------------------------------------------------

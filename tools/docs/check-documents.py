@@ -99,6 +99,31 @@ def render_map(records):
     return "\n".join(lines) + "\n"
 
 
+def derive_topic(lines, name):
+    """The topic of a new registry record: the first heading after an optional YAML frontmatter block, else the
+    frontmatter `name:`, else the first non-empty line, else the file stem. A SKILL.md starts with `---`, and
+    taking line one made 20 topics a bare delimiter."""
+    body, front_name = lines, ""
+    if lines and lines[0].strip() == "---":
+        for index in range(1, len(lines)):
+            if lines[index].strip() == "---":
+                body = lines[index + 1:]
+                break
+            if lines[index].startswith("name:"):
+                front_name = lines[index][5:].strip().strip("'\"")
+    # Headings only, and never a '#' line inside a fenced block: prose() is this module's own fence stripper.
+    for line in prose("\n".join(body)).splitlines():
+        heading = re.match(r"^ {0,3}#{1,6}\s+(.+?)(?:\s+#+)?\s*$", line)
+        if heading:
+            return heading.group(1).strip() or Path(name).stem
+    if front_name:
+        return front_name
+    for line in body:
+        if line.strip().strip("-"):
+            return line.strip()
+    return Path(name).stem
+
+
 def check_corpus(root, config_path, register=False, render=False):
     config = json.loads(config_path.read_text(encoding="utf-8-sig"))
     generated = config.get("generated", [])
@@ -123,8 +148,11 @@ def check_corpus(root, config_path, register=False, render=False):
         for name in sorted(files):
             record = existing.get(name, {})
             lines = (root / name).read_text(encoding="utf-8-sig").splitlines()
-            topic = lines[0].lstrip("# ") if lines else Path(name).stem
-            records.append({"path": name, "topic": record.get("topic", topic),
+            topic = derive_topic(lines, name)
+            stored = record.get("topic") or ""
+            stored = stored if isinstance(stored, str) else str(stored)
+            # A stored topic that is only a frontmatter delimiter was written by the older extractor: derive it again.
+            records.append({"path": name, "topic": stored if stored.strip().strip("-") else topic,
                             "area": record.get("area", name.split("/")[0] if "/" in name else "repository"),
                             "update_triggers": record.get("update_triggers", ["Changes to the documented interface or workflow"]),
                             "role": "render" if name == config["map"] or is_generated(name) else "source"})
@@ -145,6 +173,8 @@ def check_corpus(root, config_path, register=False, render=False):
         name = record["path"]
         if not all(record.get(k) for k in ("topic", "area", "update_triggers", "role")) or record["role"] not in ("source", "render"):
             errors.append(f"{name}: incomplete registry record")
+        elif not str(record["topic"]).strip().strip("-"):
+            errors.append(f"{name}: registry topic is a frontmatter delimiter, not a topic - run --register --render")
         if name in declared:
             errors.append(f"{name}: duplicate authoritative record")
         declared.add(name)
@@ -170,6 +200,16 @@ def check_corpus(root, config_path, register=False, render=False):
     for name in sorted(files):
         path = root / name
         text = path.read_text(encoding="utf-8-sig")
+        if not local:
+            # A published document carries no control character but CR and LF. An escape-interpreting channel once
+            # turned `\t` and `\a` of a Windows path into a tab and a bell, and the wrong path passed every gate
+            # for a week because none looked at bytes. The local corpus holds the owner's verbatim text and is exempt.
+            # The whole text is searched, not its split lines: splitlines() treats form feed and vertical tab as
+            # line ends and removes them. A tab is refused in code samples too - write spaces there.
+            hit = re.search(r"[\x00-\x09\x0b\x0c\x0e-\x1f\x7f]", text)
+            if hit:
+                number = text.count("\n", 0, hit.start()) + 1
+                errors.append(f"{name}:{number}: control character in a published document (a tab or an interpreted escape)")
         readable = re.sub(r"(`+).*?\1", "", prose(text))
         if re.search(r"[\u2013\u2014\u2015\u2026]|(?<!\.)\.{3}(?!\.)", readable):
             errors.append(f"{name}: house style requires plain hyphens and two periods in prose")

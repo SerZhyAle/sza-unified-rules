@@ -82,6 +82,12 @@ $script:PqQueueRowPattern = '^(?<repo>[a-z][a-z0-9-]*)(?::(?<id>\*|[^\s:#_]+)(?:
 $script:PqQueueUnscheduled = [long]::MaxValue
 $script:PqQueueTicketWidth = 74
 $script:PqProfileDefaults = $null
+# The statuses whose ticket has left the queue, for a repository read from its ledger or from a hand-kept table: the
+# release-ready set of spec_catalog/_status-sets.ps1 (Implemented, Verified, BlockNeedUserTest - a ticket waiting for the
+# owner's test leaves the queue, as the header above and the operator's guide say), plus Archived and the legacy word
+# Closed. One list for every reader in this file; _status-sets.ps1 itself is not dot-sourced here because it loads
+# _profile.ps1, which caches one project root.
+$script:PqQueueLeftStatuses = @('Verified', 'Archived', 'Implemented', 'BlockNeedUserTest', 'Closed')
 
 function Get-PqQueueHash([byte[]]$Bytes) {
     return [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($Bytes)).ToLowerInvariant()
@@ -541,7 +547,7 @@ function Read-PqTicketQueueRows([string]$Path) {
 
     if ($Path.EndsWith('.jsonl', [StringComparison]::OrdinalIgnoreCase)) {
         $out = [Collections.Generic.List[object]]::new()
-        $closed = @('Verified', 'Archived', 'Implemented', 'Closed')
+        $closed = $script:PqQueueLeftStatuses
         try {
             $split = Split-PqQueueText (Read-PqQueueBytes $Path)
             foreach ($line in $split.lines) {
@@ -597,7 +603,7 @@ function Read-PqTicketQueueRows([string]$Path) {
         return , $out.ToArray()
     }
 
-    $closedStatuses = @('Verified', 'Archived', 'Implemented', 'Closed', 'Done')
+    $closedStatuses = @($script:PqQueueLeftStatuses) + 'Done'
     $dir = Split-Path -Parent $Path
     $parentDir = Split-Path -Parent $dir
     $seenIds = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)

@@ -51,6 +51,28 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# -Only / -Skip take a comma list. Through `pwsh -File`, the form the header documents, `-Only A,B` binds as ONE
+# element 'A,B', which matches no check id: every finding was filtered out and the run printed a clean
+# "0 error(s), 0 warning(s)" with exit 0 - a green that observed nothing. So the lists are split here, and an id
+# that names no check of this script is "could not verify" (exit 2), never a filtered-to-empty verdict.
+$Only = @($Only | ForEach-Object { "$_" -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+$Skip = @($Skip | ForEach-Object { "$_" -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+if (-not $PrintDigest -and ($Only.Count -gt 0 -or $Skip.Count -gt 0)) {
+    $knownCheckIds = @([regex]::Matches([IO.File]::ReadAllText($PSCommandPath), "'(SZA-[A-Z]+\d+)'") |
+                       ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique)
+    $unknownCheckIds = @(@($Only) + @($Skip) | Where-Object { $knownCheckIds -notcontains $_ } | Sort-Object -Unique)
+    if ($unknownCheckIds.Count -gt 0) {
+        Write-Host "check-compliance: unknown check id in -Only/-Skip: $($unknownCheckIds -join ', ') - nothing was verified. Ids look like SZA-CANON03; separate several with commas."
+        exit 2
+    }
+    # Group FLOW runs only behind -CheckTaskFlow: asking for nothing but FLOW ids without it would again be a
+    # clean verdict over zero checks.
+    if ($Only.Count -gt 0 -and -not $CheckTaskFlow -and @($Only | Where-Object { $_ -notlike 'SZA-FLOW*' }).Count -eq 0) {
+        Write-Host "check-compliance: -Only names only FLOW checks, and group FLOW is off without -CheckTaskFlow - nothing was verified."
+        exit 2
+    }
+}
+
 # Host guard. Windows PowerShell 5.1 reads a BOM-less UTF-8 file as ANSI, and nearly every repo file this
 # gate judges is exactly that - so under 5.1 the house-style checks report em-dashes that are not there
 # and fail a clean repo. Refusing to run is the only honest answer: exit 2 is "could not verify", never
@@ -1324,7 +1346,11 @@ try {
                    elseif ($stamp -and $stamp.role -and $stamp.role -ne 'product') { 'none' }
                    else { '?' }
     if ($fileSet -ne 'tracked') { Write-Host "note: files judged - $fileSet" }
-    Write-Host "check-compliance: $(Split-Path $RepoRoot -Leaf) - $($errors.Count) error(s), $($warns.Count) warning(s) (overlay $overlayText, canon $canonVersion)"
+    # A filtered run says so in its verdict line, so it cannot be read as a full one.
+    $filterText = ''
+    if ($Only.Count -gt 0) { $filterText += ", only $($Only -join ',')" }
+    if ($Skip.Count -gt 0) { $filterText += ", skipping $($Skip -join ',')" }
+    Write-Host "check-compliance: $(Split-Path $RepoRoot -Leaf) - $($errors.Count) error(s), $($warns.Count) warning(s) (overlay $overlayText, canon $canonVersion$filterText)"
 
     if ($errors.Count -gt 0) {
         Write-Error "check-compliance: $($errors.Count) error(s)" -ErrorAction Continue

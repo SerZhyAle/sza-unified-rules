@@ -18,6 +18,12 @@ tmp/
 
 # Local launchers written by tools/harness/portfolio/install-shortcuts.ps1 - machine paths, never shipped.
 /PQ *.lnk
+# The owner's own two-line PQShell build-and-start note (a machine path); the build itself is
+# tools/harness/portfolio/gui/build.ps1.
+/pqshell.ps1
+# filedo.exe writes its command history into whatever folder it is started from; it rode into three plugin
+# versions (2026.1117.2, 2026.1117.3, 2026.1118.1) before deploy.ps1 learned to stop a new root file.
+history.json
 
 # Build junk - deploy.ps1 stages everything, so this has to be excluded here or not at all.
 __pycache__/

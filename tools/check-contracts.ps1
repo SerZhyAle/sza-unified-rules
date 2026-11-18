@@ -264,12 +264,17 @@ try {
         $lagJson = & pwsh -NoProfile -File $lagScript -CatalogRoot $CatalogRoot -Json 2>$null
         if ($LASTEXITCODE -eq 0 -and $lagJson) {
             $lag = ($lagJson -join "`n") | ConvertFrom-Json
-            $behindCount = [int]$lag.counts.behind + [int]$lag.counts.partial
-            if ($behindCount -gt 0 -or [int]$lag.counts.unparsed -gt 0) {
-                $products = @($lag.rows | Where-Object { $_.state -in 'behind', 'partial' } |
-                              ForEach-Object { $_.product -replace '\s*\(.*$', '' } | Sort-Object -Unique).Count
+            # A row is behind when its version is below the contract's: the plain `behind` rows and the `partial`
+            # rows that name an older version. A `partial` row at the current version is a gap inside the current
+            # contract, not a lag, and is counted on its own: on 2026-11-18 the old sum read 325, of which 183 rows named an
+            # older version and 142 were partial at the current one.
+            $lagRows = @($lag.rows | Where-Object { $_.state -eq 'behind' -or ($_.state -eq 'partial' -and $_.synced -ne $_.current) })
+            $partialAtCurrent = @($lag.rows | Where-Object { $_.state -eq 'partial' -and $_.synced -eq $_.current }).Count
+            $behindCount = $lagRows.Count
+            if ($behindCount -gt 0 -or $partialAtCurrent -gt 0 -or [int]$lag.counts.unparsed -gt 0) {
+                $products = @($lagRows | ForEach-Object { $_.product -replace '\s*\(.*$', '' } | Sort-Object -Unique).Count
                 Add-Finding -Id 'CTR-LAG' -Severity 'warn' -Path '_meta/REGISTRY.md' `
-                    -Message ("$behindCount adoption rows are behind their contract ($products products), $($lag.counts.unparsed) unreadable - " +
+                    -Message ("$behindCount adoption rows are behind their contract ($products products), $partialAtCurrent partial at the current version, $($lag.counts.unparsed) unreadable - " +
                               'run tools/contract-lag.ps1; -Product <name> -EmitSpec writes the sync spec')
             }
         }

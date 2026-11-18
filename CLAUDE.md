@@ -37,8 +37,9 @@ pwsh -File deploy.ps1 -DryRun                             # the gates + what wou
   take `-KeepScratch` to leave them for inspection).
 - **`tools/check-compliance.ps1` judges an adopting repository, not this one** - it is run from that repo
   (`-Strict`, `-Json`). Here the stamp's `role: canon-home` switches the surface and overlay checks off.
-- **`deploy.ps1` without `-DryRun` is the owner's tool.** It stages everything (`git add .`), commits and pushes
-  the current branch; an agent runs it only when asked for that deploy.
+- **`deploy.ps1` without `-DryRun` is the owner's tool.** It stages everything (`git add -A`), commits and pushes
+  the current branch; an agent runs it only when asked for that deploy. A new untracked file or folder at the repo
+  root stops it before anything is written (`-AllowNew` accepts one that is meant to ship).
 
 ## Working here
 
@@ -78,11 +79,14 @@ pwsh -File deploy.ps1 -DryRun                             # the gates + what wou
   `.sza-profile.json`, the three agent-rules filenames or the digest's coverage is a contract change, so
   the catalog moves first and the code follows.
 - **Touching the catalog?** `pwsh -File tools/check-contracts.ps1` (exit 0 required) validates it: the
-  governance pages, every domain's header block, the registry agreeing with it, expired exceptions, and
+  governance pages, every domain's header block, the registry agreeing with it, and
   links. The catalog is outside git, so nothing else can catch a broken edit there - the deploy runs this
   advisory, never as a blocker, because a machine without the drive must still be able to ship a rule fix.
-- **Changing a rule doc changes the digest**, which marks every adopting repo stale. That is intended: the
-  version raised alongside it lets the staleness ladder tell a minor reconciliation from a hard re-adoption.
+- **Changing a rule doc changes the digest**, which marks every adopting repo stale. That is intended: a
+  differing digest is a warning that owes a reconciliation of the changed documents, and only the stamp's age (more
+  than 180 days since the last reconciliation, or since adoption when none is recorded, or no readable date at all)
+  turns it into an error that owes a full re-adoption - the version
+  number does not decide the rung (`RULE-DELIVERY` rule 5).
 - **The version pair is written by `deploy.ps1`, not by hand.** It calls
   [tools/bump-canon-version.ps1](tools/bump-canon-version.ps1) before staging, which is the only writer of
   [CANON_VERSION](CANON_VERSION) and of `.claude-plugin/plugin.json` `version`, derived from it:
@@ -165,8 +169,8 @@ pwsh -File deploy.ps1 -DryRun                             # the gates + what wou
   (`../../rules/...`) when read as files. Keep both working: a skill is read as a document *and* executed.
 - `rules/` was moved here from the `sza.od.ua` site repo with its history intact (`git subtree split`). The
   site repo keeps a pointer, not a copy.
-- **`.gitignore` is the only thing between a local file and the payload**, because the deploy stages
-  everything. Local by design: `PLAN/` (this repo's tickets and ledger), `temp/`, the `dev/` registry files,
+- **`.gitignore` is what stands between a local file and the payload**, because the deploy stages
+  everything inside the tracked top-level folders (a new path at the repo root is refused instead). Local by design: `PLAN/` (this repo's tickets and ledger), `temp/`, the `dev/` registry files,
   the `PQ *.lnk` launchers and `/.sza-profile.json` - the harness looks for a profile above its own root, so a
   shipped one would become the project root of every consumer that has none.
 - [AGENTS.md](AGENTS.md) is the Codex entry point: it defers to this file and repeats only the command list,

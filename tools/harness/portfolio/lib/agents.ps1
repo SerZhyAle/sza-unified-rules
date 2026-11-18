@@ -335,9 +335,38 @@ function Get-PqRunnerLimitUntil {
     catch { return $null }
 }
 
+# The dated form of a limit that lifts on another day (Codex's weekly limit): "try again at Nov 19th, 2026 11:35 PM".
+# The caller hands over a whole pass log, and a log quotes limit texts (source lines, test fixtures), so the form counts
+# only when it is the LAST limit-shaped text of the log - the real message ends it - and only when the time lies within
+# eight days: a quoted fixture from another year must not park a provider. Anything else returns $null, and the clock
+# and span forms are tried as before.
+function Get-PqDatedLimitTime {
+    param([string]$Text, [string]$Offset = '', [DateTimeOffset]$Now = [DateTimeOffset]::UtcNow)
+    $all = [regex]::Matches($Text, '(?i)(?:try again|retry|resets?)\s+(?:at|on)\s+(?<mon>[a-z]{3,9})\.?\s+(?<day>\d{1,2})(?:st|nd|rd|th)?,?\s+(?<year>\d{4}),?\s+(?:at\s+)?(?<time>\d{1,2}:\d{2}(?::\d{2})?\s*(?:[ap]\.?m\.?)?)')
+    if ($all.Count -eq 0) { return $null }
+    $m = $all[$all.Count - 1]
+    $other = [regex]::Matches($Text, '(?i)(?:try again|retry|resets?)\s+(?:at|on)\s+\d{1,2}:\d{2}|resets?\s+in\s+\d')
+    if ($other.Count -gt 0 -and $other[$other.Count - 1].Index -gt $m.Index) { return $null }
+    $mon = $m.Groups['mon'].Value.Substring(0, 3)
+    $timeStr = ((($m.Groups['time'].Value -replace '\.', '') -replace '\s+', '') -replace '(?i)([ap]m)$', ' $1').Trim().ToUpperInvariant()
+    $stamp = "$mon $([int]$m.Groups['day'].Value) $($m.Groups['year'].Value) $timeStr"
+    $formats = [string[]]@('MMM d yyyy h:mm tt', 'MMM d yyyy h:mm:ss tt', 'MMM d yyyy H:mm', 'MMM d yyyy H:mm:ss')
+    $parsed = [datetime]::MinValue
+    if (-not [datetime]::TryParseExact($stamp, $formats, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref]$parsed)) { return $null }
+    $zone = $null
+    if ($Offset -match '^\s*([+-]?)(\d{1,2}):(\d{2})\s*$') {
+        $zone = [timespan]::new([int]$Matches[2], [int]$Matches[3], 0)
+        if ($Matches[1] -ceq '-') { $zone = $zone.Negate() }
+    }
+    $at = if ($null -ne $zone) { [DateTimeOffset]::new($parsed, $zone) } else { [DateTimeOffset]::new($parsed) }
+    if ($at -gt $Now.AddDays(8)) { return $null }
+    return $at
+}
+
 # When the limit lifts, read from the text of a limit message (S0016, S0035):
 #   `Usage limit reached for 5 hour. Your limit will reset at 2026-11-11 00:34:51`   a clock time, in the provider's zone
 #   `You've hit your usage limit. Try again at 2:38 AM.`                             a daily clock time (Codex)
+#   `.. or try again at Nov 19th, 2026 11:35 PM.`                                    a dated clock time (Codex, a limit of several days)
 #   `Individual quota reached. .. Resets in 57h10m24s.`                              a span from now
 # -Offset is the provider's UTC offset for the clock form (`+08:00` for z.ai: its reset time reads 1 h 20 min after the
 # call, against 7 h 20 min if it were Kyiv time and 9 h 20 min if UTC, for a five hour window); empty reads it as this
@@ -359,6 +388,9 @@ function ConvertFrom-PqLimitText {
             }
             $at = if ($null -ne $zone) { [DateTimeOffset]::new($parsed, $zone) } else { [DateTimeOffset]::new($parsed) }
         }
+    }
+    elseif ($null -ne ($datedAt = Get-PqDatedLimitTime -Text $Text -Offset $Offset -Now $Now)) {
+        $at = $datedAt
     }
     else {
         # S0035: Codex clock time format without date ("try again at 2:38 AM", "resets at 14:38")
