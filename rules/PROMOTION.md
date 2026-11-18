@@ -136,8 +136,9 @@ the persona; a CLI catalogue, a technical subreddit or a curated developer list 
 Crawlers read `robots.txt` **only at the host root** (RFC 9309; Google: crawlers "don't check for robots.txt
 files in subdirectories"). Every portfolio product site at `serzhyale.github.io/<repo>/` is a project page, so
 its own `robots.txt` is read by nobody and its `Sitemap:` line reaches no crawler. The host root
-`serzhyale.github.io` is served by the user-site repository `SerZhyAle/SerZhyAle.github.io`, which today is a
-redirect to the hub and answers 404 for `/robots.txt`.
+`serzhyale.github.io` is served by the user-site repository `SerZhyAle/SerZhyAle.github.io`, which redirects the
+root page to the hub and serves the host-root files published from the hub's `github-root-redirect/` folder. The
+format, the membership and the proof of that file are the contract `SEARCH-INDEXING`; this section is the how-to.
 
 - **The portfolio fix is one file at the host root**: an allow-all `robots.txt` with one `Sitemap:` line per
   live project sitemap (a `Sitemap:` line may name any path on the host). A wrong `Disallow` there de-indexes

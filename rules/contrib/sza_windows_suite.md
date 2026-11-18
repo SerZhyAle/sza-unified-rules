@@ -15,6 +15,7 @@ The four overlay facts + editions, each with evidence:
 - **Channels + listing files.** GitHub Releases (`setup.exe` and `.zip`), winget (`publishing/winget/SZA.WindowsSuite.*.yaml`), and Microsoft Store (`publishing/msix/AppxManifest.xml`). (evidence: `publishing/`)
 - **Frozen anchors.** winget `PackageIdentifier: SZA.WindowsSuite`, Inno Setup `AppId: {{B8799C0A-90D1-4E15-992F-437EE8D36622}}`, MSIX Identity Name `SZA.WindowsSuite`, Publisher `CN=Serhii Zhyhunenko`. (evidence: `CLAUDE.md`, `publishing/installer/setup.iss`, `publishing/msix/AppxManifest.xml`)
 - **Editions + parity mechanism.** None - single edition. Produces dual delivery artifacts: online bootstrapper and offline bundle. (evidence: `tools/assemble-suite.ps1`)
+- **Command surface & single-instance activation.** `APP-COMMANDS` 0.3 (`docs/cli-commands.json` compiled verbatim in `CliCommandManifest.cs`, rendered into `docs/CLI.md`) exposes five `safe` base verbs (`commands`, `version`, `status`, `show`, `quit`) at `cliVersion` 1.0 alongside the `install` family; `APP-ACTIVATION` 0.16 uses per-session mutex `Local\SzaWindowsSuiteSingleInstance` (`SingleInstanceLock.cs`), named pipe `\\.\pipe\sza-windows-suite-single-instance` created `CurrentUserOnly` (`ActivationPipe.cs`) with 1000 ms bounded connect and no-vanish fallback, `ForegroundActivation` (`SMTO_ABORTIFHUNG` 50 ms probe), no URI scheme, and no network listener. (evidence: `src/SzaWindowsSuite/Activation/`, `src/SzaWindowsSuite/Cli/CliCommandManifest.cs`, `docs/cli-commands.json`)
 
 ## Channel-matrix rows (this project)
 

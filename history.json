@@ -20,5 +20,49 @@
     "results": {},
     "duration": "0s",
     "success": false
+  },
+  {
+    "timestamp": "2026-11-17T22:01:07.9871239+01:00",
+    "command": "",
+    "target": "",
+    "operation": "",
+    "fullCommand": "C:\\GD\\tc\\SZA\\_APP\\filedo.exe help",
+    "parameters": {},
+    "results": {},
+    "duration": "0s",
+    "success": false
+  },
+  {
+    "timestamp": "2026-11-17T22:01:13.5186807+01:00",
+    "command": "",
+    "target": "",
+    "operation": "",
+    "fullCommand": "C:\\GD\\tc\\SZA\\_APP\\filedo.exe --version",
+    "parameters": {},
+    "results": {},
+    "duration": "0s",
+    "success": false
+  },
+  {
+    "timestamp": "2026-11-17T22:01:13.5364639+01:00",
+    "command": "",
+    "target": "",
+    "operation": "",
+    "fullCommand": "C:\\GD\\tc\\SZA\\_APP\\filedo.exe help",
+    "parameters": {},
+    "results": {},
+    "duration": "0s",
+    "success": false
+  },
+  {
+    "timestamp": "2026-11-17T22:01:20.1145066+01:00",
+    "command": "",
+    "target": "",
+    "operation": "",
+    "fullCommand": "C:\\GD\\tc\\SZA\\_APP\\filedo.exe help",
+    "parameters": {},
+    "results": {},
+    "duration": "0s",
+    "success": false
   }
 ]
