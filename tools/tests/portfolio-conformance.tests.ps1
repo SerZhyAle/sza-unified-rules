@@ -93,7 +93,7 @@ Assert-Equal (Get-AgentProblems @{ limitDetector = @{ kind = 'exitText'; pattern
 
 # ---- rule 42: agent.fallback why ----
 Assert-Equal (Test-PqFallbackWhy 'stopped') $false 'rule 42: an owner stop is not a fallback why'
-Assert-Equal (@(@('limit', 'maxParallel', 'levelNotAllowed', 'noPipelineForm', 'launchFailed') | Where-Object { -not (Test-PqFallbackWhy $_) }).Count) 0 'rule 42: every why of the vocabulary is written'
+Assert-Equal (@(@('limit', 'maxParallel', 'levelNotAllowed', 'aboveCeiling', 'noPipelineForm', 'launchFailed') | Where-Object { -not (Test-PqFallbackWhy $_) }).Count) 0 'rule 42: every why of the vocabulary is written'
 $loopText = [IO.File]::ReadAllText((Join-Path $lib 'loop.ps1'))
 Assert-Equal ($loopText -match "if \(-not \(Test-PqFallbackWhy \(\[string\]\`$fb\.why\)\)\) \{ continue \}\s+\`$null = Write-PqEvent -Log \`$log -Ev 'agent\.fallback'") $true 'rule 42: the loop filters agent.fallback by the vocabulary'
 
@@ -107,12 +107,12 @@ $r = Get-PqHoldResume @{ writtenAt = 'garbage' } $now
 Assert-Equal "$($r.heldFor)/$($r.by)" '0/probe' 'rule 48: an unreadable hold time gives heldFor 0'
 Assert-Equal ($loopText.Contains("heldFor = `$resume.heldFor; by = `$resume.by")) $true 'rule 48: the loop writes heldFor into agent.resume'
 
-# ---- rule 51: the two level regexes ----
+# ---- rule 51: one parser of the line for both readers (TASK-FLOW 0.32, S0139) ----
 $levelRx = { param([string]$Text) @([regex]::Matches($Text, "'(\^\((?:light|medium|hard)\|[^']+)'") | ForEach-Object { $_.Groups[1].Value }) -join ' ' }
-$dispatcherRx = & $levelRx ([IO.File]::ReadAllText((Join-Path $lib 'agents.ps1')))
-$runnerRx = & $levelRx ([IO.File]::ReadAllText((Join-Path $PSScriptRoot '..\harness\batch\run-spec-queue.ps1')))
-Assert-Equal (@($dispatcherRx -split ' ').Count) 3 'rule 51: the dispatcher has three level patterns'
-Assert-Equal $runnerRx $dispatcherRx 'rule 51: the runner reads the same three level patterns as the dispatcher'
+$parserRx = & $levelRx ([IO.File]::ReadAllText((Join-Path $PSScriptRoot '..\harness\spec_catalog\lib\complexity-grade.ps1')))
+Assert-Equal (@($parserRx -split ' ').Count) 3 'rule 51: the parser has three level patterns'
+Assert-Equal (([IO.File]::ReadAllText((Join-Path $lib 'agents.ps1'))).Contains('ConvertFrom-SzaComplexityValue $raw')) $true 'rule 51: the dispatcher reads the line through the parser'
+Assert-Equal (([IO.File]::ReadAllText((Join-Path $PSScriptRoot '..\harness\batch\run-spec-queue.ps1'))).Contains('ConvertFrom-SzaComplexityValue $raw')) $true 'rule 51: the runner reads the line through the same parser'
 
 # ---- rule 61: repo.free ----
 $mark = New-PqOccupancyMark @{ by = 'lease'; holderKind = 'unknown' } $now

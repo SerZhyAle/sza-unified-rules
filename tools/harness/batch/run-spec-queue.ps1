@@ -227,6 +227,13 @@ param(
     # promptTemplate: this instance's own, else runner.promptTemplate (HARNESS-PROFILE rule 9).
     [string] $PromptTemplate = '',
 
+    # S0140: the parallel axis of the pass, set by the dispatcher from the agent's route. 'ultracode' appends the
+    # workflow opt-in to a Claude child's system prompt (--append-system-prompt, proven headless 2026-11-18) and keeps
+    # Workflow out of the S0041 trial's disallowed tools; the prompt itself is untouched, so a slash argument stays
+    # a ticket id. Empty = no parallel axis, the pass is what it always was. A non-Claude child ignores it.
+    [ValidateSet('', 'ultracode')]
+    [string] $Parallel = '',
+
     # Permission mode for the child session.
     [ValidateSet('acceptEdits', 'auto', 'bypassPermissions', 'manual', 'dontAsk', 'plan')]
     [string] $PermissionMode = 'bypassPermissions',
@@ -277,6 +284,7 @@ param(
 . (Join-Path $PSScriptRoot '_limit-hold.ps1')
 . (Join-Path $PSScriptRoot '_pass-usage.ps1')
 . (Join-Path $PSScriptRoot '_instance-settings.ps1')
+. (Join-Path $PSScriptRoot '..\spec_catalog\lib\complexity-grade.ps1')
 if ([string]::IsNullOrWhiteSpace($RepoRoot)) { $RepoRoot = Get-SzaProjectRoot }
 # The portfolio dispatcher sets this in the pass's environment rather than passing the switch, so a runner stand-in
 # with a fixed parameter list keeps working.
@@ -412,6 +420,13 @@ function Get-ChildHelpText {
 
     $script:ChildHelpText = $help
     return $script:ChildHelpText
+}
+
+# S0140: the system-prompt text that opts a headless pass into a workflow. The keyword is the opt-in the Workflow
+# tool names; the cap keeps the run inside the session's medium size guideline.
+function Get-ParallelOptIn([string]$Axis) {
+    return "$Axis - the owner enabled multi-agent orchestration for this ticket (its spec carries the Parallel flag): " +
+        'use the Workflow tool for the independent parts the plan names, keep it under 10 agents, and do the dependent work yourself.'
 }
 
 function Test-ChildHelpLists {
@@ -851,7 +866,8 @@ function Get-NextQueuedTicket {
 function Get-TicketComplexity {
     <#
         The level a spec declares for itself: light, medium or hard, or '' when the spec carries no
-        `**Complexity:**` line or the line names nothing this function recognises.
+        `**Complexity:**` line or the line names nothing this function recognises. A grade 0-9 (TASK-FLOW
+        0.32, S0139) answers its band, so every map keyed by level reads it unchanged.
 
         Read from the spec's own header rather than from the catalog or the preflight payload. The
         preflight's `frontmatter` carries only Status, Priority, Tier and Date, and an explicit -Ids
@@ -881,12 +897,9 @@ function Get-TicketComplexity {
     }
     if (-not $raw) { return '' }
 
-    switch -Regex ($raw.ToLowerInvariant()) {
-        '^(light|лёгкий|легкий)\b'  { return 'light' }
-        '^(medium|средний)\b'       { return 'medium' }
-        '^(hard|сложный)\b'         { return 'hard' }
-    }
-    return ''
+    # One parser for every reader of the line (spec_catalog/lib/complexity-grade.ps1): the words, the
+    # Russian words and the grade 0-9, whose band is the level.
+    return [string](ConvertFrom-SzaComplexityValue $raw).level
 }
 
 function Select-ModelFor {
@@ -1601,7 +1614,7 @@ while ($true) {
     $prompt = $prompt.Replace('{repoRoot}', $RepoRoot).Replace('{reporoot}', $RepoRoot).Replace('<repo root>', $RepoRoot)
     $prompt = $prompt.Replace('{updatePath}', $updateRel).Replace('{updatepath}', $updateRel).Replace('<update.ps1 path>', $updateRel)
     if ($isClaudeChild -and $ModelPolicy -eq 'shape' -and -not $childComplexity) {
-        $prompt += ' Before other ticket work, research the ticket and write its **Complexity:** line as light, medium or hard with the reason for your assessment.'
+        $prompt += ' Before other ticket work, research the ticket and write its **Complexity:** line as a grade 0-9 (0-3 light, 4-6 medium, 7-9 hard) with the reason for your assessment.'
     }
     $childArgs = @(Expand-ChildArgs -Template $runnerArgsTemplate -Prompt $prompt `
             -Mode $PermissionMode -Model $childModel -Effort (Resolve-ChildEffort -RecordEffort $recordEffort -Model $childModel))
@@ -1633,8 +1646,19 @@ while ($true) {
             }
         }
         if (Test-ChildHelpLists '--disallowedTools') {
-            $childArgs += @('--disallowedTools', 'Workflow', 'ScheduleWakeup', 'ReportFindings')
+            $denied = if ($Parallel) { @('ScheduleWakeup', 'ReportFindings') } else { @('Workflow', 'ScheduleWakeup', 'ReportFindings') }
+            $childArgs += @('--disallowedTools') + $denied
         }
+    }
+
+    # S0140: the opt-in of a parallel pass rides in the system prompt, never in the prompt - a keyword after
+    # `/spec-all <id>` reaches the command as part of its argument and the resolver reads it as an idea (proof run
+    # 2026-11-18, canon:S0140 section 3.5).
+    if ($Parallel -and $isClaudeChild -and [array]::IndexOf($childArgs, '--append-system-prompt') -lt 0) {
+        if (Test-ChildHelpLists '--append-system-prompt') {
+            $childArgs += @('--append-system-prompt', (Get-ParallelOptIn $Parallel))
+        }
+        else { Write-Host "  parallel       : $Parallel asked, but the CLI's --help does not list --append-system-prompt; the pass runs single" -ForegroundColor Yellow }
     }
 
     # ProcessStartInfo.ArgumentList, never Start-Process -ArgumentList. Start-Process joins the array

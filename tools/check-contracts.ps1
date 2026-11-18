@@ -12,6 +12,7 @@ Checks:
   CTR-FOLDER  every registry row points at a folder that exists
   CTR-LINK    relative markdown links inside the catalog resolve
   CTR-PATH    no Windows path inside markdown link parentheses (the backslashes vanish silently)
+  CTR-PROP    every PROPOSAL-*.md carries the status line of RULES.md section 7; the open ones are listed
   CTR-STALE   how many adoption rows are still unverified (informational)
   CTR-LAG     how many adoption rows are behind their contract, from tools/contract-lag.ps1 (informational)
 
@@ -215,11 +216,29 @@ try {
     # ------------------------------------------------------- CTR-LINK / CTR-PATH
 
     $docs = @(Get-ChildItem -LiteralPath $CatalogRoot -Filter *.md -File -Recurse)
+    $proposals = New-Object System.Collections.Generic.List[object]   # CTR-PROP: one record per PROPOSAL-*.md
+    $openProposals = New-Object System.Collections.Generic.List[string]
     foreach ($doc in $docs) {
         $rel = Get-RelativePath $doc.FullName
+        # CTR-PROP rides on this loop: each file is read once, for its links and for its status line.
+        $prop = $null
+        if ($doc.Name -like 'PROPOSAL-*.md') {
+            $prop = [pscustomobject]@{ rel = $rel; status = ''; line = 0; decided = $false; aboveH2 = $true }
+            $proposals.Add($prop)
+        }
         $lineNo = 0
         foreach ($line in (Get-Content -LiteralPath $doc.FullName)) {
             $lineNo++
+            if ($prop) {
+                if ($line.StartsWith('## ', [StringComparison]::Ordinal)) {
+                    $prop.aboveH2 = $false
+                    if ($line -match '^## Decision \(?\d{4}-\d{2}-\d{2}') { $prop.decided = $true }
+                }
+                elseif ($prop.aboveH2 -and -not $prop.status -and $line.StartsWith('**Status:** ', [StringComparison]::Ordinal)) {
+                    $prop.status = $line; $prop.line = $lineNo
+                }
+                elseif ($line.StartsWith('> **Current decision:', [StringComparison]::Ordinal)) { $prop.decided = $true }
+            }
             foreach ($m in [regex]::Matches($line, '\[[^\]]*\]\(([^)\s]+)\)')) {
                 $target = $m.Groups[1].Value
                 if ($target -match '^(https?|mailto):' -or $target.StartsWith('#')) { continue }
@@ -248,6 +267,32 @@ try {
                 }
             }
         }
+    }
+
+    # ------------------------------------------------------------------ CTR-PROP
+
+    foreach ($prop in $proposals) {
+        if (-not $prop.status) {
+            Add-Finding -Id 'CTR-PROP' -Severity 'error' -Path $prop.rel -Message "no status line - a line beginning '**Status:** ' must stand above the first '## ' heading, e.g. '**Status:** proposed' under the title (_meta/RULES.md section 7)"
+        }
+        elseif ($prop.status -cmatch '^\*\*Status:\*\* (proposed|accepted|partly accepted|answered|rejected|withdrawn)\b') {
+            $word = $Matches[1]
+            if ($word -eq 'proposed') {
+                if ($prop.decided) {
+                    Add-Finding -Id 'CTR-PROP' -Severity 'error' -Path $prop.rel -Line $prop.line -Message "status line reads 'proposed' but the file records a decision - put the decided status line above it"
+                }
+                else { $openProposals.Add($prop.rel) }
+            }
+            elseif ($prop.status -notmatch '\d{4}-\d{2}-\d{2}') {
+                Add-Finding -Id 'CTR-PROP' -Severity 'error' -Path $prop.rel -Line $prop.line -Message "status '$word' carries no date (YYYY-MM-DD) on its line"
+            }
+        }
+        else {
+            Add-Finding -Id 'CTR-PROP' -Severity 'error' -Path $prop.rel -Line $prop.line -Message 'status line does not open with one of (lower case): proposed, accepted, partly accepted, answered, rejected, withdrawn'
+        }
+    }
+    if ($openProposals.Count -gt 0) {
+        Add-Finding -Id 'CTR-PROP' -Severity 'warn' -Path '_meta/RULES.md' -Message ("$($openProposals.Count) open proposal(s) await a decision: " + ($openProposals -join ', '))
     }
 
     # ------------------------------------------------------------------ report
@@ -293,6 +338,7 @@ try {
         ''
         "catalog: $CatalogRoot"
         "contracts: $($registry.Count) in the registry, $($seenIds.Count) declared by a domain README"
+        "proposals: $($proposals.Count) file(s), $($openProposals.Count) open"
         "result: $($errors.Count) error(s), $($warns.Count) warning(s)"
     }
 

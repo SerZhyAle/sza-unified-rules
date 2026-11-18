@@ -183,7 +183,9 @@ a written step; every consumed symbol greps in the code or is produced earlier.
 value equals / command exits 0 - never "works correctly"), and every pre-implementation blocker is ticked.
 An unchecked blocker is the encoded stop. The plan pass has also read the ticket's complexity level against
 the plan and rewritten its `**Complexity:**` line where the plan disagrees (see
-[DEVELOPMENT.md](../../rules/DEVELOPMENT.md) section 8).
+[DEVELOPMENT.md](../../rules/DEVELOPMENT.md) section 8). When the topology shows two or more phases that consume
+nothing from each other, the plan pass writes `**Parallel:** <those phases>` below the `**Complexity:**` line
+(TASK-FLOW 0.33); a route of the portfolio runner may then build them as a workflow. No such phases, no line.
 
 ## Stage 3 - Implement
 

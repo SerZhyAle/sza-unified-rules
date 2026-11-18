@@ -179,6 +179,7 @@ function Get-PqEventNames {
         'queue.edited', 'queue.row',
         'race.suspect',
         'rank.result',
+        'rater.fail',
         'registry.changed',
         'repo.disabled', 'repo.discovered', 'repo.enabled', 'repo.free', 'repo.notready', 'repo.occupied',
         'repo.ready', 'repo.scaffolded', 'repo.skipped',

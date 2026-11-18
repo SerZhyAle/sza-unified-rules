@@ -38,6 +38,12 @@
                                                    spent, the next takes over only then) - a provider without a
                                                    record gets the shipped one; with -Release clear a provider's
                                                    limit hold, so it is tried again at once
+    pq agents -Settings [-Json] | -Apply <file.json> [-Json]
+                                                   the grade routes of every agent record, the raters and escalateBy
+                                                   (TASK-FLOW 0.32/0.33); -Apply writes a JSON object of routes
+                                                   (agent -> rows, [] removes), raters ([] removes) and escalateBy
+                                                   (null removes): only the keys it names, the rest of every record
+                                                   kept, refused whole when the registry check fails
     pq doctor [-All]                                check the enabled repositories (all with -All); writes nothing
     pq start [-Drain] [-MaxTickets <n>] [-Until <time>] [-Ticket <key:id> | -Repo <key>]
                                                    run one worker; wait when empty, or exit with -Drain; -Until
@@ -124,6 +130,8 @@ param(
     [string]$Rank,
     [string[]]$Order,
     [string]$Release,
+    [switch]$Settings,
+    [string]$Apply,
     [ValidateSet('', 'drain', 'pass', 'halt', 'kill')][string]$Level = '',
     [ValidateRange(0, [int]::MaxValue)][int]$Worker = 0,
     [string]$Agent,
@@ -356,6 +364,33 @@ function Invoke-PqAgents {
     if ($null -eq $read) { return 2 }
     $names = @(@($Order) | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
     if ($names.Count -gt 0 -and $Release) { Write-PqError 'ArgumentConflict' 'agents takes either -Order or -Release, not both'; return 2 }
+    # S0141: the routes, raters and escalateBy the owner edits beside the order (the PQShell Routes dialog).
+    if ($Settings -or $Apply) {
+        if ($names.Count -gt 0 -or $Release) { Write-PqError 'ArgumentConflict' 'agents -Settings/-Apply takes no -Order or -Release'; return 2 }
+        if ($Apply) {
+            if (-not [IO.File]::Exists($Apply)) { Write-PqError 'ApplyFileMissing' "no settings file '$Apply'"; return 2 }
+            try { $edit = [IO.File]::ReadAllText($Apply) | ConvertFrom-Json -Depth 12 }
+            catch { Write-PqError 'ApplyFileInvalid' "the settings file is not JSON: $($_.Exception.Message)"; return 2 }
+            $r = Set-PqAgentSettings -Settings $edit -Log
+            if (-not $r.ok) { Write-PqError $r.error $r.message; return 2 }
+            if ($r.changed) { Write-PqOwnerAction 'agents' }
+            $read = Get-PqRegistryOrFail
+            if ($null -eq $read) { return 2 }
+            if (-not $Json) { if ($r.changed) { 'agents - settings written; a running worker uses them from its next ticket' } else { 'agents - settings: no change' } }
+        }
+        $s = Get-PqAgentSettings -Registry $read.registry
+        if ($Json) { ConvertTo-Json -InputObject $s -Depth 8; return 0 }
+        foreach ($a in ($s.agents | Sort-Object { if ($_.position -gt 0) { $_.position } else { 99 } })) {
+            $rows = if (@($a.routes).Count -eq 0) { 'every grade (no routes)' } else {
+                (@($a.routes) | ForEach-Object { $t = "<=$($_.max)"; foreach ($k in 'model', 'effort', 'parallel') { if ($_.Contains($k)) { $t += " $($_[$k])" } }; $t }) -join ', ' }
+            $pos = if ($a.position -gt 0) { '{0,2}.' -f $a.position } else { ' -' }
+            '{0} {1,-14} {2}' -f $pos, $a.name, $rows
+        }
+        $rt = if (@($s.raters).Count -eq 0) { 'none (nothing is rated)' } else { (@($s.raters) | ForEach-Object { "$($_.name) ($($_.command) $($_.model))" }) -join ', ' }
+        "raters: $rt"
+        "escalateBy: $($s.escalateBy)$(if (-not $s.escalateBySet) { ' (default)' })"
+        return 0
+    }
     if ($Release) {
         $p = Resolve-PqProvider $Release
         if ($null -eq $p) { Write-PqError 'UnknownProvider' "no provider '$Release'"; return 2 }

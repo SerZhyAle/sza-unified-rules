@@ -54,10 +54,11 @@ command in Step 3. The script is `<root>/tools/harness/portfolio/spec-draft.ps1`
    `[a-z0-9-]`, at most 60 characters, never starting with `spec_`. Prefix `bugfix-` for a bug, crash or defect
    (`ошибка`, `падает`, `краш`, `баг`), `hotfix-` for an urgent or release-blocking one (`срочно`, `блокер`) -
    never both. The script derives the priority from the prefix: 95, 90, otherwise 50.
-3. **Complexity.** Pass `-Complexity "<light|medium|hard> - <one-line reason>"` only when the finding itself
-   settles it: a known one-line fix is `light`, a symptom with no located cause is `hard`. Otherwise omit it - the
-   ticket gets `medium - not assessed at capture` and its first pass settles the level. A capture never researches
-   to find the level.
+3. **Complexity.** Pass `-Complexity "<grade> - <one-line reason>"` (a grade 0-9; `light`, `medium` and `hard` are
+   still accepted) only when the finding itself settles it: a known one-line fix is `1`, a symptom with no located
+   cause is `7` or above. When the owner states the grade themselves, pass `"<n> pinned - <reason>"`. Otherwise omit
+   it - the ticket gets `medium - not assessed at capture`, and the portfolio's rater or its first pass settles the
+   grade. A capture never researches to find the grade.
 4. **Dedup.** When the text carries an error class, an exception or a distinctive symptom, pass it as
    `-DedupQuery "<that>"`. Several distinct problems in one message -> one capture each.
 

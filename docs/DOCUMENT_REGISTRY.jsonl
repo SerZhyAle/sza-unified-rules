@@ -103,6 +103,7 @@
 {"path": "tools/harness/document_registry/README.md", "topic": "Document registry - how a page gets announced", "area": "tools", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "tools/harness/portfolio/README.md", "topic": "pq - the portfolio queue, operator's guide", "area": "tools", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "tools/harness/portfolio/docs/INBOX-PACKET.md", "topic": "INBOX-PACKET - the phone-ticket transport packet (S0045)", "area": "tools", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "tools/harness/portfolio/rater/RATER_PROMPT.md", "topic": "You grade how hard one ticket of a software project is, so that a dispatcher can pick a model strong enough for it", "area": "tools", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "tools/harness/releases/README.md", "topic": "Release ledger - the harness writer", "area": "tools", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "tools/harness/scaffold/templates/ticket-template.md", "topic": "{{ID}}_{{SLUG}}", "area": "tools", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "tools/harness/spec_catalog/SCHEMA.md", "topic": "Spec Catalog - Journal Schema", "area": "tools", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}

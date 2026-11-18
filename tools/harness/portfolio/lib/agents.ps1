@@ -5,7 +5,8 @@
 # no preference and prints nothing.
 #
 #   Get-PqTicketLevel -RepoPath <dir> -TicketId <id>
-#       light, medium or hard from the spec's `**Complexity:**` line (rule 51, the runner's reader), or '' for none.
+#       light, medium or hard from the spec's `**Complexity:**` line (rule 51, the runner's reader; a grade 0-9
+#       answers its band), or '' for none.
 #   Get-PqTicketLevelInfo -RepoPath <dir> -TicketId <id>
 #       the same one reading of the line, with the answer named: level, why (declared, noLine, noFile or
 #       unrecognised) and captureDefault (the recognised 'medium - not assessed at capture' text). The doctor
@@ -43,9 +44,14 @@ $script:PqFastFailureSeconds = 120
 # "Complex (..)" reads as no declaration, on purpose). captureDefault is true only for the capture text
 # 'medium - not assessed at capture': a recognised level under rule 51 that is still not an assessment,
 # which S0041 reports separately rather than redefining the recognition.
+#
+# TASK-FLOW 0.32 (S0139): the value is read by the one parser of the line (spec_catalog/lib/complexity-grade.ps1), so
+# a grade 0-9 is recognised too; score is the grade (a word reads as 1, 5 or 8; -1 for none), numeric says the line
+# carries a digit, pinned that the owner marked it, spec the spec file's full path ('' when there is none).
+. (Join-Path $PSScriptRoot '..\..\spec_catalog\lib\complexity-grade.ps1')
 function Get-PqTicketLevelInfo {
     param([Parameter(Mandatory)][string]$RepoPath, [Parameter(Mandatory)][string]$TicketId)
-    $info = [pscustomobject]@{ level = ''; why = 'noLine'; captureDefault = $false }
+    $info = [pscustomobject]@{ level = ''; why = 'noLine'; captureDefault = $false; score = -1; numeric = $false; pinned = $false; spec = ''; parallel = $false }
     try {
         $snap = Get-PqLedgerSnapshot -RepoPath $RepoPath
         if (-not $snap.tickets.Contains($TicketId)) { $info.why = 'noFile'; return $info }
@@ -53,21 +59,23 @@ function Get-PqTicketLevelInfo {
         if (-not $file) { $info.why = 'noFile'; return $info }
         $spec = Resolve-PqRepoPathValue $snap.root $file
         if (-not [IO.File]::Exists($spec)) { $info.why = 'noFile'; return $info }
+        $info.spec = $spec
         $raw = ''
-        foreach ($line in (Get-Content -LiteralPath $spec -TotalCount 40 -Encoding UTF8)) {
+        $head = @(Get-Content -LiteralPath $spec -TotalCount 40 -Encoding UTF8)
+        # S0140: the decomposable flag is read whatever the grade line holds.
+        $info.parallel = [bool](Get-SzaParallelFlag $head).flagged
+        foreach ($line in $head) {
             if ($line -match '^\*\*Complexity:\*\*\s*(.+?)\s*$') { $raw = $Matches[1]; break }
         }
         if (-not $raw) { $info.why = 'noLine'; return $info }
-        switch -Regex ($raw.ToLowerInvariant()) {
-            '^(light|лёгкий|легкий)\b' { $info.level = 'light'; $info.why = 'declared'; break }
-            '^(medium|средний)\b' {
-                $info.level = 'medium'; $info.why = 'declared'
-                if ($raw -imatch 'not assessed at capture') { $info.captureDefault = $true }
-                break
-            }
-            '^(hard|сложный)\b' { $info.level = 'hard'; $info.why = 'declared'; break }
-            default { $info.why = 'unrecognised' }
-        }
+        $g = ConvertFrom-SzaComplexityValue $raw
+        if (-not $g.recognised) { $info.why = 'unrecognised'; return $info }
+        $info.level = $g.level
+        $info.why = 'declared'
+        $info.score = $g.score
+        $info.numeric = $g.numeric
+        $info.pinned = $g.pinned
+        if (-not $g.numeric -and $g.level -ceq 'medium' -and $raw -imatch 'not assessed at capture') { $info.captureDefault = $true }
     }
     catch { $info.why = 'noFile' }
     return $info
@@ -234,8 +242,40 @@ function Get-PqAgentLiveCount([Parameter(Mandatory)][string]$Name) {
 # The `why` vocabulary of `agent.fallback` (EVENTS.md). Select-PqAgent also records an agent the owner's
 # `STOP-agent__<name>` keeps out (why `stopped`) for the console summary; that is the owner's stop, recorded by the
 # stop itself, not a fallback test, so the loop writes no `agent.fallback` for it.
-$script:PqFallbackWhys = @('limit', 'maxParallel', 'levelNotAllowed', 'noPipelineForm', 'launchFailed')
+$script:PqFallbackWhys = @('limit', 'maxParallel', 'levelNotAllowed', 'aboveCeiling', 'noPipelineForm', 'launchFailed')
 function Test-PqFallbackWhy([string]$Why) { return $script:PqFallbackWhys -ccontains $Why }
+
+# The grade a ticket is chosen at (TASK-FLOW 0.32 item C): its own grade, else the grade of its level word, else 5.
+function Get-PqSelectScore([int]$Score, [string]$Level) {
+    if ($Score -ge 0 -and $Score -le 9) { return $Score }
+    $w = Get-SzaComplexityWordScore $Level
+    if ($w -ge 0) { return $w }
+    return 5
+}
+
+# The route of an agent for a grade (TASK-FLOW 0.32 item B): the first row of `routes` whose max is at or above the
+# grade, as @{ ok; max; model; effort } (model and effort '' when the row names none). A record without routes has
+# the ceiling 9 and a row that changes nothing; a grade above the last row's max answers ok $false (aboveCeiling).
+function Get-PqAgentRoute($Agent, [int]$Score) {
+    $none = @{ ok = $true; max = 9; model = ''; effort = ''; parallel = ''; routed = $false }
+    if ($null -eq $Agent -or -not (Test-PqHasKey $Agent 'routes')) { return $none }
+    foreach ($row in @($Agent.routes)) {
+        $max = [int](Get-PqValue $row 'max' -1)
+        if ($Score -le $max) {
+            return @{ ok = $true; max = $max; model = [string](Get-PqValue $row 'model' ''); effort = [string](Get-PqValue $row 'effort' '')
+                parallel = [string](Get-PqValue $row 'parallel' ''); routed = $true }
+        }
+    }
+    return @{ ok = $false; max = -1; model = ''; effort = ''; parallel = ''; routed = $true }
+}
+
+# The ceiling of an agent: the last row's max, 9 without routes.
+function Get-PqAgentCeiling($Agent) {
+    if ($null -eq $Agent -or -not (Test-PqHasKey $Agent 'routes')) { return 9 }
+    $rows = @($Agent.routes)
+    if ($rows.Count -eq 0) { return 9 }
+    return [int](Get-PqValue $rows[-1] 'max' 9)
+}
 
 # `agent.resume` data for a hold that just ended (rule 48): heldFor is the whole seconds since the hold was last
 # written (0 when its time is unreadable); by is `reset` when the hold carried a reset time that has passed, else
@@ -249,7 +289,9 @@ function Get-PqHoldResume($Hold, [DateTimeOffset]$Now = [DateTimeOffset]::UtcNow
 
 function Select-PqAgent {
     # -Skip names agents the owner's `STOP-agent__<name>` keeps out of new work while a pass of it is still running (rule 47).
-    param([Parameter(Mandatory)]$Registry, [Parameter(Mandatory)][string]$RepoPath, [Parameter(Mandatory)][string]$Level, [string[]]$Skip = @())
+    # -Score is the ticket's grade (TASK-FLOW 0.32); -1 (the default) tests the grade of -Level's word, 5 without one.
+    param([Parameter(Mandatory)]$Registry, [Parameter(Mandatory)][string]$RepoPath, [Parameter(Mandatory)][string]$Level, [string[]]$Skip = @(), [int]$Score = -1)
+    $score = Get-PqSelectScore $Score $Level
     $byName = @{}
     foreach ($a in @($Registry.agents)) { $byName[[string]$a.name] = $a }
     $fallbacks = [Collections.Generic.List[object]]::new()
@@ -260,13 +302,79 @@ function Select-PqAgent {
         if (Test-PqAgentHeld (Get-PqAgentHold $name) $a) { $fallbacks.Add(@{ from = $name; why = 'limit' }); continue }
         $levels = @(Get-PqValue $a 'levels' @('light', 'medium', 'hard'))
         if ($levels -cnotcontains $Level) { $fallbacks.Add(@{ from = $name; why = 'levelNotAllowed' }); continue }
+        $route = Get-PqAgentRoute $a $score
+        if (-not $route.ok) { $fallbacks.Add(@{ from = $name; why = 'aboveCeiling' }); continue }
         $max = [int](Get-PqValue $a 'maxParallel' 1)
         if ((Get-PqAgentLiveCount $name) -ge $max) { $fallbacks.Add(@{ from = $name; why = 'maxParallel' }); continue }
         $prompt = Get-PqAgentPrompt -Agent $a -RepoPath $RepoPath
         if (-not $prompt.ok) { $fallbacks.Add(@{ from = $name; why = $prompt.why }); continue }
-        return @{ agent = [string]$name; record = $a; template = $prompt.template; fallbacks = $fallbacks }
+        return @{ agent = [string]$name; record = $a; template = $prompt.template; fallbacks = $fallbacks; route = $route; score = $score }
     }
-    return @{ agent = $null; record = $null; template = $null; fallbacks = $fallbacks }
+    return @{ agent = $null; record = $null; template = $null; fallbacks = $fallbacks; route = $null; score = $score }
+}
+
+# The model and effort a pick launches with (TASK-FLOW 0.32 item B): the route's, else the record's fixed ones (for
+# claude the record names none, so '' - the runner then chooses by the level, as before). @{ model; effort }.
+function Get-PqPickLaunch($Pick) {
+    $model = ''; $effort = ''
+    if ($null -ne $Pick -and $null -ne $Pick.record) {
+        $model = [string](Get-PqValue $Pick.record 'model' '')
+        $effort = [string](Get-PqValue $Pick.record 'effort' '')
+        if ([string]$Pick.agent -ceq 'claude') { $model = ''; $effort = '' }
+        $route = $Pick.route
+        if ($null -ne $route) {
+            if ($route.model) { $model = [string]$route.model }
+            if ($route.effort) { $effort = [string]$route.effort }
+        }
+    }
+    return @{ model = $model; effort = $effort }
+}
+
+# The runner's arguments for a pass of claude (TASK-FLOW 0.32 item B). A route that names neither model nor effort (or
+# no route) launches as before: no arguments, so the dispatcher passes -ModelPolicy shape and the runner maps the
+# level through the profile. A route model launches -ModelPolicy fixed with it; a route effort goes in a record that
+# names only claude and the effort, which the runner takes ahead of the profile's effortByModel (rule 42 precedence).
+#
+# -Status: a code-complete ticket (Implemented, BlockNeedUserTest) is an audit of code the tree already carries, and the
+# runner's shape policy caps it at the cheap model; a fixed route model would lift that cap, so such a pass launches as
+# before (shape) whatever the route.
+#
+# -Flagged (S0140): the ticket's spec carries the `**Parallel:**` flag. With a route row naming `parallel` and a build
+# status (Get-PqClaudeParallel), the pass also gets -Parallel for the runner, which appends the workflow opt-in.
+$script:PqClaudeShapeStatuses = @('Implemented', 'BlockNeedUserTest')
+$script:PqParallelStatuses = @('Approved', 'Tactical', 'In Progress', 'Partial', 'Broken')
+
+# The parallel axis a claude pass launches with (S0140): the route's `parallel` value when the spec carries the flag
+# and the status is a build stage; '' otherwise (an audit, a spec pass, an unflagged ticket, no such route key).
+function Get-PqClaudeParallel($Pick, [string]$Status = '', [bool]$Flagged = $false) {
+    $route = if ($null -ne $Pick) { $Pick.route } else { $null }
+    if ($null -eq $route -or -not $Flagged) { return '' }
+    $p = [string](Get-PqValue $route 'parallel' '')
+    if (-not $p) { return '' }
+    if ($script:PqParallelStatuses -cnotcontains $Status) { return '' }
+    return $p
+}
+
+function Get-PqClaudePassArgs($Pick, [string]$Status = '', [bool]$Flagged = $false) {
+    $route = if ($null -ne $Pick) { $Pick.route } else { $null }
+    $parallel = Get-PqClaudeParallel $Pick $Status $Flagged
+    if ($parallel -and ($null -eq $route -or (-not $route.model -and -not $route.effort))) {
+        $args_ = @('-ModelPolicy', 'shape', '-Parallel', $parallel)
+        if ($Pick.template) { $args_ += @('-PromptTemplate', [string]$Pick.template) }
+        return [string[]]$args_
+    }
+    if ($null -eq $route -or (-not $route.model -and -not $route.effort)) { return [string[]]@() }
+    if ($Status -and $script:PqClaudeShapeStatuses -ccontains $Status) { return [string[]]@() }
+    $args_ = @()
+    if ($parallel) { $args_ += @('-Parallel', $parallel) }
+    if ($route.effort) {
+        $rec = [ordered]@{ name = 'claude'; effort = [string]$route.effort }
+        $args_ += @('-AgentJson', (ConvertTo-Json -InputObject $rec -Compress))
+    }
+    if ($route.model) { $args_ += @('-ModelPolicy', 'fixed', '-Model', [string]$route.model) }
+    else { $args_ += @('-ModelPolicy', 'shape') }
+    if ($Pick.template) { $args_ += @('-PromptTemplate', [string]$Pick.template) }
+    return [string[]]$args_
 }
 
 # The runner's arguments for a pass of a non-Claude agent: the record (rule 42), its fixed model, and the prompt form.
@@ -275,13 +383,15 @@ function Select-PqAgent {
 # through another CLI's environment (z.ai) is told where to go; a value may name a variable as %NAME%.
 function Get-PqAgentPassArgs($Pick) {
     $a = $Pick.record
-    $rec = [ordered]@{ name = [string]$a.name; command = [string]$a.command; argsTemplate = @($a.argsTemplate); effort = [string](Get-PqValue $a 'effort' '') }
+    # The route of the pick may name another model and a lower effort for this grade (TASK-FLOW 0.32 item B).
+    $launch = Get-PqPickLaunch $Pick
+    $rec = [ordered]@{ name = [string]$a.name; command = [string]$a.command; argsTemplate = @($a.argsTemplate); effort = $launch.effort }
     if (Test-PqHasKey $a 'headlessMatch') { $rec.headlessMatch = [string]$a.headlessMatch }
     $pattern = [string](Get-PqValue (Get-PqValue $a 'limitDetector') 'pattern' '')
     if ($pattern) { $rec.limitPattern = $pattern }
     $env_ = Get-PqValue $a 'env'
     if ($null -ne $env_) { $rec.env = $env_ }
-    $args_ = @('-AgentJson', (ConvertTo-Json -InputObject $rec -Compress -Depth 8), '-ModelPolicy', 'fixed', '-Model', [string]$a.model)
+    $args_ = @('-AgentJson', (ConvertTo-Json -InputObject $rec -Compress -Depth 8), '-ModelPolicy', 'fixed', '-Model', $launch.model)
     if ($pattern) { $args_ += '-Quiet' }
     if ($Pick.template) { $args_ += @('-PromptTemplate', [string]$Pick.template) }
     return [string[]]$args_
@@ -310,6 +420,7 @@ function Get-PqNoAgentSummary {
             $rel = Get-PqHoldRelease (Get-PqAgentHold $fb.from) $byName[[string]$fb.from]
             if ($rel) { "$($fb.from): usage limit, back at $($rel.LocalDateTime.ToString('yyyy-MM-dd HH:mm'))" } else { "$($fb.from): usage limit" }
         }
+        elseif ($fb.why -ceq 'aboveCeiling') { "$($fb.from): grade $($Pick.score) above its ceiling $(Get-PqAgentCeiling $byName[[string]$fb.from])" }
         else { "$($fb.from): $($fb.why)" }
     }
     return (@($parts) -join '; ')
@@ -759,4 +870,118 @@ function Set-PqAgentOrder {
     if (-not $w.ok) { return @{ ok = $false; changed = $false; error = $w.error; message = $w.message } }
     if ($Log) { $null = Write-PqLibEvent 'registry.changed' ([ordered]@{ by = 'cli'; added = @(); removed = @(); hash = $w.hash }) }
     return @{ ok = $true; changed = ($before -cne ($names -join ',')); error = $null; message = $null }
+}
+
+# --- Routes, raters and escalateBy (TASK-FLOW 0.32/0.33; pq agents -Settings / -Apply; the PQShell Routes dialog, S0141) --
+# The settings the owner edits beside the provider order: each agent record's `routes`, the registry's `raters` and
+# `escalateBy`. Read as one object; written by Set-PqAgentSettings, which touches only the keys it is given and keeps
+# every other key of a record (rule 41).
+
+# The provider of an agent record (its label), '' when the record belongs to none.
+function Get-PqAgentProviderLabel([string]$AgentName) {
+    foreach ($p in $script:PqProviders) { if (@(Get-PqProviderAgents $p) -ccontains $AgentName) { return [string]$p.label } }
+    return ''
+}
+
+function Get-PqAgentSettings {
+    param([Parameter(Mandatory)]$Registry)
+    $order = @(@(Get-PqValue $Registry 'agentOrder' @()) | ForEach-Object { [string]$_ })
+    $agents = foreach ($a in @(Get-PqValue $Registry 'agents' @())) {
+        $name = [string](Get-PqValue $a 'name' '')
+        $rows = @(foreach ($row in @(Get-PqValue $a 'routes' @())) {
+                $r = [ordered]@{ max = [int](Get-PqValue $row 'max' 0) }
+                foreach ($k in @('model', 'effort', 'parallel')) { $v = [string](Get-PqValue $row $k ''); if ($v) { $r[$k] = $v } }
+                $r
+            })
+        [ordered]@{
+            name = $name; provider = (Get-PqAgentProviderLabel $name)
+            position = ([array]::IndexOf($order, $name) + 1)
+            model = [string](Get-PqValue $a 'model' ''); effort = [string](Get-PqValue $a 'effort' '')
+            ceiling = (Get-PqAgentCeiling $a); routes = $rows
+        }
+    }
+    $raters = @(foreach ($r in @(Get-PqValue $Registry 'raters' @())) {
+            $o = [ordered]@{ name = [string](Get-PqValue $r 'name' ''); command = [string](Get-PqValue $r 'command' ''); model = [string](Get-PqValue $r 'model' '') }
+            $t = Get-PqValue $r 'timeoutSeconds'
+            if ($null -ne $t) { $o.timeoutSeconds = [int]$t }
+            $o.extra = @($r.PSObject.Properties.Name | Where-Object { $_ -cnotin @('name', 'command', 'model', 'timeoutSeconds') })
+            $o
+        })
+    return [ordered]@{
+        agents = @($agents); raters = $raters
+        escalateBy = [int](Get-PqValue $Registry 'escalateBy' 2); escalateBySet = (Test-PqHasKey $Registry 'escalateBy')
+    }
+}
+
+# Apply edited settings. $Settings may carry `routes` (an object: agent name -> array of rows; an empty array removes
+# the agent's `routes`, so it takes every grade as before), `raters` (an array; empty removes the key, so nothing is
+# rated) and `escalateBy` (an integer, or null to remove the key and keep the default 2). A key left out is not touched.
+# A route row that keeps the max of an old row keeps that row's other keys; a rater keeps the keys of the old record of
+# its name (argsTemplate, env). The result passes Test-PqRegistry or nothing is written. @{ ok; changed; error; message }.
+function Set-PqAgentSettings {
+    param([Parameter(Mandatory)]$Settings, [switch]$Log, [string]$RegistryPath)
+    if (-not $RegistryPath) { $RegistryPath = Get-PqPath -Kind registry }
+    $cur = Read-PqRegistryForWrite $RegistryPath
+    if (-not $cur.ok) { return @{ ok = $false; changed = $false; error = $cur.error; message = $cur.message } }
+    $doc = $cur.document
+    $before = ConvertTo-Json -InputObject $doc -Depth 12 -Compress
+    $byName = @{}
+    foreach ($a in @(Get-PqValue $doc 'agents' @())) { $byName[[string](Get-PqValue $a 'name' '')] = $a }
+    $known = @('max', 'model', 'effort', 'parallel')
+    if (Test-PqHasKey $Settings 'routes') {
+        $routeMap = $Settings.routes
+        $pairs = if ($routeMap -is [Collections.IDictionary]) { @($routeMap.Keys | ForEach-Object { [pscustomobject]@{ Name = [string]$_; Value = $routeMap[$_] } }) }
+        else { @($routeMap.PSObject.Properties | ForEach-Object { [pscustomobject]@{ Name = $_.Name; Value = $_.Value } }) }
+        foreach ($prop in $pairs) {
+            $name = [string]$prop.Name
+            $a = $byName[$name]
+            if ($null -eq $a) { return @{ ok = $false; changed = $false; error = 'UnknownAgent'; message = "no agent record '$name' in the registry" } }
+            $old = @(Get-PqValue $a 'routes' @())
+            $rows = [Collections.Generic.List[object]]::new()
+            foreach ($row in @($prop.Value)) {
+                if ($null -eq $row) { continue }
+                $r = [ordered]@{}
+                $max = Get-PqValue $row 'max'
+                $r.max = if ($max -is [string] -and $max -match '^\d+$') { [int]$max } else { $max }
+                foreach ($k in @('model', 'effort', 'parallel')) { $v = [string](Get-PqValue $row $k ''); if ($v.Trim()) { $r[$k] = $v.Trim() } }
+                $match = @($old | Where-Object { "$(Get-PqValue $_ 'max')" -ceq "$($r.max)" }) | Select-Object -First 1
+                if ($null -ne $match) { foreach ($p in $match.PSObject.Properties) { if ($p.Name -cnotin $known) { $r[$p.Name] = $p.Value } } }
+                $rows.Add([pscustomobject]$r)
+            }
+            if ($rows.Count -eq 0) { if (Test-PqHasKey $a 'routes') { $a.PSObject.Properties.Remove('routes') } }
+            else { $a | Add-Member -NotePropertyName routes -NotePropertyValue @($rows) -Force }
+        }
+    }
+    if (Test-PqHasKey $Settings 'raters') {
+        $oldRaters = @(Get-PqValue $doc 'raters' @())
+        $list = [Collections.Generic.List[object]]::new()
+        foreach ($r in @($Settings.raters)) {
+            if ($null -eq $r) { continue }
+            $name = [string](Get-PqValue $r 'name' '')
+            $o = [ordered]@{ name = $name; command = [string](Get-PqValue $r 'command' ''); model = [string](Get-PqValue $r 'model' '') }
+            $t = Get-PqValue $r 'timeoutSeconds'
+            if ($null -ne $t -and "$t" -ne '') { $o.timeoutSeconds = $(if ("$t" -match '^\d+$') { [int]"$t" } else { $t }) }
+            $match = @($oldRaters | Where-Object { [string](Get-PqValue $_ 'name' '') -ceq $name }) | Select-Object -First 1
+            if ($null -ne $match) { foreach ($p in $match.PSObject.Properties) { if ($p.Name -cnotin @('name', 'command', 'model', 'timeoutSeconds')) { $o[$p.Name] = $p.Value } } }
+            $list.Add([pscustomobject]$o)
+        }
+        if ($list.Count -eq 0) { if (Test-PqHasKey $doc 'raters') { $doc.PSObject.Properties.Remove('raters') } }
+        else { $doc | Add-Member -NotePropertyName raters -NotePropertyValue @($list) -Force }
+    }
+    if (Test-PqHasKey $Settings 'escalateBy') {
+        $e = $Settings.escalateBy
+        if ($null -eq $e) { if (Test-PqHasKey $doc 'escalateBy') { $doc.PSObject.Properties.Remove('escalateBy') } }
+        else { $doc | Add-Member -NotePropertyName escalateBy -NotePropertyValue $(if ("$e" -match '^\d+$') { [int]"$e" } else { $e }) -Force }
+    }
+    $check = Test-PqRegistry -Registry $doc
+    if (-not $check.ok) {
+        $first = @($check.errors)[0]
+        return @{ ok = $false; changed = $false; error = $first.name; message = "the settings would make the registry invalid: $($first.where) - $($first.message)" }
+    }
+    $after = ConvertTo-Json -InputObject $doc -Depth 12 -Compress
+    if ($after -ceq $before) { return @{ ok = $true; changed = $false; error = $null; message = $null } }
+    $w = Write-PqRegistry -Registry $doc -Path $RegistryPath -ExpectedHash $cur.hash
+    if (-not $w.ok) { return @{ ok = $false; changed = $false; error = $w.error; message = $w.message } }
+    if ($Log) { $null = Write-PqLibEvent 'registry.changed' ([ordered]@{ by = 'cli'; added = @(); removed = @(); hash = $w.hash }) }
+    return @{ ok = $true; changed = $true; error = $null; message = $null }
 }

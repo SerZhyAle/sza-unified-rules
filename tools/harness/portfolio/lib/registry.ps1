@@ -285,6 +285,36 @@ function Test-PqRegistry {
                 $v = $a.limitPollMinutes
                 if (-not (Test-PqIntValue $v) -or $v -lt 1) { & $add 'AgentLimitPollRange' "$w.limitPollMinutes" "limitPollMinutes '$v' is not an integer of at least 1" }
             }
+            # TASK-FLOW 0.32 item B (S0139): rows { max, model?, effort? }, max 0-9 strictly rising; the last max is the ceiling.
+            if (Test-PqHasKey $a 'routes') {
+                $rows = $a.routes
+                if ($rows -isnot [array] -or @($rows).Count -eq 0) { & $add 'AgentRoutesInvalid' "$w.routes" 'routes is not a non-empty array' }
+                else {
+                    $prev = -1
+                    $j = 0
+                    foreach ($row in @($rows)) {
+                        $rw = "$w.routes[$j]"
+                        $j++
+                        if (-not (Test-PqObjectValue $row)) { & $add 'AgentRoutesInvalid' $rw 'a route is not an object'; continue }
+                        $max = Get-PqValue $row 'max'
+                        if (-not (Test-PqIntValue $max) -or $max -lt 0 -or $max -gt 9) { & $add 'AgentRoutesInvalid' "$rw.max" "max '$max' is not an integer 0-9" }
+                        elseif ($max -le $prev) { & $add 'AgentRoutesInvalid' "$rw.max" "max '$max' does not rise above the row before ($prev)" }
+                        else { $prev = [int]$max }
+                        foreach ($n in @('model', 'effort')) {
+                            if (Test-PqHasKey $row $n) {
+                                $v = $row.$n
+                                if ($v -isnot [string] -or [string]::IsNullOrWhiteSpace($v)) { & $add 'AgentRoutesInvalid' "$rw.$n" "$n is not a non-empty string" }
+                            }
+                        }
+                        # S0140: the parallel axis of a route row; the one value is ultracode (a Claude Code workflow).
+                        if (Test-PqHasKey $row 'parallel') {
+                            $v = $row.parallel
+                            if ($v -isnot [string] -or $v -cne 'ultracode') { & $add 'AgentRoutesInvalid' "$rw.parallel" "parallel '$v' is not ultracode" }
+                            elseif ([string](Get-PqValue $a 'name' '') -cne 'claude') { & $add 'AgentRoutesInvalid' "$rw.parallel" 'parallel is read for the claude agent only' }
+                        }
+                    }
+                }
+            }
         }
     }
     else { $null = $agentNames.Add('claude') }
@@ -294,6 +324,40 @@ function Test-PqRegistry {
             if (-not $agentNames.Contains([string]$n)) { & $add 'AgentOrderUnknownAgent' 'agentOrder' "agentOrder names '$n', which is not an agent record" }
             if (-not $seen.Add([string]$n)) { & $add 'AgentOrderDuplicate' 'agentOrder' "agentOrder names '$n' twice" }
         }
+    }
+
+    # TASK-FLOW 0.32 items D and E (S0139): the raters of rule 71, and the escalation step.
+    if (Test-PqHasKey $Registry 'raters') {
+        $rs = $Registry.raters
+        if ($rs -isnot [array]) { & $add 'RatersInvalid' 'raters' 'raters is not an array' }
+        else {
+            $rNames = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+            $j = 0
+            foreach ($rt in @($rs)) {
+                $rw = "raters[$j]"
+                $j++
+                if (-not (Test-PqObjectValue $rt)) { & $add 'RatersInvalid' $rw 'a rater record is not an object'; continue }
+                $rn = Get-PqValue $rt 'name'
+                if (-not (Test-PqKeyValue $rn)) { & $add 'RatersInvalid' "$rw.name" "rater name '$rn' does not match the key pattern of rule 41" }
+                elseif (-not $rNames.Add($rn)) { & $add 'RatersInvalid' "$rw.name" "rater name '$rn' is used twice" }
+                foreach ($n in @('command', 'model')) {
+                    $v = Get-PqValue $rt $n
+                    if ($v -isnot [string] -or [string]::IsNullOrWhiteSpace($v)) { & $add 'RatersInvalid' "$rw.$n" "rater '$rn' needs a $n" }
+                }
+                if (Test-PqHasKey $rt 'argsTemplate') {
+                    $at = $rt.argsTemplate
+                    if ($at -isnot [array] -or @($at | Where-Object { $_ -isnot [string] }).Count -gt 0) { & $add 'RatersInvalid' "$rw.argsTemplate" 'argsTemplate is not an array of strings' }
+                }
+                if (Test-PqHasKey $rt 'timeoutSeconds') {
+                    $v = $rt.timeoutSeconds
+                    if (-not (Test-PqIntValue $v) -or $v -lt 10 -or $v -gt 600) { & $add 'RatersInvalid' "$rw.timeoutSeconds" "timeoutSeconds '$v' is not an integer 10-600" }
+                }
+            }
+        }
+    }
+    if (Test-PqHasKey $Registry 'escalateBy') {
+        $v = $Registry.escalateBy
+        if (-not (Test-PqIntValue $v) -or $v -lt 0 -or $v -gt 9) { & $add 'EscalateByRange' 'escalateBy' "escalateBy '$v' is not an integer 0-9" }
     }
 
     # Repositories (rules 41 and 60).

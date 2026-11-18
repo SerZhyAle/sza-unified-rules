@@ -186,7 +186,7 @@ runs every change through `pq.ps1`, so it never writes a file of its own.
 | double-click on a worker, a pass or a Queue row | also opens that ticket's spec, the file its project's ledger names for exactly that id; a row without a ticket opens nothing |
 | Queue top | the first scheduled row of an enabled project nothing holds - the file's own answer; **Dry-Run** prints pq's exact plan |
 | New Spec, Register, Doctor | `spec-draft.ps1`, `pq register`, `pq doctor -All` |
-| Providers | which model providers spend tokens and in what order (`pq agents`, see Model providers below); the window title shows the order, with a provider marked while its usage limit is spent |
+| Providers | which model providers spend tokens and in what order (`pq agents`, see Model providers below); the window title shows the order, with a provider marked while its usage limit is spent; **Grade routes..** inside it edits the routes, raters and escalate by (`pq agents -Settings` / `-Apply`) |
 
 ```powershell
 pwsh -NoProfile -File tools/harness/portfolio/gui/build.ps1 publish -Configuration Release   # build and copy the exe
@@ -451,6 +451,20 @@ A provider whose CLI is not found cannot be checked and the line says what to in
 `repos.json` and, for a provider with no record there yet, the shipped record built against the CLI found on this
 machine; a record you already have is never touched. A running worker applies the new order to the next ticket it takes.
 
+**Grade routes..** in the same dialog edits what "Grades, routes and the rater" below describes, without hand-editing
+`repos.json`: one row per route (agent, max grade, model, effort, parallel), the raters, and escalate by. **Apply** there
+writes at once through the command line below; the registry check refuses a bad table whole (the message names the
+cell), and every key the dialog does not show - a record's `env`, a rater's `argsTemplate` - is kept.
+
+```powershell
+pq agents -Settings                        # every agent record's routes, the raters, escalateBy
+pq agents -Settings -Json                  # the same, as the dialog reads it
+pq agents -Apply edit.json                 # {"routes":{"zai":[{"max":4}]},"raters":[..],"escalateBy":2}
+```
+
+`-Apply` touches only the keys the file names: an agent named with `[]` loses its `routes` (it takes every grade again),
+`"raters": []` turns the rater off, `"escalateBy": null` returns to the default 2.
+
 The first provider of the order works until its usage limit is spent. Only then does the next one take the ticket - the
 limit is read from the provider's own output (Claude: its transcript; the others: the record's `limitDetector.pattern`
 in the pass's output, which is why those passes are quiet in the console and keep their output in the repository's runs
@@ -508,14 +522,14 @@ does not edit that file.
 
 `agentOrder` in `repos.json` is the spend order (Model providers above): for each pass the worker takes the first agent that
 is not held, is under its `maxParallel`, whose `levels` admit the ticket's level (a spec without a Complexity line counts
-as `medium`) and that can reach the repository's pipeline. An agent without slash commands (`promptForm: file`) is told to
+as `medium`), whose `routes` take the ticket's grade (below) and that can reach the repository's pipeline. An agent without slash commands (`promptForm: file`) is told to
 open the pipeline's command file - `.claude/commands/spec-all.md` for a repository whose prompt is `/spec-all {id}`, the
 plugin's `skills/spec-to-audit/SKILL.md` for `/sza:spec-to-audit` - and follow it; a repository whose prompt is plain text
 gets that text. A repository without a prompt of its own, or whose prompt names a command it does not have (no command or
 skill file in the repository or in `~/.claude`), gets the shared default, `/sza:spec-to-audit {id}` with the
 unattended-pass instructions, for every agent: an unknown slash command is not an error to the CLI, the child would read
-it as plain text and improvise. The runner prints `prompt note` when it makes that swap. Every agent other than Claude always runs the `model` and `effort` written in its record, whatever the
-ticket's level.
+it as plain text and improvise. The runner prints `prompt note` when it makes that swap. An agent other than Claude runs
+the `model` and `effort` written in its record, unless its `routes` (next section) name others for the ticket's grade.
 
 A record for Codex, beside the Claude record (once `agents` is present, Claude needs its own record too):
 
@@ -544,6 +558,57 @@ provider is held in `holds\<agent>.json` and the ticket goes to the next one. Ex
 the ticket waits for the primary provider's reset via temporary transient hold rather than delegating to fallback
 providers (a free fallback agent may remain idle during the wait). Matched detector text is never stored in holds or
 events.
+
+### Grades, routes and the rater
+
+A spec's `**Complexity:**` line may carry a grade from 0 to 9 (TASK-FLOW 0.32): 0-3 is `light`, 4-6 `medium`, 7-9 `hard`,
+and a line that still names a word reads as 1, 5 or 8. `7 pinned - <reason>` is the owner's own grade, which no tool
+rewrites. An agent record may carry `routes`, rows of `{ max, model?, effort? }` with `max` rising: the first row whose
+`max` is at or above the ticket's grade serves it, with that row's model and effort when it names them, and the last row's
+`max` is the agent's ceiling. The worker passes over an agent with no row for the grade (`agent.fallback` why
+`aboveCeiling`) and takes the next one of `agentOrder`; a ticket no agent may take waits. A record without `routes` takes
+every grade and launches as before.
+
+```json
+"agentOrder": ["zai", "gemini", "codex", "claude"],
+"agents": [
+  { "name": "zai", "routes": [ { "max": 4 } ], ".." : ".." },
+  { "name": "gemini", "routes": [ { "max": 6 } ], ".." : ".." },
+  { "name": "codex", "routes": [ { "max": 3, "effort": "medium" }, { "max": 6 } ], ".." : ".." },
+  { "name": "claude", "routes": [ { "max": 2, "model": "haiku" }, { "max": 5, "model": "sonnet" }, { "max": 9, "model": "opus" } ], ".." : ".." }
+],
+"raters": [
+  { "name": "haiku", "command": "claude", "model": "claude-haiku-5-5" }
+],
+"escalateBy": 2
+```
+
+With `raters` present, a ticket whose line is absent, unrecognised or the capture default is graded once before its pass:
+the first rater record that answers in time with a valid JSON grade wins, the line becomes
+`**Complexity:** <n> - rated by <model> (<confidence>): <reason>`, and `ticket.complexity` (by `rater`) records it. The
+prompt is `rater/RATER_PROMPT.md` beside this guide plus the start of the spec. A record without `argsTemplate` runs
+`claude -p --model <model> --tools "" --strict-mcp-config --no-session-persistence` in a temporary folder, the prompt on
+the standard input, so the rater gets no tools and never reads the project. No valid answer
+from any record leaves the line alone and the ticket runs at the grade 5 (`rater.fail`). A pass that ends `child-failed`,
+`no-progress` or `timeout`, or leaves the ticket `Broken`, raises a numeric, unpinned grade by `escalateBy` (default 2, at
+most 9; 0 turns it off), so the next pass goes to an agent that takes the higher grade.
+
+`rate-ticket.ps1 -Project <key> -Id <id>` runs the rater by hand and prints the grade (`-Write` writes it,
+`-PromptOnly` prints the prompt without a model call). `-Anchors <file.json>`, a list of
+`{ "project", "id", "expected" }`, prints how many of the rater's grades agree with the expected ones within one - the
+report that decides which model rates. Every row is a model call.
+
+**Parallel passes (TASK-FLOW 0.33).** A `claude` route row may also carry `"parallel": "ultracode"`; no row carries it
+unless the owner writes it. A pass is then a workflow (several agents side by side) only when the ticket's spec carries
+`**Parallel:** <the independent parts>` among its header lines - written by the pass that plans those parts or by the
+owner, never by the rater - and the ticket is at a build stage (`Approved`, `Tactical`, `In Progress`, `Partial`,
+`Broken`). A spec pass and an audit stay single. The runner (`run-spec-queue.ps1 -Parallel ultracode`) leaves the prompt
+`/spec-all <id>` as it is and appends the opt-in to the child's system prompt (`--append-system-prompt`), capped at 10
+agents; `pass.launch` records `parallel`. Read the first such pass's cost in `runs.jsonl` before turning it on widely.
+
+```json
+{ "name": "claude", "routes": [ { "max": 2, "model": "haiku" }, { "max": 5, "model": "sonnet" }, { "max": 9, "model": "opus", "parallel": "ultracode" } ] }
+```
 
 ## Waiting
 
@@ -687,7 +752,7 @@ environment values or keys.
 | `start` waits and `Next: none` | no enabled repository offers a ticket: `PQ Dry-run`, then check `enabled`, a `hold` section in either file, and that the ticket is not leased by a manual session |
 | the order is not what the file says | `PQ Dry-run` prints the rule behind each pick and `PQ Doctor` lists bad rows; a repository named only by `<key>:<id>` rows offers just those tickets |
 | a ticket is passed over | it did not move last time and stays dropped until its status, `updated` or spec file changes; or another worker holds the repository; or its `Blocker: <key>:<id>` is not released (the worker printed `waits on`) |
-| an agent gets no work | it is held after its usage limit (`holds\<agent>.json`, until the reset time, or probed by one pass after `limitPollMinutes`), at its `maxParallel`, its `levels` exclude the ticket, or the repository has no command file for it |
+| an agent gets no work | it is held after its usage limit (`holds\<agent>.json`, until the reset time, or probed by one pass after `limitPollMinutes`), at its `maxParallel`, its `levels` exclude the ticket, its `routes` stop below the ticket's grade (`aboveCeiling`), or the repository has no command file for it |
 | a new repository did not join | the worker printed `not joined: <why>` once; fix that and the next scan, within ten minutes, picks it up. Registered but disabled: set a top-level `permissionMode` in `repos.json` |
 | `start` exits 3 at once | a previous `STOP` is still draining live workers - wait for them to leave |
 | refuses unattended work | the repository has no `permissionMode` - register it again with `-PermissionMode`, or set it in `repos.json` |

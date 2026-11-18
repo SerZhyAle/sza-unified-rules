@@ -43,6 +43,7 @@ Public Class FormProviders
     Private btnUp As Button
     Private btnDown As Button
     Private btnClearLimit As Button
+    Private btnRoutes As Button
     Private btnApply As Button
     Private btnClose As Button
     Private lblMsg As Label
@@ -67,7 +68,7 @@ Public Class FormProviders
         Me.Font = New Font("Segoe UI", 9.0F)
 
         Dim lblInfo As New Label With {
-            .Text = "Check the providers that may spend tokens and put them in order. The first one works until its usage limit is spent; the next one takes over only then, and the first is tried again when its limit lifts.",
+            .Text = "Check the providers that may spend tokens and put them in order. A ticket goes to the first one that is not at its usage limit and takes the ticket's grade (Grade routes..); the next one takes over when it is spent or below the grade.",
             .Location = New Point(20, 16),
             .Size = New Size(580, 44)
         }
@@ -123,6 +124,17 @@ Public Class FormProviders
             .Size = New Size(580, 44)
         }
 
+        ' S0141: the grade routes, raters and escalateBy of TASK-FLOW 0.32/0.33, in their own dialog.
+        btnRoutes = New Button With {
+            .Name = "btnProviderRoutes",
+            .Text = "Grade &routes..",
+            .Location = New Point(20, 352),
+            .Size = New Size(130, 34),
+            .AccessibleName = "Edit the grade routes, raters and escalate by",
+            .AccessibleRole = AccessibleRole.PushButton
+        }
+        AddHandler btnRoutes.Click, AddressOf BtnRoutes_Click
+
         btnApply = New Button With {
             .Name = "btnProviderApply",
             .Text = "&Apply",
@@ -144,7 +156,7 @@ Public Class FormProviders
         }
         AddHandler btnClose.Click, Sub() Me.DialogResult = DialogResult.Cancel
 
-        Me.Controls.AddRange({lblInfo, lstProviders, btnUp, btnDown, btnClearLimit, lblHint, lblMsg, btnApply, btnClose})
+        Me.Controls.AddRange({lblInfo, lstProviders, btnUp, btnDown, btnClearLimit, lblHint, lblMsg, btnRoutes, btnApply, btnClose})
 
         Me.AcceptButton = btnApply
         Me.CancelButton = btnClose
@@ -153,8 +165,20 @@ Public Class FormProviders
         btnUp.TabIndex = 1
         btnDown.TabIndex = 2
         btnClearLimit.TabIndex = 3
-        btnApply.TabIndex = 4
-        btnClose.TabIndex = 5
+        btnRoutes.TabIndex = 4
+        btnApply.TabIndex = 5
+        btnClose.TabIndex = 6
+    End Sub
+
+    ' The routes are written by their own dialog at once; the order here is applied only by Apply.
+    Private Sub BtnRoutes_Click(sender As Object, e As EventArgs)
+        Using dlg As New FormProviderRoutes()
+            If dlg.ShowDialog(Me) = DialogResult.OK Then
+                lblMsg.ForeColor = ThemeService.Palette.Accent
+                lblMsg.Text = dlg.ResultText
+                ResultText = dlg.ResultText
+            End If
+        End Using
     End Sub
 
     Protected Overrides Sub OnShown(e As EventArgs)

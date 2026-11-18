@@ -138,21 +138,29 @@ compile-only -> targeted tests -> minified release variant -> device) lives in
   template gains a section, and the gate then reads the wrong part of every older file while its verdict
   stays green.
 - **A ticket declares how hard its own work is, in one header line:**
-  `**Complexity:** <light|medium|hard> - <one-line reason>`. It is written by whoever approves the ticket
-  or returns it to the queue, in the same edit that writes its verification level where the repository
-  keeps one (`**Verify:**`). The level names what the work is: `light` - the fix is known and local (one
-  file, script, string, document or rule line; nothing is left to decide); `medium` - a bounded change
-  inside one feature or layer, whose approach is visible in the neighbouring code; `hard` - the work
-  contains a decision (a new subsystem, a change across layers or modules, lifecycle, concurrency,
-  persistence or a migration, a harness or canon mechanism, or a question research has not answered yet).
-  In doubt, the higher level. It is never an estimate: no hours, no line count, no cost.
+  `**Complexity:** <grade> - <one-line reason>`, the grade a digit from 0 (the easiest) to 9 (the hardest).
+  It is written by whoever approves the ticket or returns it to the queue, in the same edit that writes its
+  verification level where the repository keeps one (`**Verify:**`). The grade is read from three axes and
+  takes the highest: breadth (files, modules, repositories, surfaces), unknowns (research and decisions still
+  open) and the cost of an error (a shared contract, a release, a migration, concurrency or lifecycle, a step
+  that cannot be undone). Its band is the level the older words name: 0-3 `light` - the fix is known and
+  local, nothing is left to decide; 4-6 `medium` - a bounded change inside one feature or layer, whose
+  approach is visible in the neighbouring code; 7-9 `hard` - the work contains a decision (a new subsystem, a
+  change across layers or modules, lifecycle, concurrency, persistence or a migration, a harness or canon
+  mechanism, or a question research has not answered yet). A line that still names a word is valid and reads
+  as 1, 5 or 8. The portfolio sends a ticket only to an agent whose route takes its grade, and grades an
+  ungraded one with a cheap rater model before its pass; the mechanics are the `TASK-FLOW` contract (rules
+  42, 51, 71). In doubt, the higher grade. It is never an estimate: no hours, no line count, no cost.
+- **The owner's grade is pinned:** `**Complexity:** 7 pinned - <reason>`. No tool rewrites a pinned line - not
+  the rater, not the escalation after a failed pass - and a pass that disagrees says so in its report instead.
 - **Two checkpoints, and the capture default does not survive the first.** A captured ticket arrives reading
   `**Complexity:** medium - not assessed at capture`. Before `Draft -> Approved` - the spec pass - the
-  author reads the level against what the research found and rewrites the Complexity line even when the
-  level stands (`<level> - assessed at the spec pass: <what was found>`), because an untouched default
-  cannot be told apart from a confirmed one. Before `Tactical` - the plan pass - the author reads the level
+  author reads the grade against what the research found and rewrites the Complexity line even when the
+  grade stands (`<grade> - assessed at the spec pass: <what was found>`), because an untouched default
+  cannot be told apart from a confirmed one. Before `Tactical` - the plan pass - the author reads the grade
   against the plan (files touched, decisions found, risks) and rewrites the Complexity line only when the
-  plan disagrees: `<new> - revised from <old>: <what was found>`. The owner overrules by editing the line.
+  plan disagrees: `<new> - revised from <old>: <what was found>`. The owner overrules by editing the line,
+  and pins it to keep it.
 
 ## 9. Dead-weight & AI-tell hygiene
 

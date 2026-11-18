@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Contract | `TASK-FLOW` |
-| Version | 0.31, draft |
+| Version | 0.33, draft |
 | Home | the shared contracts catalog, domain `task-flow/` (the path is in [CLAUDE.md](../../CLAUDE.md)) |
 | Role | **shared implementation, partial**: `tools/harness/` supplies the ticket tools, repository runner and day-0 scaffold; `tools/harness/portfolio/` supplies the S0015 dispatcher, registry, queue, rank and event log. Remaining portfolio features belong to S0016. The owner is `shared`, so this repository edits the contract only through the canon session |
 
@@ -137,3 +137,18 @@
   reads the rows with `source` `robot` created on the day; `Get-PqIntakeCapped` in `portfolio/lib/loop.ps1` gives the
   `Draft` rows past the cap to every rank as excluded, so no worker keeps a count. Covered by the robot-filed cap case
   of `tools/tests/portfolio-limit-reset.tests.ps1` (fast).
+- 0.32 (2026-11-18, S0139): the grade 0-9 and the routes by grade (README section 12, `EVENTS.md` section 8). One parser
+  of the line, `spec_catalog/lib/complexity-grade.ps1`, serves the runner (`Get-TicketComplexity`), the dispatcher
+  (`Get-PqTicketLevelInfo`) and the regex of both capture tools. `portfolio/lib/agents.ps1` reads `routes`
+  (`Get-PqAgentRoute`, `aboveCeiling` in `Select-PqAgent`, the route's model and effort in the pass arguments, claude
+  included); `portfolio/lib/rater.ps1` is rule 71 - the raters before the pick and the escalation after a failed pass,
+  both writing the header line and `ticket.complexity`, `rater.fail` when no record answers; `registry.ps1` checks
+  `routes`, `raters` and `escalateBy`. `portfolio/rate-ticket.ps1` runs the rater by hand and the anchor report. Covered
+  by `tools/tests/complexity-grade.tests.ps1` (fast). The live registry carries the routes, the Haiku rater
+  and `escalateBy` 2 from 2026-11-18.
+- 0.33 (2026-11-18, S0140): the parallel axis (README section 13, `EVENTS.md` section 9). `Get-SzaParallelFlag` reads
+  the `**Parallel:**` line; `Get-PqAgentRoute` carries the row's `parallel`; `Get-PqClaudeParallel` applies it to a
+  flagged ticket at a build stage and `Get-PqClaudePassArgs` hands the runner `-Parallel`; `run-spec-queue.ps1` appends
+  the opt-in with `--append-system-prompt` (`Get-ParallelOptIn`) and keeps Workflow allowed under the context trial;
+  `pass.launch` carries `parallel`; `registry.ps1` refuses another value or another agent. Case 10 of
+  `complexity-grade.tests.ps1`. The live registry names no `parallel` yet.

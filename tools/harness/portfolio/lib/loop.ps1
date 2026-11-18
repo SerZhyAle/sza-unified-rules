@@ -23,6 +23,11 @@
 # the variable exists, and that turn error dropped a ticket that had just closed Verified (S0035).
 $script:PqProviderStreaks = @{}
 
+# The rater and the escalation of rule 71 (TASK-FLOW 0.32, S0139), read by Start-PqLoop; loaded here so every loader of
+# this file has them. They call agents.ps1 and events.ps1 at run time only.
+. (Join-Path $PSScriptRoot 'rater.ps1')
+. (Join-Path $PSScriptRoot '..\..\spec_catalog\lib\complexity-grade.ps1')
+
 function Get-PqNextRank {
     param(
         [Parameter(Mandatory)]$Registry,
@@ -792,17 +797,20 @@ function Get-PqRunRowAgentExit($Value) {
 # The complexity a pass is launched at and where it came from (rule 51, EVENTS pass.launch cxSource): a non-Claude agent
 # runs its record's fixed model whatever the level (fixedAgent), a declared `**Complexity:**` level is header, and no
 # declaration runs at medium (default). @{ cx; cxSource }.
-function Get-PqPassCx([string]$Level, [string]$Agent) {
+#
+# -Rated (TASK-FLOW 0.32, EVENTS section 8): the rater graded the ticket just before this launch, so cxSource is rated.
+function Get-PqPassCx([string]$Level, [string]$Agent, [switch]$Rated) {
     $cx = if ($Level) { $Level } else { 'medium' }
-    $source = if ($Agent -and $Agent -cne 'claude') { 'fixedAgent' } elseif ($Level) { 'header' } else { 'default' }
+    $source = if ($Rated -and $Level) { 'rated' } elseif ($Agent -and $Agent -cne 'claude') { 'fixedAgent' } elseif ($Level) { 'header' } else { 'default' }
     return @{ cx = $cx; cxSource = $source }
 }
 
 # The model the dispatcher knows at the pick (EVENTS envelope model): a non-Claude agent's fixed record model; for
-# claude the runner chooses by the level at launch, so the pick carries none and pass.end carries the run row's.
+# claude the runner chooses by the level at launch, so the pick carries none and pass.end carries the run row's. A route
+# that names a model (TASK-FLOW 0.32 item B) is that model, claude included.
 function Get-PqPickModel($Pick) {
-    if ($null -eq $Pick -or -not $Pick.agent -or [string]$Pick.agent -ceq 'claude') { return $null }
-    $m = [string](Get-PqValue $Pick.record 'model' '')
+    if ($null -eq $Pick -or -not $Pick.agent) { return $null }
+    $m = [string](Get-PqPickLaunch $Pick).model
     if ($m) { return $m }
     return $null
 }
@@ -1218,6 +1226,8 @@ function Start-PqLoop {
     $stopNoticeState = @{}
     $transient = @{}
     $transientSaid = @{}
+    # Tickets the raters were asked about in this worker run (TASK-FLOW rule 71): asked once, answered or not.
+    $raterTried = @{}
     $heldResources = $null
     $heldResourcesRepo = ''
     $heldResourcesId = ''
@@ -1742,8 +1752,21 @@ function Start-PqLoop {
 
                 # The agent of this pass (rule 42): the first of agentOrder that is not held, under its maxParallel, admits
                 # the ticket's level and can reach the repository's pipeline. No declared level runs at medium (rule 51).
-                $ticketLevel = Get-PqTicketLevel -RepoPath $repoPath -TicketId $ticketId
-                $pick = Select-PqAgent -Registry $Registry -RepoPath $repoPath -Level $(if ($ticketLevel) { $ticketLevel } else { 'medium' }) -Skip $stopAgents
+                # TASK-FLOW 0.32 (S0139): the grade decides too - an agent with no route for it is passed over
+                # (aboveCeiling), and an ungraded ticket is graded once by the registry's raters first (rule 71).
+                $levelInfo = Get-PqTicketLevelInfo -RepoPath $repoPath -TicketId $ticketId
+                $ticketRated = $false
+                if (Test-PqRaterDue -Registry $Registry -Info $levelInfo -Key "$repoKey`:$ticketId" -Tried $raterTried) {
+                    $rateRes = Invoke-PqTicketRating -Registry $Registry -Info $levelInfo -RepoKey $repoKey -TicketId $ticketId -Log $log -Run $runId -Worker $slot
+                    $raterTried["$repoKey`:$ticketId"] = $true
+                    if ($rateRes.ok) {
+                        $ticketRated = $true
+                        $levelInfo = Get-PqTicketLevelInfo -RepoPath $repoPath -TicketId $ticketId
+                    }
+                }
+                $ticketLevel = [string]$levelInfo.level
+                $ticketScore = [int]$levelInfo.score
+                $pick = Select-PqAgent -Registry $Registry -RepoPath $repoPath -Level $(if ($ticketLevel) { $ticketLevel } else { 'medium' }) -Skip $stopAgents -Score $ticketScore
                 foreach ($fb in @($pick.fallbacks)) {
                     if (-not (Test-PqFallbackWhy ([string]$fb.why))) { continue }
                     $null = Write-PqEvent -Log $log -Ev 'agent.fallback' -Run $runId -Repo $repoKey -Id $ticketId -Worker $slot -D ([ordered]@{ from = $fb.from; to = $pick.agent; repo = $repoKey; id = $ticketId; why = $fb.why })
@@ -1780,9 +1803,14 @@ function Start-PqLoop {
                 }
                 $noAgentSaid = ''
                 $agentName = [string]$pick.agent
-                $agentArgs = if ($agentName -ceq 'claude') { @() } else { Get-PqAgentPassArgs $pick }
-                $passCx = Get-PqPassCx $ticketLevel $agentName
+                $ticketParallelFlag = [bool](Get-PqValue $levelInfo 'parallel' $false)
+                $agentArgs = if ($agentName -ceq 'claude') { @(Get-PqClaudePassArgs $pick ([string]$cand.status) $ticketParallelFlag) } else { Get-PqAgentPassArgs $pick }
+                # S0140: the parallel axis this pass launches with ('' for none), for pass.launch.
+                $pickParallel = if ($agentName -ceq 'claude') { Get-PqClaudeParallel $pick ([string]$cand.status) $ticketParallelFlag } else { '' }
+                $passCx = Get-PqPassCx $ticketLevel $agentName -Rated:$ticketRated
                 $pickModel = Get-PqPickModel $pick
+                $pickEffort = [string](Get-PqPickLaunch $pick).effort
+                $pickScore = [int]$pick.score
 
                 # Rule 48 (S0082): past a poll hold's limitPollMinutes the pass is its probe, and the assignment's agent cap of
                 # 1 lets exactly one worker take it; the others see the agent held while it runs.
@@ -1853,17 +1881,22 @@ function Start-PqLoop {
                 $onStarted = {
                     param($childPid, [string[]]$childArgv)
                     # S0082 (EVENTS 3.4): argvHash, promptForm, cxSource, profileHash and heads; model and cx in the envelope.
-                    $null = Write-PqEvent -Log $log -Ev 'pass.launch' -Run $runId -Repo $repoKey -Id $ticketId -Pass $passId -Worker $slot -Agent $agentName -Model $pickModel -Cx $passCx.cx -D ([ordered]@{
+                    # S0139 (EVENTS section 8): the grade the pass was chosen at, and the effort when the route or record names one.
+                    $launchD = [ordered]@{
                         instance = "pq$slot"
                         argvHash = Get-PqArgvHash $childArgv
                         promptForm = [string](Get-PqValue $pick.record 'promptForm' 'slash')
                         permission = $permMode
                         statusBefore = $statusBefore
                         cxSource = $passCx.cxSource
+                        score = $pickScore
                         profileHash = $profileHash
                         pid = $childPid
                         heads = @(Get-PqValue $rank 'heads' @()).Count
-                    })
+                    }
+                    if ($pickEffort) { $launchD.effort = $pickEffort }
+                    if ($pickParallel) { $launchD.parallel = $pickParallel }
+                    $null = Write-PqEvent -Log $log -Ev 'pass.launch' -Run $runId -Repo $repoKey -Id $ticketId -Pass $passId -Worker $slot -Agent $agentName -Model $pickModel -Cx $passCx.cx -D $launchD
                     if ($currentRepoLock) { Set-PqRepoLockPass -LockFile $currentRepoLock -PassPid $childPid }
                 }
 
@@ -1970,9 +2003,17 @@ function Start-PqLoop {
                     elapsed = $elapsedSec
                 })
                 # Rule 51 (S0082): a pass that rewrote the ticket's `**Complexity:**` line leaves ticket.complexity.
-                $cxChange = Get-PqComplexityChange $ticketLevel (Get-PqTicketLevel -RepoPath $repoPath -TicketId $ticketId) $statusBefore
+                $afterInfo = Get-PqTicketLevelInfo -RepoPath $repoPath -TicketId $ticketId
+                $cxChange = Get-PqComplexityChange $ticketLevel ([string]$afterInfo.level) $statusBefore
                 if ($null -ne $cxChange) {
                     $null = Write-PqEvent -Log $log -Ev 'ticket.complexity' -Run $runId -Repo $repoKey -Id $ticketId -Pass $passId -Worker $slot -Agent $agentName -Cx $cxChange.to -D $cxChange
+                }
+                # Rule 71 (TASK-FLOW 0.32, S0139): a failed pass raises a numeric, unpinned grade by escalateBy, so the
+                # next launch takes an agent whose route admits it. A pass that rewrote the line itself is obeyed instead.
+                if ($null -eq $cxChange) {
+                    try {
+                        $null = Invoke-PqTicketEscalation -Registry $Registry -Info $afterInfo -Outcome ([string]$outcomeRes.outcome) -StatusAfter ([string]$outcomeRes.statusAfter) -RepoKey $repoKey -TicketId $ticketId -Log $log -Run $runId -Pass $passId -Worker $slot -Agent $agentName
+                    } catch { }
                 }
                 # Rule 59 (S0082): the pass's own moves are written now, with its id as viaPass, not at the next idle poll.
                 $endedPass = @{ repo = $repoKey; id = $ticketId; pass = $passId; startedAt = [DateTimeOffset]$passBegan; endedAt = [DateTimeOffset]::UtcNow }

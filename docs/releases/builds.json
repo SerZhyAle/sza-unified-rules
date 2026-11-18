@@ -5,9 +5,9 @@
       "package": "sza",
       "flavor": "default",
       "kind": "release",
-      "version": "2026.1118.3",
-      "builtAt": "2026-11-18T16:38:48+01:00",
-      "note": "rules: AI_USAGE, CHANNEL_MATRIX, DEVELOPMENT, GITHUB_INTERACTION, INVARIANTS, NEW_PROJECT_CHECKLIST, PLATFORM_OVERLAYS, README, REPOSITORY_LAYOUT, SITE_CONFIGURATION, TESTING_AND_QA; tools 44, contrib 18, skills 11, root 6, docs 5, hooks 1, templates 1"
+      "version": "2026.1118.4",
+      "builtAt": "2026-11-18T17:50:52+01:00",
+      "note": "rules: DEVELOPMENT; tools 19, docs 3, skills 2, root 1"
     }
   ]
 }

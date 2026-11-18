@@ -59,10 +59,10 @@
     created, so the caller can read the hits and decide.
 
 .PARAMETER Complexity
-    `<light|medium|hard> - <one-line reason>`, written to the spec's `**Complexity:**` line; the level is
-    case-insensitive and written lower-case. Omitted: `medium - not assessed at capture`. A level outside
-    the three, a missing reason or a reason over more than one line is refused with exit 2 before anything
-    is created.
+    `<level> - <one-line reason>`, written to the spec's `**Complexity:**` line. The level is a grade 0-9
+    (`7 pinned` for the owner's own, TASK-FLOW 0.32) or light, medium or hard; it is case-insensitive and
+    written lower-case. Omitted: `medium - not assessed at capture`. Another level, a missing reason or a
+    reason over more than one line is refused with exit 2 before anything is created.
 
 .PARAMETER AllowClosedDuplicate
     Capture anyway after a closed hit - the old defect really did come back, and the new ticket is a
@@ -137,14 +137,15 @@ if ($Slug -cnotmatch '^[a-z0-9][a-z0-9_-]*$' -or $Slug -match '^spec_') {
 }
 # Checked here, before insert.ps1 runs, so a refused level creates nothing.
 if ($Complexity -match '[\r\n]') {
-    Stop-BadInvocation "invalid -Complexity - the reason is one line; expected '<light|medium|hard> - <one-line reason>'"
+    Stop-BadInvocation "invalid -Complexity - the reason is one line; expected '<0-9|light|medium|hard> - <one-line reason>'"
 }
 if ($Complexity) {
-    $cx = [regex]::Match($Complexity, '^\s*(light|medium|hard)\s+-\s+(\S.*?)\s*$', 'IgnoreCase')
+    # A level word, or a grade 0-9 with an optional `pinned` (TASK-FLOW 0.32, S0139).
+    $cx = [regex]::Match($Complexity, '^\s*(light|medium|hard|[0-9](?:\s+pinned)?)\s+-\s+(\S.*?)\s*$', 'IgnoreCase')
     if (-not $cx.Success) {
-        Stop-BadInvocation "invalid -Complexity '$Complexity' - expected '<level> - <one-line reason>' with level light, medium or hard"
+        Stop-BadInvocation "invalid -Complexity '$Complexity' - expected '<level> - <one-line reason>' with level 0-9 (optionally '<n> pinned'), light, medium or hard"
     }
-    $Complexity = '{0} - {1}' -f $cx.Groups[1].Value.ToLowerInvariant(), $cx.Groups[2].Value
+    $Complexity = '{0} - {1}' -f ($cx.Groups[1].Value.ToLowerInvariant() -replace '\s+', ' '), $cx.Groups[2].Value
 } else {
     $Complexity = 'medium - not assessed at capture'
 }
