@@ -33,6 +33,9 @@ Format: Channel | Trigger | Cost | Auth | Signer | Listing source | Frozen ancho
 ### DOCUMENTATION_CONCEPT.md / LOCALIZATION.md
 - CONFIRM: the site's user-facing prose is RU-first (`GOOGLE_SITES_TEXT.md`, `SITE_DRAFT_RU.md`), matching the portfolio's EN/RU/UK ceiling with per-surface coverage. No parity-enforced string resource applies - a hand-authored HTML page has no string-catalog tool; the "one authoritative source, rendered per language" rule holds via the Google Sites source being the authority.
 
+### RELEASE_AND_DISTRIBUTION.md
+- CONFIRM (no release ledger, S0018, 2026-11-18): `hub` keeps no release ledger (`docs/releases/` absent, `ledgerShape: none`, `versionShape.tagRegex: null`) because it publishes an unversioned static portfolio site (`sza.od.ua`, `role: portfolio`) with no build artifacts, no tags, and no version pattern on its pages.
+
 ## No delta
 
 Core docs verified with nothing to add: REPOSITORY_LAYOUT (root-served static site fits the layout model), RELEASE_AND_DISTRIBUTION / CHANNEL_MATRIX / WINDOWS_PACKAGING (no releases, no store, no installer - N/A for a site), TESTING_AND_QA (no build/test suite; the gate here is `Unified_Rules/tools/check-rules.ps1` for the canon, and visual review for the page), SECURITY_AND_PRIVACY (static site, no secrets, `.gitignore` drops `*.gsite`/`*.gdoc` Drive pointers and `.research/`), SUPPORT_AND_FEEDBACK / GITHUB_INTERACTION / AUTHOR / AI_USAGE (portfolio-wide, no hub delta).

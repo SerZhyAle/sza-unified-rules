@@ -165,6 +165,8 @@ CANON_VERSION       the monotonic version the stamp records
 - Rule fixes land **here first**, then spread to repos - never the other way round.
 - Run `pwsh -File tools/check-rules.ps1` (exit 0 required) before committing under `rules/`.
 - A project's own record lives in [`rules/contrib/`](rules/contrib/) - a facts file and, under `history/`, its
-  dated history - and those two are the only files a project session may edit here.
+  dated history - and those two are the only files a project session may edit here. Anything else a project
+  session needs changed here goes in as a ticket in the canon (`spec-draft.ps1 -Project canon`), for a canon
+  session to consider.
 - `deploy.ps1` raises `CANON_VERSION` and the plugin version for you, through
   [`tools/bump-canon-version.ps1`](tools/bump-canon-version.ps1) - do not write either by hand.

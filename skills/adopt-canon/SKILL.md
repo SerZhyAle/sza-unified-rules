@@ -139,8 +139,10 @@ decisions: ask in question-with-options form, then apply the answer.
 Where the repo diverges from the canon: **fix the repo, or - if the divergence is legitimate - keep it and
 record it as a DIVERGE delta.** Never silently ignore a divergence; that is how the canon rots.
 
-If a canon rule looks wrong for this repo, push back once with evidence, then execute the decision. Collect
-needed **canon fixes** in your report - do not edit the canon from this session.
+If a canon rule looks wrong for this repo, push back once with evidence, then execute the decision. Do not
+edit the canon from this session: **file each needed canon fix as a ticket in the canon** for the canon
+session to consider (`spec-draft.ps1 -Project canon`, the problem and the evidence in the ticket text), and cite
+the ticket ids in your report.
 
 **Shared contracts - decide, then hand off.** Hold the repo against the definition in
 [CONTRACTS.md](../../rules/CONTRACTS.md) §1: does it write or read something another product
@@ -293,7 +295,8 @@ Re-run the compliance gate and show the before/after counts.
   which divergences are now recorded, what remains.
 - Commit **in the target repo** per its conventions - English message, co-author trailer. Push only if the
   repo's flow requires it.
-- Report the canon fixes you found so they can be applied in a canon session.
+- File the canon fixes you found as tickets in the canon (`spec-draft.ps1 -Project canon`) and cite their ids in
+  the report; a canon session decides and applies them.
 
 ---
 
@@ -313,7 +316,7 @@ Re-run the compliance gate and show the before/after counts.
 - [ ] The repo's own gates pass, with exit codes cited.
 - [ ] The compliance gate's error count is zero, or every remaining error has a recorded exemption.
 - [ ] The facts record is current, and `rules/contrib/history/<repo>.md` carries a dated adoption section.
-- [ ] Needed canon fixes are listed in the report, and the canon itself was not edited.
+- [ ] Needed canon fixes are filed as tickets in the canon (ids in the report), and the canon itself was not edited.
 
 ## Guardrails
 

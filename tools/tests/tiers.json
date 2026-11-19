@@ -37,6 +37,7 @@
     {"path":"tools/tests/portfolio-queue.tests.ps1","tier":"release","seconds":330.0,"measured":"2026-10-28","covers":"S0015 phase 02: registry, queue file, picker, rank and the pq verbs; recorded as 200-330 s, upper bound kept"},
     {"path":"tools/tests/portfolio-order.tests.ps1","tier":"fast","seconds":0.37,"measured":"2026-11-18","covers":"S0130: a registered repository's ticket order read from the portfolio queue file (TASK-FLOW rules 18 and 44), 4 cases"},
     {"path":"tools/tests/contract-render.tests.ps1","tier":"fast","seconds":1.67,"measured":"2026-11-18","covers":"S0136: check-contracts.ps1 -Render and the block-first version map of contract-lag.ps1"},
-    {"path":"tools/tests/catalog-lock-order.tests.ps1","tier":"fast","seconds":1.4,"measured":"2026-11-18","covers":"S0144: the portfolio projection runs after the catalog lock is released, and release-queue -SetCurrent and -Ship take the lock; S0145: -Ship with a missing and a one-line DONE file"}
+    {"path":"tools/tests/catalog-lock-order.tests.ps1","tier":"fast","seconds":1.4,"measured":"2026-11-18","covers":"S0144: the portfolio projection runs after the catalog lock is released, and release-queue -SetCurrent and -Ship take the lock; S0145: -Ship with a missing and a one-line DONE file; S0150: a row crossing to a missing RELEASE_READY.md creates the file"},
+    {"path":"tools/tests/release-queue-seed.tests.ps1","tier":"fast","seconds":3.22,"measured":"2026-11-19","covers":"S0151: release-queue.ps1 -Seed (dry run, -Apply, -Since, group comments, created files) and the unlisted-row note of -Validate"}
   ]
 }

@@ -113,7 +113,9 @@ maintainer, a store review, hardware shipment. It is never for work this repo's 
 itself, never for another registered repository in the portfolio, and never for an action the owner performs.
 The canon is read-only from a project session with one exception, the repo's own `rules/contrib/<repo>.md`
 record ([adopt-canon](../adopt-canon/SKILL.md)), so a ticket that says "record it in the canon contrib record
-by a canon session" is not blocked: write the record, with the re-sync it belongs to. Where a ticket genuinely
+by a canon session" is not blocked: write the record, with the re-sync it belongs to. A change the canon itself
+needs is never made from a project session; it is filed as a ticket in the canon (`spec-draft.ps1 -Project canon`)
+for the canon session to consider. Where a ticket genuinely
 waits on another registered repository in the portfolio (the canon included when a rule, skill or contract
 must change first), file the needed ticket there with `spec-draft.ps1 -Project <key>`, record
 `Blocker: <key>:<id>` in `statusNote` (the `-StatusNote` of the status move; the same token written bare on a

@@ -20,6 +20,8 @@
                  RELEASE_QUEUE_DONE.md and exits 0 (S0145: the $existing if-expression unrolled the array)
     plan files - release-queue.ps1 -SetCurrent and -Ship take the catalog lock (a text match on the two branches);
                  -SetCurrent still rewrites the marker (one real run)
+    ready file - update.ps1 moving a Draft row to Implemented with no RELEASE_READY.md creates the file
+                 with the standard header and lands the row in it (S0150: the row was dropped silently)
   Exit 0 when every case passed, 1 on any failure.
 #>
 [CmdletBinding()]
@@ -169,6 +171,27 @@ foreach ($k in $steps.Keys) { Write-Output ('{0}={1}' -f $k, $steps[$k]) }
         Assert-Equal $r.code 0 "-SetCurrent: $($r.out)"
         $queue = [IO.File]::ReadAllText((Join-Path $repo 'PLAN\RELEASE_QUEUE.md'))
         Assert-That ($queue -match '(?m)^current-next-release: 4\s*$') "the marker was not rewritten: $queue"
+    }
+
+    Run-Case 'ready file: a row crossing to a missing RELEASE_READY.md creates the file instead of being dropped (S0150)' {
+        $tool = Join-Path $Harness 'spec_catalog\update.ps1'
+        $readyPath = Join-Path $repo 'PLAN\RELEASE_READY.md'
+        $queuePath = Join-Path $repo 'PLAN\RELEASE_QUEUE.md'
+        # A Draft row in the queue, a ready file that does not exist - the state a young project is in.
+        Write-Utf8 (Join-Path $repo 'PLAN\spec-catalog.jsonl') `
+            ((New-Row 'S0004' 'ready-file' 'PLAN/S0004_ready-file.md') + "`n")
+        Write-Utf8 (Join-Path $repo 'PLAN\S0004_ready-file.md') "# S0004_ready-file`n`n**Status:** Draft`n"
+        Write-Utf8 $queuePath "# Release queue`r`n`r`ncurrent-next-release: 1`r`n`r`n1`r`nS0004_ready-file   26-11-18 12:00  Draft`r`n"
+        if (Test-Path -LiteralPath $readyPath) { Remove-Item -LiteralPath $readyPath -Force }
+
+        $r = Invoke-Tool $repo $tool @('-Id', 'S0004', '-Status', 'Implemented')
+        Assert-Equal $r.code 0 "update.ps1 to Implemented: $($r.out)"
+        Assert-That (Test-Path -LiteralPath $readyPath) "RELEASE_READY.md was not created"
+        $ready = [IO.File]::ReadAllText($readyPath)
+        Assert-That ($ready -match '(?m)^# Release Content \(ready\)\r?$') "the standard header is missing: $ready"
+        Assert-That ($ready -match 'S0004_ready-file\s+\d{2}-\d{2}-\d{2} \d{2}:\d{2}\s+Implemented') "the row is not in the ready file: $ready"
+        $queue = [IO.File]::ReadAllText($queuePath)
+        Assert-That ($queue -notmatch 'S0004_ready-file') "the row is still in the queue file too: $queue"
     }
 }
 finally {

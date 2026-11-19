@@ -22,8 +22,10 @@
      11. Closed since the last build (S0135): tickets at Implemented written in or after the minute of the newest
          build are counted, an unreadable date counts, no build gives no figure, and a repository with no ledger or
          no build says why.
+     12. Empty GitHub probe/import (S0148): New-RlProbeResult keeps an empty [object[]] under StrictMode when
+         parsers return nothing, and release-ledger probe/import exit 0 when gh release list returns [].
 
-    Everything is a throwaway folder; no real repository, no network, three pwsh processes for case 10.
+    Everything is a throwaway folder; no real repository, no network, pwsh child processes for CLI checks.
     Takes -KeepScratch to leave the throwaway folder for inspection.
 #>
 [CmdletBinding()]
@@ -53,6 +55,7 @@ $scratch = Join-Path ([System.IO.Path]::GetTempPath()) ('s0092-ledger-' + [guid]
 New-Item -ItemType Directory -Path $scratch | Out-Null
 $savedNow = $env:SZA_RELEASES_NOW
 $savedStub = $env:SZA_RELEASES_PROBE_STUB
+$savedPath = $env:PATH
 
 . (Join-Path $releases '_lib.ps1')
 . (Join-Path $releases '_probes.ps1')
@@ -256,9 +259,40 @@ try {
         & pwsh -NoProfile -File $rl publish -RepoRoot $repo -Key github -Version 1.2 -State done 2>$null | Out-Null
         Assert-That ($LASTEXITCODE -eq 2) "an invalid state gave exit $LASTEXITCODE"
     }
+
+    Test-Case 'empty GitHub probe and import keep observed as an array under StrictMode' {
+        & {
+            Set-StrictMode -Version Latest
+            $rNull = New-RlProbeResult -Ok $true -Observed $null
+            Assert-That ($null -ne $rNull.observed -and $rNull.observed.Count -eq 0) 'New-RlProbeResult -Observed $null returned null'
+            $rGh = New-RlProbeResult -Ok $true -Observed (ConvertFrom-RlGithubReleases -Json '[]' -Repo 'o/r')
+            Assert-That ($null -ne $rGh.observed -and $rGh.observed.Count -eq 0) 'empty GitHub releases returned null observed'
+            $rWp = New-RlProbeResult -Ok $true -Observed (ConvertFrom-RlWingetPulls -Json '[]' -Id 'Pub.App')
+            Assert-That ($null -ne $rWp.observed -and $rWp.observed.Count -eq 0) 'empty winget pulls returned null observed'
+            $rPlay = New-RlProbeResult -Ok $true -Observed (ConvertFrom-RlPlayTrack -Track ([pscustomobject]@{}) -TrackName 'production' -AppId 'com.x')
+            Assert-That ($null -ne $rPlay.observed -and $rPlay.observed.Count -eq 0) 'empty Play track returned null observed'
+        }
+        $emptyRepo = Join-Path $scratch 'empty-gh'
+        New-Item -ItemType Directory -Path (Join-Path $emptyRepo 'docs/releases') -Force | Out-Null
+        [IO.File]::WriteAllText((Join-Path $emptyRepo 'docs/releases/channels.json'), '{"schema":"1","packages":[{"id":"app"}],"channels":[{"key":"github","channel":"github","repo":"o/r"}]}')
+        $stubBin = Join-Path $scratch 'gh-stub-bin'
+        New-Item -ItemType Directory -Path $stubBin -Force | Out-Null
+        [IO.File]::WriteAllText((Join-Path $stubBin 'gh.cmd'), "@echo off`r`necho []`r`nexit /b 0`r`n")
+        $env:SZA_RELEASES_PROBE_STUB = ''
+        $env:PATH = "$stubBin;$savedPath"
+        $rl = Join-Path $releases 'release-ledger.ps1'
+        $outProbe = & pwsh -NoProfile -File $rl probe -RepoRoot $emptyRepo -Key github 2>&1
+        Assert-That ($LASTEXITCODE -eq 0) "probe exit $LASTEXITCODE`n$($outProbe -join "`n")"
+        Assert-That ((@($outProbe) -join "`n") -match 'seen\s+github\s+nothing published') "unexpected probe output: $($outProbe -join "`n")"
+        $outImport = & pwsh -NoProfile -File $rl import -RepoRoot $emptyRepo -Key github 2>&1
+        Assert-That ($LASTEXITCODE -eq 0) "import exit $LASTEXITCODE`n$($outImport -join "`n")"
+        Assert-That ((@($outImport) -join "`n") -match 'seen\s+github\s+nothing published') "unexpected import output: $($outImport -join "`n")"
+        Assert-That (-not (Test-Path (Join-Path $emptyRepo 'docs/releases/history.jsonl'))) 'empty probe/import wrote history.jsonl'
+    }
 } finally {
     $env:SZA_RELEASES_NOW = $savedNow
     $env:SZA_RELEASES_PROBE_STUB = $savedStub
+    $env:PATH = $savedPath
     if ($KeepScratch) { Write-Host "scratch kept: $scratch" } else { Remove-Item -LiteralPath $scratch -Recurse -Force -ErrorAction SilentlyContinue }
 }
 

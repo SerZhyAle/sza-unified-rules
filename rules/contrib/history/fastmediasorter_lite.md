@@ -682,3 +682,11 @@ any implementation claim. General workflow: [PROMOTION.md](../../PROMOTION.md) s
 ## Record split 2026-11-18 (canon ticket S0120)
 
 Every section of this file dated before this one was moved here verbatim from [../fastmediasorter_lite.md](../fastmediasorter_lite.md) when the record was split into facts and history. A line number quoted inside such a section counts lines of the record as it was before the move; relative links were deepened by one `../`; nothing else changed.
+
+## Release ledger adoption 2026-11-18 (ticket L0344)
+
+- Adopted `RELEASE-LEDGER` 0.1 under `docs/releases/` (`channels.json`, `history.jsonl`, rendered `RELEASES.md`) via `tools/harness.ps1 releases/release-ledger`.
+- Split packages into `user` (`github`, `winget`, `installer`), `user-msix` (`msstore`, remapped Store stamp `YY.(M*100+D).HHmm.0`), `server` (`winget-server`, `installer-server`), and `exchange-server` (no channels while `INCLUDE_EXCHANGE` is `'false'`).
+- `release-ledger import` recorded 42 events across all 6 channels; `release-ledger probe` returned 0 new events with all 6 channels live (`26.11.13.0130`, `msstore` `26.1113.130.0`).
+- Added `tools/lib/ReleaseLedgerHook.ps1` (`Invoke-ReleaseLedgerBuild`, `Invoke-ReleaseLedgerPublish`) and hooked `build.ps1`, `tools/Build-Installer.ps1`, `tools/Build-ServerInstaller.ps1`, `tools/Build-OfflineRelease.ps1`, `publishing/msix/build-msix.ps1`, `exchange-server/build.ps1`, `tools/Release.ps1`, and `tools/Set-ReleaseManifest.ps1`; documented in `docs/guides/BUILD_AND_RELEASE.md`, `.claude/skills/release/SKILL.md`, `docs/contracts/RELEASE-LEDGER.md`, and `P:\Contracts\_meta\REGISTRY.md`.
+- Real full builds and release tag runs remain deferred to the next build/release (>5 s ceiling).

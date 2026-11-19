@@ -50,10 +50,12 @@
 #       same name in the other of paths.specsDir and paths.specArchiveDir, through the repository's update.ps1 -File.
 #       @{ repo; id; from; to; ok; err } per row tried; -List only names them. State: the rows the tool refused, not
 #       offered again by this process until the journal changes.
-#   Read-PqTicketQueueRows -Path <file>
+#   Read-PqTicketQueueRows -Path <file> [-RepoPath <dir>]
 #       that file's ticket rows in file order, each @{ id; token; tail; unscheduled } (token: the id with its slug;
 #       tail: changed, status and any note, as written; unscheduled: under its '--'); $null when the file is absent or
-#       unreadable.
+#       unreadable. A row's id matches the shipped S####, T#### and XX-#### shapes plus, with -RepoPath, that
+#       repository's grammar.ticketIdPattern (its core between the anchors, the harness default behind it); an id of
+#       any other shape still makes the whole file unsupported (S0149).
 #   Get-PqQueueSources -Registry
 #       [ordered] key -> Read-PqTicketQueueRows of every registered repository, in registry order.
 #   Sync-PqRegisteredQueues -Path -Registry [-Key] [-Log]
@@ -79,6 +81,9 @@
 . (Join-Path $PSScriptRoot 'events.ps1')
 
 $script:PqQueueRowPattern = '^(?<repo>[a-z][a-z0-9-]*)(?::(?<id>\*|[^\s:#_]+)(?:_[^\s#]*)?)?$'
+# The ticket id shapes every repository's queue rows share; a repository's own grammar.ticketIdPattern joins them as
+# one more alternative (Get-PqTicketIdShapes, S0149).
+$script:PqTicketIdShapes = 'S\d{4,}|T\d{4,}|[A-Z][A-Z0-9]*-\d+'
 $script:PqQueueUnscheduled = [long]::MaxValue
 $script:PqQueueTicketWidth = 74
 $script:PqProfileDefaults = $null
@@ -562,7 +567,21 @@ function Get-PqTicketQueuePath($Repo) {
     return [IO.Path]::GetFullPath((Join-Path $repoPath $rel))
 }
 
-function Read-PqTicketQueueRows([string]$Path) {
+# The id alternation a queue row's id is matched against: the shipped S####, T#### and XX-#### shapes plus, for a
+# repository path given, its grammar.ticketIdPattern (the core between the anchors; the harness default '^S\d{4}$'
+# behind it, already one of the shipped shapes). A project whose ledger ids are L#### (fms-lite) is read from its plan
+# tool's RELEASE_QUEUE.md this way; an id matching none of the alternatives is still an unsupported shape.
+function Get-PqTicketIdShapes([string]$RepoPath) {
+    $alt = [string]$script:PqTicketIdShapes
+    if ($RepoPath) {
+        $core = ([string](Get-PqRepoProfileValue -RepoPath $RepoPath -Section 'grammar' -Key 'ticketIdPattern')).TrimStart('^').TrimEnd('$')
+        if ($core) { $alt = "$alt|$core" }
+    }
+    return $alt
+}
+
+function Read-PqTicketQueueRows {
+    param([Parameter(Mandatory)][string]$Path, [string]$RepoPath)
     if (-not [IO.File]::Exists($Path)) { return $null }
 
     if ($Path.EndsWith('.jsonl', [StringComparison]::OrdinalIgnoreCase)) {
@@ -600,6 +619,7 @@ function Read-PqTicketQueueRows([string]$Path) {
     $hasCurrent = $false
     $hasSection = $false
     $hasUnsupported = $false
+    $rowPattern = '^(?<token>(?<id>(?:' + (Get-PqTicketIdShapes $RepoPath) + '))(?:_\S*)?)(?:\s+(?<tail>.*))?$'
 
     foreach ($line in $split.lines) {
         $t = $line.Trim()
@@ -607,7 +627,7 @@ function Read-PqTicketQueueRows([string]$Path) {
         if ($t -ceq '--') { $unscheduled = $true; $hasSection = $true; continue }
         if ($t -cmatch '^\d+$') { $unscheduled = $false; $hasSection = $true; continue }
         if (-not $hasSection) { continue }
-        $m = [regex]::Match($t, '^(?<token>(?<id>(?:S\d{4,}|T\d{4,}|[A-Z][A-Z0-9]*-\d+))(?:_\S*)?)(?:\s+(?<tail>.*))?$')
+        $m = [regex]::Match($t, $rowPattern)
         if (-not $m.Success) {
             if ($t -cmatch '^\S+\s+\d{2}-\d{2}-\d{2}\s+\d{2}:\d{2}\s+') {
                 $hasUnsupported = $true
@@ -918,7 +938,7 @@ function Repair-PqTicketFileRefs {
 
 function Get-PqQueueSources($Registry) {
     $sources = [ordered]@{}
-    foreach ($r in @($Registry.repos)) { $sources[[string]$r.key] = Read-PqTicketQueueRows (Get-PqTicketQueuePath $r) }
+    foreach ($r in @($Registry.repos)) { $sources[[string]$r.key] = Read-PqTicketQueueRows -Path (Get-PqTicketQueuePath $r) -RepoPath ([string]$r.path) }
     return $sources
 }
 
@@ -958,7 +978,7 @@ function Sync-PqRegisteredQueues {
             if ($Key) {
                 $repo = @($Registry.repos | Where-Object { [string]$_.key -ceq $Key }) | Select-Object -First 1
                 if ($null -eq $repo) { return @{ ok = $false; error = 'UnknownRepoKey'; message = "no repository '$Key' in the registry" } }
-                $rows = Read-PqTicketQueueRows (Get-PqTicketQueuePath $repo)
+                $rows = Read-PqTicketQueueRows -Path (Get-PqTicketQueuePath $repo) -RepoPath ([string]$repo.path)
                 if ($null -eq $rows) { return @{ ok = $false; error = 'TicketQueueUnreadable'; message = "cannot read a complete ticket queue for $Key" } }
                 $sources = [ordered]@{}; $sources[$Key] = $rows
             } else { $sources = Get-PqQueueSources $Registry }

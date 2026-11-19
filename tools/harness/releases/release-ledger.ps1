@@ -318,8 +318,8 @@ foreach ($c in $targets) {
     foreach ($b in $snap.builds) { if ([string](Get-RlProp $b 'package') -ceq $c.package -and -not $known.Contains([string](Get-RlProp $b 'version'))) { $known.Add([string](Get-RlProp $b 'version')) } }
     $res = Invoke-RlProbe -Channel $c -RepoRoot $root -Candidates ([string[]]@($known | Select-Object -Last 20)) -All:$isImport
     if (-not $res.ok) { Write-Output ("unverified  {0,-14} {1}" -f $c.key, $res.reason); continue }
-    if ($res.observed.Count -eq 0) { Write-Output ("seen        {0,-14} nothing published$(if ($res.reason) { ' - ' + $res.reason })" -f $c.key); continue }
-    foreach ($o in $res.observed) {
+    if (@($res.observed).Count -eq 0) { Write-Output ("seen        {0,-14} nothing published$(if ($res.reason) { ' - ' + $res.reason })" -f $c.key); continue }
+    foreach ($o in @($res.observed)) {
         # The ledger's own spelling of a version wins over the channel's (26.1117.1450 recorded, 26.1117.1450.0 in
         # the Store): the observation is matched loosely and written under the recorded string.
         $recordedKey = $null

@@ -1259,6 +1259,21 @@ try {
         Assert-That ($null -eq (Read-PqTicketQueueRows (Join-Path (New-Scratch 'norq') 'RELEASE_QUEUE.md'))) 'an absent file did not read as $null'
     }
 
+    Test-Case 'queue-sync: Read-PqTicketQueueRows reads an L#### queue through the repository grammar (-RepoPath), and still refuses an unknown shape' {
+        . (Get-LibPath 'queue-file.ps1')
+        $repo = New-Scratch 'lrepo'
+        Write-Json (Join-Path $repo '.sza-profile.json') ([ordered]@{ version = '1'; grammar = [ordered]@{ ticketIdPattern = '^L\d{4}$' } })
+        $rq = New-QueueFile @('# Release Queue', 'current-next-release: 46', '', 'ticket   changed   status', '46', 'L0359_fix-queue-reader   26-11-18 15:08  Draft', '', '--', 'L0360_later   26-11-18 16:00  Approved')
+        $rows = Read-PqTicketQueueRows -Path $rq -RepoPath $repo
+        Assert-That ($null -ne $rows -and $rows.Count -eq 2) "rows: $(if ($null -eq $rows) { 'null' } else { $rows.Count })"
+        Assert-That ($rows[0].id -ceq 'L0359' -and $rows[0].token -ceq 'L0359_fix-queue-reader' -and $rows[0].tail -ceq '26-11-18 15:08  Draft' -and -not $rows[0].unscheduled) 'first row misread'
+        Assert-That ($rows[1].id -ceq 'L0360' -and $rows[1].token -ceq 'L0360_later' -and $rows[1].unscheduled) 'second row misread'
+        $sameNoPath = Read-PqTicketQueueRows -Path $rq
+        Assert-That ($null -eq $sameNoPath) 'an L#### row without -RepoPath was read through the shipped shapes'
+        $unknown = New-QueueFile @('current-next-release: 1', '1', 'X001_task  26-11-28 10:00  Draft')
+        Assert-That ($null -eq (Read-PqTicketQueueRows -Path $unknown -RepoPath $repo)) 'an id matching neither the shipped shapes nor the grammar was accepted'
+    }
+
     # ---------------------------------------------------------------- picker
     Test-Case 'picker: returns the documented keys for a fixture with three tickets' {
         . (Get-LibPath 'picker.ps1')

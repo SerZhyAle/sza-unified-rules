@@ -786,7 +786,8 @@ function Sync-ReleaseQueue {
     #   - updates the changed-date ONLY when the status actually moved,
     #   - a status change across the ready boundary moves the line to the other file,
     #   - drops a line whose ticket left the active journal (archived or deleted),
-    #   - never ADDS a ready ticket that is in neither file: it shipped in an earlier package,
+    #   - never ADDS a ready ticket that is in neither file: it shipped in an earlier package
+    #     (release-queue.ps1 -Seed is the owner's one-off for a ledger where that is false, S0151),
     #   - keeps ONE line per ticket id across both files: the first occurrence wins its position
     #     and its `rel` column, every later one is dropped (S1698).
     #
@@ -847,10 +848,48 @@ function Sync-ReleaseQueue {
     Add-ReleaseLines -Target $keptReady -Additions $toReady
 
     Write-ReleaseFile -Path $script:ReleaseQueuePath -Lines $keptQueue
-    if (Test-Path $script:ReleaseReadyPath) {
+    # S0150: a row that crossed to the ready side was written nowhere when the file was absent - the
+    # queue pass had already dropped it, and -Reconcile cannot bring a ready row back (a ready ticket
+    # in neither file is assumed shipped earlier). Create the file with the standard header - the same
+    # one scaffold/init-task-flow.ps1 writes - so the row always lands somewhere. No ready rows and no
+    # file still writes nothing: a project that never had a ready side keeps not having one.
+    $readyHasTickets = $false
+    foreach ($l in $keptReady) { if ($l.Kind -eq 'ticket') { $readyHasTickets = $true; break } }
+    if ($readyHasTickets -and -not (Test-Path $script:ReleaseReadyPath)) {
+        $headerText = @(Get-ReleaseReadyHeaderLines)
+        for ($i = $headerText.Count - 1; $i -ge 0; $i--) {
+            $keptReady.Insert(0, [pscustomobject]@{ Kind = 'verbatim'; Text = $headerText[$i] })
+        }
+    }
+    if ((Test-Path $script:ReleaseReadyPath) -or $readyHasTickets) {
         Write-ReleaseFile -Path $script:ReleaseReadyPath -Lines $keptReady
     }
     if (-not $SkipProjection) { Sync-PortfolioProjection }
+}
+
+function Get-ReleaseReadyHeaderLines {
+    # The header of a RELEASE_READY.md the plan tool creates - the text scaffold/init-task-flow.ps1 writes. One
+    # definition for the two creators of the file: the sync (S0150) and the seed (S0151).
+    return @(
+        '# Release Content (ready)'
+        ''
+        'Finished as far as its package is concerned. Written by the plan tool, sorted by nobody.'
+        ''
+        ('{0,-62} {1,-15} {2}' -f 'ticket', 'changed', 'status').TrimEnd()
+        ''
+    )
+}
+
+function Get-ReleaseDoneHeaderLines {
+    # The header of a RELEASE_QUEUE_DONE.md the seed creates, the text scaffold/init-task-flow.ps1 writes. The ship
+    # step finds its insertion point as the first `## release` line, so the header is whatever stands above it.
+    return @(
+        '# Shipped Release Packages'
+        ''
+        'What actually went out, newest first. Each block is one release package, moved here verbatim from the'
+        'queue file by the ship step. This file is written by that step - do not hand-edit it.'
+        ''
+    )
 }
 
 function Select-ReleaseLines {
@@ -1005,6 +1044,212 @@ function Add-ReleaseLines {
         }
         if ($insertAt -ge 0) { $Target.Insert($insertAt + 1, $add) } else { $Target.Add($add) }
     }
+}
+
+# -- The seed (S0151): moving an existing ledger onto the plan files --------------------------------
+#
+# The sync never adds a READY ticket that stands in neither file - it shipped in an earlier package, is the premise.
+# For a project that adopts the plan files with built-and-unshipped work already in its ledger the premise is false,
+# and the sync cannot repair it. The seed is the owner's one-off for that moment: it adds those tickets to one
+# package of the ready file, and splits a hand-kept queue file by status the way the sync does - keeping the
+# owner's `#` group comment lines with the rows that move.
+
+function ConvertTo-ReleaseSeedMoment {
+    # `yyyy-MM-dd HH:mm` (the ledger's `updated`) or `yyyy-MM-dd` (midnight) -> [datetime]; $null for any other shape.
+    param([AllowEmptyString()][AllowNull()][string] $Text)
+    $probe = "$Text".Trim()
+    $moment = [datetime]::MinValue
+    foreach ($format in 'yyyy-MM-dd HH:mm', 'yyyy-MM-dd') {
+        if ([datetime]::TryParseExact($probe, $format, [cultureinfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref] $moment)) {
+            return $moment
+        }
+    }
+    return $null
+}
+
+function Get-ReleaseRowGroups {
+    # Ticket id -> the group its row stands in: the `#` lines written above the row inside its package block, since
+    # the previous row. A row with no `#` line of its own inherits the group of the row above it, so one comment
+    # covers every row beneath it until the next `#` line or the next package heading. The `#` lines that open the
+    # file, above its first package heading, are the file's own header and belong to no group.
+    param([Parameter(Mandatory)] $Lines)
+    $map = @{}
+    $pending = New-Object System.Collections.Generic.List[string]
+    $current = $null
+    $count = 0
+    $opened = $false
+    foreach ($l in $Lines) {
+        if ($l.Kind -eq 'ticket') {
+            if ($pending.Count -gt 0) {
+                $count++
+                $current = @{ Key = "group$count"; Lines = $pending.ToArray() }
+                $pending.Clear()
+            }
+            if ($null -ne $current) { $map[[string] $l.Id] = $current }
+            continue
+        }
+        $text = [string] $l.Text
+        if ($null -ne (Get-ReleaseSectionHeading -Text $text)) {
+            $opened = $true
+            $pending.Clear()
+            $current = $null
+            continue
+        }
+        if ($opened -and $text.TrimStart().StartsWith('#')) { $pending.Add($text) }
+    }
+    return $map
+}
+
+function Add-ReleaseSeedRows {
+    # Put each row at the end of its package block in the target file, in the order given. The first row of a group
+    # is preceded by the group's `#` lines. A package the file has no heading for gets its heading as a written line
+    # here, before the comments: the writer emits a missing heading only right above a row, which would put the
+    # comments in the package above.
+    param(
+        [Parameter(Mandatory)] $Target,
+        [Parameter(Mandatory)][AllowEmptyCollection()] $Additions
+    )
+    $byPackage = [ordered]@{}
+    foreach ($add in $Additions) {
+        $key = Format-ReleaseQueueSection -Release ([string] $add.Release)
+        if (-not $byPackage.Contains($key)) { $byPackage[$key] = New-Object System.Collections.Generic.List[object] }
+        $byPackage[$key].Add($add)
+    }
+    foreach ($key in @($byPackage.Keys)) {
+        $insert = New-Object System.Collections.Generic.List[object]
+        $lastGroup = $null
+        foreach ($add in $byPackage[$key]) {
+            $groupKey = $null
+            if ($null -ne $add.Group) {
+                $groupKey = [string] $add.Group.Key
+                if ($groupKey -ne $lastGroup) {
+                    foreach ($text in $add.Group.Lines) { $insert.Add([pscustomobject]@{ Kind = 'verbatim'; Text = [string] $text }) }
+                }
+            }
+            $lastGroup = $groupKey
+            $insert.Add($add)
+        }
+        $at = Find-ReleaseBlockInsertIndex -Target $Target -Release $key
+        if ($at -ge 0) {
+            $Target.InsertRange($at + 1, $insert)
+        } else {
+            $Target.Add([pscustomobject]@{ Kind = 'verbatim'; Text = $key })
+            $Target.AddRange($insert)
+        }
+    }
+}
+
+function Invoke-ReleaseSeed {
+    # Computes the seed over the plan files as they stand and, with -Apply, writes it. The caller holds the catalog
+    # lock for the whole call. Without -Apply nothing is written, so the report is exactly what -Apply would do.
+    #
+    #   moved      queue-file rows whose ledger status is ready -> the ready file, same package, group lines kept
+    #   returned   ready-file rows whose ledger status fell below Implemented -> the queue file (the sync's move)
+    #   added      ready tickets of the ledger in neither file, last updated at or after -Since -> package $Release
+    #   leftOut    ready tickets of the ledger in neither file that -Since excludes
+    #   queueAdded unfinished tickets in neither file -> the queue at the open package (what every ledger write does)
+    #
+    # Nothing existing is reordered and no row changes its package.
+    param(
+        [Parameter(Mandatory)][AllowEmptyCollection()][object[]] $Records,
+        [Parameter(Mandatory)][string] $Release,
+        [AllowNull()] $SinceMoment = $null,
+        [switch] $Apply
+    )
+    $report = [pscustomobject]@{
+        Release           = $Release
+        Since             = $SinceMoment
+        Applied           = [bool] $Apply
+        Moved             = (New-Object System.Collections.Generic.List[object])
+        Returned          = (New-Object System.Collections.Generic.List[object])
+        Added             = (New-Object System.Collections.Generic.List[object])
+        LeftOut           = (New-Object System.Collections.Generic.List[object])
+        QueueAdded        = (New-Object System.Collections.Generic.List[object])
+        Created           = (New-Object System.Collections.Generic.List[string])
+        DuplicatesDropped = 0
+    }
+
+    $byId = @{}
+    foreach ($r in $Records) { $byId[$r.id] = $r }
+    $stamp = Get-ReleaseChangedStamp
+    $seen = @{}
+    $toReady = New-Object System.Collections.Generic.List[object]
+    $toQueue = New-Object System.Collections.Generic.List[object]
+    $script:ReleaseQueueDuplicatesDropped = 0
+
+    $groups = Get-ReleaseRowGroups -Lines (Read-ReleaseQueue)
+    $keptQueue = Select-ReleaseLines -Path $script:ReleaseQueuePath -ById $byId -Seen $seen `
+        -Stamp $stamp -WantReady $false -Moved $toReady
+    $keptReady = Select-ReleaseLines -Path $script:ReleaseReadyPath -ById $byId -Seen $seen `
+        -Stamp $stamp -WantReady $true -Moved $toQueue
+    foreach ($row in $toQueue) { $report.Returned.Add($row) }
+
+    $readyAdds = New-Object System.Collections.Generic.List[object]
+    foreach ($row in $toReady) {
+        $group = $null
+        if ($groups.ContainsKey([string] $row.Id)) { $group = $groups[[string] $row.Id] }
+        $moved = [pscustomobject]@{
+            Kind = 'ticket'; Release = $row.Release; Ticket = $row.Ticket; Changed = $row.Changed
+            Status = $row.Status; Id = $row.Id; Group = $group
+        }
+        $readyAdds.Add($moved)
+        $report.Moved.Add($moved)
+    }
+
+    $current = Get-CurrentRelease
+    foreach ($r in ($Records | Sort-Object -Property id)) {
+        if ($seen.ContainsKey($r.id)) { continue }
+        $updatedProp = $r.PSObject.Properties['updated']
+        $updatedText = if ($null -ne $updatedProp) { [string] $updatedProp.Value } else { '' }
+        if (-not (Test-ReleaseReadyStatus -Status $r.status)) {
+            $queueRow = [pscustomobject]@{
+                Kind = 'ticket'; Release = $current; Ticket = (Get-TicketBaseName -File $r.file)
+                Changed = (ConvertTo-ReleaseChangedStamp -Value $updatedText); Status = $r.status; Id = $r.id
+            }
+            $toQueue.Add($queueRow)
+            $report.QueueAdded.Add($queueRow)
+            continue
+        }
+        $reason = ''
+        if ($null -ne $SinceMoment) {
+            $moment = ConvertTo-ReleaseSeedMoment -Text $updatedText
+            if ($null -eq $moment) { $reason = 'no readable updated stamp to place against -Since' }
+            elseif ($moment -lt $SinceMoment) { $reason = 'last updated before -Since' }
+        }
+        $item = [pscustomobject]@{
+            Kind = 'ticket'; Release = $Release; Ticket = (Get-TicketBaseName -File $r.file)
+            Changed = (ConvertTo-ReleaseChangedStamp -Value $updatedText); Status = $r.status; Id = $r.id
+            Group = $null; Updated = $updatedText; Reason = $reason
+        }
+        if ($reason) { $report.LeftOut.Add($item) } else { $readyAdds.Add($item); $report.Added.Add($item) }
+    }
+
+    Add-ReleaseLines -Target $keptQueue -Additions $toQueue
+    if (-not (Test-Path -LiteralPath $script:ReleaseReadyPath)) {
+        $report.Created.Add('releaseReady')
+        $headerText = @(Get-ReleaseReadyHeaderLines)
+        for ($i = $headerText.Count - 1; $i -ge 0; $i--) {
+            $keptReady.Insert(0, [pscustomobject]@{ Kind = 'verbatim'; Text = $headerText[$i] })
+        }
+    }
+    Add-ReleaseSeedRows -Target $keptReady -Additions $readyAdds
+    $doneMissing = -not (Test-Path -LiteralPath $script:ReleaseQueueDonePath)
+    if ($doneMissing) { $report.Created.Add('releaseQueueDone') }
+    $report.DuplicatesDropped = $script:ReleaseQueueDuplicatesDropped
+
+    if ($Apply) {
+        foreach ($path in @($script:ReleaseQueuePath, $script:ReleaseReadyPath, $script:ReleaseQueueDonePath)) {
+            $dir = Split-Path -Parent $path
+            if ($dir -and -not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+        }
+        Write-ReleaseFile -Path $script:ReleaseQueuePath -Lines $keptQueue
+        Write-ReleaseFile -Path $script:ReleaseReadyPath -Lines $keptReady
+        if ($doneMissing) {
+            $payload = [string]::Join("`r`n", @(Get-ReleaseDoneHeaderLines)) + "`r`n"
+            [System.IO.File]::WriteAllText($script:ReleaseQueueDonePath, $payload, (New-Object System.Text.UTF8Encoding($false)))
+        }
+    }
+    return $report
 }
 
 function Write-ArchiveCatalog {

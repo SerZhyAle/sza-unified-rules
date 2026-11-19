@@ -75,7 +75,9 @@ S0001_pq-first-run                                             26-10-28 10:09  I
 S0003_sandbox-three                                            26-10-28 10:20  Draft
 ```
 
-A bare number opens a package, `--` is work not yet scheduled, a row is the ticket. The status and time columns are kept
+A bare number opens a package, `--` is work not yet scheduled, a row is the ticket. A row's id is read through the
+shipped `S####`, `T####` and `XX-####` shapes plus the project's own `grammar.ticketIdPattern` (S0149); an id of any
+other shape makes the whole file unreadable to `pq sync`. The status and time columns are kept
 current by the repository's tools. For a registered project the order of work is not read from this file: the robots, `/sn`
 and the `r1`-`r3` launchers all take that project's `<key>:<id>` lines of `PORTFOLIO_QUEUE.md` in line order, and the line
 order here decides only among tickets that file does not name. In a project that is not registered, moving a line here is

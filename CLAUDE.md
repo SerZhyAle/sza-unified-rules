@@ -157,7 +157,8 @@ pwsh -File deploy.ps1 -DryRun                             # the gates + what wou
   repos before shipping it; a check that cries wolf gets disabled, and then nothing is enforced.
 - **`rules/contrib/<project>.md`** is the per-project facts record, edited in place; its dated sections are
   appended to `rules/contrib/history/<project>.md`, which no skill reads. A project session may edit those two
-  files of its own project here and nothing else.
+  files of its own project here and nothing else; a change it wants anywhere else it files as a ticket in this
+  canon (`spec-draft.ps1 -Project canon`), and a canon session decides.
 
 ## How the pieces fit
 

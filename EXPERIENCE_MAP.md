@@ -266,7 +266,8 @@ Delivery failures worth remembering:
 
 - **The rule.** Never edit the canon from a project session; fixes land here ([CLAUDE.md](CLAUDE.md)). A project
   session may edit its own record - `rules/contrib/<project>.md` and `rules/contrib/history/<project>.md` - and
-  nothing else.
+  nothing else. What it needs changed anywhere else it files as a ticket in the canon (`spec-draft.ps1 -Project
+  canon`), for a canon session to consider.
 - **Deviations on record.** 2026-08-02 (the guardrail bent), 2026-08-28 (the owner directed it explicitly after being
   shown the constraint), 2026-09-03 S2402 ("a recorded deviation, not a precedent"). The 2026-08-18 propagation was
   executed from a canon session and did not need to bend.

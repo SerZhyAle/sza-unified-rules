@@ -24,8 +24,9 @@
 #>
 
 function New-RlProbeResult {
-    param([bool]$Ok, [string]$Reason = '', [AllowEmptyCollection()][object[]]$Observed = @())
-    return [pscustomobject]@{ ok = $Ok; reason = $Reason; observed = [object[]]$Observed }
+    param([bool]$Ok, [string]$Reason = '', [AllowNull()][AllowEmptyCollection()][object[]]$Observed = @())
+    $items = [object[]]@($Observed | Where-Object { $null -ne $_ })
+    return [pscustomobject]@{ ok = $Ok; reason = $Reason; observed = $items }
 }
 
 function New-RlObservation {
@@ -91,7 +92,7 @@ function Invoke-RlProbeGithub {
     if (-not (Test-RlHasProp $Spec 'tagPrefix')) { $prefix = 'v' }
     $out = & gh release list -R $repo --limit $Limit --json 'tagName,isDraft,isPrerelease,publishedAt,createdAt' 2>&1
     if ($LASTEXITCODE -ne 0) { return (New-RlProbeResult -Ok $false -Reason "gh release list failed: $(Get-RlFirstLine $out)") }
-    return (New-RlProbeResult -Ok $true -Observed (ConvertFrom-RlGithubReleases -Json (@($out) -join "`n") -Repo $repo -TagPrefix $prefix))
+    return (New-RlProbeResult -Ok $true -Observed @(ConvertFrom-RlGithubReleases -Json (@($out) -join "`n") -Repo $repo -TagPrefix $prefix))
 }
 
 function Test-RlHasProp {
@@ -165,7 +166,7 @@ function Invoke-RlProbeWinget {
     }
     $pulls = & gh pr list -R microsoft/winget-pkgs --state open --search "$id in:title" --json 'number,title,url' --limit 20 2>&1
     if ($LASTEXITCODE -eq 0) { foreach ($p in @(ConvertFrom-RlWingetPulls -Json (@($pulls) -join "`n") -Id $id)) { $observed.Add($p) } }
-    return (New-RlProbeResult -Ok $true -Observed $observed.ToArray())
+    return (New-RlProbeResult -Ok $true -Observed @($observed.ToArray()))
 }
 
 # ---- Microsoft Store (msstore, the same read-only call as tools/Store-Preflight.ps1) ----
@@ -277,7 +278,7 @@ function Invoke-RlProbePlay {
     catch { return (New-RlProbeResult -Ok $false -Reason "the Play API refused to open a read edit for $appId (no access, or the app does not exist)") }
     try {
         $t = Invoke-RestMethod -Method Get -Uri "$base/edits/$($edit.id)/tracks/$track" -Headers $h -TimeoutSec 25
-        return (New-RlProbeResult -Ok $true -Observed (ConvertFrom-RlPlayTrack -Track $t -TrackName $track -AppId $appId))
+        return (New-RlProbeResult -Ok $true -Observed @(ConvertFrom-RlPlayTrack -Track $t -TrackName $track -AppId $appId))
     } catch {
         return (New-RlProbeResult -Ok $false -Reason "the Play API did not return track '$track'")
     } finally {
@@ -336,7 +337,7 @@ function ConvertFrom-RlVscodeQuery {
         $at = if ($lu -is [datetime]) { ([DateTimeOffset]$lu).ToString("yyyy-MM-dd'T'HH:mm:sszzz", [Globalization.CultureInfo]::InvariantCulture) } else { [string]$lu }
         New-RlObservation -Version ([string](Get-RlProp $v 'version')) -State 'live' -At $at -Url "https://marketplace.visualstudio.com/items?itemName=$Id"
     }
-    return (New-RlProbeResult -Ok $true -Observed ([object[]]@($out)))
+    return (New-RlProbeResult -Ok $true -Observed @($out | Where-Object { $null -ne $_ }))
 }
 
 function Invoke-RlProbeVscode {

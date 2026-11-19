@@ -58,6 +58,12 @@ failure-mode list** and the **frozen-anchor-vs-visible-name decoupling** were le
   **manual** Partner Center upload; the Inno installers under `publishing/installer/`. The Media Exchange
   Server has no channel: its packaging cell reads "Not in this package" (evidence:
   `.github/workflows/release.yml`, the `winget/*.yaml` files, `tools/site-facts.json` `availability`).
+- **Release ledger (`RELEASE-LEDGER` 0.1).** `docs/releases/` (`channels.json`, `builds.json`, `history.jsonl`,
+  rendered `RELEASES.md`), written through `tools/harness.ps1 releases/release-ledger` and
+  `tools/lib/ReleaseLedgerHook.ps1`. Four packages: `user` (`github`, `winget`, `installer`), `user-msix`
+  (`msstore`, split for its remapped `YY.(M*100+D).HHmm.0` version), `server` (`winget-server`,
+  `installer-server`), and `exchange-server` (no channels while gated). Build scripts record `test` (or
+  `release` on unsigned Store MSIX / `Release.ps1 -Push`) non-fatally.
 - **Frozen anchors.** winget `PackageIdentifier: SerZhyAle.FastMediaSorter` **and `PackageName:
   FastMediaSorter LITE`** (frozen because it must equal the installed ARP DisplayName for `winget upgrade`
   to correlate - `locale.en-US.yaml`, `PackageName`, line 17); Inno `AppId {7371E7F1-..}`,
