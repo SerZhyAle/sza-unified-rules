@@ -43,7 +43,9 @@ function Get-PqNextRank {
         [switch]$FirstHead,
         [switch]$CheckXrepo,
         # Passed to Get-PqRank: refuse a head inside the walk (the loop's rule 52 check), see there.
-        [scriptblock]$HeadFilter = $null
+        [scriptblock]$HeadFilter = $null,
+        # Passed to Get-PqRank: offer the root of a refused ticket's blocker chain in its place (TASK-FLOW 0.38 section 16).
+        [scriptblock]$HeadLift = $null
     )
     if (-not $HarnessRoot) { $HarnessRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..')) }
     if (@($Occupied).Count -eq 0) {
@@ -94,6 +96,18 @@ function Get-PqNextRank {
     if ($OnlyRepo) { $rankArgs.OnlyRepo = $OnlyRepo }
     if ($FirstHead) { $rankArgs.FirstHead = $true }
     if ($null -ne $HeadFilter) { $rankArgs.HeadFilter = $HeadFilter }
+    if ($null -ne $HeadLift) { $rankArgs.HeadLift = $HeadLift }
+    if ($CheckXrepo -and $null -eq $HeadFilter) {
+        # The preview applies rule 52 inside the one walk, as the loop does, so that the lift of the blocker chain's root
+        # shows in `pq dry-run` exactly as it will happen; Get-PqXrepoFilteredRank still re-ranks for what the walk's
+        # filter cannot see (a second head of a concurrent repository in the fill).
+        $previewSnaps = @{}
+        $previewMemo = @{}
+        $rankArgs.HeadFilter = { param($k, $i) Get-PqXrepoBlock -Registry $Registry -RepoKey $k -TicketId $i -Snapshots $previewSnaps }.GetNewClosure()
+        if ($null -eq $HeadLift -and $null -ne (Get-Command Get-PqLiftTarget -ErrorAction Ignore)) {
+            $rankArgs.HeadLift = { param($k, $i, $refusal) Get-PqLiftTarget -Registry $Registry -Refusal $refusal -Memo $previewMemo -Snapshots $previewSnaps }.GetNewClosure()
+        }
+    }
     if ($CheckXrepo) {
         $ranker = {
             param($blockedIds)
@@ -1530,21 +1544,43 @@ function Start-PqLoop {
                     $regForFilter = $Registry
                     $xrepoSnaps = @{}
                     $xrepoFilter = { param($k, $i) Get-PqXrepoBlock -Registry $regForFilter -RepoKey $k -TicketId $i -Snapshots $xrepoSnaps }.GetNewClosure()
+                    # TASK-FLOW 0.38 section 16: the root of a refused ticket's blocker chain is offered in its place. One
+                    # memo per rank, so many tickets behind one blocker cost one chain walk. Without the inbox library (a
+                    # test that loads the loop alone) there is no lift and the walk is the one of 0.37.
+                    $xrepoLift = $null
+                    if ($null -ne (Get-Command Get-PqLiftTarget -ErrorAction Ignore)) {
+                        $liftMemo = @{}
+                        $xrepoLift = { param($k, $i, $refusal) Get-PqLiftTarget -Registry $regForFilter -Refusal $refusal -Memo $liftMemo -Snapshots $xrepoSnaps }.GetNewClosure()
+                    }
                     if ((Get-PqValue $Registry 'fill' 'depth') -ceq 'breadth' -and $busyRepos.Count -gt 0) {
-                        $rank = Get-PqNextRank -Registry $Registry -HarnessRoot $harness -Exclude $rankExclude -Occupied (@($rankOccupied) + @($busyRepos)) -Slots 1 -StopAfter 1 -HeadFilter $xrepoFilter @repoOnly
+                        $rank = Get-PqNextRank -Registry $Registry -HarnessRoot $harness -Exclude $rankExclude -Occupied (@($rankOccupied) + @($busyRepos)) -Slots 1 -StopAfter 1 -HeadFilter $xrepoFilter -HeadLift $xrepoLift @repoOnly
                         if (@($rank.candidates).Count -eq 0) { $rank = $null }
                     }
-                    if ($null -eq $rank) { $rank = Get-PqNextRank -Registry $Registry -HarnessRoot $harness -Exclude $rankExclude -Occupied $rankOccupied -Slots 1 -StopAfter 1 -HeadFilter $xrepoFilter @repoOnly }
+                    if ($null -eq $rank) { $rank = Get-PqNextRank -Registry $Registry -HarnessRoot $harness -Exclude $rankExclude -Occupied $rankOccupied -Slots 1 -StopAfter 1 -HeadFilter $xrepoFilter -HeadLift $xrepoLift @repoOnly }
+                    $liftRows = @{}
+                    foreach ($lf in @(Get-PqValue $rank 'lifts' @())) { $liftRows[[string]$lf.blocked] = $lf }
                     foreach ($hr in @(Get-PqValue $rank 'headRefused' @())) {
                         $xb = $hr.refusal
                         $xbKey = "$($hr.repo):$($hr.id)"
                         if ($xblocked.ContainsKey($xbKey)) { continue }
                         $exclude.Add($xbKey)
                         $xblocked[$xbKey] = @{ repo = [string]$hr.repo; id = [string]$hr.id; blocker = $xb.blocker }
-                        $null = Write-PqEvent -Log $log -Ev 'xrepo.resolve' -Run $runId -Repo $hr.repo -Id $hr.id -Worker $slot -D ([ordered]@{ blocked = $xbKey; blocker = $xb.blocker; state = $xb.state; blockerStatus = $xb.status })
+                        # The root of the chain and what became of it (TASK-FLOW 0.38 section 16): optional keys of the event
+                        # and a tail of the printed line, so the owner sees what the waiting ticket is really waiting for.
+                        $xd = [ordered]@{ blocked = $xbKey; blocker = $xb.blocker; state = $xb.state; blockerStatus = $xb.status }
+                        $liftTail = ''
+                        if ($liftRows.ContainsKey($xbKey)) {
+                            $lf = $liftRows[$xbKey]
+                            $xd.root = [string]$lf.root
+                            $xd.rootStatus = [string]$lf.status
+                            $xd.lift = $(if ($lf.offered) { 'offered' } else { 'notOffered' })
+                            if (-not $lf.offered) { $xd.liftWhy = [string]$lf.why }
+                            $liftTail = "; root $($lf.root) ($($lf.status)): " + $(if ($lf.offered) { 'offered first' } else { "not worked ($($lf.why))" })
+                        }
+                        $null = Write-PqEvent -Log $log -Ev 'xrepo.resolve' -Run $runId -Repo $hr.repo -Id $hr.id -Worker $slot -D $xd
                         if ($xb.state -ceq 'cycle') { $null = Write-PqEvent -Log $log -Ev 'xrepo.cycle' -Run $runId -Worker $slot -D ([ordered]@{ members = @($xbKey, $xb.blocker) }) }
                         $null = Write-PqEvent -Log $log -Ev 'ticket.blocked' -Run $runId -Repo $hr.repo -Id $hr.id -Worker $slot -D ([ordered]@{ status = [string]$hr.status; why = (ConvertTo-PqCut $xb.why 80); blocker = $xb.blocker })
-                        Write-Host "ticket $xbKey waits on $($xb.blocker) ($($xb.state): $($xb.why))"
+                        Write-Host "ticket $xbKey waits on $($xb.blocker) ($($xb.state): $($xb.why))$liftTail"
                     }
                 }
                 # Rule 58 (S0082): every rank is one picker call of the hour's poll.summary; a drain carry ranks nothing.

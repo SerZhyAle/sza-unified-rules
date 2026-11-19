@@ -22,6 +22,16 @@
 #   have added, cover only what was walked. 0 (the default) walks every entry.
 #   -FirstHead: the walk of step 3 stops walking a repository once its first head is found (one candidate per project).
 #
+#   -HeadLift (TASK-FLOW 0.38 section 16, the amendment of rule 52): asked after every refusal of -HeadFilter, with
+#   (repo, id, refusal) of the refused ticket. It returns $null (nothing to lift) or @{ repo; id; status; why } naming the
+#   ROOT of that ticket's blocker chain; a non-empty `why` means the root is not worth asking the picker about (its status
+#   is one no robot works). The walk then offers the root in the refused ticket's place, once per walk, as a ticket row of
+#   the queue file: the root's repository must be active (not disabled, held, stopped, occupied or at its worker cap) and
+#   its own picker is asked for exactly that id, so the idle hold, the owner gate, a lease and every other gate of a row
+#   apply unchanged. The lifted entry carries rule and source 'blockerLift' and the key liftedFor = 'repo:id' of the ticket
+#   it stands in for; the result's `lifts` lists, for every refused ticket that had a root, @{ blocked; blocker; root;
+#   status; offered; why }. A named start (-NamedTicket) lifts nothing, and without -HeadLift nothing changes.
+#
 #   The provider returns what Get-PqPickerHead returns: @{ ok; head; payload; why } ($Repo is the registry record).
 #
 #   Order (rule 63): the active repositories by registry rank ascending, array position on a tie - the owner's order
@@ -162,9 +172,13 @@ function Get-PqRank {
         # Asked of every head the walk of step 3 finds: param($RepoKey, $Id) -> $null when the head may be offered, else
         # an object saying why not (the loop passes Get-PqXrepoBlock, rule 52). A refused head is excluded and the SAME
         # entry is asked again, so one walk goes past every blocked head instead of the caller ranking once per head.
-        [scriptblock]$HeadFilter = $null
+        [scriptblock]$HeadFilter = $null,
+        # Asked after every refusal of the filter: param($RepoKey, $Id, $Refusal) -> $null, or @{ repo; id; status; why }
+        # naming the root of the refused ticket's blocker chain, which the walk then offers in its place (see the header).
+        [scriptblock]$HeadLift = $null
     )
     $headRefused = [Collections.Generic.List[object]]::new()
+    $lifts = [Collections.Generic.List[object]]::new()
     $namedMode = $false
     $namedRepo = ''
     $namedId = ''
@@ -339,6 +353,7 @@ function Get-PqRank {
                     $repoExclude[$Entry.repo].Add([string]$Entry.id)
                     $excluded.xrepo++
                     $headRefused.Add([ordered]@{ repo = $Entry.repo; id = [string]$Entry.id; status = ''; refusal = $refusal })
+                    & $tryLift $Entry ([string]$Entry.id) $refusal
                     return @{ head = $null; why = 'xrepo' }
                 }
             }
@@ -356,9 +371,69 @@ function Get-PqRank {
     $walk = [Collections.Generic.List[object]]::new()
     $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
     $reposWithHead = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
-    $found = 0
+    # A box, not a plain variable: the lift below adds to the walk from inside a script block, whose assignment to a
+    # plain counter would land in its own scope.
+    $walkFound = @{ n = 0 }
+
+    # The lift (TASK-FLOW 0.38 section 16): the root of a refused ticket's blocker chain is offered in the refused ticket's
+    # place, through the same pick of a queue row, so every gate of a row applies to it. Called at each refusal of the head
+    # filter, during the walk of step 3 only; the root goes into $walk right there, ahead of whatever the refused ticket's
+    # repository offers next, and into $liftEntries so that step 4 fills from it too.
+    $liftEnabled = $true
+    $liftOutcome = @{}
+    $liftEntries = [Collections.Generic.List[object]]::new()
+    $tryLift = {
+        param($Entry, [string]$Id, $Refusal)
+        if ($null -eq $HeadLift -or $namedMode -or -not $liftEnabled) { return }
+        $target = $null
+        try { $target = & $HeadLift ([string]$Entry.repo) $Id $Refusal } catch { $target = $null }
+        if ($null -eq $target) { return }
+        $rk = "$([string](Get-PqRankValue $target 'repo')):$([string](Get-PqRankValue $target 'id'))"
+        $blockedKey = "$($Entry.repo):$Id"
+        if ($rk -ceq $blockedKey) { return }
+        $row = [ordered]@{ blocked = $blockedKey; blocker = [string](Get-PqRankValue $Refusal 'blocker' ''); root = $rk
+            status = [string](Get-PqRankValue $target 'status' ''); offered = $false; why = '' }
+        $lifts.Add($row)
+        if ($liftOutcome.ContainsKey($rk)) {
+            # Another ticket behind the same root already asked: the root is offered once per walk.
+            $row.offered = [bool]$liftOutcome[$rk].offered
+            $row.why = [string]$liftOutcome[$rk].why
+            return
+        }
+        $tRepo = [string](Get-PqRankValue $target 'repo')
+        $why = [string](Get-PqRankValue $target 'why' '')
+        if (-not $why) {
+            if (-not $repos.Contains($tRepo)) { $why = 'unknownRepo' }
+            elseif (-not $active.Contains($tRepo)) {
+                $why = 'notActive'
+                foreach ($sk in $skipped) { if ($sk.repo -ceq $tRepo) { $why = [string]$sk.why; break } }
+            }
+            elseif ($active[$tRepo].cap -le 0) { $why = 'workerCap' }
+            elseif ($FirstHead -and $reposWithHead.Contains($tRepo)) { $why = 'repoHasHead' }
+        }
+        if (-not $why) {
+            $le = @{ repo = $tRepo; kind = 'ticket'; id = [string](Get-PqRankValue $target 'id'); source = 'blockerLift'; rule = 'blockerLift'
+                score = $Entry.score; package = $null; row = $null; liftedFor = $blockedKey }
+            $lp = & $pickOne $le $false
+            if ($null -eq $lp.head) { $why = [string]$lp.why; if (-not $why) { $why = 'notOffered' } }
+            else {
+                $lid = [string](Get-PqRankValue $lp.head 'id')
+                if (-not $seen.Add("$tRepo`:$lid")) { $why = 'alreadyOffered' }
+                else {
+                    $null = $reposWithHead.Add($tRepo)
+                    $walk.Add(@{ entry = $le; head = $lp.head; why = $null; id = $lid })
+                    $liftEntries.Add(@{ before = $Entry; entry = $le })
+                    $walkFound.n++
+                }
+            }
+        }
+        $row.offered = (-not $why)
+        $row.why = $why
+        $liftOutcome[$rk] = @{ offered = $row.offered; why = $why }
+    }
+
     foreach ($e in $entries) {
-        if ($StopAfter -gt 0 -and $found -ge $StopAfter) { break }
+        if ($StopAfter -gt 0 -and $walkFound.n -ge $StopAfter) { break }
         if ($FirstHead -and $reposWithHead.Contains($e.repo)) { continue }
         $p = & $pickOne $e $false
         # Measured 2026-11-13: three hub tickets waiting on other projects cost a full walk each (about a minute per walk,
@@ -374,9 +449,13 @@ function Get-PqRank {
                 $repoExclude[$e.repo].Add($hid)
                 $excluded.xrepo++
                 $headRefused.Add([ordered]@{ repo = $e.repo; id = $hid; status = [string](Get-PqRankValue $p.head 'status'); refusal = $refusal })
+                & $tryLift $e $hid $refusal
                 $p = & $pickOne $e $false
             }
         }
+        # A lift above may have filled the walk to -StopAfter: the entry's own next head then stays out, so the first n
+        # candidates are still exactly n.
+        if ($StopAfter -gt 0 -and $walkFound.n -ge $StopAfter) { continue }
         if ($namedMode) { $namedOffered = ($null -ne $p.head); $namedWhy = if ($namedOffered) { $null } else { [string]$p.why } }
         if ($null -eq $p.head) {
             if ($e.kind -eq 'ticket') { $walk.Add(@{ entry = $e; head = $null; why = "notOffered:$($p.why)"; id = $e.id }) }
@@ -386,7 +465,16 @@ function Get-PqRank {
         if (-not $seen.Add("$($e.repo):$id")) { continue }
         $null = $reposWithHead.Add($e.repo)
         $walk.Add(@{ entry = $e; head = $p.head; why = $null; id = $id })
-        $found++
+        $walkFound.n++
+    }
+    # The lift belongs to the walk of step 3: a refusal met later (step 4 asks heads again) is not lifted from.
+    $liftEnabled = $false
+
+    # Entries for step 4: the lifted roots stand directly before the entry they stand in for.
+    $fillEntries = [Collections.Generic.List[object]]::new()
+    foreach ($e0 in $entries) {
+        foreach ($lx in $liftEntries) { if ([object]::ReferenceEquals($lx.before, $e0)) { $fillEntries.Add($lx.entry) } }
+        $fillEntries.Add($e0)
     }
 
     # 4. Fill (R66).
@@ -402,7 +490,7 @@ function Get-PqRank {
                 priority = Get-PqRankValue $Head 'priority'; status = Get-PqRankValue $Head 'status'; title = Get-PqRankTitle $Head })
     }
     if ($Fill -ceq 'depth') {
-        foreach ($e in $entries) {
+        foreach ($e in $fillEntries) {
             $st = $active[$e.repo]
             while ($plan.Count -lt $Slots -and $st.used -lt $st.cap) {
                 if ($FirstHead -and $st.used -ge 1) { break }
@@ -418,9 +506,9 @@ function Get-PqRank {
         $doneTicket = [Collections.Generic.HashSet[int]]::new()
         do {
             $made = $false
-            for ($i = 0; $i -lt $entries.Count; $i++) {
+            for ($i = 0; $i -lt $fillEntries.Count; $i++) {
                 if ($plan.Count -ge $Slots) { break }
-                $e = $entries[$i]
+                $e = $fillEntries[$i]
                 if ($round -gt 1 -and $e.kind -eq 'ticket') { continue }
                 if ($doneTicket.Contains($i)) { continue }
                 $st = $active[$e.repo]
@@ -458,9 +546,11 @@ function Get-PqRank {
             }
             $alt.Add([ordered]@{ repo = $o.entry.repo; id = $o.id; why = $why })
         }
-        $candidates.Add([ordered]@{ repo = $e.repo; id = $w.id; rule = $e.rule; source = $e.source; score = $e.score; package = $e.package
-                row = $e.row; priority = Get-PqRankValue $w.head 'priority'; status = Get-PqRankValue $w.head 'status'
-                title = Get-PqRankTitle $w.head; alt = $alt.ToArray() })
+        $cand = [ordered]@{ repo = $e.repo; id = $w.id; rule = $e.rule; source = $e.source; score = $e.score; package = $e.package
+            row = $e.row; priority = Get-PqRankValue $w.head 'priority'; status = Get-PqRankValue $w.head 'status'
+            title = Get-PqRankTitle $w.head; alt = $alt.ToArray() }
+        if ($e.ContainsKey('liftedFor')) { $cand.liftedFor = [string]$e.liftedFor }
+        $candidates.Add($cand)
     }
     foreach ($k in $active.Keys) {
         $st = $active[$k]
@@ -480,7 +570,7 @@ function Get-PqRank {
         candidates = $candidates.ToArray(); plan = $plan.ToArray(); skipped = $skipped.ToArray(); excluded = $excluded
         autoSkipReasons = $autoSkip; fill = $Fill; heads = $heads; ms = [int]$sw.ElapsedMilliseconds
         queueRows = $queueRows.Count; queueBad = $queueBad; events = $events.ToArray()
-        headRefused = $headRefused.ToArray()
+        headRefused = $headRefused.ToArray(); lifts = $lifts.ToArray()
     }
     if ($namedMode) {
         $result.named = @{ repo = $namedRepo; id = $namedId; offered = $namedOffered; why = $namedWhy; heldBypassed = $heldBypassed }

@@ -518,7 +518,8 @@ function Invoke-PqDryRun {
     $rank = Get-PqNextRank -Registry $registry -HarnessRoot $harness -Slots $n -FirstHead:(-not $All) -CheckXrepo
     if ($Json) {
         ConvertTo-Json -InputObject ([ordered]@{ candidates = $rank.candidates; plan = $rank.plan; skipped = $rank.skipped; excluded = $rank.excluded
-                autoSkipReasons = $rank.autoSkipReasons; fill = $rank.fill; heads = $rank.heads; ms = $rank.ms; queueRows = $rank.queueRows; queueBad = $rank.queueBad }) -Depth 16
+                autoSkipReasons = $rank.autoSkipReasons; fill = $rank.fill; heads = $rank.heads; ms = $rank.ms; queueRows = $rank.queueRows; queueBad = $rank.queueBad
+                lifts = @($rank.lifts) }) -Depth 16
         return 0
     }
     "pq dry-run: fill=$($rank.fill) slots=$n enabled=$($enabled.Count) candidates=$(@($rank.candidates).Count)"
@@ -526,10 +527,14 @@ function Invoke-PqDryRun {
     foreach ($c in @($rank.candidates)) {
         $i++
         '{0,2}. {1}:{2}  rule={3}  pri={4}  {5}  {6}' -f $i, $c.repo, $c.id, $c.rule, $c.priority, $c.status, (ConvertTo-PqCut ([string]$c.title) 80)
+        if ($c.Contains('liftedFor')) { "      root of the chain behind $($c.liftedFor) - worked first (rule 52, the lift)" }
         if ($i -le 3) { foreach ($a in @($c.alt)) { "      alt $($a.repo):$($a.id) - $($a.why)" } }
     }
     foreach ($p in @($rank.plan)) { "slot $($p.slot): $($p.repo):$($p.id)" }
     foreach ($s in @($rank.skipped)) { "skip $($s.repo) - $($s.why)" }
+    foreach ($l in @($rank.lifts)) {
+        "lift $($l.blocked) -> root $($l.root) ($($l.status)): " + $(if ($l.offered) { 'offered in its place' } else { "not worked ($($l.why))" })
+    }
     foreach ($e in @($rank.events | Where-Object { $_.ev -ceq 'queue.row' })) { "queue row $($e.d.line) - $($e.d.kind): $($e.d.text)" }
     return 0
 }
@@ -951,7 +956,10 @@ function Invoke-PqStatus {
             # Rule 52 inside the one walk (Get-PqRank -HeadFilter), as the loop does: not one walk per blocked head.
             $regNext = $reg
             $snapsNext = @{}
-            $rank = Get-PqNextRank -Registry $reg -HarnessRoot $harness -Slots 1 -StopAfter 1 -HeadFilter ({ param($k, $i) Get-PqXrepoBlock -Registry $regNext -RepoKey $k -TicketId $i -Snapshots $snapsNext }.GetNewClosure())
+            $liftMemoNext = @{}
+            # The lift of the root of a blocker chain (TASK-FLOW 0.38 section 16) shows here as it will happen in the loop.
+            $liftNext = { param($k, $i, $refusal) Get-PqLiftTarget -Registry $regNext -Refusal $refusal -Memo $liftMemoNext -Snapshots $snapsNext }.GetNewClosure()
+            $rank = Get-PqNextRank -Registry $reg -HarnessRoot $harness -Slots 1 -StopAfter 1 -HeadLift $liftNext -HeadFilter ({ param($k, $i) Get-PqXrepoBlock -Registry $regNext -RepoKey $k -TicketId $i -Snapshots $snapsNext }.GetNewClosure())
             if (@($rank.candidates).Count -gt 0) {
                 $nextCandidate = [ordered]@{
                     repo = [string]$rank.candidates[0].repo

@@ -22,6 +22,9 @@
 #       BlockByOtherTask tickets are grouped by their chain root: the walk follows the spec's Blocker: tokens
 #       (qualified and local) while the blocker holds, judged by the same release test the picker uses
 #       (Test-BlockerReleased through xrepo.ps1), at most ten hops.
+#   Get-PqLiftTarget -Registry -Refusal <Get-PqXrepoBlock result> [-Memo] [-Snapshots]
+#       the same walk for the dispatcher's lift (TASK-FLOW 0.38 section 16): @{ repo; id; status; why } of the root behind a
+#       refused ticket, or $null; passed to Get-PqRank as -HeadLift.
 
 . (Join-Path $PSScriptRoot 'registry.ps1')
 . (Join-Path $PSScriptRoot 'ledger-watch.ps1')
@@ -189,6 +192,42 @@ function Get-PqInboxChainRoot($Registry, $ByKey, $Snaps, [string] $RepoKey, [str
         $at = $next
     }
     return @{ pair = $at; state = 'cycle'; why = 'the blocker chain is longer than ten hops' }
+}
+
+# The root of the chain behind a ticket the dispatcher refused for an open blocker - the same walk the inbox prints, used
+# by the lift of Get-PqRank (-HeadLift; TASK-FLOW 0.38 section 16). -> $null when there is nothing to lift: the refusal is
+# not an open blocker, the chain cycles, names an unknown key or ends in a ticket that cannot be read. Else
+# @{ repo; id; status; why }, with why 'status' when the root stands in a status no robot works (Block*, Verified,
+# Archived: the picker would not offer it, so it is not asked) and '' otherwise. -Memo is shared across one walk and keyed
+# by the refusal's blocker, so many tickets behind one blocker cost one chain walk. It never throws: a failed walk is no lift.
+function Get-PqLiftTarget {
+    param([Parameter(Mandatory)]$Registry, [Parameter(Mandatory)]$Refusal, [hashtable] $Memo = $null, [hashtable] $Snapshots = $null)
+    if ($null -eq $Refusal -or [string]$Refusal['state'] -cne 'open') { return $null }
+    $blocker = [string]$Refusal['blocker']
+    if (-not $blocker.Contains(':')) { return $null }
+    if ($null -ne $Memo -and $Memo.ContainsKey($blocker)) { return $Memo[$blocker] }
+    $snaps = if ($null -ne $Snapshots) { $Snapshots } else { @{} }
+    $target = $null
+    try {
+        $byKey = @{}
+        foreach ($r in @($Registry.repos)) { $byKey[[string]$r.key] = $r }
+        $bKey, $bId = $blocker -split ':', 2
+        $root = Get-PqInboxChainRoot $Registry $byKey $snaps $bKey $bId
+        if ([string]$root.state -cnotin @('cycle', 'unknownKey', 'unreadable')) {
+            $rKey, $rId = ([string]$root.pair) -split ':', 2
+            if ($byKey.ContainsKey($rKey)) {
+                $t = Get-PqXrepoTicket $byKey[$rKey] $rId $snaps
+                if ($null -ne $t) {
+                    $st = [string]$t.status
+                    $why = if ($st -like 'Block*' -or $st -ceq 'Verified' -or $st -ceq 'Archived') { 'status' } else { '' }
+                    $target = @{ repo = $rKey; id = $rId; status = $st; why = $why }
+                }
+            }
+        }
+    }
+    catch { $target = $null }
+    if ($null -ne $Memo) { $Memo[$blocker] = $target }
+    return $target
 }
 
 # The full inbox. -Held: the set of "key:id" rows held in PORTFOLIO_QUEUE.md (may be $null).

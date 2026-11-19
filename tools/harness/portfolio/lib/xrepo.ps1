@@ -139,6 +139,14 @@ function Get-PqXrepoFilteredRank {
     while ($true) {
         $rank = & $Ranker ([string[]]@($blocked.Keys))
         $added = $false
+        # A ranker that carries the head filter (Get-PqNextRank -CheckXrepo does) refuses blocked heads inside its walk and
+        # lifts the root of their chain (TASK-FLOW 0.38 section 16); those refusals are listed here as well, without a
+        # re-rank, because the rank already left them out.
+        foreach ($hr in @($rank.headRefused)) {
+            if ($null -eq $hr) { continue }
+            $hk = "$($hr.repo):$($hr.id)"
+            if (-not $blocked.Contains($hk)) { $blocked[$hk] = $hr.refusal }
+        }
         foreach ($candidate in @($rank.candidates) + @($rank.plan)) {
             $key = "$($candidate.repo):$($candidate.id)"
             if ($blocked.Contains($key)) { continue }

@@ -403,6 +403,18 @@ empty: wait, see Waiting
   that is not in its ledger, or two tickets that block each other keep the ticket out, and the worker prints why
   (`ticket fms-web:S0040 waits on fms-a:S4470 (open: fms-a:S4470 is In Progress)`). Only `pq` reads the qualified form; the
   repository's own runner and a manual session ignore it, so such a ticket keeps its working status.
+- **The root of the chain is worked first** (TASK-FLOW 0.38, section 16). When a ticket is refused for an open blocker the
+  worker also walks to the end of the chain (the walk `pq inbox` prints under "chain": the blocker, then what holds the
+  blocker, qualified and local `Blocker:` tokens, at most ten hops) and offers that root in the refused ticket's place,
+  once per walk however many tickets wait on it (`rule=blockerLift` in `pq dry-run`, `dispatch.pick`). The root goes through
+  its own repository's picker like a queue row, so every gate stands: a project on hold or under a hold line of the queue
+  file, a stop, occupancy, the worker cap, the idle hold, the owner gate, a lease, and the statuses no robot works
+  (`Block*`, `Verified`, `Archived`). The printed line names the root and what became of it
+  (`ticket fms-web:S0040 waits on fms-a:S4470 (open: fms-a:S4470 is Approved); root fms-a:S4470 (Approved): not worked
+  (idle-hold)`), and
+  `pq dry-run` prints a `lift` line for each refused ticket. A root the gates refuse waits for its own cause (an edit of
+  its spec lifts the idle hold; a `BlockExternal` root moves when the outside party does), so the line is also the list of
+  what only you can unblock. The preview and the loop share the walk, so the dry-run shows the lift that will happen.
 - A ticket whose drop was lifted three times within an hour keeps coming back unmoved, so something rewrites its row after
   every pass: it stays dropped for an hour (`ticket.thrash`) and is tried again after.
 - `pq start -Drain` exits instead of waiting: 0 after at least one pass, 3 when nothing ran. `-MaxTickets N` ends the loop

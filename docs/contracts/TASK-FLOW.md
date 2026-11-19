@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Contract | `TASK-FLOW` |
-| Version | 0.37, draft |
+| Version | 0.39, draft |
 | Home | the shared contracts catalog, domain `task-flow/` (the path is in [CLAUDE.md](../../CLAUDE.md)) |
 | Role | **shared implementation, partial**: `tools/harness/` supplies the ticket tools, repository runner and day-0 scaffold; `tools/harness/portfolio/` supplies the S0015 dispatcher, registry, queue, rank and event log. Remaining portfolio features belong to S0016. The owner is `shared`, so this repository edits the contract only through the canon session |
 
@@ -167,6 +167,12 @@
 - 0.36 (2026-11-18, S0135): the run row no longer carries `built` (rules 23 and 46). The runner no longer reads the
   disclosure sentence; `pq report` counts "closed without a build" from the ticket ledgers against each repository's
   release ledger (`Get-RlClosedSinceBuild`, `Get-PqClosedUnbuilt`; case 11 of `tools/tests/release-ledger.tests.ps1`).
+- 0.38 (2026-11-19, owner order): the dispatcher works the root of a blocker chain (rule 52 amended, section 16).
+  `Get-PqRank -HeadLift` offers the root in the refused ticket's place through the repository's own picker, so every gate
+  of a queue row still applies; `Get-PqLiftTarget` (`portfolio/lib/inbox.ps1`) finds the root with the walk of `pq inbox`;
+  the loop, `pq dry-run` and `pq status -Next` pass it, and the printed line, `xrepo.resolve` and `dispatch.pick` name the
+  root and the outcome. Checked by `tools/tests/portfolio-blocker-lift.tests.ps1` (7 cases, fast) and a live `pq dry-run`;
+  the release-tier rank suites (`portfolio-queue`, `pq-rank-cost`, `portfolio-named-start`) were not run.
 - 0.37 (2026-11-19, S0152): one prefix migration per repository (rule 2, section 15). `spec_catalog/rename-prefix.ps1
   -Prefix <SIX> [-DryRun] [-AllRepos]` renames the open tickets inside the ledger lock and lists each old id in
   `formerIds`; the status tool, `close.ps1`, `complete.ps1`, `bulk-update.ps1`, `block-links.ps1` and the dispatcher's

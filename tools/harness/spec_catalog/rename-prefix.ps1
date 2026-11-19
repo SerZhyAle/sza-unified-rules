@@ -16,6 +16,10 @@
     Closed tickets keep their old ids; the burned list is not touched, so the next id continues after the highest old
     number. An old id stays a name of its ticket: the status tool, block-links.ps1 and the portfolio queue resolve it
     through `formerIds`.
+    With -Correct (TASK-FLOW 0.39, section 17) the same run changes a prefix that an earlier migration already wrote:
+    the owner ordered a different prefix after the repository had migrated. The tickets of the current shape that are
+    not Verified or Archived are renamed, the current pattern joins grammar.legacyTicketIdPatterns (the list grows, it
+    is never replaced), and `formerIds` gains the id the ticket carried before this run.
     Stop the portfolio robots for this repository before the run: a pass that holds a ticket open keeps its old path.
 .PARAMETER Prefix
     The new prefix: six characters, an upper-case letter then upper-case letters or digits (FMSAND, D2HTML).
@@ -23,9 +27,13 @@
     Print every change and write nothing.
 .PARAMETER AllRepos
     Also rewrite `<key>:<old id>` tokens in the specs of the other repositories of the portfolio registry.
+.PARAMETER Correct
+    Change a prefix that an earlier migration wrote (the owner's correction). Without it a repository that already
+    migrated is refused; with it a repository that has not migrated is refused.
 .NOTES
     Exit codes: 0 done (or nothing to do, or a dry run); 1 an error; 2 refused - a bad prefix, a repository that
-    already migrated, an id shape that cannot be renamed, a target file that exists, no profile file, or a newest
+    already migrated (no -Correct), -Correct on a repository that has not migrated, a prefix the repository carried
+    before, an id shape that cannot be renamed, a target file that exists, no profile file, or a newest
     installed sza plugin whose harness predates TASK-FLOW 0.37 (a dry run is not refused for that).
 #>
 [CmdletBinding(PositionalBinding = $false)]
@@ -33,6 +41,7 @@ param(
     [string] $Prefix,
     [switch] $DryRun,
     [switch] $AllRepos,
+    [switch] $Correct,
     [switch] $Help
 )
 
@@ -86,8 +95,15 @@ if (-not $DryRun) {
         }
     }
 }
-if (@(Get-SzaLegacyTicketIdSpecs).Count -gt 0) {
-    Stop-Rename "this repository already moved its prefix once (grammar.legacyTicketIdPatterns is set); TASK-FLOW rule 2 allows one migration."
+$legacySpecs = @(Get-SzaLegacyTicketIdSpecs)
+if ($legacySpecs.Count -gt 0 -and -not $Correct) {
+    Stop-Rename "this repository already moved its prefix once (grammar.legacyTicketIdPatterns is set); TASK-FLOW rule 2 allows one migration. The owner's correction of that prefix runs with -Correct (TASK-FLOW section 17)."
+}
+if ($Correct -and $legacySpecs.Count -eq 0) {
+    Stop-Rename "-Correct changes a prefix that an earlier migration wrote, and this repository has not migrated (grammar.legacyTicketIdPatterns is empty); run without -Correct."
+}
+foreach ($l in $legacySpecs) {
+    if ($l.prefix -ceq $newPrefix) { Stop-Rename "this repository carried the prefix $newPrefix before (grammar.legacyTicketIdPatterns); a correction does not return to it." }
 }
 $newPattern = '^' + [regex]::Escape($Prefix) + '-\d{' + $old.width + '}$'
 $oldCore = ($old.pattern -replace '^\^', '') -replace '\$$', ''
@@ -220,6 +236,10 @@ if ($renames.Count -eq 0 -and $DryRun) { Exit-CatalogLock; exit 0 }
 
 # 1. the profile
 $legacy = [System.Collections.Generic.List[string]]::new()
+if ($Correct) {
+    # The earlier shapes stay valid: the list grows by the pattern that is being replaced.
+    foreach ($p in @(Get-SzaProfileValue 'grammar.legacyTicketIdPatterns')) { if ($p -and -not $legacy.Contains([string]$p)) { $legacy.Add([string]$p) } }
+}
 $legacy.Add($old.pattern)
 $grammar['ticketIdPattern'] = $newPattern
 $grammar['legacyTicketIdPatterns'] = [string[]]$legacy.ToArray()
