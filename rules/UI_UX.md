@@ -6,7 +6,7 @@ same places, said in the same way. Where products cannot be identical, they must
 
 This page holds the **principles, the precedence and the tone**. The exact shapes - palette roles, glyph
 vocabulary, window behaviour, page layout - are shared contracts in the catalog (`APP-STYLE`,
-`APP-BEHAVIOUR`, `WINDOWS-UI`, `BUTTONS`, `ICON-SET`, `ICON-RENDER`, `PAGE-STYLE`, `CONTEXT-HELP`; see [CONTRACTS.md](CONTRACTS.md)) and are cited
+`APP-BEHAVIOUR`, `WINDOWS-UI`, `BUTTONS`, `ICON-SET`, `ICON-RENDER`, `PAGE-STYLE`, `CONTEXT-HELP`, `PRODUCT-IDENTITY`; see [CONTRACTS.md](CONTRACTS.md)) and are cited
 there by id and section, never copied here. Platform specifics are marked *(overlay)*.
 
 ## 1. The reference is FastMediaSorter Android
@@ -142,7 +142,7 @@ kit has none.
   in that contract. It takes precedence over the earlier Windows button recommendation and conflicting
   platform button styling. Useful semantic glyphs are required; obvious answers may be text-only.
   Buttons in one visual row share the tallest member's height; widths follow content and known states.
-  Permanent supported variants and temporary migration follow section 8.
+  Permanent supported variants and temporary migration follow section 9.
 - **Buttons support variable interface sizes** (`BUTTONS` section 8): compact through very large,
   with coherent shared geometry and vector scaling under `UI-SIZING`. Text-only accessibility enlargement
   need not enlarge icons proportionally; compact mode may reduce declared hit targets.
@@ -204,7 +204,29 @@ holds the principles.
   that counts them against it, and a window with no help says why.
 - **Help is not promotion.** No tracker, no remote font or script on a help page, no upsell inside it (§3).
 
-## 8. Making it hold
+## 8. One picture of the product, one approach to every picture
+
+A user who saw a product in a store, on its site or in a help page must find the same picture on the home screen, in
+the Start menu and in the window, and must find in the window the same small pictures the help page showed. The shared
+contract is `PRODUCT-IDENTITY`, beside the image contracts `ICON-SET` and `ICON-RENDER`; this section holds the
+principles.
+
+- **One master, every surface.** Each product keeps one vector drawing of its mark in the repository and generates
+  every picture of itself from it - the launcher and window icons, the MSIX logos, the store icon and feature graphic,
+  the favicons and social card, the site's identity block, the help page head, the family-map card - listed in one
+  manifest with their hashes. A store or season never gets a different drawing; an edition differs by colour or badge.
+- **The store icon is the installed icon.** What the user tapped in Play, the Microsoft Store or a marketplace is what
+  they then find on the device.
+- **A store screenshot is as honest as a help screenshot.** Taken by a script from the real build, in the listing's
+  language, regenerated, never edited; so the glyphs in it are the ones the build ships.
+- **A help page shows the product and the glyphs.** Its title carries the product's picture, and an element that has a
+  glyph shows that glyph beside its name.
+- **One approach, not one style, for every other picture.** Diagrams are kept as text source (Mermaid, DOT, PlantUML or
+  a script) and generated; they take glyphs, product marks and state colours from the shared library in the catalog;
+  they read in light and dark and in the page's language; what they show is also said in words; and every other image
+  has its origin and licence on record. How a diagram looks beyond that is the product's own choice.
+
+## 9. Making it hold
 
 - Approved permanent variants named by the shared UI contracts are recorded in the product's design
   or profile, without expiring exceptions. Missing mandatory behavior is temporary migration debt:

@@ -5,9 +5,9 @@
       "package": "sza",
       "flavor": "default",
       "kind": "release",
-      "version": "2026.1119.5",
-      "builtAt": "2026-11-19T21:19:31+01:00",
-      "note": "contrib 3, tools 2, root 1"
+      "version": "2026.1119.6",
+      "builtAt": "2026-11-19T23:40:34+01:00",
+      "note": "rules: README, UI_UX"
     }
   ]
 }
