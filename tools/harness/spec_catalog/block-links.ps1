@@ -148,18 +148,24 @@ function Read-BlForeignRecord([string] $Root, [string] $TicketId) {
         } catch { }
     }
     $needle = '"id":"' + $TicketId + '"'
-    foreach ($rel in @($journal, $archive)) {
-        $file = if ([IO.Path]::IsPathRooted($rel)) { $rel } else { Join-Path $Root $rel }
-        if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { continue }
-        # ReadAllLines: a foreach over ReadLines left by return keeps the foreign ledger open, and the child update.ps1
-        # this process starts in that repository is then refused its write.
-        foreach ($line in [IO.File]::ReadAllLines($file)) {
-            if ($line.IndexOf($needle, [StringComparison]::Ordinal) -lt 0) { continue }
-            try { $row = $line | ConvertFrom-Json } catch { continue }
-            if ([string](Get-BlProp $row 'id') -cne $TicketId) { continue }
-            $f = [string](Get-BlProp $row 'file')
-            $abs = if (-not $f) { $null } elseif ([IO.Path]::IsPathRooted($f)) { $f } else { Join-Path $Root ($f -replace '/', '\') }
-            return [pscustomobject]@{ id = $TicketId; status = [string](Get-BlProp $row 'status'); statusNote = [string](Get-BlProp $row 'statusNote'); file = $abs }
+    # TASK-FLOW 0.37: the second walk finds a ticket the prefix migration renamed, by its `formerIds`.
+    $alias = '"' + $TicketId + '"'
+    foreach ($byAlias in @($false, $true)) {
+        foreach ($rel in @($journal, $archive)) {
+            $file = if ([IO.Path]::IsPathRooted($rel)) { $rel } else { Join-Path $Root $rel }
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { continue }
+            # ReadAllLines: a foreach over ReadLines left by return keeps the foreign ledger open, and the child update.ps1
+            # this process starts in that repository is then refused its write.
+            foreach ($line in [IO.File]::ReadAllLines($file)) {
+                if ($line.IndexOf($(if ($byAlias) { $alias } else { $needle }), [StringComparison]::Ordinal) -lt 0) { continue }
+                try { $row = $line | ConvertFrom-Json } catch { continue }
+                if ($byAlias) {
+                    if (@(Get-BlProp $row 'formerIds') -notcontains $TicketId) { continue }
+                } elseif ([string](Get-BlProp $row 'id') -cne $TicketId) { continue }
+                $f = [string](Get-BlProp $row 'file')
+                $abs = if (-not $f) { $null } elseif ([IO.Path]::IsPathRooted($f)) { $f } else { Join-Path $Root ($f -replace '/', '\') }
+                return [pscustomobject]@{ id = [string](Get-BlProp $row 'id'); status = [string](Get-BlProp $row 'status'); statusNote = [string](Get-BlProp $row 'statusNote'); file = $abs }
+            }
         }
     }
     return $null
@@ -170,7 +176,7 @@ function Read-BlLocalRecord([string] $TicketId) {
     if (-not $r) { return $null }
     $f = [string](Get-BlProp $r 'file')
     $abs = if ($f) { Resolve-SpecPath -PathRef $f } else { $null }
-    return [pscustomobject]@{ id = $TicketId; status = [string]$r.status; statusNote = [string](Get-BlProp $r 'statusNote'); file = $abs }
+    return [pscustomobject]@{ id = [string]$r.id; status = [string]$r.status; statusNote = [string](Get-BlProp $r 'statusNote'); file = $abs }
 }
 
 function Read-BlText([string] $File) {

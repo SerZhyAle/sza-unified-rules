@@ -18,6 +18,7 @@ trap {
 . (Join-Path $PSScriptRoot '_lib.ps1')
 
 if (-not (Test-SzaTicketId $Id)) { throw "Invalid -Id '$Id' (must match $(Get-SzaTicketIdDisplay))." }
+$Id = Resolve-CatalogId -Id $Id   # TASK-FLOW 0.37: a former id names the renamed ticket
 
 $records = [System.Collections.Generic.List[object]]::new()
 # S1437: read -> mutate -> write is one critical section. Two processes holding the same

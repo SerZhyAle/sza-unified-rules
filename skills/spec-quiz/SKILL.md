@@ -23,7 +23,7 @@ in every project: finding the tickets, naming the right project, and the mechani
 /spec-quiz fms-web            every waiting ticket of that project
 /spec-quiz --all              every waiting ticket of every registered project, held or not, in registry rank order - one sitting
 /spec-quiz S0021 --dry        the questions that would be asked; nothing asked, nothing written, nothing moved
-/spec-quiz S0021 --assumed    the sitting plus the ticket's `### Assumed (unattended, <date>)` entries, listed for review and overrule
+/spec-quiz S0021 --assumed    the sitting plus the ticket's `### Assumed (unattended|attended, <date>)` entries, listed for review and overrule
 ```
 
 `--all` is the portfolio sitting, started from any folder - the `PQ Answer questions` shortcut and the PQShell button
@@ -118,8 +118,8 @@ Follow Quiz mode steps 2-8. The parts a project-independent skill must pin down:
   version**: research (next bullet) exactly as before 0.23 and leave the old block where it stands - neither it
   nor any other part of the ticket is edited on the way in.
 - **Research first.** The decision points are the reason note (`Q: ..?` questions and `DO: <action>` pre-implementation owner actions), every open research item and every unfilled owner input (including `- **DO:** <action>` lines under `### 3.3 Owner inputs (Approval gate)`) the note points at. What the ticket's own spec, the code, a contract in the catalog or a recorded decision settles is **not asked**: fill it in and list it as *resolved without asking*, with what settled it.
-- **`--assumed` lists the unattended assumptions.** With the flag, each ticket in scope has its
-  `### Assumed (unattended, <date>)` blocks read out of the spec file and printed: date, decision, what was taken,
+- **`--assumed` lists the pass assumptions.** With the flag, each ticket in scope has its
+  `### Assumed (unattended, <date>)` and `### Assumed (attended, <date>)` blocks read out of the spec file and printed: date, decision, what was taken,
   the alternative (Quiz mode step 2). The owner may overrule any entry in the sitting: the entry is marked
   `overruled <date>: <the owner's answer in quotes>` in place, the owner's value is written into the owner input or
   research item the assumption settled, and where a pass already built on the assumption - the ticket at

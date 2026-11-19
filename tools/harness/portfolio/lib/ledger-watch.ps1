@@ -280,6 +280,11 @@ function Read-PqLedgerFile($Snap, [string]$Path, [bool]$IsArchive) {
             priority = $priority
             file     = Get-PqLwText $row 'file'
         }
+        # TASK-FLOW 0.37: the old ids a prefix migration replaced, kept apart from `tickets` so the diff never sees them.
+        $former = Get-PqLwField $row 'formerIds'
+        if ($null -ne $former -and (Get-PqLwField $Snap 'aliases') -is [Collections.IDictionary]) {
+            foreach ($f in @($former)) { if ($f -is [string] -and $f.Length -gt 0 -and -not $Snap.aliases.ContainsKey($f)) { $Snap.aliases[$f] = $id } }
+        }
     }
 }
 
@@ -292,6 +297,7 @@ function Get-PqLedgerSnapshot {
         root        = $Paths.Root
         at          = $when
         tickets     = [Collections.Specialized.OrderedDictionary]::new([StringComparer]::Ordinal)
+        aliases     = [Collections.Generic.Dictionary[string, string]]::new([StringComparer]::Ordinal)
         bad         = 0
         ledgerRead  = $false
         archiveRead = $false

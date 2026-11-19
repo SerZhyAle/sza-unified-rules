@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Contract | `TASK-FLOW` |
-| Version | 0.36, draft |
+| Version | 0.37, draft |
 | Home | the shared contracts catalog, domain `task-flow/` (the path is in [CLAUDE.md](../../CLAUDE.md)) |
 | Role | **shared implementation, partial**: `tools/harness/` supplies the ticket tools, repository runner and day-0 scaffold; `tools/harness/portfolio/` supplies the S0015 dispatcher, registry, queue, rank and event log. Remaining portfolio features belong to S0016. The owner is `shared`, so this repository edits the contract only through the canon session |
 
@@ -167,6 +167,11 @@
 - 0.36 (2026-11-18, S0135): the run row no longer carries `built` (rules 23 and 46). The runner no longer reads the
   disclosure sentence; `pq report` counts "closed without a build" from the ticket ledgers against each repository's
   release ledger (`Get-RlClosedSinceBuild`, `Get-PqClosedUnbuilt`; case 11 of `tools/tests/release-ledger.tests.ps1`).
+- 0.37 (2026-11-19, S0152): one prefix migration per repository (rule 2, section 15). `spec_catalog/rename-prefix.ps1
+  -Prefix <SIX> [-DryRun] [-AllRepos]` renames the open tickets inside the ledger lock and lists each old id in
+  `formerIds`; the status tool, `close.ps1`, `complete.ps1`, `bulk-update.ps1`, `block-links.ps1` and the dispatcher's
+  ledger reader resolve an old id. Covered by `tools/tests/rename-prefix.tests.ps1` (4 cases, fast). No repository has
+  migrated; each runs the tool in its own adoption ticket after the release that ships it.
 - Rule 16 steps 2 and 3 have a caller from 2026-11-18 (canon ticket S0131): `spec_catalog/ship-package.ps1` runs
   `release-queue.ps1 -Ship` for every numbered ready block up to the marker, puts the marker on the next package
   and then runs `archive.ps1` for the `Verified` rows in neither plan file. The release skill calls it in Phase 8

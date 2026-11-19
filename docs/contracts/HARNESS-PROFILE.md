@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Contract | `HARNESS-PROFILE` |
-| Version | 0.19, draft; source reader verified at 0.13; rules 9 to 12, 14 and 15 implemented, rule 8 in part |
+| Version | 0.20, draft; source reader verified at 0.13; rules 9 to 12 and 14 to 16 implemented, rule 8 in part |
 | Home | the shared contracts catalog, domain `rule-adoption/` (the path is in [CLAUDE.md](../../CLAUDE.md)) |
 | Role | **consumer**, and the schema's owner. Each repository running the harness writes its own profile |
 
@@ -78,3 +78,7 @@
   `portfolio/spec-draft.ps1`, `spec_catalog/block-links.ps1`, the ledger check of `tools/check-compliance.ps1`),
   so a profile drops one of the eight keys only after they call the same function. Fast case:
   `tools/tests/portfolio-profile-override.tests.ps1`. The reader vectors are regenerated at the next release.
+- `grammar.legacyTicketIdPatterns` is optional (rule 16, the 2026-11-19 amendment, S0152): the id shapes before the one
+  prefix migration of TASK-FLOW 0.37, written only by `spec_catalog/rename-prefix.ps1`. `_profile.ps1` ships it empty;
+  `Test-SzaTicketId`, `ConvertTo-SzaTicketNumber`, `Get-SzaTicketIdFragment` and the rule-15 derivation read it.
+  Fast case: `tools/tests/rename-prefix.tests.ps1`. The reader vectors are regenerated at the next release.

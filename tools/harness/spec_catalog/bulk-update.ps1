@@ -43,6 +43,8 @@ $allRecords = [System.Collections.Generic.List[object]]::new()
 Enter-CatalogLock
 foreach ($r in (Read-Catalog)) { $allRecords.Add($r) }
 
+# TASK-FLOW 0.37: a former id of a ticket renamed by the prefix migration names that ticket.
+$Id = @($Id | ForEach-Object { if (Test-SzaTicketId $_) { Resolve-CatalogId -Id $_ } else { $_ } })
 $indexMap = @{}
 for ($i = 0; $i -lt $allRecords.Count; $i++) {
     $indexMap[$allRecords[$i].id] = $i

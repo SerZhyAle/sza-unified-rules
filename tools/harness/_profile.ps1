@@ -104,6 +104,10 @@ $Script:SzaProfileDefaults = [ordered]@{
         ticketIdPattern  = '^S\d{4}$'
         specFilePattern  = '^PLAN/(archive/)?S\d{4}_(?!spec_)'
         specFileTemplate = 'PLAN/{0}_{1}.md'
+        # TASK-FLOW 0.37 (rule 2), HARNESS-PROFILE 0.20: the id shapes this repository used before its one prefix
+        # migration (spec_catalog/rename-prefix.ps1). An id of such a shape still validates and still counts for the
+        # next number; a new id is always allocated in ticketIdPattern. Empty: the repository never migrated.
+        legacyTicketIdPatterns = @()
         statusVocabulary = @('Draft', 'Approved', 'Tactical', 'In Progress', 'Implemented', 'Verified',
             'Partial', 'Broken', 'BlockByOtherTask', 'BlockNeedUserTest', 'BlockQuestions', 'BlockExternal', 'Archived')
     }
@@ -306,7 +310,8 @@ function Get-SzaDerivedDefaults {
         id pattern) is left out and the caller keeps the shipped literal. paths.probeBaseline is deliberately not
         derived: a repository keeps that file where it already is.
     #>
-    param([AllowEmptyString()][string]$SpecsDir, [AllowEmptyString()][string]$SpecArchiveDir, [AllowEmptyString()][string]$TicketIdPattern)
+    param([AllowEmptyString()][string]$SpecsDir, [AllowEmptyString()][string]$SpecArchiveDir, [AllowEmptyString()][string]$TicketIdPattern,
+        [AllowEmptyCollection()][string[]]$LegacyTicketIdPatterns = @())
     $out = [ordered]@{ paths = [ordered]@{}; grammar = [ordered]@{} }
     $specs = ([string]$SpecsDir).Replace('\', '/').Trim().TrimEnd('/')
     if (-not $specs) { return $out }
@@ -318,6 +323,9 @@ function Get-SzaDerivedDefaults {
     $template = [string]$Script:SzaProfileDefaults.grammar.specFileTemplate
     if ($template.StartsWith($shipped, [System.StringComparison]::Ordinal)) { $out.grammar['specFileTemplate'] = $specs + '/' + $template.Substring($shipped.Length) }
     $core = (([string]$TicketIdPattern).Trim() -replace '^\^', '') -replace '\$$', ''
+    # TASK-FLOW 0.37: a migrated repository keeps the files of its closed tickets under their old ids.
+    $legacyCores = @(@($LegacyTicketIdPatterns) | ForEach-Object { (([string]$_).Trim() -replace '^\^', '') -replace '\$$', '' } | Where-Object { $_ })
+    if ($core -and $legacyCores.Count -gt 0) { $core = '(?:' + ((@($core) + $legacyCores) -join '|') + ')' }
     if ($core) {
         $archive = ([string]$SpecArchiveDir).Replace('\', '/').Trim().TrimEnd('/')
         $head = '^' + [regex]::Escape($specs) + '/'
@@ -338,7 +346,8 @@ function Add-SzaDerivedDefaults {
     param($Merged, $Declared)
     if (-not ($Merged -is [System.Collections.IDictionary])) { return }
     if (-not ($Merged['paths'] -is [System.Collections.IDictionary]) -or -not ($Merged['grammar'] -is [System.Collections.IDictionary])) { return }
-    $derived = Get-SzaDerivedDefaults -SpecsDir ([string]$Merged['paths']['specsDir']) -SpecArchiveDir ([string]$Merged['paths']['specArchiveDir']) -TicketIdPattern ([string]$Merged['grammar']['ticketIdPattern'])
+    $derived = Get-SzaDerivedDefaults -SpecsDir ([string]$Merged['paths']['specsDir']) -SpecArchiveDir ([string]$Merged['paths']['specArchiveDir']) -TicketIdPattern ([string]$Merged['grammar']['ticketIdPattern']) `
+        -LegacyTicketIdPatterns ([string[]]@(@($Merged['grammar']['legacyTicketIdPatterns']) | Where-Object { $_ }))
     foreach ($section in 'paths', 'grammar') {
         $own = $null
         if (Test-SzaHasProperty -Object $Declared -Name $section) { $own = $Declared.$section }
@@ -797,8 +806,10 @@ function Get-SzaTicketIdFragment {
     .SYNOPSIS
         The ticket-id pattern without its ^ and $ anchors, for embedding in a larger regex.
     #>
-    $p = [string](Get-SzaProfileValue 'grammar.ticketIdPattern')
-    return ($p -replace '^\^', '') -replace '\$$', ''
+    # TASK-FLOW 0.37: after a prefix migration the fragment is a group of every shape, so the old ids still match.
+    $cores = @((Get-SzaTicketIdPatterns) | ForEach-Object { ($_ -replace '^\^', '') -replace '\$$', '' })
+    if ($cores.Count -eq 1) { return $cores[0] }
+    return '(?:' + ($cores -join '|') + ')'
 }
 
 function Test-SzaTicketId {
@@ -808,7 +819,35 @@ function Test-SzaTicketId {
         Case-insensitive, as the -match it replaces always was.
     #>
     param([AllowNull()][AllowEmptyString()][string]$Id)
-    return [regex]::IsMatch([string]$Id, [string](Get-SzaProfileValue 'grammar.ticketIdPattern'), [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    foreach ($p in (Get-SzaTicketIdPatterns)) {
+        if ([regex]::IsMatch([string]$Id, $p, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)) { return $true }
+    }
+    return $false
+}
+
+function Get-SzaTicketIdPatterns {
+    <#
+    .SYNOPSIS
+        Every id shape this repository has carried: grammar.ticketIdPattern first, then grammar.legacyTicketIdPatterns
+        (TASK-FLOW 0.37 rule 2 - a prefix migration keeps the old ids of closed tickets and the aliases of renamed ones).
+    #>
+    $out = [System.Collections.Generic.List[string]]::new()
+    $out.Add([string](Get-SzaProfileValue 'grammar.ticketIdPattern'))
+    foreach ($p in @(Get-SzaProfileValue 'grammar.legacyTicketIdPatterns')) {
+        if ($p -and -not $out.Contains([string]$p)) { $out.Add([string]$p) }
+    }
+    # Enumerated on purpose: every caller wraps the call in @() or walks it with foreach.
+    return $out.ToArray()
+}
+
+function Get-SzaLegacyTicketIdSpecs {
+    <# Prefix and width of each legacy id shape of the allocatable form '^<prefix>\d{N}$'; another form is skipped. #>
+    $out = [System.Collections.Generic.List[object]]::new()
+    foreach ($p in @(Get-SzaProfileValue 'grammar.legacyTicketIdPatterns')) {
+        $m = [regex]::Match([string]$p, '^\^(?<prefix>[A-Za-z][A-Za-z0-9-]*)\\d\{(?<width>[1-9][0-9]*)\}\$$')
+        if ($m.Success) { $out.Add([pscustomobject]@{ pattern = [string]$p; prefix = $m.Groups['prefix'].Value; width = [int]$m.Groups['width'].Value }) }
+    }
+    return $out.ToArray()
 }
 
 function Get-SzaTicketIdSpec {
@@ -840,6 +879,11 @@ function ConvertTo-SzaTicketNumber {
     $spec = Get-SzaTicketIdSpec
     $m = [regex]::Match([string]$Id, '^' + [regex]::Escape($spec.prefix) + '(?<n>\d{' + $spec.width + '})$', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
     if ($m.Success) { return [int]$m.Groups['n'].Value }
+    # TASK-FLOW 0.37: an id of a legacy shape keeps its number, so the next id continues after it.
+    foreach ($l in (Get-SzaLegacyTicketIdSpecs)) {
+        $m = [regex]::Match([string]$Id, '^' + [regex]::Escape($l.prefix) + '(?<n>\d{' + $l.width + '})$', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+        if ($m.Success) { return [int]$m.Groups['n'].Value }
+    }
     return $null
 }
 

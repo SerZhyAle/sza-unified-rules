@@ -80,13 +80,14 @@ is the contract the audit later checks the build against.
   ([CONTRACTS.md](../../rules/CONTRACTS.md) §4). The `contract-sync` skill does the catalog side.
 - Every *required* research item is closed. An open required item **stops the pipeline** - this is an encoded
   stop, not a judgement call.
-- Every user-facing placement, visibility, or fallback decision is resolved. Surface UI ambiguity before
-  implementing; never guess. (But do not ask what the architecture already answers - research it and
-  recommend.) In an **unattended pass** the researched recommendation is taken, not asked: a choice that is
-  reversible inside the ticket is recorded under `### Assumed (unattended, <date>)` with the alternative it
-  was weighed against and "owner may overrule", and the pass goes on. What stays an owner decision even
-  unattended: one-way and outward steps (publish, release, store submit), contract changes, scope, money,
-  and facts only the owner knows.
+- Every user-facing placement, visibility, or fallback decision is resolved - by research, not by a guess
+  and not by a question (S0153). In **every pass, attended or unattended**, the researched recommendation
+  is taken, not asked: search the repository, the canon, the contracts catalog and official documentation
+  online, take the most obvious answer they support, and record a choice that is reversible inside the
+  ticket under `### Assumed (unattended, <date>)` or `### Assumed (attended, <date>)` with the alternative
+  it was weighed against and "owner may overrule"; the final report names each in one line, and the pass
+  goes on. What stays an owner decision: one-way and outward steps (publish, release, store submit),
+  contract changes, scope, money, and facts only the owner knows.
 - The ticket has one authoritative record with an id and a first-line **Status:**, mutated only through its
   tool where one exists - a catalog CLI, a journal - never hand-edited.
 - The ticket's `**Complexity:**` line exists and was **rewritten at this spec pass**, confirmation included:
@@ -195,11 +196,11 @@ nothing from each other, the plan pass writes `**Parallel:** <those phases>` bel
 1. Re-read the step; verify its declared dependency step is done.
 2. Confirm every symbol the step references **actually exists at the stated path**. If not, abort - never
    invent a path.
-3. Ambiguity check: any `<TODO>`, `<choose..>` or `???` is a hard stop. In an attended pass set
-   `BlockQuestions` with the open question as its reason note - do not guess; the answer arrives through
-   Quiz mode, not from you. In an **unattended pass** a decision with a researched, ticket-reversible
-   recommendation is taken and recorded under `### Assumed (unattended, <date>)` (with the alternative and
-   "owner may overrule") instead of blocking. `BlockQuestions` stays for one-way and outward steps,
+3. Ambiguity check: any `<TODO>`, `<choose..>` or `???` stops the step until it is decided. In **every
+   pass, attended or unattended** (S0039, S0153), a decision with a researched, ticket-reversible
+   recommendation is taken and recorded under `### Assumed (unattended, <date>)` or
+   `### Assumed (attended, <date>)` (with the alternative and "owner may overrule") instead of blocking or
+   asking. `BlockQuestions` stays for one-way and outward steps,
    contract changes, scope, money, facts only the owner knows (whose reason note is a literal `Q: ..?`
    token), and pre-implementation owner actions on a device, at the desk, or in an outside console account
    (recorded as `- **DO:** <action>` in `### 3.3 Owner inputs (Approval gate)` and a literal `DO: <action>`
@@ -476,5 +477,6 @@ Chat in Russian; write files, code, comments, logs, commit messages and script c
 including build and release scripts only the owner ever sees. Dry and concise, high autonomy: run searches,
 builds and CLI chores without asking, background long jobs and keep working, flag blockers up front. No
 trailing "what I did" summary - the diff speaks. Push back once with evidence if a call looks wrong, then
-execute it cleanly. Reserve questions for genuine forks the owner must own: scope, product intent, UI
-ambiguity.
+execute it cleanly. Take the researched recommendation instead of asking and name it in one line of the
+report; reserve questions for the owner-owned forks - one-way and outward steps, contract changes, scope,
+money, facts only the owner knows.

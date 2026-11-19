@@ -104,6 +104,12 @@ function Get-IdPattern([string] $Root) {
             if ($g -and $g.Value) {
                 $v = $g.Value.PSObject.Properties['ticketIdPattern']
                 if ($v -and [string]$v.Value) { $pattern = [string]$v.Value }
+                # TASK-FLOW 0.37: the id shapes of the repository before its prefix migration still name its tickets.
+                $l = $g.Value.PSObject.Properties['legacyTicketIdPatterns']
+                if ($l -and $l.Value) {
+                    $all = @($pattern) + @(@($l.Value) | Where-Object { $_ } | ForEach-Object { [string]$_ })
+                    $pattern = '(?:' + ($all -join ')|(?:') + ')'
+                }
             }
         }
         catch { }

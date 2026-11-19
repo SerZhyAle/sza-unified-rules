@@ -14,7 +14,13 @@ What each package was built as last, what each channel carries, and every public
 
 | Package | Flavor | Kind | Version | Built | Artifact |
 | --- | --- | --- | --- | --- | --- |
-| sza | default | release | 2026.1119.1 | 2026-11-19 01:47:53+01:00 | - |
+| sza | default | release | 2026.1119.2 | 2026-11-19 10:11:08+01:00 | - |
+
+## Built, not published
+
+| Package | Flavor | Version | Built | Days |
+| --- | --- | --- | --- | --- |
+| sza | default | 2026.1119.2 | 2026-11-19 | 0 |
 
 ## History
 

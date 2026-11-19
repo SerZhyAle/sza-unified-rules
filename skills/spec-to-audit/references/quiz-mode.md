@@ -15,7 +15,7 @@ any project and carries the mechanics; the procedure below is its authority.
 2. **Extract the decision points**: the questions (`Q: ..?`) and pre-implementation owner actions
    (`DO: <action>`) in the block's reason note, plus every open research item and unfilled owner input
    (including `- **DO:** <action>` lines in `### 3.3 Owner inputs (Approval gate)`) that note points at. On request (`--assumed`) the sitting also lists the
-   ticket's `### Assumed (unattended, <date>)` entries - each with what was taken, the alternative it was
+   ticket's `### Assumed (unattended, <date>)` and `### Assumed (attended, <date>)` entries - each with what was taken, the alternative it was
    weighed against and the date - so the owner can review and overrule them in the same sitting. An
    overrule is an answer of step 5's kind: the entry is marked `overruled <date>` with the owner's answer,
    the owner's value is written into the owner input or research item the assumption settled, and where a
@@ -43,8 +43,8 @@ any project and carries the mechanics; the procedure below is its authority.
    shown as one table - question, recommended answer, consequence - with one owner choice over it: accept all,
    pick the exceptions, or one by one (S0026). Accepting the table is the owner's answer to every row, given
    by the owner's click; nothing is accepted without it. The questions that arrive here are the
-   owner-owned ones only: since S0039 an unattended pass takes a researched, ticket-reversible
-   recommendation itself and records it under `### Assumed (unattended, <date>)`, so a reversible default
+   owner-owned ones only: since S0039 (S0153 for attended passes) every pass takes a researched,
+   ticket-reversible recommendation itself and records it under `### Assumed (...)`, so a reversible default
    no longer reaches this sitting as a question. What does arrive is still answered by the owner - in the
    reference sitting the owner chose something other than the default in 3 of 15 answers - and the
    recommendation never replaces a question that earned its place here. **After each round, re-apply the

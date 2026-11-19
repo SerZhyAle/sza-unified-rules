@@ -601,7 +601,7 @@ $script:PqProviders = @(
     # `also` names the provider's further records, each a model with its own quota (rule 42 gives a non-Claude agent one
     # fixed model, so a second model is a second record): they follow the first in the order, and the next one takes the
     # ticket only while the earlier is at its limit.
-    @{ id = 'gemini'; agent = 'gemini'; also = @('gemini-argon'); label = 'Google (Gemini)'; aliases = @('gemini', 'google') }
+    @{ id = 'gemini'; agent = 'gemini'; also = @('gemini-argon', 'gemini-claude'); label = 'Google (Gemini)'; aliases = @('gemini', 'google', 'antigravity', 'agy') }
     @{ id = 'zai'; agent = 'zai'; label = 'z.ai (GLM)'; aliases = @('zai', 'glm', 'zcode', 'zhipu') }
     # Mistral's own subscription (admin.mistral.ai/subscription), used through the Mistral Vibe VS Code extension: the same
     # GLM-5.3 as z.ai, hosted by Mistral, with its own "Vibe budget".
@@ -737,16 +737,21 @@ function New-PqProviderRecord([string]$Id, [string]$Agent = '') {
             }
         }
         'gemini' {
-            # Hydrogen is Google's model for everyday coding and agent work (fast, cheap, the successor of 3.8 Flash) and
-            # takes every ticket; Argon, the deeper and costlier model, is the second record and works only while Hydrogen's
-            # quota is spent.
-            $isArgon = ($Agent -ceq 'gemini-argon')
+            # One agy sign-in, three quota pools (Antigravity "Models & Usage"): the Gemini models, Gemini 4 Argon on its own,
+            # and the Claude and GPT models. Hydrogen is Google's model for everyday coding and agent work (fast, cheap, the
+            # successor of 3.8 Flash) and takes every ticket; Argon, the deeper and costlier model, is the second record and
+            # works only while Hydrogen's quota is spent; Claude Sonnet 5.5 from the third pool is the last record and works
+            # only while Argon's is spent too. Sonnet, not Opus, so the shared Claude and GPT weekly pool lasts.
+            $model = 'gemini-4-hydrogen-high'
+            $recName = 'gemini'
+            if ($Agent -ceq 'gemini-argon') { $recName = 'gemini-argon'; $model = 'gemini-4-argon-high' }
+            elseif ($Agent -ceq 'gemini-claude') { $recName = 'gemini-claude'; $model = 'claude-sonnet-5-5-high' }
             $rec = [ordered]@{
-                name = $(if ($isArgon) { 'gemini-argon' } else { 'gemini' }); command = $cli.command
-                # The model slug carries the effort (agy models). Each model has its own quota.
+                name = $recName; command = $cli.command
+                # The model slug carries the effort (agy models). Each pool has its own quota.
                 argsTemplate = @($cli.prefix) + @('--model', '{model}', '--dangerously-skip-permissions', '--print', '{prompt}')
                 headlessMatch = '(?i)agy(\.exe)?"?\s.*(-p|--print|--prompt)\b'; promptForm = 'file'
-                model = $(if ($isArgon) { 'gemini-4-argon-high' } else { 'gemini-4-hydrogen-high' }); effort = 'default'; maxParallel = 2; contractFile = 'GEMINI.md'
+                model = $model; effort = 'default'; maxParallel = 2; contractFile = 'GEMINI.md'
                 # Seen on 2026-10-29: "Individual quota reached. .. Resets in 57h10m24s." (RESOURCE_EXHAUSTED, exit 3).
                 limitDetector = [ordered]@{ kind = 'exitText'; pattern = '(?i)quota reached|resource_exhausted|usage limit|rate limit|credits? (are )?(exhausted|exceeded)'; status = 'unproven' }
             }

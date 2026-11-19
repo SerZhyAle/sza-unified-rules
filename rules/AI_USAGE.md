@@ -25,15 +25,20 @@ shares. Reconciled against the portfolio; per-project records in `contrib/`.
   the reason section 5 gives.
 - **Don't ask what the architecture already answers.** If a convention, flavor hierarchy, or contract
   decides the question, research it and recommend - don't kick it back to the owner. Reserve questions
-  for genuine forks the owner must own (scope, product intent, UI ambiguity).
-- **An unattended pass assumes the reversible recommended answer.** In a headless pass a choice that is
-  reversible inside the ticket and has a researched recommendation is not asked: it is taken and recorded
-  under `### Assumed (unattended, <date>)` with the alternative it was weighed against and "owner may
-  overrule", and the pass goes on (S0039; measured there: 21% of unattended passes ended in
-  `BlockQuestions`, and in 38 quiz sittings the owner took the robot's first option in 89% of the
-  answers). `BlockQuestions` stays for one-way and outward steps (publish, release, store submit),
-  contract changes, scope, money, facts only the owner knows, and owner actions that must happen before
-  implementation; which Block status fits a wait and what its note carries is
+  for the owner-owned decisions listed in the next bullet.
+- **Every pass takes the recommended answer instead of asking** - attended or unattended (S0039 for the
+  queue, S0153 for every session). A choice that is reversible inside the ticket is researched and then
+  taken: first the repository (its rules file, code, docs, tickets), then the canon and the contracts
+  catalog, then official documentation online; the most obvious answer that research supports is the
+  recommendation. The agent then proves its own work on the cheapest rung that matches the risk, inside the
+  5 s line ([TESTING_AND_QA.md](TESTING_AND_QA.md) §2), and goes on. Each assumption is recorded in the
+  ticket under `### Assumed (unattended, <date>)` or `### Assumed (attended, <date>)` with the alternative
+  it was weighed against and "owner may overrule", and named in one line of the final report, so the owner
+  comes back for the rare exception instead of answering the common case (measured in S0039: 21% of
+  unattended passes ended in `BlockQuestions`, and in 38 quiz sittings the owner took the first option in
+  89% of the answers). Only these stay questions: one-way and outward steps (publish, release, store
+  submit), contract changes, scope, money, facts only the owner knows, and owner actions that must happen
+  before implementation; which Block status fits a wait and what its note carries is
   [DEVELOPMENT.md](DEVELOPMENT.md) §8. A slow run is never asked about either: it is a release item, not a
   question.
 - **Never ask the owner about bookkeeping** - a ticket's status, a carrier token, archival, a queue
@@ -54,9 +59,9 @@ shares. Reconciled against the portfolio; per-project records in `contrib/`.
 - **Never put an agent inference in the owner's voice.** Only the owner's verbatim words are attributed to
   the owner; everything else is labelled a hypothesis. An inference the owner denies is retracted with "do
   not re-derive this".
-- **Surface UI placement/visibility/fallback ambiguity before implementing** - don't guess a
-  user-facing decision; research it, and unattended take the researched reversible one under
-  `### Assumed (unattended, <date>)` rather than ask.
+- **A UI placement, visibility or fallback decision is researched, not guessed and not asked** - the
+  product's existing screens, the compass in [AUTHOR.md](AUTHOR.md) and the platform's guidelines decide
+  it, and the researched reversible answer is taken and recorded under `### Assumed` like any other.
 - **Push back once, then obey.** If the owner's call looks wrong, argue the case once with evidence;
   if they hold, execute their decision cleanly.
 

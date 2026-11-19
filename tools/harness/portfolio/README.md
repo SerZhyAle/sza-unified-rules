@@ -451,7 +451,7 @@ You choose who spends tokens, and in what order. Five providers are known:
 | --- | --- | --- |
 | `openai` | `codex` | the Codex CLI (`npm install -g @openai/codex`) |
 | `anthropic` | `claude` | Claude Code on PATH |
-| `gemini` | `gemini`, `gemini-argon` | Antigravity CLI `agy` (`irm https://antigravity.google/cli/install.ps1 \| iex`), signed in with Google; it reuses the Antigravity sign-in. The Gemini CLI no longer serves personal Google sign-ins (closed 2026-06-18) |
+| `gemini` (also `antigravity`, `agy`) | `gemini`, `gemini-argon`, `gemini-claude` | Antigravity CLI `agy` (`irm https://antigravity.google/cli/install.ps1 \| iex`), signed in with Google; it reuses the Antigravity sign-in. The Gemini CLI no longer serves personal Google sign-ins (closed 2026-06-18) |
 | `zai` | `zai` | Claude Code and the user environment variable `ZAI_API_KEY` (a key from z.ai/manage-apikey); the pass is Claude Code pointed at z.ai's Anthropic-compatible endpoint |
 | `mistral` | `mistral` | the **Mistral Vibe** extension in VS Code, signed in (the subscription at admin.mistral.ai/subscription); the pass is `vibe-acp-pass.ps1` driving the extension's `vibe-acp.exe` |
 
@@ -503,20 +503,28 @@ the GLM model itself (`glm-5.3`) and pins Claude Code's `opus`, `sonnet` and `ha
 the console, the events log and the transcript all say `opus` and nothing shows which GLM model ran. `GET
 https://api.z.ai/api/anthropic/v1/models` lists the names the account accepts; `model` in the record switches it.
 Gemini runs as `agy --model <slug> --dangerously-skip-permissions --print`, and a non-Claude
-agent has one fixed model (rule 42), so the provider is two records that follow each other in the order: `gemini` runs
-`gemini-4-hydrogen-high` - Google's model for everyday coding and agent work, fast and cheap - and takes every ticket;
-`gemini-argon` runs `gemini-4-argon-high`, the deeper and costlier one, and takes a ticket only while Hydrogen's quota is
-spent. Each model has its own quota, so each record has its own limit hold. The slug carries the effort, `agy models`
-lists the others, and `model` in a record switches it. For `pq agents` and the Providers dialog the two are one provider:
-`-Order` keeps them together, `-Release gemini` clears both holds, and the row shows the provider held only when both
-are. ZCode's own CLI is not used: it needs the desktop app's runtime files.
+agent has one fixed model (rule 42), so the provider is three records that follow each other in the order, one per quota
+pool of Antigravity's *Models & Usage* page: `gemini` runs `gemini-4-hydrogen-high` - Google's model for everyday coding
+and agent work, fast and cheap, the "Gemini Models" pool - and takes every ticket; `gemini-argon` runs
+`gemini-4-argon-high`, the deeper and costlier one, which has a pool of its own, and takes a ticket only while Hydrogen's
+quota is spent; `gemini-claude` runs `claude-sonnet-5-5-high` from the "Claude and GPT models" pool and takes a ticket only
+while Argon's quota is spent too (Sonnet rather than `claude-opus-5-5-high`, so that shared weekly pool lasts;
+`gpt-oss-120b-medium`, the pool's open-weights model, is not shipped as a record). Each pool has its own quota, so each
+record has its own limit hold. The slug carries the effort, `agy models` lists the others, and `model` in a record
+switches it. For `pq agents` and the Providers dialog the three are one provider: `-Order` keeps them together,
+`-Release gemini` clears all holds, and the row shows the provider held only when all of them are. A registry written
+before `gemini-claude` existed keeps working as it is; `pq agents -Order <the current providers>` adds the missing record
+(and leaves every record that exists, its grade routes included, untouched). ZCode's own CLI is not used: it needs the
+desktop app's runtime files.
 
 The z.ai pattern follows z.ai's error code list (1308, 1310, 1316-1321 `Usage limit reached` / `Limit Exhausted`, 1113
 `Insufficient balance`, 1302 `Rate limit reached`); its observed limit message and reset time are recognized with the
 shipped `+08:00` offset, and its detector is marked `proven`. A real z.ai pass that advances a ticket remains unverified.
 The Gemini pattern matches agy's observed `Individual quota reached. .. Resets in 57h10m24s.` message
 (`RESOURCE_EXHAUSTED`, exit 3), whose reset time is read. Gemini has advanced a ticket, but its shipped detector remains
-`unproven`. When no reset time can be read, the provider is retried after `limitPollMinutes`.
+`unproven`. `gemini-claude` shares that pattern and has not yet run a real pass: the slug is the one `agy models` lists
+(checked 2026-11-19), and the first ticket it takes proves the sign-in, the pool and the limit text. When no reset time
+can be read, the provider is retried after `limitPollMinutes`.
 
 Mistral Vibe has no `vibe -p`: the extension's only binary is `vibe-acp.exe`, an Agent Client Protocol server on stdio.
 [vibe-acp-pass.ps1](vibe-acp-pass.ps1) is the smallest client that runs one prompt to its end - initialize, a session in

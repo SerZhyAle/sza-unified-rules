@@ -198,8 +198,9 @@ function Assert-Record {
             throw "Record field '$f' is empty."
         }
     }
-    if ($Record.id -notmatch $script:IdPattern) {
-        throw "Invalid id '$($Record.id)' - must match $script:IdPattern."
+    # TASK-FLOW 0.37: a migrated repository keeps the old ids of its closed tickets, so a legacy shape still validates.
+    if (-not (Test-SzaTicketId ([string]$Record.id))) {
+        throw "Invalid id '$($Record.id)' - must match $((Get-SzaTicketIdPatterns) -join ' or ')."
     }
     # S1504: a ticket name is a slug or a short title - a quote, a backslash or a control character
     # can only arrive from a mis-bound argument fragment, which is how S1474 was silently renamed
@@ -1330,14 +1331,41 @@ function New-CatalogId {
 function Find-Record {
     # Resolve by id against the active journal, falling back to the archive
     # journal on a miss so archived tickets stay reachable transparently.
+    # TASK-FLOW 0.37: an id a prefix migration replaced resolves to the record that carries it in `formerIds`.
     param([Parameter(Mandatory)][string] $Id)
-    foreach ($r in (Read-JsonlFile -Path $script:CatalogPath)) {
+    $active = Read-JsonlFile -Path $script:CatalogPath
+    $archived = Read-JsonlFile -Path $script:ArchivePath
+    foreach ($r in $active) {
         if ($r.id -eq $Id) { return $r }
     }
-    foreach ($r in (Read-JsonlFile -Path $script:ArchivePath)) {
+    foreach ($r in $archived) {
         if ($r.id -eq $Id) { return $r }
+    }
+    foreach ($r in @($active) + @($archived)) {
+        if (Test-RecordFormerId -Record $r -Id $Id) { return $r }
     }
     return $null
+}
+
+function Test-RecordFormerId {
+    # Whether a record lists the id among the old ids a prefix migration gave it (the optional field `formerIds`).
+    param($Record, [string] $Id)
+    if ($null -eq $Record -or -not $Id) { return $false }
+    $p = $Record.PSObject.Properties['formerIds']
+    if ($null -eq $p -or $null -eq $p.Value) { return $false }
+    foreach ($f in @($p.Value)) { if ([string]$f -ieq $Id) { return $true } }
+    return $false
+}
+
+function Resolve-CatalogId {
+    # The current id for an id or a former id (TASK-FLOW 0.37). An id no record carries is returned unchanged, so the
+    # caller's own "not found" message still names what was asked for.
+    param([Parameter(Mandatory)][string] $Id)
+    foreach ($r in (Read-JsonlFile -Path $script:CatalogPath)) { if ($r.id -eq $Id) { return [string]$r.id } }
+    foreach ($r in (Read-JsonlFile -Path $script:ArchivePath)) { if ($r.id -eq $Id) { return [string]$r.id } }
+    $hit = Find-Record -Id $Id
+    if ($null -ne $hit) { return [string]$hit.id }
+    return $Id
 }
 
 function Resolve-SpecPath {

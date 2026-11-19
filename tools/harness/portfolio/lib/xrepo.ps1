@@ -71,7 +71,10 @@ function Get-PqXrepoTicket($Repo, [string]$Id, [hashtable]$Snapshots) {
         try { $Snapshots[$key] = Get-PqLedgerSnapshot -RepoPath ([string]$Repo.path) } catch { $Snapshots[$key] = $null }
     }
     $snap = $Snapshots[$key]
-    if ($null -eq $snap -or -not $snap.complete -or -not $snap.tickets.Contains($Id)) { return $null }
+    if ($null -eq $snap -or -not $snap.complete) { return $null }
+    # TASK-FLOW 0.37: a former id resolves to the ticket the prefix migration renamed.
+    if (-not $snap.tickets.Contains($Id) -and $snap.PSObject.Properties['aliases'] -and $snap.aliases.ContainsKey($Id)) { $Id = $snap.aliases[$Id] }
+    if (-not $snap.tickets.Contains($Id)) { return $null }
     $t = $snap.tickets[$Id]
     $file = if ($t.file) { Resolve-PqRepoPathValue $snap.root ([string]$t.file) } else { $null }
     $note = Get-PqXrepoStatusNote $snap.root $Id $Snapshots

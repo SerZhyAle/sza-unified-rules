@@ -43,6 +43,9 @@ trap {
 . (Join-Path $PSScriptRoot '_lib.ps1')
 
 if (-not (Test-SzaTicketId $Id)) { throw "Invalid -Id '$Id' (must match $(Get-SzaTicketIdDisplay))." }
+# TASK-FLOW 0.37: an old id of a ticket renamed by the prefix migration names the same ticket.
+$resolvedId = Resolve-CatalogId -Id $Id
+if ($resolvedId -cne $Id) { Write-Host "update: $Id is a former id of $resolvedId" -ForegroundColor DarkGray; $Id = $resolvedId }
 if ($PSBoundParameters.ContainsKey('Priority')) {
     if ($Priority -lt 0 -or $Priority -gt 100) {
         throw "Invalid -Priority '$Priority' (must be 0..100)."

@@ -22,6 +22,7 @@
     {"path":"tools/tests/portfolio-limit-reset.tests.ps1","tier":"fast","seconds":0.8,"measured":"2026-11-18","covers":"S0035: provider limit holds and the reset-time parser"},
     {"path":"tools/tests/documentation.tests.py","tier":"fast","seconds":4.1,"measured":"2026-11-18","covers":"negative fixtures of check-documents.py"},
     {"path":"tools/tests/idle-hold.tests.ps1","tier":"fast","seconds":0.2,"measured":"2026-11-18","covers":"S0104, the idle hold and its lift"},
+    {"path":"tools/tests/rename-prefix.tests.ps1","tier":"fast","seconds":4.63,"measured":"2026-11-19","covers":"S0152, TASK-FLOW 0.37 rule 2: the one prefix migration, formerIds and the legacy id shapes"},
     {"path":"tools/tests/ticket-source.tests.ps1","tier":"fast","seconds":1.7,"measured":"2026-11-18","covers":"S0108, the ledger field `source`"},
     {"path":"tools/tests/proposal-status.tests.ps1","tier":"fast","seconds":0.9,"measured":"2026-11-18","covers":"S0121, the proposal status line of CTR-PROP"},
     {"path":"tools/tests/complexity-grade.tests.ps1","tier":"fast","seconds":2.6,"measured":"2026-11-18","covers":"S0139-S0141, the grade 0-9, routes, rater, escalation, the parallel axis and the settings write"},
@@ -38,6 +39,7 @@
     {"path":"tools/tests/portfolio-order.tests.ps1","tier":"fast","seconds":0.37,"measured":"2026-11-18","covers":"S0130: a registered repository's ticket order read from the portfolio queue file (TASK-FLOW rules 18 and 44), 4 cases"},
     {"path":"tools/tests/contract-render.tests.ps1","tier":"fast","seconds":1.67,"measured":"2026-11-18","covers":"S0136: check-contracts.ps1 -Render and the block-first version map of contract-lag.ps1"},
     {"path":"tools/tests/catalog-lock-order.tests.ps1","tier":"fast","seconds":1.4,"measured":"2026-11-18","covers":"S0144: the portfolio projection runs after the catalog lock is released, and release-queue -SetCurrent and -Ship take the lock; S0145: -Ship with a missing and a one-line DONE file; S0150: a row crossing to a missing RELEASE_READY.md creates the file"},
-    {"path":"tools/tests/release-queue-seed.tests.ps1","tier":"fast","seconds":3.22,"measured":"2026-11-19","covers":"S0151: release-queue.ps1 -Seed (dry run, -Apply, -Since, group comments, created files) and the unlisted-row note of -Validate"}
+    {"path":"tools/tests/release-queue-seed.tests.ps1","tier":"fast","seconds":3.22,"measured":"2026-11-19","covers":"S0151: release-queue.ps1 -Seed (dry run, -Apply, -Since, group comments, created files) and the unlisted-row note of -Validate"},
+    {"path":"tools/tests/portfolio-providers.tests.ps1","tier":"fast","seconds":0.62,"measured":"2026-11-19","covers":"S0154: the Google provider's three agy records (Hydrogen, Argon, Claude Sonnet via the third quota pool) and the order apply"}
   ]
 }

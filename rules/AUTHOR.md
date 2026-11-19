@@ -70,7 +70,9 @@ here.
   front; background long jobs. **No trailing "what I did" summaries** - the diff speaks.
 - **Don't ask what the architecture already answers** - research the convention and recommend. Reserve
   questions for real forks (see [AI_USAGE.md](AI_USAGE.md) §1).
-- Surface UI ambiguity before implementing. Push back once with evidence, then execute the owner's call.
+- Take the researched recommendation instead of asking, record it as an assumption, and let the owner
+  overrule the rare exception later ([AI_USAGE.md](AI_USAGE.md) §1). Push back once with evidence, then
+  execute the owner's call.
 - Ticket/spec lifecycle and generated catalogs are **sacred**: always go through the tool/CLI, never
   hand-edit the underlying journal.
 
