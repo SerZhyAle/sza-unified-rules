@@ -6,8 +6,11 @@
 #   Test-PqRaterDue -Registry -Info -Key -Tried
 #       whether a ticket is to be graded before its pass: the registry carries raters, the line is absent,
 #       unrecognised or the capture default, not pinned, the spec file exists, and this worker run has not tried it.
-#   Get-PqRaterPrompt -SpecPath [-MaxChars 16000]
-#       the shipped prompt (rater/RATER_PROMPT.md) followed by the start of the spec file.
+#   Get-PqRaterPrompt -SpecPath [-MaxChars 16000] [-Registry]
+#       the shipped prompt (rater/RATER_PROMPT.md) followed by the start of the spec file; with a registry, the ladder of
+#       what each grade launches (Get-PqGradeLadderLines) sits before the prompt's closing "The ticket:" line.
+#   Get-PqGradeLadderLines -Registry
+#       one line per grade 0-9: the first agent of agentOrder whose route takes it, its model, effort and parallel axis.
 #   ConvertFrom-PqRaterAnswer -Text
 #       @{ ok; score; reason; confidence; why } from the LAST JSON object of the output that names a score: score an
 #       integer 0-9, confidence high/medium/low (absent reads medium), low raises the score by one (at most 9).
@@ -44,13 +47,55 @@ function Test-PqRaterDue($Registry, $Info, [string]$Key, $Tried) {
     return [bool]$Info.captureDefault
 }
 
-function Get-PqRaterPrompt([string]$SpecPath, [int]$MaxChars = 16000) {
+function Get-PqRaterPrompt([string]$SpecPath, [int]$MaxChars = 16000, $Registry = $null) {
     $head = [IO.File]::ReadAllText($script:PqRaterPromptFile, [Text.Encoding]::UTF8)
     $spec = [IO.File]::ReadAllText($SpecPath, [Text.Encoding]::UTF8)
     # The ticket's own Complexity line is left out, so the rater is not anchored on the capture default or an old grade.
     $spec = [regex]::Replace($spec, '(?m)^\*\*Complexity:\*\*[^\r\n]*\r?\n?', '')
     if ($spec.Length -gt $MaxChars) { $spec = $spec.Substring(0, $MaxChars) + "`n[.. the rest of the file is left out]" }
-    return ($head.TrimEnd() + "`n`n" + $spec)
+    $head = $head.TrimEnd()
+    $ladder = @(Get-PqGradeLadderLines $Registry)
+    if ($ladder.Count -gt 0) {
+        # The ladder goes before the closing "The ticket:" line, so the ticket still follows that line directly.
+        $cut = $head.LastIndexOf('The ticket:')
+        $block = "What each grade launches now (the first provider of the owner's order whose route takes it; a later provider takes over only while the earlier one is at its usage limit):`n`n" +
+            ($ladder -join "`n") + "`n`nThe table is there so you see what a grade costs: grade by the anchors above, and a grade one step too high spends a stronger model or a higher effort for nothing."
+        if ($cut -ge 0) { $head = $head.Substring(0, $cut).TrimEnd() + "`n`n" + $block + "`n`n" + $head.Substring($cut) }
+        else { $head = $head + "`n`n" + $block }
+    }
+    return ($head + "`n`n" + $spec)
+}
+
+# What each grade launches under the registry (rule 71 helper, owner's request 2026-11-20): one line per grade 0-9 naming
+# the first agent of agentOrder whose route takes it, with the route's model and effort (the record's when the row names
+# none; Claude's empty model is its level map) and the parallel axis a row names. Limit holds are ignored on purpose: the
+# grade is written into the spec for good and must not follow a quota that resets in hours. An empty array without a
+# registry, an order or any agent.
+function Get-PqGradeLadderLines($Registry) {
+    if ($null -eq $Registry -or -not (Test-PqHasKey $Registry 'agents')) { return @() }
+    $byName = @{}
+    foreach ($a in @($Registry.agents)) { if ($null -ne $a) { $byName[[string](Get-PqValue $a 'name' '')] = $a } }
+    $order = @(@(Get-PqValue $Registry 'agentOrder' @()) | ForEach-Object { [string]$_ } | Where-Object { $_ -and $byName.ContainsKey($_) })
+    if ($order.Count -eq 0) { return @() }
+    $lines = [Collections.Generic.List[string]]::new()
+    for ($g = 0; $g -le 9; $g++) {
+        $text = 'no provider takes it'
+        foreach ($name in $order) {
+            $a = $byName[$name]
+            $route = Get-PqAgentRoute $a $g
+            if (-not $route.ok) { continue }
+            $model = if ($route.model) { [string]$route.model } elseif ($name -cne 'claude') { [string](Get-PqValue $a 'model' '') } else { '' }
+            $effort = if ($route.effort) { [string]$route.effort } elseif ($name -cne 'claude') { [string](Get-PqValue $a 'effort' '') } else { '' }
+            $parts = @($name)
+            if ($model) { $parts += $model }
+            if ($effort -and $effort -cne 'default') { $parts += "effort $effort" }
+            $text = $parts -join ' '
+            if ($route.parallel) { $text += " + parallel ($($route.parallel)) when the spec carries the Parallel flag" }
+            break
+        }
+        $lines.Add("- $g - $text")
+    }
+    return $lines.ToArray()
 }
 
 function ConvertFrom-PqRaterAnswer([string]$Text) {
@@ -171,7 +216,7 @@ function Invoke-PqTicketRating($Registry, $Info, [string]$RepoKey, [string]$Tick
     $tried = [Collections.Generic.List[string]]::new()
     $lastWhy = 'noAnswer'
     $prompt = $null
-    try { $prompt = Get-PqRaterPrompt -SpecPath $Info.spec } catch { $prompt = $null }
+    try { $prompt = Get-PqRaterPrompt -SpecPath $Info.spec -Registry $Registry } catch { $prompt = $null }
     if ($null -ne $prompt) {
         foreach ($r in @(Get-PqRaters $Registry)) {
             $rname = [string](Get-PqValue $r 'name' 'rater')

@@ -21,7 +21,8 @@
 .PARAMETER Project
     A registered project key, or a project folder.
 .PARAMETER Id
-    The ticket id.
+    The ticket id - the current one, an old id a prefix migration replaced, or the bare number (139, -0139) when
+    one ticket of the project ends in it.
 .PARAMETER Rater
     The name of a `raters` record of the registry.
 .PARAMETER Model
@@ -92,7 +93,7 @@ function Invoke-RateOne([string]$ProjectValue, [string]$TicketId, $Record) {
     if (-not $root) { return @{ ok = $false; code = 2; why = "unknown project '$ProjectValue'" } }
     $info = Get-PqTicketLevelInfo -RepoPath $root -TicketId $TicketId
     if (-not $info.spec) { return @{ ok = $false; code = 2; why = "no spec file for $ProjectValue`:$TicketId" } }
-    $prompt = Get-PqRaterPrompt -SpecPath $info.spec
+    $prompt = Get-PqRaterPrompt -SpecPath $info.spec -Registry $registry
     if ($PromptOnly) { return @{ ok = $true; code = 0; prompt = $prompt; info = $info } }
     $run = Invoke-PqRaterRecord -Rater $Record -Prompt $prompt -WorkingDirectory ([IO.Path]::GetTempPath())
     if (-not $run.ok) { return @{ ok = $false; code = 1; why = "rater run failed: $($run.why)"; info = $info } }
@@ -128,7 +129,7 @@ $res = Invoke-RateOne $Project $Id $record
 if ($PromptOnly -and $res.ok) { Write-Output $res.prompt; exit 0 }
 if (-not $res.ok) { Stop-Rate $res.code $res.why }
 $a = $res.answer
-Write-Host ("{0}:{1} grade {2} ({3}, band {4}) by {5}: {6}" -f $Project, $Id, $a.score, $a.confidence, (Get-SzaComplexityBand $a.score), $raterName, $a.reason)
+Write-Host ("{0}:{1} grade {2} ({3}, band {4}) by {5}: {6}" -f $Project, $res.info.id,$a.score, $a.confidence, (Get-SzaComplexityBand $a.score), $raterName, $a.reason)
 if ($Write) {
     $line = Format-SzaComplexityLine -Score $a.score -Reason ("rated by {0} ({1}): {2}" -f ([string](Get-PqValue $record 'model')), $a.confidence, $(if ($a.reason) { $a.reason } else { 'no reason given' }))
     $wrote = Set-PqSpecComplexity -SpecPath $res.info.spec -Line $line

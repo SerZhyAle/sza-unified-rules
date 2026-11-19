@@ -51,10 +51,14 @@ $script:PqFastFailureSeconds = 120
 . (Join-Path $PSScriptRoot '..\..\spec_catalog\lib\complexity-grade.ps1')
 function Get-PqTicketLevelInfo {
     param([Parameter(Mandatory)][string]$RepoPath, [Parameter(Mandatory)][string]$TicketId)
-    $info = [pscustomobject]@{ level = ''; why = 'noLine'; captureDefault = $false; score = -1; numeric = $false; pinned = $false; spec = ''; parallel = $false }
+    $info = [pscustomobject]@{ id = $TicketId; level = ''; why = 'noLine'; captureDefault = $false; score = -1; numeric = $false; pinned = $false; spec = ''; parallel = $false }
     try {
         $snap = Get-PqLedgerSnapshot -RepoPath $RepoPath
-        if (-not $snap.tickets.Contains($TicketId)) { $info.why = 'noFile'; return $info }
+        # An old id (formerIds) or the owner's short number names the same ticket (TASK-FLOW 0.37).
+        $current = Resolve-PqSnapshotTicketId $snap $TicketId
+        if (-not $current) { $info.why = 'noFile'; return $info }
+        $TicketId = $current
+        $info.id = $current
         $file = [string]$snap.tickets[$TicketId].file
         if (-not $file) { $info.why = 'noFile'; return $info }
         $spec = Resolve-PqRepoPathValue $snap.root $file
@@ -601,7 +605,7 @@ $script:PqProviders = @(
     # `also` names the provider's further records, each a model with its own quota (rule 42 gives a non-Claude agent one
     # fixed model, so a second model is a second record): they follow the first in the order, and the next one takes the
     # ticket only while the earlier is at its limit.
-    @{ id = 'gemini'; agent = 'gemini'; also = @('gemini-argon', 'gemini-claude'); label = 'Google (Gemini)'; aliases = @('gemini', 'google', 'antigravity', 'agy') }
+    @{ id = 'gemini'; agent = 'gemini'; also = @('gemini-argon', 'gemini-neon', 'gemini-claude'); label = 'Google (Gemini)'; aliases = @('gemini', 'google', 'antigravity', 'agy') }
     @{ id = 'zai'; agent = 'zai'; label = 'z.ai (GLM)'; aliases = @('zai', 'glm', 'zcode', 'zhipu') }
     # Mistral's own subscription (admin.mistral.ai/subscription), used through the Mistral Vibe VS Code extension: the same
     # GLM-5.3 as z.ai, hosted by Mistral, with its own "Vibe budget".
@@ -737,14 +741,17 @@ function New-PqProviderRecord([string]$Id, [string]$Agent = '') {
             }
         }
         'gemini' {
-            # One agy sign-in, three quota pools (Antigravity "Models & Usage"): the Gemini models, Gemini 4 Argon on its own,
-            # and the Claude and GPT models. Hydrogen is Google's model for everyday coding and agent work (fast, cheap, the
+            # One agy sign-in, several quota pools (Antigravity "Models & Usage"): the Gemini models, Gemini 4 Argon on its own,
+            # and the Claude and GPT models; Neon's pool is not documented, its first limit message will show it. Hydrogen is Google's model for everyday coding and agent work (fast, cheap, the
             # successor of 3.8 Flash) and takes every ticket; Argon, the deeper and costlier model, is the second record and
-            # works only while Hydrogen's quota is spent; Claude Sonnet 5.5 from the third pool is the last record and works
-            # only while Argon's is spent too. Sonnet, not Opus, so the shared Claude and GPT weekly pool lasts.
+            # works only while Hydrogen's quota is spent; Neon (Google's mid-tier model of 2026-11-18, set by Google against
+            # Claude Opus 5.5 and GPT-6.2 Sol, the one that replaces Argon in the Gemini app) is the third; Claude Sonnet 5.5
+            # from the Claude and GPT pool is the last record and works only while the Google records are spent. Sonnet,
+            # not Opus, so the shared Claude and GPT weekly pool lasts. Carbon, the Ultra model above Neon, has no record.
             $model = 'gemini-4-hydrogen-high'
             $recName = 'gemini'
             if ($Agent -ceq 'gemini-argon') { $recName = 'gemini-argon'; $model = 'gemini-4-argon-high' }
+            elseif ($Agent -ceq 'gemini-neon') { $recName = 'gemini-neon'; $model = 'gemini-4-neon-high' }
             elseif ($Agent -ceq 'gemini-claude') { $recName = 'gemini-claude'; $model = 'claude-sonnet-5-5-high' }
             $rec = [ordered]@{
                 name = $recName; command = $cli.command

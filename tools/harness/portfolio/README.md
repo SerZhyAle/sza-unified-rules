@@ -463,7 +463,7 @@ You choose who spends tokens, and in what order. Five providers are known:
 | --- | --- | --- |
 | `openai` | `codex` | the Codex CLI (`npm install -g @openai/codex`) |
 | `anthropic` | `claude` | Claude Code on PATH |
-| `gemini` (also `antigravity`, `agy`) | `gemini`, `gemini-argon`, `gemini-claude` | Antigravity CLI `agy` (`irm https://antigravity.google/cli/install.ps1 \| iex`), signed in with Google; it reuses the Antigravity sign-in. The Gemini CLI no longer serves personal Google sign-ins (closed 2026-06-18) |
+| `gemini` (also `antigravity`, `agy`) | `gemini`, `gemini-argon`, `gemini-neon`, `gemini-claude` | Antigravity CLI `agy` (`irm https://antigravity.google/cli/install.ps1 \| iex`), signed in with Google; it reuses the Antigravity sign-in. The Gemini CLI no longer serves personal Google sign-ins (closed 2026-06-18) |
 | `zai` | `zai` | Claude Code and the user environment variable `ZAI_API_KEY` (a key from z.ai/manage-apikey); the pass is Claude Code pointed at z.ai's Anthropic-compatible endpoint |
 | `mistral` | `mistral` | the **Mistral Vibe** extension in VS Code, signed in (the subscription at admin.mistral.ai/subscription); the pass is `vibe-acp-pass.ps1` driving the extension's `vibe-acp.exe` |
 
@@ -515,27 +515,49 @@ the GLM model itself (`glm-5.3`) and pins Claude Code's `opus`, `sonnet` and `ha
 the console, the events log and the transcript all say `opus` and nothing shows which GLM model ran. `GET
 https://api.z.ai/api/anthropic/v1/models` lists the names the account accepts; `model` in the record switches it.
 Gemini runs as `agy --model <slug> --dangerously-skip-permissions --print`, and a non-Claude
-agent has one fixed model (rule 42), so the provider is three records that follow each other in the order, one per quota
-pool of Antigravity's *Models & Usage* page: `gemini` runs `gemini-4-hydrogen-high` - Google's model for everyday coding
-and agent work, fast and cheap, the "Gemini Models" pool - and takes every ticket; `gemini-argon` runs
-`gemini-4-argon-high`, the deeper and costlier one, which has a pool of its own, and takes a ticket only while Hydrogen's
-quota is spent; `gemini-claude` runs `claude-sonnet-5-5-high` from the "Claude and GPT models" pool and takes a ticket only
-while Argon's quota is spent too (Sonnet rather than `claude-opus-5-5-high`, so that shared weekly pool lasts;
-`gpt-oss-120b-medium`, the pool's open-weights model, is not shipped as a record). Each pool has its own quota, so each
-record has its own limit hold. The slug carries the effort, `agy models` lists the others, and `model` in a record
-switches it. For `pq agents` and the Providers dialog the three are one provider: `-Order` keeps them together,
-`-Release gemini` clears all holds, and the row shows the provider held only when all of them are. A registry written
-before `gemini-claude` existed keeps working as it is; `pq agents -Order <the current providers>` adds the missing record
-(and leaves every record that exists, its grade routes included, untouched). ZCode's own CLI is not used: it needs the
-desktop app's runtime files.
+agent has one fixed model (rule 42), so the provider is four records that follow each other in the order, each a model with
+its own quota (Antigravity's *Models & Usage* page lists the pools): `gemini` runs `gemini-4-hydrogen-high` - Google's
+model for everyday coding and agent work, fast and cheap, the "Gemini Models" pool - and takes every ticket;
+`gemini-argon` runs `gemini-4-argon-high`, the deeper and costlier one, which has a pool of its own, and takes a ticket
+only while Hydrogen's quota is spent; `gemini-neon` runs `gemini-4-neon-high`, Google's mid-tier model of 2026-11-18, and
+takes a ticket only while Argon's quota is spent too; `gemini-claude` runs `claude-sonnet-5-5-high` from the "Claude and
+GPT models" pool and takes a ticket only while the three Google records are spent (Sonnet rather than
+`claude-opus-5-5-high`, so that shared weekly pool lasts; `gpt-oss-120b-medium`, the pool's open-weights model, is not
+shipped as a record). Each record has its own limit hold. The slug carries the effort, `agy models` lists the others,
+and `model` in a record switches it. For `pq agents` and the Providers dialog the four are one provider: `-Order` keeps
+them together, `-Release gemini` clears all holds, and the row shows the provider held only when all of them are. A
+registry written before a later record existed keeps working as it is; `pq agents -Order <the current providers>` adds
+the missing records (and leaves every record that exists, its grade routes included, untouched). ZCode's own CLI is
+not used: it needs the desktop app's runtime files.
+
+**Models the runners use (the owner's rule of 2026-11-19, lists read on that day).** Each provider contributes its three
+newest models at the level of Claude Haiku 5.5, Sonnet 5.5 and Opus 5.5; a model above that level, more powerful and
+costlier, is not given to a runner. Both subscriptions are the $20 plans (ChatGPT Plus, Google AI Pro). The levels are the
+vendors' own positioning (Google sets Neon against Opus 5.5 and GPT-6.2 Sol), not a benchmark of this repository.
+
+| Provider (plan) | Light (Haiku 5.5 level) | Medium (Sonnet 5.5 level) | Hard (Opus 5.5 level) | Not used (above that level) |
+|---|---|---|---|---|
+| Codex (ChatGPT Plus) | `gpt-6-luna` - fast and affordable, for easier tasks | `gpt-6.1-terra` - efficient, the record's model | `gpt-6.2-sol`; `gpt-6.1-sol` until the CLI is newer than 0.165 | `gpt-6.2-astra`, `gpt-6-astra` |
+| Gemini (Google AI Pro) | `gemini-4-hydrogen-high` - the `gemini` record | `gemini-4-argon-high` - the `gemini-argon` record | `gemini-4-neon-high` - the `gemini-neon` record | `gemini-4-carbon-*` (Ultra, not in this account's `agy models`) |
+
+Codex answers `codex debug models` with the catalog of its own client version: 0.165 lists `gpt-6.1-terra`, `gpt-6.1-sol`,
+`gpt-6-astra`, `gpt-6-sol`, `gpt-6-luna` and the `gpt-5.6-*` family, while the VS Code extension's 0.169 also lists
+`gpt-6.2-sol` and `gpt-6.2-astra`. A pass with `--model gpt-6.2-sol` on 0.165 ends with `The 'gpt-6.2-sol' model is not
+supported when using Codex with a ChatGPT account` (checked 2026-11-19), so the Hard row stays on `gpt-6.1-sol` until
+`npm install -g @openai/codex` brings the CLI to 0.169 or later. `agy models` lists `gemini-4-neon-*`, `gemini-4-argon-*`,
+`gemini-4-hydrogen-*`, `gemini-3.8-flash-*`, `claude-opus-5-5-*`, `claude-sonnet-5-5-*` and `gpt-oss-120b-medium` for this
+account; a one-word probe answered on `gemini-4-neon-low` and `gemini-4-hydrogen-low`. The owner's registry gives each grade
+its own step - the model and its effort rise inside a band, so 7 is Opus at `medium` and 9 is Opus at `max` with the
+`ultracode` axis (parallel only on a ticket that carries the `**Parallel:**` flag) - and Codex's routes stop at 6: the Hard
+row stays out of them.
 
 The z.ai pattern follows z.ai's error code list (1308, 1310, 1316-1321 `Usage limit reached` / `Limit Exhausted`, 1113
 `Insufficient balance`, 1302 `Rate limit reached`); its observed limit message and reset time are recognized with the
 shipped `+08:00` offset, and its detector is marked `proven`. A real z.ai pass that advances a ticket remains unverified.
 The Gemini pattern matches agy's observed `Individual quota reached. .. Resets in 57h10m24s.` message
 (`RESOURCE_EXHAUSTED`, exit 3), whose reset time is read. Gemini has advanced a ticket, but its shipped detector remains
-`unproven`. `gemini-claude` shares that pattern and has not yet run a real pass: the slug is the one `agy models` lists
-(checked 2026-11-19), and the first ticket it takes proves the sign-in, the pool and the limit text. When no reset time
+`unproven`. `gemini-neon` and `gemini-claude` share that pattern and have not yet run a real pass: the slugs are the ones
+`agy models` lists (checked 2026-11-19), and the first ticket each takes proves the pool and the limit text. When no reset time
 can be read, the provider is retried after `limitPollMinutes`.
 
 Mistral Vibe has no `vibe -p`: the extension's only binary is `vibe-acp.exe`, an Agent Client Protocol server on stdio.
@@ -621,7 +643,10 @@ every grade and launches as before.
 With `raters` present, a ticket whose line is absent, unrecognised or the capture default is graded once before its pass:
 the first rater record that answers in time with a valid JSON grade wins, the line becomes
 `**Complexity:** <n> - rated by <model> (<confidence>): <reason>`, and `ticket.complexity` (by `rater`) records it. The
-prompt is `rater/RATER_PROMPT.md` beside this guide plus the start of the spec. A record without `argsTemplate` runs
+prompt is `rater/RATER_PROMPT.md` beside this guide plus the start of the spec; before the ticket it carries the ladder
+of what each grade launches now - for each grade 0-9 the first agent of `agentOrder` whose route takes it, with its model,
+effort and parallel axis - so the rater sees what a grade one step too high costs. Limit holds do not enter that ladder:
+the grade is written into the spec for good and must not follow a quota that resets in hours. A record without `argsTemplate` runs
 `claude -p --model <model> --tools "" --strict-mcp-config --no-session-persistence` in a temporary folder, the prompt on
 the standard input, so the rater gets no tools and never reads the project. No valid answer
 from any record leaves the line alone and the ticket runs at the grade 5 (`rater.fail`). A pass that ends `child-failed`,

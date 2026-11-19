@@ -288,6 +288,26 @@ function Read-PqLedgerFile($Snap, [string]$Path, [bool]$IsArchive) {
     }
 }
 
+function Resolve-PqSnapshotTicketId($Snap, [string]$Id) {
+    # The current id a caller's id names in this snapshot, or '' when none or more than one does. Taken in order: the id
+    # itself; an old id a prefix migration replaced (TASK-FLOW 0.37, `formerIds`); the owner's local notation - a bare
+    # number or `-0139` - matched against the trailing digits of every id, accepted only when exactly one id carries them.
+    if ($null -eq $Snap -or -not $Id) { return '' }
+    $want = $Id.Trim()
+    if ($Snap.tickets.Contains($want)) { return $want }
+    $aliases = Get-PqLwField $Snap 'aliases'
+    if ($aliases -is [Collections.IDictionary] -and ([Collections.IDictionary]$aliases).Contains($want)) { return [string]$aliases[$want] }
+    if ($want -match '^-?(\d+)$') {
+        $n = [int64]$Matches[1]
+        $hits = @(foreach ($k in $Snap.tickets.Keys) {
+                $m = [regex]::Match([string]$k, '(\d+)$')
+                if ($m.Success -and [int64]$m.Groups[1].Value -eq $n) { [string]$k }
+            })
+        if ($hits.Count -eq 1) { return $hits[0] }
+    }
+    return ''
+}
+
 function Get-PqLedgerSnapshot {
     param([string]$RepoPath, [string]$Key, $At, $Paths)
     if ($null -eq $Paths) { $Paths = Get-PqRepoPaths -RepoPath $RepoPath }
