@@ -83,7 +83,7 @@ param(
     [string]   $PermissionMode = 'bypassPermissions',
     [string]   $Model          = '',
     [string[]] $ChildArgs      = @(),
-    [string]   $IdRegex        = 'S\d{4}',
+    [string]   $IdRegex        = '(?:CANONR-\d{4}|S\d{4})',
     [string[]] $WorkStatuses   = @('Draft', 'Approved', 'Tactical', 'In Progress', 'Implemented', 'Partial', 'Broken'),
     [string[]] $ClearOnStart   = @('temp/SPEC-TICKET.LEASES'),
     [string]   $LocksDir       = 'temp',

@@ -29,7 +29,8 @@ privacy site and two Google Play Console apps, all created on the owner's order;
 
 - **Source root & release-mechanics.** Gradle modules phone / wear / watchface, and `build-logic`, are on `main` of the
   public remote since the first push (commit `5db4d6e`, measured 2026-11-13); the 2026-10-02 "none exist yet" is history.
-  Specs in `PLAN/Sxxxx_<slug>.md`, the harness run from the plugin through `tools/harness.ps1` (evidence:
+  Specs in `PLAN/TOURST-nnnn_<slug>.md` (the repository's own ticket prefix since 2026-11-19, ticket S0095; closed
+  tickets keep their `Snnnn` ids), the harness run from the plugin through `tools/harness.ps1` (evidence:
   `.sza-profile.json`, `tools/harness.ps1`).
 - **Version shape.** PACKAGE-VERSIONING Android profile; no tag yet (the remote has none on 2026-11-13, and
   `versionShape.tagRegex` is null in the remote stamp).

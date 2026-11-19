@@ -2,7 +2,9 @@
     run as a child in a throwaway repository and a throwaway portfolio root under the system temp directory - the dry
     run, the rename (ledger rows, formerIds, files, folder, token lines, prose left alone, plan file, the other
     repository's qualified token), the next id continuing the old numbers, a former id accepted by update.ps1, the
-    refusal of a second migration and of a bad prefix. Nothing else is touched.
+    refusal of a second migration and of a bad prefix, the R0 launcher's -IdRegex default re-rendered by the run and
+    healed by a repeat of the same prefix (CANONR-0157), the probes of the renamed tickets retagged in source by the run
+    and healed by the same repeat (CANONR-0158). Nothing else is touched.
     Exit 0 when every case passed, 1 on any failure.
     Run:  pwsh -NoProfile -File tools/tests/rename-prefix.tests.ps1 [-KeepScratch] #>
 [CmdletBinding()]
@@ -44,6 +46,14 @@ Write-Text (Join-Path $repo 'PLAN\S0002_open.md') "# S0002_open`n`n**Status:** D
 Write-Text (Join-Path $repo 'PLAN\S0002_open\attachments\a.txt') 'x'
 Write-Text (Join-Path $repo 'PLAN\S0003_held.md') "# S0003_held`n`n**Status:** BlockByOtherTask`n`nBlocker: S0002`n`nThe prose names S0002 and S0001 and stays as written.`n"
 Write-Text (Join-Path $repo 'PLAN\RELEASE_QUEUE.md') "# Release Queue`n`nticket  changed  status`n1`nS0003_held  26-11-01 10:00  BlockByOtherTask`nS0002_open  26-11-01 10:00  Draft`n"
+$launcherText = "param(`n    [string[]] `$ChildArgs      = @(),`n    [string]   `$IdRegex        = 'S\d{4}',`n    [string[]] `$WorkStatuses   = @('Draft')`n)`n"
+$launcherNew = $launcherText.Replace("'S\d{4}'", "'(?:TESTAB-\d{4}|S\d{4})'")
+Write-Text (Join-Path $repo 'r0.ps1') $launcherText
+<# CANONR-0158: probes of two open tickets (one spanning two lines), a probe of the closed one, and mentions that are
+   not probes - a log call of another level and a comment. #>
+$sourceText = "fun a() {`n    Timber.d(`"S0002: opened`")`n    Timber.d(`n        `"S0003: held`")`n    Timber.i(`"S0002: not a probe`")`n    // Timber.d(`"S0002: in a comment`")`n    Timber.d(`"S0001: closed`")`n}`n"
+$sourceNew = $sourceText.Replace('"S0002: opened"', '"TESTAB-0002: opened"').Replace('"S0003: held"', '"TESTAB-0003: held"')
+Write-Text (Join-Path $repo 'src\A.kt') $sourceText
 Write-Text (Join-Path $other 'PLAN\S0009_waits.md') "# S0009_waits`n`nBlocker: t:S0002`n`nBlocker: t:S0001`n"
 $reg = @{ repos = @(@{ key = 't'; path = $repo }, @{ key = 'o'; path = $other }) } | ConvertTo-Json -Depth 5
 Write-Text (Join-Path $portfolio 'repos.json') $reg
@@ -83,6 +93,10 @@ try {
         Assert-Equal ($r.out -match 'S0002 -> TESTAB-0002' -and $r.out -match 'S0003 -> TESTAB-0003' -and $r.out -notmatch 'S0001 ->') 'True' 'the listed renames'
         Assert-Equal (Read-Text 'repo\.sza-profile.json') $profileText 'the profile'
         Assert-Equal (Test-Path (Join-Path $repo 'PLAN\S0002_open.md')) 'True' 'the old spec file'
+        Assert-Equal ($r.out.Contains('would set the -IdRegex default')) 'True' 'the planned launcher line'
+        Assert-Equal (Read-Text 'repo\r0.ps1') $launcherText 'the launcher'
+        Assert-Equal ($r.out -match 'would retag the probe .*A\.kt:2  S0002 -> TESTAB-0002' -and $r.out -match 'A\.kt:3  S0003 -> TESTAB-0003') 'True' "the planned probe retags ($($r.out))"
+        Assert-Equal (Read-Text 'repo\src\A.kt') $sourceText 'the source'
     }
     Run-Case 'an installed plugin older than TASK-FLOW 0.37 refuses the run with exit 2' {
         $r = Invoke-Tool 'spec_catalog\rename-prefix.ps1' @('-Prefix', 'TESTAB')
@@ -112,6 +126,18 @@ try {
         $p = Read-Text 'repo\.sza-profile.json' | ConvertFrom-Json
         Assert-Equal $p.grammar.ticketIdPattern '^TESTAB-\d{4}$' 'the new pattern'
         Assert-Equal (@($p.grammar.legacyTicketIdPatterns) -join ',') '^S\d{4}$' 'the legacy pattern'
+        Assert-Equal (Read-Text 'repo\r0.ps1') $launcherNew 'the re-rendered launcher'
+        Assert-Equal (Read-Text 'repo\src\A.kt') $sourceNew 'the retagged probes, the rest of the source as written'
+    }
+    Run-Case 'the same prefix again re-renders a stale launcher, retags left-over probes and leaves the ledger alone' {
+        Write-Text (Join-Path $repo 'r0.ps1') $launcherText
+        Write-Text (Join-Path $repo 'src\A.kt') $sourceText   <# a repository that migrated before CANONR-0158 #>
+        $before = Read-Text 'repo\PLAN\spec-catalog.jsonl'
+        $r = Invoke-Tool 'spec_catalog\rename-prefix.ps1' @('-Prefix', 'TESTAB')
+        Assert-Equal $r.code 0 "the exit code ($($r.out))"
+        Assert-Equal (Read-Text 'repo\r0.ps1') $launcherNew 'the healed launcher'
+        Assert-Equal (Read-Text 'repo\src\A.kt') $sourceNew 'the healed probes'
+        Assert-Equal (Read-Text 'repo\PLAN\spec-catalog.jsonl') $before 'the ledger'
     }
     Run-Case 'the next id continues the old numbers, a former id names its ticket, a second migration is refused' {
         $n = Invoke-Tool 'spec_catalog\next-id.ps1' @()

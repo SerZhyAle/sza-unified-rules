@@ -28,8 +28,9 @@ privacy site and two Google Play Console apps, all created on the owner's order;
 
 - **Source root & release-mechanics.** Gradle modules `phone`, `wear` and `watchface` (the stamp's `modules.names`);
   the directory `exchange-core` is named in the profile's probe roots as well (directory listing, 2026-11-13). Specs in
-  `PLAN/Sxxxx_<slug>.md`, the harness run from the plugin through `tools/harness.ps1` (evidence: `.sza-profile.json`,
-  `tools/harness.ps1`).
+  `PLAN/STRMOB-NNNN_<slug>.md` (own ticket prefix STRMOB since 2026-11-19, repository ticket S0164; a ticket closed
+  before it keeps `S####_<slug>.md`, `grammar.legacyTicketIdPatterns`), the harness run from the plugin through
+  `tools/harness.ps1` (evidence: `.sza-profile.json`, `tools/harness.ps1`).
 - **Version shape.** PACKAGE-VERSIONING Android profile, tag regex `^v\d+\.\d+\.\d+\.\d+$` (the stamp's
   `versionShape.tagRegex`, set after 2026-10-02); no release tag is named in the 2026-11-13 report.
 - **Channels + listing files.** `channels: ["play"]` (the stamp; owner decision B39 of 2026-10-14, S0010, declared with

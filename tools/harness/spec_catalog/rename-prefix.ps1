@@ -12,7 +12,15 @@
       3. rewrites the old id inside the token lines of the specs (`Blocker:`, `Блокер:`, `Carrier:`, `Blocks:`) and
          inside `statusNote` and `blocked_by` of the ledger rows, the rows of the three plan files and this
          repository's rows of the portfolio queue file;
-      4. with -AllRepos, also the `<key>:<old id>` token lines in the specs of every other registered repository.
+      4. with -AllRepos, also the `<key>:<old id>` token lines in the specs of every other registered repository;
+      5. retags the status-bound debug probes of the renamed tickets in source (probes.scanRoots, the project's probe
+         form): the old id inside each probe becomes the new one, because every probe gate matches the current id only
+         (CANONR-0158); the dry run lists each probe it would retag;
+      6. re-renders the `-IdRegex` default of the scaffold's R0 launcher (r0.ps1 in the root, when it has that line)
+         from the new grammar - the new shape and every legacy one - so its queue-file reader keeps finding the
+         tickets (CANONR-0157). A repository that migrated before steps 5 and 6 runs the same -Prefix again: the ids are
+         already that shape, so only the launcher is re-rendered and the probes of the open tickets that still carry
+         one of their `formerIds` are retagged.
     Closed tickets keep their old ids; the burned list is not touched, so the next id continues after the highest old
     number. An old id stays a name of its ticket: the status tool, block-links.ps1 and the portfolio queue resolve it
     through `formerIds`.
@@ -75,9 +83,100 @@ $root = Get-SzaProjectRoot
 $profileFile = Join-Path $root '.sza-profile.json'
 if (-not (Test-Path -LiteralPath $profileFile -PathType Leaf)) { Stop-Rename "$root has no .sza-profile.json; the new id shape is written there." }
 
+# The R0 launcher of the scaffold (init-task-flow.ps1, r0.ps1 in the root) carries the id shape as a rendered literal,
+# the default of its -IdRegex parameter; it is re-rendered from the profile's grammar after every change of it
+# (CANONR-0157), so its queue-file reader keeps recognising the renamed ids and the old ones beside them.
+$launcherFile = Join-Path $root 'r0.ps1'
+$launcherLine = [regex]::new('(?m)^(?<head>[ \t]*\[string\][ \t]+\$IdRegex[ \t]*=[ \t]*)''(?:[^'']|'''')*''')
+function Update-RpLauncher([switch] $Plan) {
+    if (-not (Test-Path -LiteralPath $launcherFile -PathType Leaf)) { return }
+    $text = [IO.File]::ReadAllText($launcherFile)
+    if (-not $launcherLine.IsMatch($text)) { return }
+    $fragment = if ($Plan) { $script:plannedFragment } else { Get-SzaTicketIdFragment }
+    $literal = "'" + $fragment.Replace("'", "''") + "'"
+    $new = $launcherLine.Replace($text, { param($m) $m.Groups['head'].Value + $literal }, 1)
+    if ($new -ceq $text) { return }
+    if ($Plan) { Write-Rp "  would set the -IdRegex default of $launcherFile to $literal" 'DarkGray'; return }
+    $bytes = [IO.File]::ReadAllBytes($launcherFile)
+    $bom = $bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF
+    [IO.File]::WriteAllText($launcherFile, $new, [Text.UTF8Encoding]::new($bom))
+    Write-Rp "the -IdRegex default of $launcherFile is now $literal" 'Green'
+}
+
+function Read-RpText([string] $Path) {
+    $t = [IO.File]::ReadAllText($Path)
+    if ($t.Length -gt 0 -and $t[0] -eq [char]0xFEFF) { $t = $t.Substring(1) }
+    return $t
+}
+function Write-RpText([string] $Path, [string] $Text) {
+    $bytes = [IO.File]::ReadAllBytes($Path)
+    $bom = $bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF
+    [IO.File]::WriteAllText($Path, $Text, [Text.UTF8Encoding]::new($bom))
+}
+
+# The status-bound debug probes carry the ticket id in source, and every probe gate matches the record's current id
+# only (CANONR-0158), so a renamed ticket's probes are retagged with its new id: under probes.scanRoots, a call that
+# is a probe of an old id by the project's own probe form (the one definition the gates use) gets the old id inside
+# that form replaced, and nothing else in the file changes. Returns the number of source files changed.
+function Update-RpProbes([hashtable] $Map, [switch] $Plan) {
+    if ($Map.Count -eq 0 -or -not [bool](Get-SzaProfileValue 'probes.enabled')) { return 0 }
+    . (Get-SzaHarnessScript 'spec_catalog/lib/blockneedusertest-probes.ps1')
+    $roots = @(Get-ProbeSourceRoot -RepoRoot $root)
+    if ($roots.Count -eq 0) { return 0 }
+    $openerRx = Get-TimberOpenerRegex
+    $formById = @{}
+    foreach ($k in $Map.Keys) { $formById[$k] = Get-TimberProbeFormRegexForId -Id $k }
+    $files = 0
+    foreach ($file in (Get-ProbeSourceFile -SourceRoots $roots)) {
+        $text = Read-RpText $file.FullName
+        if ([string]::IsNullOrEmpty($text)) { continue }
+        $mentioned = @($Map.Keys | Where-Object { $text.Contains($_) })
+        if ($mentioned.Count -eq 0) { continue }
+        $edits = [System.Collections.Generic.List[object]]::new()
+        foreach ($m in $openerRx.Matches($text)) {
+            $span = (Get-SanitizedTimberCallSpan -Content $text -PrefixStart $m.Index -OpenParenIndex ($m.Index + $m.Length - 1)).Span
+            foreach ($k in $mentioned) {
+                $fm = $formById[$k].Match($span)
+                if (-not $fm.Success) { continue }
+                $hit = Get-ProbeHitAt -Content $text -Match $m -FullName $file.FullName
+                $im = [regex]::Match($fm.Value, '(?<![A-Za-z0-9])' + [regex]::Escape($k) + '(?![A-Za-z0-9])')
+                if ($null -ne $hit -and $im.Success) {
+                    $edits.Add([pscustomobject]@{ at = $m.Index + $fm.Index + $im.Index; oldId = $k; newId = $Map[$k]; line = $hit.Line })
+                }
+                break
+            }
+        }
+        if ($edits.Count -eq 0) { continue }
+        $files++
+        foreach ($e in $edits) {
+            $verb = if ($Plan) { 'would retag' } else { 'retagged' }
+            Write-Rp ("  {0} the probe {1}:{2}  {3} -> {4}" -f $verb, $file.FullName, $e.line, $e.oldId, $e.newId) $(if ($Plan) { 'DarkGray' } else { 'Gray' })
+        }
+        if ($Plan) { continue }
+        foreach ($e in @($edits | Sort-Object -Property at -Descending)) {
+            $text = $text.Substring(0, $e.at) + $e.newId + $text.Substring($e.at + $e.oldId.Length)
+        }
+        Write-RpText $file.FullName $text
+    }
+    return $files
+}
+
 $old = Get-SzaTicketIdSpec
 $newPrefix = $Prefix + '-'
-if ($old.prefix -ceq $newPrefix) { Write-Rp "the ids are already $newPrefix$('#' * $old.width); nothing to do." 'Green'; exit 0 }
+if ($old.prefix -ceq $newPrefix) {
+    # A repository that migrated before the launcher was re-rendered, or before the probes were retagged
+    # (CANONR-0158), heals both by running the same prefix again: a probe of an open ticket that still carries one of
+    # its formerIds gets the current id.
+    if (-not $DryRun) { Update-RpLauncher } else { $script:plannedFragment = Get-SzaTicketIdFragment; Update-RpLauncher -Plan }
+    $probeMap = @{}
+    foreach ($r in (Read-Catalog)) {
+        if (@('Verified', 'Archived') -contains [string]$r.status -or -not $r.PSObject.Properties['formerIds']) { continue }
+        foreach ($f in @($r.formerIds)) { if ($f -and ([string]$f) -cne [string]$r.id) { $probeMap[[string]$f] = [string]$r.id } }
+    }
+    $probeFiles = Update-RpProbes -Map $probeMap -Plan:$DryRun
+    $tail = if ($probeFiles -gt 0) { "; the probes in $probeFiles source file(s) $(if ($DryRun) { 'would carry' } else { 'now carry' }) the current ids" } else { '' }
+    Write-Rp "the ids are already $newPrefix$('#' * $old.width); nothing else to do$tail." 'Green'; exit 0
+}
 
 # An attended session runs the harness of the newest installed plugin. One that predates TASK-FLOW 0.37 refuses every
 # ledger write once the closed tickets' old ids no longer match the profile, so the migration waits for that release.
@@ -147,6 +246,7 @@ foreach ($r in $records) {
     $newFileRel = if ($dirRel) { "$dirRel/$newBase.md" } else { "$newBase.md" }
     $renames.Add([pscustomobject]@{
             oldId = [string]$r.id; newId = $newId; oldBase = $oldBase; newBase = $newBase
+            former = @(if ($r.PSObject.Properties['formerIds']) { @($r.formerIds) | ForEach-Object { [string]$_ } })
             oldFile = Resolve-SpecPath -PathRef $fileRel; newFile = Resolve-SpecPath -PathRef $newFileRel; newFileRel = $newFileRel
             oldDir = Resolve-SpecPath -PathRef $(if ($dirRel) { "$dirRel/$oldBase" } else { $oldBase })
             newDir = Resolve-SpecPath -PathRef $(if ($dirRel) { "$dirRel/$newBase" } else { $newBase })
@@ -201,16 +301,6 @@ function Convert-RpBaseNames([string] $Text) {
     }
     return $Text
 }
-function Write-RpText([string] $Path, [string] $Text) {
-    $bytes = [IO.File]::ReadAllBytes($Path)
-    $bom = $bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF
-    [IO.File]::WriteAllText($Path, $Text, [Text.UTF8Encoding]::new($bom))
-}
-function Read-RpText([string] $Path) {
-    $t = [IO.File]::ReadAllText($Path)
-    if ($t.Length -gt 0 -and $t[0] -eq [char]0xFEFF) { $t = $t.Substring(1) }
-    return $t
-}
 function Get-RpSpecFiles([string] $RepoRoot, [string[]] $Dirs) {
     $out = [System.Collections.Generic.List[string]]::new()
     foreach ($d in $Dirs) {
@@ -246,6 +336,9 @@ $grammar['legacyTicketIdPatterns'] = [string[]]$legacy.ToArray()
 if ($declaredFilePattern) { $grammar['specFilePattern'] = $declaredFilePattern.Replace($oldCore, '(?:' + $newCore + '|' + $oldCore + ')') }
 if ($DryRun) {
     Write-Rp "  would write grammar.ticketIdPattern '$newPattern' and grammar.legacyTicketIdPatterns ['$($old.pattern)'] into $profileFile" 'DarkGray'
+    $plannedCores = @(@($newPattern) + $legacy.ToArray() | ForEach-Object { ($_ -replace '^\^', '') -replace '\$$', '' })
+    $script:plannedFragment = if ($plannedCores.Count -eq 1) { $plannedCores[0] } else { '(?:' + ($plannedCores -join '|') + ')' }
+    Update-RpLauncher -Plan
 } else {
     $json = $profileDoc | ConvertTo-Json -Depth 32
     [IO.File]::WriteAllText($profileFile, $json + [Environment]::NewLine, [Text.UTF8Encoding]::new($false))
@@ -253,6 +346,7 @@ if ($DryRun) {
     $Script:SzaProfileCache = $null
     $script:FilePattern = [string](Get-SzaProfileValue 'grammar.specFilePattern')
     $script:IdPattern = [string](Get-SzaProfileValue 'grammar.ticketIdPattern')
+    Update-RpLauncher
 }
 
 # 2. spec files and folders
@@ -307,7 +401,12 @@ if ($AllRepos) {
     }
 }
 
-# 5. the ledger rows
+# 5. the status-bound debug probes in source: the old id, and every id the ticket carried before it, become the new id
+$probeMap = @{}
+foreach ($x in $renames) { foreach ($f in @(@($x.oldId) + $x.former)) { if ($f -and $f -cne $x.newId) { $probeMap[$f] = $x.newId } } }
+$script:changedFiles += (Update-RpProbes -Map $probeMap -Plan:$DryRun)
+
+# 6. the ledger rows
 if (-not $DryRun -and $renames.Count -gt 0) {
     $byOld = @{}
     foreach ($x in $renames) { $byOld[$x.oldId] = $x }
