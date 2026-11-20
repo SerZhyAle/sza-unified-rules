@@ -1627,6 +1627,16 @@ while ($true) {
         $childArgs += @('--session-id', $sessionId)
     }
 
+    # Claude in Chrome: an interactive session turns it on from the user's claudeInChromeDefaultEnabled setting,
+    # but a print-mode child (-p) never does - measured 2026-11-20 on CLI 2.1.329: 0 chrome tools without the flag,
+    # 20 and the claude-in-chrome server connected with it. A robot gets what the owner's session has, so every child
+    # started through the Claude Code CLI (Claude itself, or a provider reached through it) asks for it, unless its
+    # template already names --chrome or --no-chrome, or the CLI's --help does not list the flag.
+    $isClaudeCli = $isClaudeChild -or ([IO.Path]::GetFileNameWithoutExtension([string]$claude) -ieq 'claude')
+    if ($isClaudeCli -and [array]::IndexOf($childArgs, '--chrome') -lt 0 -and [array]::IndexOf($childArgs, '--no-chrome') -lt 0 -and (Test-ChildHelpLists '--chrome')) {
+        $childArgs += '--chrome'
+    }
+
     # S0041's context trial, appended after the template like the session id above, and only on a
     # Claude child whose own --help names the flag. --strict-mcp-config with the
     # repository's .mcp.json beside it keeps the one MCP configuration the repository declared and
