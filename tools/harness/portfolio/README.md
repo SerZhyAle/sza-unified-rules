@@ -742,6 +742,14 @@ writes as it works (`> the agent's words`, `. Read path` for a tool it called, `
 pass or on Ctrl+C and never touches the pass. The runner buffers another agent's output until its pass ends, so there is
 nothing to follow for a Codex or Gemini pass.
 
+The worker window follows its own Claude pass the same way, with no second window: every two seconds it prints the new
+records of the pass transcript, each with the time (`> the agent's words` in white, `. Read path` for a tool it called, `!
+text` for a tool error in red, `(+n more)` when a burst was cut at 30 lines). A session that existed before the pass began
+is shown from its end, never replayed; a new session of the same ticket (a context handoff) is shown from its start. The
+`pass <instance> <id> - still running` line then appears only after a minute with nothing printed, and it is the only sign
+for a Codex or Gemini pass. `SZA_PQ_FOLLOW=0` in the worker's environment turns the view off and restores the minute line
+alone. The view only reads: it holds no lock, writes nothing, and a failure in it ends the view, never the pass.
+
 | Command | Shows |
 | --- | --- |
 | `pq inbox [-Json]` | what waits for the owner across all projects: one line per kind (count, oldest age, the command that clears it), then the tickets with id, age and note; `BlockByOtherTask` as chain roots |

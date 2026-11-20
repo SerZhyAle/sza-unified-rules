@@ -12,7 +12,8 @@
       2.  Waiting (R29-R34): the fingerprint parts, change detection per file kind, a lease heartbeat rewrite is not a
           change, the drop fingerprint on the spec file, the wait `why` counts, drop-lift thrash.
       3.  Stop and console (R54-R56): level ranks, stop file parsing, the most severe applicable stop, busy targets,
-          target completion (repo stop leaves a hold), pause, transcript record formatting, Read-PqTail offset/carry.
+          target completion (repo stop leaves a hold), pause, transcript record formatting, Read-PqTail offset/carry, the
+          pass follower the worker window prints from (older session from its end, handoff session from its start, cap).
       4.  Analysis (R44-R48): run rows, stats, the n >= 5 split rule, findings with stable ids severity-first, seq gaps
           and unparsable/unsupported lines, trace, compare verdict, CSV.
       5.  The loop wiring of the 2026-11-10 pieces (source-level, as portfolio-occupancy case 4 does).
@@ -247,6 +248,34 @@ try {
         [IO.File]::AppendAllText($live, " rest`nline2`n", [Text.Encoding]::UTF8)
         $t2 = Read-PqTail -Path $live -Offset $t1.offset -Carry $t1.carry
         Check (($t2.lines -join '|') -ceq 'partial rest|line2') "second read joins the carried partial: $($t2.lines -join '|')"
+    }
+    Case 'the pass follower prints a new session from its start, an older one only from its end, and caps a burst' {
+        $homeBefore = $env:USERPROFILE
+        $env:USERPROFILE = Join-Path $scratch 'follow-home'
+        try {
+            $txDir = Join-Path $env:USERPROFILE ('.claude\projects\' + [regex]::Replace($repo, '[^A-Za-z0-9]', '-'))
+            $null = [IO.Directory]::CreateDirectory($txDir)
+            $leaseFile = Join-Path $repo 'temp/SPEC-TICKET.LEASES/S0001.json'
+            $rec = { param($t) (@{ type = 'assistant'; message = @{ content = $t } } | ConvertTo-Json -Compress -Depth 5) }
+            $old = Join-Path $txDir 'sess-old.jsonl'
+            [IO.File]::WriteAllText($old, ((& $rec 'earlier run') + "`n"))
+            (Get-Item $old).CreationTimeUtc = [datetime]::UtcNow.AddHours(-2)
+            [IO.File]::WriteAllText($leaseFile, '{"sessionId":"sess-old"}')
+            $st = New-PqPassFollower -RepoPath $repo -TicketId 'S0001' -Since ([datetime]::Now)
+            Check (@(Step-PqPassFollower -State $st).Count -eq 0) 'an older transcript is not replayed'
+            [IO.File]::AppendAllText($old, (& $rec 'more from old') + "`n")
+            Check ((@(Step-PqPassFollower -State $st) -join '|') -ceq '> more from old') 'an older transcript gains only the new line'
+            $new = Join-Path $txDir 'sess-new.jsonl'
+            [IO.File]::WriteAllText($new, ((& $rec 'first of new') + "`n" + (& $rec 'second of new') + "`n"))
+            [IO.File]::WriteAllText($leaseFile, '{"sessionId":"sess-new"}')
+            Check ((@(Step-PqPassFollower -State $st) -join '|') -ceq '> first of new|> second of new') 'a handoff session starts from its first record'
+            Check (@(Step-PqPassFollower -State $st).Count -eq 0) 'nothing new gives nothing'
+            [IO.File]::AppendAllText($new, ((1..5 | ForEach-Object { & $rec "n$_" }) -join "`n") + "`n")
+            Check ((@(Step-PqPassFollower -State $st -MaxLines 2) -join '|') -ceq '> n1|> n2|(+3 more)') 'a burst is cut at the cap and the rest counted'
+            Remove-Item -LiteralPath $leaseFile -Force
+            Check (@(Step-PqPassFollower -State $st).Count -eq 0) 'no lease gives nothing and does not throw'
+        }
+        finally { $env:USERPROFILE = $homeBefore }
     }
 
     # ================= 4. analysis =================

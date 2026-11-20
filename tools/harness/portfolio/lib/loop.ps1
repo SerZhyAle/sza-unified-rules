@@ -509,7 +509,10 @@ function Invoke-PqPassChild {
         # it only the whole-portfolio STOP is read, as before levels existed.
         [scriptblock]$StopWatcher,
         # Called about once a minute on the beat loop; emits pass.beat event and refreshes worker seen timestamp.
-        [scriptblock]$OnBeat
+        [scriptblock]$OnBeat,
+        # Print what the agent does while the pass runs, read from its transcript (console.ps1, the built-in `pq tail`).
+        # Only a Claude pass writes one; for any other agent nothing is found and the minute line stays the only sign.
+        [switch]$Follow
     )
     # A registry record may spell the drive letter in lower case; the agent CLI would then see an untrusted workspace.
     $RepoPath = ConvertTo-PqFullPath $RepoPath
@@ -539,17 +542,39 @@ function Invoke-PqPassChild {
         $proc = [Diagnostics.Process]::Start($psi)
         if ($OnStarted) { $null = & $OnStarted $proc.Id (@($Script) + $passArgs) }
         # Short waits let PowerShell process Ctrl+C. A cancelled dispatcher must not orphan its runner.
-        # The agent CLI prints its answer only when it finishes, so a minute-by-minute line is the only sign of life.
+        # The agent CLI prints its answer only when it finishes, so the session transcript is the live source (-Follow);
+        # a minute-by-minute line is what stays when nothing was printed from it for a minute.
         $passSw = [Diagnostics.Stopwatch]::StartNew()
         $beatAt = 60
         $stopAt = 0.0
         $tickAt = 0.0
+        $followAt = 0.0
+        $lastLineAt = 0.0
+        $follower = $null
+        if ($Follow -and (Get-Command Step-PqPassFollower -ErrorAction SilentlyContinue)) {
+            try { $follower = New-PqPassFollower -RepoPath $RepoPath -TicketId $TicketId -Since ([DateTime]::Now) } catch { $follower = $null }
+        }
         $titlePart = if ($TicketTitle) { " - $TicketTitle" } else { '' }
         try { $host.UI.RawUI.WindowTitle = "pass $Instance $TicketId$titlePart" } catch { }
         while (-not $proc.WaitForExit(250)) {
             $elapsedNow = $passSw.Elapsed.TotalSeconds
+            if ($null -ne $follower -and $elapsedNow -ge $followAt) {
+                $followAt = $elapsedNow + 2
+                # A view must never fail a pass: whatever goes wrong in it only ends the view.
+                try {
+                    foreach ($fl in @(Step-PqPassFollower -State $follower)) {
+                        $flColor = switch ($fl.Substring(0, 1)) { '>' { 'White' } '!' { 'Red' } '(' { 'DarkGray' } default { 'DarkCyan' } }
+                        Write-Host ('{0:HH:mm:ss} {1}' -f [DateTime]::Now, $fl) -ForegroundColor $flColor
+                        $lastLineAt = $elapsedNow
+                    }
+                }
+                catch [Management.Automation.PipelineStoppedException] { throw }
+                catch { $follower = $null }
+            }
             if ($elapsedNow -ge $beatAt) {
-                Write-Host ('pass {0} {1}{2} - still running, {3:hh\:mm\:ss} elapsed' -f $Instance, $TicketId, $titlePart, $passSw.Elapsed) -ForegroundColor DarkGray
+                if ($null -eq $follower -or ($elapsedNow - $lastLineAt) -ge 60) {
+                    Write-Host ('pass {0} {1}{2} - still running, {3:hh\:mm\:ss} elapsed' -f $Instance, $TicketId, $titlePart, $passSw.Elapsed) -ForegroundColor DarkGray
+                }
                 $beatAt += 60
                 if ($OnBeat) { try { & $OnBeat ([Math]::Round($elapsedNow, 1)) } catch { } }
             }
@@ -1980,7 +2005,7 @@ function Start-PqLoop {
                 }
 
                 Write-Host "pass $passNum $repoKey`:$ticketId $statusBefore$titlePart$agentPart - started"
-                $childRes = Invoke-PqPassChild -Script $actualRunner -RepoPath $repoPath -TicketId $ticketId -TicketTitle $ticketTitle -Instance "pq$slot" -PermissionMode $permMode -OnStarted $onStarted -AgentArgs $agentArgs -OnTick $onTick -StopWatcher $stopWatcher -OnBeat $onBeat
+                $childRes = Invoke-PqPassChild -Script $actualRunner -RepoPath $repoPath -TicketId $ticketId -TicketTitle $ticketTitle -Instance "pq$slot" -PermissionMode $permMode -OnStarted $onStarted -AgentArgs $agentArgs -OnTick $onTick -StopWatcher $stopWatcher -OnBeat $onBeat -Follow:($agentName -ceq 'claude' -and $env:SZA_PQ_FOLLOW -cne '0')
                 $passSw.Stop()
                 $elapsedSec = [Math]::Round($passSw.ElapsedMilliseconds / 1000, 1)
                 Add-PqPassSessions -Ids @($pqPassSessions)

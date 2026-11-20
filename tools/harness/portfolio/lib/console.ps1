@@ -13,6 +13,8 @@
 #                                            session, and the session is the transcript's file name.
 #   Read-PqTail -Path <file> -Offset <long> -Carry <string>
 #                                            @{ lines; offset; carry } the complete records written after Offset.
+#   New-PqPassFollower / Step-PqPassFollower
+#                                            the same live view inside the worker window (see the block above them).
 
 function Format-PqTranscriptRecord([string]$Line) {
     $out = [Collections.Generic.List[string]]::new()
@@ -72,6 +74,48 @@ function Get-PqLiveTranscript {
         return @{ ok = $true; path = $file; session = $sid; why = $null }
     }
     catch { return @{ ok = $false; path = $null; session = ''; why = $_.Exception.Message } }
+}
+
+# The follower is the built-in form of `pq tail`: the worker window of a pass prints what the agent does while the pass
+# runs, so no second window is needed. State is a hashtable the caller keeps between steps.
+#
+#   New-PqPassFollower -RepoPath <path> -TicketId <id> -Since <datetime>
+#   Step-PqPassFollower -State <hashtable> [-MaxLines <n>]
+#                                            the display lines written since the last step, at most MaxLines (the rest is
+#                                            counted in one `(+n more)` line). A session whose transcript existed before
+#                                            the pass began is followed from its end, never replayed; a new session of the
+#                                            same ticket (a context handoff) is followed from its start. Never throws.
+function New-PqPassFollower {
+    param([Parameter(Mandatory)][string]$RepoPath, [Parameter(Mandatory)][string]$TicketId, [datetime]$Since = [datetime]::Now)
+    return @{ repo = $RepoPath; ticket = $TicketId; since = $Since.ToUniversalTime(); session = ''; path = ''; offset = [long]0; carry = '' }
+}
+
+function Step-PqPassFollower {
+    param([Parameter(Mandatory)]$State, [int]$MaxLines = 30)
+    $out = [Collections.Generic.List[string]]::new()
+    try {
+        $tx = Get-PqLiveTranscript -Repo @{ path = $State.repo } -TicketId $State.ticket
+        if (-not $tx.ok) { return @() }
+        if ($tx.session -cne $State.session) {
+            $info = [IO.FileInfo]::new($tx.path)
+            $State.session = $tx.session
+            $State.path = $tx.path
+            $State.carry = ''
+            # A file made before the pass began belongs to an earlier run of this ticket: only what it gains is shown.
+            $State.offset = if ($info.CreationTimeUtc -ge $State.since.AddSeconds(-15)) { [long]0 } else { [long]$info.Length }
+        }
+        $r = Read-PqTail -Path $State.path -Offset $State.offset -Carry $State.carry
+        $State.offset = $r.offset
+        $State.carry = $r.carry
+        foreach ($l in @($r.lines)) { foreach ($d in @(Format-PqTranscriptRecord $l)) { $out.Add($d) } }
+    }
+    catch { return @() }
+    if ($out.Count -gt $MaxLines) {
+        $more = $out.Count - $MaxLines
+        $out.RemoveRange($MaxLines, $more)
+        $out.Add("(+$more more)")
+    }
+    return @($out)
 }
 
 function Read-PqTail {
