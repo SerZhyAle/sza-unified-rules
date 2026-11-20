@@ -1,11 +1,10 @@
 ---
 # Contribution: streamsplayer_mob (overlay B, flavor shape, three packages, LIVE-BROADCAST producer) -> Unified_Rules
-Source repo: P:\ANDROID\StreamsPlayer_mob | Date: 2026-10-02, refreshed 2026-11-13 (S0059)
-Read: NEW_PROJECT_CHECKLIST, PLATFORM_OVERLAYS, REPOSITORY_LAYOUT, CONTRACTS, INVARIANTS, RELEASE_AND_DISTRIBUTION section 8, AI_USAGE (sections), harness README and spec_catalog SCHEMA; on 2026-11-13 also CHANNEL_MATRIX, SITE_CONFIGURATION, the store-publish skill's Google Play reference, the repository's own stamp, profile, `.git/config`, `.github/workflows/pages.yml` and its `docs/play/` file names, the public GitHub API and the Pages URLs, and the deviceinfo record (S0057) as the model; deduped against: contrib/fastmediasorter_mob_v2.md, contrib/streams_player.md
+Source repo: P:\ANDROID\StreamsPlayer_mob | Date: 2026-10-02, refreshed 2026-11-13 (S0059), re-synced 2026-11-20 (STRMOB-0176)
+Read: AI_USAGE, AUTHOR, CHANNEL_MATRIX, CONTRACTS, DEVELOPMENT, DOCUMENTATION_CONCEPT, GITHUB_INTERACTION, INVARIANTS, LOCALIZATION, NEW_PROJECT_CHECKLIST, PLATFORM_OVERLAYS, PROMOTION, RELEASE_AND_DISTRIBUTION, REPOSITORY_LAYOUT, SECURITY_AND_PRIVACY, SITE_CONFIGURATION, SUPPORT_AND_FEEDBACK, TESTING_AND_QA, UI_UX, WINDOWS_PACKAGING (full 20-doc re-sync against canon 2026.11.20.4); harness README and spec_catalog SCHEMA; the store-publish skill's Google Play reference; the repository's own stamp, profile, `.git/config`, `.github/workflows/pages.yml`, `docs/play/`, `docs/releases/` and `docs/contracts/`; deduped against: contrib/fastmediasorter_mob_v2.md, contrib/streams_player.md
 ---
 
-> **Owner decision, 2026-11-16:** `PLAN/` and its archive are local and ignored. Earlier statements below
-> that the workspace is tracked or public describe the former policy.
+> **Owner decision, 2026-11-16:** `PLAN/` and its archive are local and ignored (`CLAUDE.md` section 4 item 6, `.gitignore` `/PLAN/`, `git ls-files PLAN` is 0). Earlier statements below that the workspace was tracked or public describe the former 2026-11-13 snapshot.
 
 StreamsPlayer for Android: phone app, Wear OS app and watch face for internet radio, live video and RTSP, plus
 live broadcast from phone and watch. An independent product extracted from FastMediaSorter Android
@@ -24,50 +23,53 @@ privacy site and two Google Play Console apps, all created on the owner's order;
 > a candidate that was applied or refused and a question that was answered are deleted here; the history
 > section of that day says what became of them.
 
-## Overlay facts (verified against this repo, 2026-10-02; refreshed 2026-11-13)
+## Overlay facts (verified against this repo, 2026-10-02; refreshed 2026-11-13 and 2026-11-20)
 
-- **Source root & release-mechanics.** Gradle modules `phone`, `wear` and `watchface` (the stamp's `modules.names`);
-  the directory `exchange-core` is named in the profile's probe roots as well (directory listing, 2026-11-13). Specs in
+- **Source root & release-mechanics.** Gradle modules `phone`, `wear` and `watchface` (the profile's `modules.names`);
+  the JVM library `exchange-core` is named in the profile's probe roots as well (`settings.gradle.kts`, `.sza-profile.json`). Specs in
   `PLAN/STRMOB-NNNN_<slug>.md` (own ticket prefix STRMOB since 2026-11-19, repository ticket S0164; a ticket closed
   before it keeps `S####_<slug>.md`, `grammar.legacyTicketIdPatterns`), the harness run from the plugin through
-  `tools/harness.ps1` (evidence: `.sza-profile.json`, `tools/harness.ps1`).
+  `tools/harness.ps1`, the day-0 launchers `r0.ps1`, `r1.ps1`-`r3.ps1`, `rs.ps1`, `rm.ps1`, `rw.ps1` at the root and the
+  eight spec-command forwarders in `.claude/commands/` (`a.ps1` builds packages and records builds in `docs/releases/`).
 - **Version shape.** PACKAGE-VERSIONING Android profile, tag regex `^v\d+\.\d+\.\d+\.\d+$` (the stamp's
-  `versionShape.tagRegex`, set after 2026-10-02); no release tag is named in the 2026-11-13 report.
+  `versionShape.tagRegex`, set after 2026-10-02); no release tag has been cut yet.
 - **Channels + listing files.** `channels: ["play"]` (the stamp; owner decision B39 of 2026-10-14, S0010, declared with
   S0033 on 2026-10-25). The 2026-10-02 reading "GitHub/sideload per owner decision 4.3" is superseded: the stamp's comment
   adds a sideload channel the day one opens, and none is declared. Listing source: `docs/play/PLAY_LISTING.md`,
-  `PLAY_LISTING-ru.md`, `PLAY_LISTING-uk.md` and `PLAY_DATA_SAFETY.md`; the 512 icon and the 1024x500 feature graphic
-  sit in `docs/play/` beside them.
-- **Frozen anchors (owner, 2026-10-02; bound 2026-11-13).** `com.sza.streamsplayer` shared by phone and watch (Data Layer
+  `PLAY_LISTING-ru.md`, `PLAY_LISTING-uk.md`, `PLAY_LISTING_WATCHFACE.md`, `PLAY_LISTING_WATCHFACE-ru.md`,
+  `PLAY_LISTING_WATCHFACE-uk.md`, `PLAY_DATA_SAFETY.md`, `PLAY_REACH.md` and `PLAY_RELEASE_RECORD.md`; the 512 icon and
+  the 1024x500 feature graphic sit in `docs/play/` beside them (rendered from `docs/brand/streamsplayer-icon.png` by
+  `tools/store/render-store-assets.ps1`). Release ledger: `docs/releases/` (`channels.json` declaring 6 Play tracks across
+  `phone`, `wear` and `watchface`, `builds.json`, `RELEASES.md`; S0154).
+- **Frozen anchors (owner, 2026-10-02; bound 2026-11-13; keys imported 2026-11-17).** `com.sza.streamsplayer` shared by phone and watch (Data Layer
   needs one id and one key) and by the noLegal variant (sanctioned exception, never co-published to one store);
-  `com.sza.streamsplayer.watchface`. Both ids are now bound to Play Console apps (created 2026-11-13; the create-app form
-  takes the package name, so the id is frozen from that day - see PLATFORM_OVERLAYS overlay B). Signing key at
-  `P:\ANDROID\StreamsPlayer_credentials`; Play App Signing with the product's own key imported as the app signing key plus
-  a separate upload key, so store and sideload builds carry one signature. The 2026-11-13 report does not say whether the
-  upload key exists or the signing key has been imported; this record does not claim either.
+  `com.sza.streamsplayer.watchface`. Both ids are bound to Play Console apps (created 2026-11-13: `4972961129584993008` and
+  `4976077107533670611`). Signing keys live at `P:\ANDROID\StreamsPlayer_credentials`; Play App Signing with the product's
+  own key (`61:CF:02:09:..:F4:97`) imported into both console apps on 2026-11-17 via `pepk`, plus a separate upload key
+  (`A8:68:0E:EA:..:FB:D0`, reset requested 2026-11-17, valid 2026-11-19 16:20/16:21; `docs/play/PLAY_RELEASE_RECORD.md`
+  section 1), so store and sideload builds carry one app-signing signature.
 - **Editions + parity mechanism.** None - single edition. Shape: flavor (store, noLegal); wear and watchface are
-  sibling modules. Coupling to FastMediaSorter: contracts plus a port ledger and drift check (handoff section 6a).
+  sibling modules. Coupling to FastMediaSorter: shared contracts plus the port ledger (`docs/port-ledger.jsonl`), outbound
+  ledger (`docs/port-outbound.jsonl`), scope manifest (`docs/port-scope.jsonl`) and feature parity manifest
+  (`docs/feature-parity.jsonl`) gated by `tools/port-ledger/assert-port-drift.ps1` and `tools/family/assert-family-sync.ps1`.
 
 ## Channel-matrix rows (this project)
 
 Format: Channel | Trigger | Cost | Auth | Signer | Listing source | Frozen anchor | Verify live
 
 - **Google Play (Android), app "StreamsPlayer: Internet Radio", phone and Wear OS in one listing** | AAB upload to a track:
-  the phone bundle, then the Wear OS bundle to the same app; no upload is named in the 2026-11-13 report | [PUBLIC] | Play Console, personal
-  developer account, owner's login; the review account's sign-in details are the owner's to type | Play App Signing; the
-  upload key and the signing-key import are not confirmed by the 2026-11-13 report | `docs/play/PLAY_LISTING*.md` (en-US,
-  ru-RU, uk) + `docs/play/PLAY_DATA_SAFETY.md`; graphics `docs/play/icon-512.png` and `docs/play/feature-graphic-1024x500.png`
-  | `com.sza.streamsplayer` (bound 2026-11-13) | track shows the build, staged rollout, update over a prior install on a
-  phone and on a watch - **not run**, nothing is published. (evidence: owner's report of 2026-11-13, S0059 section 0;
-  `docs/play/` listing)
-- **Google Play (Android), app "StreamsPlayer Watch Face"** | AAB upload to a track; no upload is named in the 2026-11-13 report;
-  listing empty by owner decision until its source exists | [PUBLIC] | same console account | same open items as above | none
-  yet - no listing source | `com.sza.streamsplayer.watchface` (bound 2026-11-13) | track shows the build - **not run**.
+  the phone bundle, then the Wear OS bundle to the same app; nothing uploaded yet (`STRMOB-0047`, `STRMOB-0072`) | [PUBLIC] | Play Console, personal
+  developer account `8446656778368889827`, owner's login; the review account's sign-in details are the owner's to type | Play App Signing with
+  imported app signing key `61:CF:..:F4:97` and separate upload key `A8:68:..:FB:D0` (valid 2026-11-19) | `docs/play/PLAY_LISTING*.md` (en-US,
+  ru-RU, uk) + `docs/play/PLAY_DATA_SAFETY.md` + `docs/play/PLAY_RELEASE_RECORD.md`; graphics `docs/play/icon-512.png` and `docs/play/feature-graphic-1024x500.png`
+  | `com.sza.streamsplayer` (bound 2026-11-13, app `4972961129584993008`) | track shows the build, staged rollout, update over a prior install on a
+  phone and on a watch - **not run**, nothing is published. (evidence: `docs/play/PLAY_RELEASE_RECORD.md`, `docs/play/PLAY_DATA_SAFETY.md`)
+- **Google Play (Android), app "StreamsPlayer Watch Face"** | AAB upload to a track; nothing uploaded yet (`STRMOB-0072`, gated on captured watch-face icons `STRMOB-0099`) | [PUBLIC] | same console account `8446656778368889827` | same app signing key `61:CF:..:F4:97` and upload key `A8:68:..:FB:D0` | `docs/play/PLAY_LISTING_WATCHFACE*.md` (en-US, ru-RU, uk) + `docs/play/PLAY_RELEASE_RECORD.md` | `com.sza.streamsplayer.watchface` (bound 2026-11-13, app `4976077107533670611`) | track shows the build - **not run**.
 
 The generic Google Play row of CHANNEL_MATRIX is unchanged: a project's own rows live in its record (`TEMPLATE.md`), and the
 generic row already says a secondary form-factor artifact has its own store guidelines.
 
-## Public presence 2026-11-13
+## Public presence 2026-11-13 (updated 2026-11-20)
 
 Recorded as the owner's session reported it; what the canon session measured itself is marked as such.
 
@@ -83,20 +85,21 @@ Recorded as the owner's session reported it; what the canon session measured its
   `BroadcastTunnelTlsTest`; the globs stay at `.gitignore` lines 31-32, and the comment at lines 39-41 and the negations at
   lines 42-43 undo them for the product source and the test identity, so a fresh clone has them.
   The three runbook lessons this run found are parked as S0060 against S0058, not written into the canon rules here.
-- **`PLAN/` is public with the remote.** `git ls-files PLAN` returns 192 files on 2026-11-13, including `PLAN/DONE/` and its
-  attachments; the 2026-10-02 reason for tracking it ("there is no remote") no longer holds. Open question below.
+- **`PLAN/` is local and gitignored since 2026-11-16.** On 2026-11-16 the owner ruled that `PLAN/`, its journal and its
+  archive are local and ignored by Git (`CLAUDE.md` section 4 item 6); `.gitignore` carries `/PLAN/` and `git ls-files PLAN`
+  returns 0 files (verified 2026-11-20).
 - **Site.** `https://serzhyale.github.io/StreamsPlayer_Android/`, served by GitHub Pages with the workflow build type through
   `.github/workflows/pages.yml`: a check job on `windows-latest` that first runs `git config --global core.autocrlf false`
   (the fix for the CRLF render-target problem in SITE_CONFIGURATION section 4), then `tools/site/build-site.ps1 -Check`; then
   the deploy job. The owner's report gives the first run as 43438392545, green. Measured by the canon session 2026-11-13:
   `privacy.html`, `privacy-ru.html`, `privacy-uk.html`, `sitemap.xml` and `robots.txt` answer 200; the site root answers
-  **404**, because the product landing does not exist yet (the product's ticket S0045), so the repository has no homepage and
-  the Play listing no website. The owner's report adds that both CSS files and every external link on the pages answer 200
-  (not re-measured here).
-- **Help.** The in-app help is not hosted yet; it is published with the first release (the product's S0048, decision D2,
+  **404**, because the product landing does not exist yet (the product's ticket STRMOB-0045), so the repository has no homepage and
+  the Play listing no website. On 2026-11-20 (STRMOB-0170) the three privacy pages gained their `og:image` (`social-card-1200x630.png`)
+  and regenerated permission tables.
+- **Help.** The in-app help is not hosted yet; it is published with the first release (the product's STRMOB-0048, decision D2,
   owner's report). The shared media exchange portal answers 200, including the account-deletion page that the Data safety
   form links (owner's report, not re-measured).
-- **Google Play Console** (personal developer account, the one that holds DeviceInfo). App "StreamsPlayer: Internet Radio",
+- **Google Play Console** (personal developer account `8446656778368889827`, the one that holds DeviceInfo). App "StreamsPlayer: Internet Radio",
   package `com.sza.streamsplayer`, App, Free, en-US; Developer Program Policies and US export laws accepted on the owner's
   explicit yes. App content saved: privacy policy `https://serzhyale.github.io/StreamsPlayer_Android/privacy.html`; ads none;
   advertising ID not used; government app no; financial features none; health features none. Content rating from a fresh
@@ -108,46 +111,55 @@ Recorded as the owner's session reported it; what the canon session measured its
   other IDs; encrypted in transit; no account creation in the app (accounts come from the exchange server); deletion link =
   the portal's account-deletion page. Store settings: category Music & Audio, contact `sza@ukr.net`, no website until the
   landing answers. Listing filled in en-US, ru-RU and uk (title, short and full description, 512 icon, 1024x500 feature
-  graphic). Form factors: Wear OS added; Android XR left active by Google's default.
-- **Waiting for the owner** (owner's report): the review account's sign-in details (instructions written; the login, password
-  and server address are typed by the owner), then the target audience (18 and over, an owner decision, not yet saved), then
-  the Data safety submit.
+  graphic). Form factors: Wear OS added; Android XR left active by Google's default. App signing key `61:CF:..:F4:97`
+  imported 2026-11-17; separate upload key `A8:68:..:FB:D0` reset valid 2026-11-19 16:20 (`docs/play/PLAY_RELEASE_RECORD.md`).
+- **Waiting for the first Play upload and console completion** (`STRMOB-0047`, `STRMOB-0072`): draft bundle upload, Foreground
+  service permissions declaration after the draft upload and before commit (`GOOGLE-PLAY` 0.2 rule 22), review account sign-in
+  details, target audience (18 and over), and Data safety submit.
 - **Google Play Console, second app "StreamsPlayer Watch Face"**, package `com.sza.streamsplayer.watchface` (bound to the account
   on 2026-11-13), App, Free. Every App content item complete ("You're all caught up"): no restricted access, no ads, no data
   collected, IARC all No (Everyone, PEGI 3), target audience 13 and over. Category Personalization, contact `sza@ukr.net`, Wear
-  OS form factor. Listing empty until its source exists (owner decision).
-- **Not published.** Nothing is published on Google Play (owner's report). The report names no bundle upload, no review
-  submission and no release; the open steps it does name are the review sign-in details, the target audience and the Data
-  safety submit, above. Nothing here claims an upload.
+  OS form factor. App signing key `61:CF:..:F4:97` imported 2026-11-17; upload key `A8:68:..:FB:D0` reset valid 2026-11-19 16:21.
+  Listing sources authored in `docs/play/PLAY_LISTING_WATCHFACE*.md`; console upload awaits captured watch-face icons (`STRMOB-0099`).
+- **Not published.** Nothing is published on Google Play (`docs/releases/RELEASES.md`, `release-ledger probe` 0 events).
 - **Referring to the product.** The owner wants the other projects, `sza.od.ua` included, to refer to it once it is published.
-  That waits for the publication and for the landing (S0045); the canon files nothing in another repository for it.
+  That waits for the publication and for the landing (`STRMOB-0045`); the canon files nothing in another repository for it.
 
 ## Deltas by document
 
 ### CONTRACTS.md
-- CONFIRM: the repo names the catalog in one file (`CLAUDE.md` line 3); ten pointers in `docs/contracts/`
-  (STREAM-BANK, LIVE-BROADCAST as producer, USER-PLAYLIST, MEDIA-CLASSIFICATION, PACKAGE-VERSIONING, INPUT-PARITY,
-  DIAGNOSTIC-REPORT and INSTALL-TRUST conditional, the rule-adoption family, the product-web-pages family
-  conditional). `docs/BOOTSTRAP_HANDOFF.md` names the catalog path too: an origin record written and amended on
-  2026-10-02 by the FastMediaSorter session of its ticket S4053 (the amendment on the owner's instruction), not
-  edited from this repository; it carries a dated SZA-CTR02 exemption.
+- CONFIRM: the repo names the catalog in one file (`CLAUDE.md` line 3); 24 pointers in `docs/contracts/` covering 37
+  contract ids (`RULE-ADOPTION`, `PORT-LEDGER`, `FUNCTION-PARITY`, `CAPTURE-OUTPUT`, `STREAM-BANK`, `USER-PLAYLIST`,
+  `MEDIA-CLASSIFICATION`, `PACKAGE-VERSIONING`, `ICONOGRAPHY`, `INPUT-PARITY`, `LIVE-BROADCAST`, `DEVICE-EXCHANGE`,
+  `INSTALL-TRUST`, `DIAGNOSTIC-REPORT`, `PRODUCT-WEB-PAGES`, `TEST-LAB`, `PORTAL-DOCS`, `UNIFIED-UI`, `CONTEXT-HELP`,
+  `AUTOMATED-CHECKS`, `EXCHANGE-MARK`, `WAVE-PARTICLES`, `GOOGLE-PLAY`, `RELEASE-LEDGER`) and 31 adoption rows in
+  `_meta/REGISTRY.md` (`check-sync.ps1` PASS on 37 pointer versions; `contract-lag.ps1 -FailOnLag` exit 0 with 0 behind,
+  19 partial with dated reasons, 10 current, 1 n/a). `docs/BOOTSTRAP_HANDOFF.md` names the catalog path too: an origin
+  record written and amended on 2026-10-02 by the FastMediaSorter session of its ticket S4053, not edited from this
+  repository; it carries a dated SZA-CTR02 exemption in `.sza-canon.json`.
 
-### RELEASE_AND_DISTRIBUTION.md section 8
-- CONFIRM with one DIVERGE: the harness release plan stood up as shipped; package number from the
-  `current-next-release:` marker, not from a branch, because this repo works on `main`. DIVERGE: `PLAN/` is
-  **tracked**, unlike FastMediaSorter's ignored store - there is no remote, so an ignored store would exist in one
-  place only, and the tickets carry the owner's recorded decisions. Since 2026-11-13 the remote is public, so the tickets
-  are public with it (192 files under `git ls-files PLAN`); the 2026-10-02 reason no longer holds, and whether to keep it
-  so is an open question below.
+### RELEASE_AND_DISTRIBUTION.md sections 8 and 10
+- CONFIRM: the harness release package plan stands with all six decisions recorded in `CLAUDE.md` section 4 (`PLAN/RELEASE_QUEUE.md`,
+  `PLAN/RELEASE_READY.md`, `PLAN/RELEASE_QUEUE_DONE.md`, hooked into `Write-Catalog` -> `Sync-ReleaseQueue`; package number from
+  `current-next-release:` marker because this repo works on `main`; `PLAN/` local and gitignored since 2026-11-16). The release
+  ledger (`docs/releases/`, `RELEASE-LEDGER` 0.1) is initialized with 6 Play channel rows and hooked into `a.ps1` (S0154).
+
+### TESTING_AND_QA.md section 2
+- CONFIRM: fast gates (5 s or less) are listed with measured wall times in `CLAUDE.md` section 5a; `.sza-profile.json`
+  declares no `commands.compileCheck` because Android/Gradle has no measured fast compile form between releases, so passes
+  record "no compile command" and defer full builds, Gradle unit suites and slow tool self-tests to
+  `tools/release/pre-release-sweep.ps1`.
 
 ## No delta
 
-REPOSITORY_LAYOUT (Android spec home), INVARIANTS, NEW_PROJECT_CHECKLIST.
+AI_USAGE, AUTHOR, CHANNEL_MATRIX, DEVELOPMENT, DOCUMENTATION_CONCEPT, GITHUB_INTERACTION, INVARIANTS, LOCALIZATION,
+NEW_PROJECT_CHECKLIST, PLATFORM_OVERLAYS, PROMOTION, REPOSITORY_LAYOUT, SECURITY_AND_PRIVACY, SITE_CONFIGURATION,
+SUPPORT_AND_FEEDBACK, UI_UX; WINDOWS_PACKAGING is not applicable to overlay B.
 
 ## Candidate core edits (PROPOSED - apply only on owner instruction)
 
 - **Harness `close` deletes the spec header's `**Status note:**` line (`tools/harness/spec_catalog/_lib.ps1`,
-  `Sync-SpecHeaderStatus`, plugin 2026.1002.3; found by the StreamsPlayer Android session 2026-10-10):**
+  `Sync-SpecHeaderStatus`, found by the StreamsPlayer Android session 2026-10-10, still present at line 2064 on 2026-11-20):**
   the parameter is `[string] $StatusNote = $null`, and an omitted `[string]` parameter binds as `''`
   (the type coerces the absent value; measured in pwsh 7.5 - `$null -eq $StatusNote` is `False` even with
   the default removed), so the caller that omits it - `close.ps1`, `archive.ps1`, `bulk-update.ps1` -
@@ -173,12 +185,6 @@ REPOSITORY_LAYOUT (Android spec home), INVARIANTS, NEW_PROJECT_CHECKLIST.
   (`$PSBoundParameters.ContainsKey` is how `update.ps1` already distinguishes omitted from explicit
   empty - `NoteSupplied` - so the fix reuses the corpus's own idiom. The `= $null` default on the
   parameter declaration should also go: it is the same trap the `[ref]` comment warns about.)
-- **Harness ticket-id grammar (tools/harness):** `grammar.ticketIdPattern` is a profile key, but `New-CatalogId`
-  (`spec_catalog/_lib.ps1`) and `insert.ps1 -Id` hard-code `^S\d{4}$` (canon session count: 57 occurrences in
-  42 files). A profile with another scheme validates ids that allocation can never issue. Confirmed by the canon
-  session 2026-10-02, not scheduled; this repo keeps the default.
-- **adopt-canon step 1:** the session that started before a plugin update keeps the old skill listing; this run
-  had to read the 2026.1002.2 skill, template and gate from the new install path by hand.
 
 ## Candidate NEW docs (not in any shared doc yet)
 
@@ -186,22 +192,22 @@ REPOSITORY_LAYOUT (Android spec home), INVARIANTS, NEW_PROJECT_CHECKLIST.
 
 ## Open questions for the owner
 
-Open as of 2026-11-13 (the owner's call each; none blocks the canon):
+Open as of 2026-11-20 (each carried by its project ticket; none blocks the canon):
 
-- **Public `PLAN/`.** The tickets are on GitHub with the remote (192 files). Keep them public, or ignore `PLAN/` as the
-  FastMediaSorter store is ignored; nothing in this record changes it. (The publication scan redacted one address in S0014.)
-- **Play variant.** Whether the Play app `com.sza.streamsplayer` carries the store variant only or also the noLegal one is not
-  in the 2026-11-13 report; the 2026-10-02 reading (noLegal never co-published to one store) stands until the owner says
-  otherwise.
-- **Watch-face listing.** Empty until the watch-face source exists (owner decision); the app is complete in App content but
-  has no listing text.
-- **Landing (the product's S0045).** The repository homepage and the Play website field wait for it; they stay empty until
+- **Play variant.** Whether the Play app `com.sza.streamsplayer` ever carries a second variant beyond `store` stays as
+  decided on 2026-10-02 (`noLegal` shares the base id as a sideload variant and is never co-published to one store).
+- **Landing (`STRMOB-0045`).** The repository homepage and the Play website field wait for it; they stay empty until
   the landing answers 200.
-- **Upload key and signing-key import.** Not in the 2026-11-13 report; the owner's step.
-- **Pending Play steps.** Sign-in details for the review account, the target audience (18 and over), then the Data safety
-  submit.
+- **Watch-face captured icons (`STRMOB-0099`).** Replacing the drawn watch-face launcher vector and listing graphics with
+  captures of the real face (`GOOGLE-PLAY` rule 25) before uploading `com.sza.streamsplayer.watchface` (`STRMOB-0072`).
+- **Pending Play publication steps (`STRMOB-0047`, `STRMOB-0072`).** Pre-release sweep PASS after drift/canon blockers,
+  first bundle upload, Foreground service permissions declaration after draft upload (`GOOGLE-PLAY` 0.2 rule 22), sign-in
+  details for the review account, target audience (18 and over), and Data safety submit.
 
-Settled or superseded since 2026-10-02: 4.3 distribution (play first, per the stamp's comment; a sideload channel is added
-when it opens), 4.4 watch-face composition (the second app exists), 4.5 GitHub remote (created 2026-11-13), 4.7 site (Pages
-is live; the landing is S0045).
+Settled or superseded since 2026-10-02 and 2026-11-13: 4.3 distribution (play first, per the stamp's comment; a sideload
+channel is added when it opens), 4.4 watch-face composition (the second app exists and its listing source is
+`docs/play/PLAY_LISTING_WATCHFACE*.md`), 4.5 GitHub remote (created 2026-11-13), 4.7 site (Pages is live; the landing is
+STRMOB-0045), public `PLAN/` (local and gitignored by owner decision of 2026-11-16), app signing key import and separate
+upload key registration (completed 2026-11-17, valid 2026-11-19).
+
 

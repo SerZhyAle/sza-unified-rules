@@ -472,7 +472,7 @@ function Get-PqDatedLimitTime {
     $all =[regex]::Matches($Text, '(?i)(?:try again|retry|resets?)\s+(?:at|on)\s+(?<mon>[a-z]{3,9})\.?\s+(?<day>\d{1,2})(?:st|nd|rd|th)?,?\s+(?<year>\d{4}),?\s+(?:at\s+)?(?<time>\d{1,2}:\d{2}(?::\d{2})?\s*(?:[ap]\.?m\.?)?)')
     if ($all.Count -eq 0) { return $null }
     $m = $all[$all.Count - 1]
-    $other = [regex]::Matches($Text, '(?i)(?:try again|retry|resets?)\s+(?:at|on)\s+\d{1,2}:\d{2}|resets?\s+in\s+\d')
+    $other = [regex]::Matches($Text, '(?i)(?:try again|retry|resets?)\s+(?:at|on)\s+\d{1,2}:\d{2}|(?:resets?|refresh(?:es)?)\s+in\s+\d')
     if ($other.Count -gt 0 -and $other[$other.Count - 1].Index -gt $m.Index) { return $null }
     $mon = $m.Groups['mon'].Value.Substring(0, 3)
     $timeStr = ((($m.Groups['time'].Value -replace '\.', '') -replace '\s+', '') -replace '(?i)([ap]m)$', ' $1').Trim().ToUpperInvariant()
@@ -486,11 +486,30 @@ function Get-PqDatedLimitTime {
     return $at
 }
 
+# The span form of a limit text, a time counted from now: agy's quota error ("Resets in 57h10m24s") and the Antigravity
+# Models & Usage line ("it will fully refresh in 4 days, 6 hours"). The units are days, hours, minutes and seconds in that
+# order, each optional, set apart by spaces, commas or "and". The caller hands over a whole pass log and a log quotes limit
+# texts (source lines, test fixtures, this function's own comment), so the LAST span-shaped text counts - the real message
+# ends the log - and a text that names no number ("resets in the morning") is no span at all. A span coarser than the
+# minute (days and hours only) is read as given: the hold may lift up to a unit early, and the next real pass that meets
+# the limit parks the provider again. Returns the time as a DateTimeOffset, or $null when the text holds no span.
+function Get-PqSpanLimitTime {
+    param([string]$Text, [DateTimeOffset]$Now = [DateTimeOffset]::UtcNow)
+    $sep = '[\s,]*(?:and\s+)?'
+    $spans = @([regex]::Matches($Text, "(?i)(?:resets?|(?:fully\s+)?refresh(?:es)?)\s+in\s+(?:(\d+)\s*d[a-z]*$sep)?(?:(\d+)\s*h[a-z]*$sep)?(?:(\d+)\s*m[a-z]*$sep)?(?:(\d+)\s*s[a-z]*)?") |
+        Where-Object { $_.Groups[1].Success -or $_.Groups[2].Success -or $_.Groups[3].Success -or $_.Groups[4].Success })
+    if ($spans.Count -eq 0) { return $null }
+    $m = $spans[$spans.Count - 1]
+    $g = { param($i) if ($m.Groups[$i].Success) { [int]$m.Groups[$i].Value } else { 0 } }
+    return $Now.Add([timespan]::new((& $g 1), (& $g 2), (& $g 3), (& $g 4)))
+}
+
 # When the limit lifts, read from the text of a limit message (S0016, S0035):
 #   `Usage limit reached for 5 hour. Your limit will reset at 2026-11-11 00:34:51`   a clock time, in the provider's zone
 #   `You've hit your usage limit. Try again at 2:38 AM.`                             a daily clock time (Codex)
 #   `.. or try again at Nov 19th, 2026 11:35 PM.`                                    a dated clock time (Codex, a limit of several days)
 #   `Individual quota reached. .. Resets in 57h10m24s.`                              a span from now
+#   `.. it will fully refresh in 4 days, 6 hours.`                                   a span from now (Antigravity's usage page)
 # -Offset is the provider's UTC offset for the clock form (`+08:00` for z.ai: its reset time reads 1 h 20 min after the
 # call, against 7 h 20 min if it were Kyiv time and 9 h 20 min if UTC, for a five hour window); empty reads it as this
 # machine's local time. The result is the ISO UTC time the machine-wide hold takes (a minute's margin past it), or $null
@@ -501,7 +520,7 @@ function ConvertFrom-PqLimitText {
     $at = $null
     # The caller hands over a whole pass log, and a log quotes limit texts (source lines, test fixtures): the real
     # message ends it, so within one form the LAST match counts, never the first. Across forms the order stands
-    # as it was - ISO time, dated time, clock time, span - and the span form still reads its first match.
+    # as it was - ISO time, dated time, clock time, span - and the span form reads its last match too.
     $isoAll = [regex]::Matches($Text, '(?i)reset(?:s)?\s+(?:at|on)\s+(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}(?::\d{2})?)')
     if ($isoAll.Count -gt 0) {
         $m = $isoAll[$isoAll.Count - 1]
@@ -534,11 +553,7 @@ function ConvertFrom-PqLimitText {
             }
         }
         else {
-            $m = [regex]::Match($Text, '(?i)resets?\s+in\s+(?:(\d+)\s*d[a-z]*\s*)?(?:(\d+)\s*h[a-z]*\s*)?(?:(\d+)\s*m[a-z]*\s*)?(?:(\d+)\s*s[a-z]*)?')
-            if ($m.Success -and ($m.Groups[1].Success -or $m.Groups[2].Success -or $m.Groups[3].Success -or $m.Groups[4].Success)) {
-                $g = { param($i) if ($m.Groups[$i].Success) { [int]$m.Groups[$i].Value } else { 0 } }
-                $at = $Now.Add([timespan]::new((& $g 1), (& $g 2), (& $g 3), (& $g 4)))
-            }
+            $at = Get-PqSpanLimitTime -Text $Text -Now $Now
         }
     }
     if ($null -eq $at) { return $null }

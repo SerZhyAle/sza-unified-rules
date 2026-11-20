@@ -125,6 +125,23 @@ try {
     $zoneMinus = ConvertTo-PqLimitZone ' -05:30 '
     if ($zonePlus -ne [timespan]::new(8, 0, 0) -or $zoneMinus -ne [timespan]::new(-5, -30, 0)) { throw "Expected +08:00 and -05:30 as timespans, got '$zonePlus' and '$zoneMinus'" }
     if ($null -ne (ConvertTo-PqLimitZone '') -or $null -ne (ConvertTo-PqLimitZone 'Europe/Kyiv')) { throw "Expected `$null for an empty or unreadable offset" }
+    # The span form, exact values: agy's quota error, and the Antigravity usage line with days and hours set apart by a comma.
+    $spanCases = @(
+        @{ Text = 'Individual quota reached. Resets in 57h10m24s.'; Want = '2026-11-19T21:11:24.000Z' }
+        @{ Text = 'Individual quota reached. Resets in 2h30m.'; Want = '2026-11-17T14:31:00.000Z' }
+        @{ Text = 'You have used some of your weekly limit, it will fully refresh in 4 days, 6 hours.'; Want = '2026-11-21T18:01:00.000Z' }
+        @{ Text = 'It will refresh in 1 day and 2 hours'; Want = '2026-11-18T14:01:00.000Z' }
+        @{ Text = 'Your limit refreshes in 45 minutes.'; Want = '2026-11-17T12:46:00.000Z' }
+        # A quoted older text comes first and the real message ends the log; a text with no number is no span.
+        @{ Text = "tests.ps1:99: it will fully refresh in 4 days, 6 hours.`nIndividual quota reached. Resets in 2h30m."; Want = '2026-11-17T14:31:00.000Z' }
+        @{ Text = "the cache resets in the morning`nIndividual quota reached. Resets in 2h30m."; Want = '2026-11-17T14:31:00.000Z' }
+        @{ Text = "or try again at Nov 19th, 2026 11:35 PM.`nit will fully refresh in 4 days, 6 hours."; Want = '2026-11-21T18:01:00.000Z' }
+        @{ Text = 'it will refresh in the morning'; Want = $null }
+    )
+    foreach ($c in $spanCases) {
+        $got = ConvertFrom-PqLimitText -Text $c.Text -Offset '+00:00' -Now $datedNow
+        if ($got -ne $c.Want) { throw "Span form: expected '$($c.Want)' for '$($c.Text)', got '$got'" }
+    }
     Write-Host " PASS" -ForegroundColor Green
 
     # -----------------------------------------------------------------------------------------

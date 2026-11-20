@@ -565,7 +565,10 @@ The z.ai pattern follows z.ai's error code list (1308, 1310, 1316-1321 `Usage li
 `Insufficient balance`, 1302 `Rate limit reached`); its observed limit message and reset time are recognized with the
 shipped `+08:00` offset, and its detector is marked `proven`. A real z.ai pass that advances a ticket remains unverified.
 The Gemini pattern matches agy's observed `Individual quota reached. .. Resets in 57h10m24s.` message
-(`RESOURCE_EXHAUSTED`, exit 3), whose reset time is read. Gemini has advanced a ticket, but its shipped detector remains
+(`RESOURCE_EXHAUSTED`, exit 3), whose reset time is read; so is the span on Antigravity's usage page, `it will fully refresh
+in 4 days, 6 hours` (days, hours, minutes and seconds, set apart by spaces, commas or `and`; the last such text of a pass
+log counts). That page names its time to the hour, so a hold may lift up to an hour early and the next real pass that meets
+the limit parks the provider again. Gemini has advanced a ticket, but its shipped detector remains
 `unproven`. `gemini-neon` and `gemini-claude` share that pattern and have not yet run a real pass: the slugs are the ones
 `agy models` lists (checked 2026-11-19), and the first ticket each takes proves the pool and the limit text. When no reset time
 can be read, the provider is retried after `limitPollMinutes`.

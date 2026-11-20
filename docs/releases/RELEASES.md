@@ -8,24 +8,25 @@ What each package was built as last, what each channel carries, and every public
 
 | Package | Channel | Kind | Live | Since | In flight | Ref |
 | --- | --- | --- | --- | --- | --- | --- |
-| sza | marketplace (Claude plugin marketplace (main)) | url | 2026.1120.3 | 2026-11-20 | - | [9d25473](https://github.com/SerZhyAle/sza-unified-rules/blob/main/.claude-plugin/plugin.json) |
+| sza | marketplace (Claude plugin marketplace (main)) | url | 2026.1120.4 | 2026-11-20 | - | [53e69b7](https://github.com/SerZhyAle/sza-unified-rules/blob/main/.claude-plugin/plugin.json) |
 
 ## Last builds
 
 | Package | Flavor | Kind | Version | Built | Artifact |
 | --- | --- | --- | --- | --- | --- |
-| sza | default | release | 2026.1120.4 | 2026-11-20 16:08:49+01:00 | - |
+| sza | default | release | 2026.1120.5 | 2026-11-20 21:04:53+01:00 | - |
 
 ## Built, not published
 
 | Package | Flavor | Version | Built | Days |
 | --- | --- | --- | --- | --- |
-| sza | default | 2026.1120.4 | 2026-11-20 | 0 |
+| sza | default | 2026.1120.5 | 2026-11-20 | 0 |
 
 ## History
 
 | When | Package | Channel | Version | State | Source | Ref | Note |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2026-11-20 16:09:01+01:00 | sza | marketplace | 2026.1120.4 | live | release | [53e69b7](https://github.com/SerZhyAle/sza-unified-rules/blob/main/.claude-plugin/plugin.json) | - |
 | 2026-11-20 14:52:08+01:00 | sza | marketplace | 2026.1120.3 | live | release | [9d25473](https://github.com/SerZhyAle/sza-unified-rules/blob/main/.claude-plugin/plugin.json) | - |
 | 2026-11-20 01:46:52+01:00 | sza | marketplace | 2026.1120.2 | live | release | [25f91f2](https://github.com/SerZhyAle/sza-unified-rules/blob/main/.claude-plugin/plugin.json) | - |
 | 2026-11-20 00:14:04+01:00 | sza | marketplace | 2026.1120.1 | live | release | [2c3c465](https://github.com/SerZhyAle/sza-unified-rules/blob/main/.claude-plugin/plugin.json) | - |
