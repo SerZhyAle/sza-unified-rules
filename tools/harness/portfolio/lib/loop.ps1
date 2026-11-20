@@ -1187,6 +1187,7 @@ function Start-PqLoop {
     $repoOnly = @{}
     if ($OnlyRepo) { $repoOnly.OnlyRepo = $OnlyRepo }
     Write-PqOwnerAction 'start'
+    if ($OnlyRepo) { Write-Host "repository $OnlyRepo is named at start - the owner's sessions there are not waited for (a lease, a lock or a hold still is)" }
 
     $harness = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 
@@ -1480,7 +1481,10 @@ function Start-PqLoop {
                 # half-minute mark of the first occupied repository had lapsed before the walk for the second was done, so
                 # the robot kept coming back to the same two repositories instead of reaching a free one. A repository stays
                 # marked until its window can have run out (a transcript only gets younger), and never less than 30 s.
-                if ($null -eq $named) {
+                # A `pq start -Repo` worker (TASK-FLOW 0.40 section 18) ranks one repository and does not wait for the
+                # owner's transcript in it, so it reads no transcript at all: the other repositories are never ranked, and
+                # a line about them (one per enabled repository) was noise on the console of a scoped start.
+                if ($null -eq $named -and -not $OnlyRepo) {
                     $ownerIn = Get-PqTranscriptOccupiedRepos -Registry $Registry -HarnessRoot $harness
                     foreach ($ownerKey in @($ownerIn.Keys)) {
                         $ownerOcc = $ownerIn[$ownerKey]
@@ -1740,7 +1744,8 @@ function Start-PqLoop {
                 # Rule 61: the robot yields to the owner. A live manual session (a transcript written within
                 # occupiedMinutes, a live lease no pass holds) means no pass is launched; the repository is looked
                 # at again in half a minute, and the next repository of the rank is tried meanwhile.
-                $occ = Get-PqRepoOccupancy -Repo $repoRec -Registry $Registry -HarnessRoot $harness
+                $namedRepo = [bool]$OnlyRepo -and $repoKey -ieq $OnlyRepo
+                $occ = Get-PqRepoOccupancy -Repo $repoRec -Registry $Registry -HarnessRoot $harness -SkipTranscript:$namedRepo
                 if ($occ.occupied) {
                     $occupiedMarks[$repoKey] = @{ until = [DateTime]::UtcNow.AddSeconds([Math]::Max(30, [int](Get-PqValue $occ 'freeInSeconds' 0))); why = 'occupied' }
                     if (-not $occupancyState.ContainsKey($repoKey)) {

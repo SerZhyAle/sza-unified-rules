@@ -18,6 +18,8 @@
 #                              owners are already seen; a lock whose holder left no transcript and no lease is the gap.
 #                              An unreadable lease listing is no evidence (it never blocks all work); a transcript folder
 #                              that does not exist is no evidence either (an agent that writes none is invisible, rule 61).
+#                              -SkipTranscript drops the transcript kind for one call: the loop passes it for the repository
+#                              a `pq start -Repo` worker names, where the owner's open session is not waited for (0.40).
 
 function Get-PqTranscriptDir([string]$RepoPath) {
     $profileDir = $env:USERPROFILE
@@ -113,12 +115,14 @@ function Test-PqTranscriptIsRobot([string]$FilePath) {
 }
 
 function Get-PqRepoOccupancy {
-    param([Parameter(Mandatory)]$Repo, [Parameter(Mandatory)]$Registry, [string]$HarnessRoot, [switch]$NoLease)
+    # -SkipTranscript: the repository is the one an owner's `pq start -Repo` names (TASK-FLOW 0.40 section 18), so a session
+    # of the owner there is not waited for; the lease evidence below is still read.
+    param([Parameter(Mandatory)]$Repo, [Parameter(Mandatory)]$Registry, [string]$HarnessRoot, [switch]$NoLease, [switch]$SkipTranscript)
     $path = [string]$Repo.path
     $minutes = [int](Get-PqValue $Registry 'occupiedMinutes' 10)
     $own = Get-PqPassSessions
 
-    $dir = Get-PqTranscriptDir $path
+    $dir = if ($SkipTranscript) { $null } else { Get-PqTranscriptDir $path }
     if ($null -ne $dir) {
         $newest = $null
         $newestId = ''

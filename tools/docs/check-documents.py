@@ -14,13 +14,22 @@ from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
 
-# What --init-local writes into a new local corpus as its ignore list. Ticket files are recorded by the ledger, so a
-# registry row for one would repeat it and be missing from the first capture to the next --register.
+# What --init-local writes into a new local corpus as its ignore list. Ticket files are recorded by the ledger, and
+# ticket attachments belong to those records, so registry rows would repeat them and go stale after capture.
 LOCAL_IGNORE = [
     {"pattern": "PLAN/DONE/*.md", "reason": "Frozen completed ticket records; no archive rewrite."},
     {"pattern": "PLAN/S[0-9][0-9][0-9][0-9]_*.md",
      "reason": "Ticket records belong to the ledger (PLAN/spec-catalog.jsonl), written by every capture and status "
                "move; a registry row would repeat it and go stale the day a ticket is captured."},
+    {"pattern": "PLAN/CANONR-[0-9][0-9][0-9][0-9]_*.md",
+     "reason": "Ticket records belong to the ledger (PLAN/spec-catalog.jsonl), written by every capture and status "
+               "move; a registry row would repeat it and go stale the day a ticket is captured."},
+    {"pattern": "PLAN/*/attachments/*",
+     "reason": "Ticket attachments are evidence owned by the ticket ledger record, not independently maintained "
+               "documents."},
+    {"pattern": "PLAN/DONE/*/attachments/*",
+     "reason": "Archived ticket attachments are evidence owned by the ticket ledger record, not independently "
+               "maintained documents."},
 ]
 
 

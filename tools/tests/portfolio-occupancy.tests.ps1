@@ -1,5 +1,6 @@
 #requires -Version 7.0
 # Tests for S0034: occupancy robot vs owner classification, flat pass-sessions, robot transcript detection, and concurrent repo occupancy
+# Case 6 (TASK-FLOW 0.40): a `pq start -Repo` worker skips the transcript evidence in the repository it names.
 $ErrorActionPreference = 'Stop'
 $lib = Join-Path (Split-Path $PSScriptRoot -Parent) 'harness/portfolio/lib'
 . (Join-Path $lib 'paths.ps1')
@@ -174,7 +175,25 @@ try {
     }
     Write-Host " PASS" -ForegroundColor Green
 
-    Write-Host "`nAll 5 test cases passed successfully." -ForegroundColor Green
+    # Case 6: a `pq start -Repo` worker does not wait for the owner's transcript in the repository it names (TASK-FLOW 0.40)
+    Write-Host "Case 6: -SkipTranscript drops the transcript evidence only, and the loop passes it for -Repo..." -NoNewline
+    $occSkip = Get-PqRepoOccupancy -Repo $repoRec -Registry $registry -NoLease -SkipTranscript
+    if ($occSkip.occupied) {
+        throw "Expected occupied=false with -SkipTranscript for a recent manual transcript, got: $($occSkip | ConvertTo-Json -Compress)"
+    }
+    $occKept = Get-PqRepoOccupancy -Repo $repoRec -Registry $registry -NoLease
+    if (-not $occKept.occupied -or $occKept.by -ne 'transcript') {
+        throw "Expected the call without -SkipTranscript to stay occupied by the same transcript, got: $($occKept | ConvertTo-Json -Compress)"
+    }
+    if ($loopContent -notmatch '-SkipTranscript:\$namedRepo') {
+        throw "loop.ps1 does not pass -SkipTranscript for the repository a -Repo worker names"
+    }
+    if ($loopContent -notmatch 'if \(\$null -eq \$named -and -not \$OnlyRepo\)\s*\{\s*\$ownerIn') {
+        throw "loop.ps1 still reads every repository's transcripts in a -Repo worker"
+    }
+    Write-Host " PASS" -ForegroundColor Green
+
+    Write-Host "`nAll 6 test cases passed successfully." -ForegroundColor Green
 }
 finally {
     $env:SZA_PORTFOLIO_ROOT = $origEnv

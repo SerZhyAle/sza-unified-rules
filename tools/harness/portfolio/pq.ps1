@@ -57,7 +57,9 @@
                                                    in the file) and nothing else - the registry's hold and enabled
                                                    flags, stops, occupancy, leases and the picker's gates still
                                                    apply; -MaxTickets with it must be 0 or 1; -Repo <key> is a normal
-                                                   worker that ranks only that project, every hold kept; neither
+                                                   worker that ranks only that project, every hold kept, and that
+                                                   does not wait for your own open session there (a lease, a lock
+                                                   or a hold still occupies it); neither
                                                    changes the project order or reorders the queue file (each syncs
                                                    its own project's rows only, and runs no discovery); -Ticket and
                                                    -Repo together are refused

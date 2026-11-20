@@ -366,7 +366,11 @@ empty: wait, see Waiting
   of every enabled repository are read before each rank (a directory listing and a 1 KB read each, no child process), so
   one walk of the rank goes past all of them; a repository stays marked until its window can have run out - a transcript
   only gets younger, so looking sooner cannot find it free - and never for less than half a minute. A pass already running
-  is never interrupted when you arrive. The passes' own sessions are told apart by the session id the pass runs under,
+  is never interrupted when you arrive. **`pq start -Repo <key>` is the exception for the repository it names**: you chose
+  that repository for the robot with the command, so your own open session there is not waited for (the worker prints
+  `repository <key> is named at start`); a live ticket lease of yours still holds a ticket, and the registry's and the
+  queue file's hold still keep the repository out. Such a worker ranks only that repository, so it reads no transcript of
+  another one. The pool (`pq start`) and `-Ticket` yield as above. The passes' own sessions are told apart by the session id the pass runs under,
   kept in `run\pass-sessions.json`. Not seen: an agent that writes no Claude transcript (Codex, Gemini), and a build or
   code lock whose holder has neither a transcript nor a lease.
 - **Shared resources.** A ticket's `**Verify:** <level> - <why>` line names what proves it: `edit` takes nothing, `build`
@@ -539,6 +543,12 @@ vendors' own positioning (Google sets Neon against Opus 5.5 and GPT-6.2 Sol), no
 |---|---|---|---|---|
 | Codex (ChatGPT Plus) | `gpt-6-luna` - fast and affordable, for easier tasks | `gpt-6.1-terra` - efficient, the record's model | `gpt-6.2-sol`; `gpt-6.1-sol` until the CLI is newer than 0.165 | `gpt-6.2-astra`, `gpt-6-astra` |
 | Gemini (Google AI Pro) | `gemini-4-hydrogen-high` - the `gemini` record | `gemini-4-argon-high` - the `gemini-argon` record | `gemini-4-neon-high` - the `gemini-neon` record | `gemini-4-carbon-*` (Ultra, not in this account's `agy models`) |
+| z.ai (GLM Coding plan) | `glm-5.3-flash` - weaker, nearly free to the owner | `glm-5.3` - the record's model | - | - |
+
+z.ai takes the light grades only (ceiling 4): `glm-5.3-flash` at 0-1, `glm-5.3` at 2-4 with the effort rising by grade.
+The `zai` record passes `--effort`, which z.ai's Anthropic endpoint takes as GLM's reasoning depth - both models accepted
+`low` and `max` on 2026-11-20 - so its own `effort` is a real value (`high`), never `default`, which the template would
+pass as is.
 
 Codex answers `codex debug models` with the catalog of its own client version: 0.165 lists `gpt-6.1-terra`, `gpt-6.1-sol`,
 `gpt-6-astra`, `gpt-6-sol`, `gpt-6-luna` and the `gpt-5.6-*` family, while the VS Code extension's 0.169 also lists
@@ -821,7 +831,7 @@ environment values or keys.
 | `TicketQueueMissing` from `pq tickets` | there is no ticket queue file at the path the message prints; restore it, or point the profile's `paths.releaseQueue` at the right file |
 | a worker window was closed by force | its state files stay; the next start reclaims files whose process is gone. If only the worker process ended and its runner ran on, the repository stays `occupied` until that pass ends |
 | `skip <key> - stopped`, `frozen` in the worker's wait line, a `Frozen:` line of `pq status`, or `repository <key> is stopped` in the worker's console | that repository's own queue stop file exists (its `rs`, or a release freeze) - see Stopping. A freeze that expired while nobody opened the repository leaves its stop in place for good, because the freeze clears itself only when something reads it and a skipped repository is never read: run the repository's own freeze Status (FMS_A: `scripts/utils/release-freeze.ps1 -Verb Status -Scope wear`, or `-Scope phone`), which removes the expired marker and the stop it asked for, or delete the file |
-| `repository <key> is occupied` | a session of yours wrote a transcript there within `occupiedMinutes`, or holds a live lease: the robot goes past it to the next repository and looks again when the window can have run out (never sooner than half a minute); a session that ended is seen as gone after the window |
+| `repository <key> is occupied` | a session of yours wrote a transcript there within `occupiedMinutes`, or holds a live lease: the robot goes past it to the next repository and looks again when the window can have run out (never sooner than half a minute); a session that ended is seen as gone after the window. A `pq start -Repo <key>` worker never prints it for transcripts of `<key>` - start the worker that way when you work in the repository yourself |
 | `waits for the build resource` | `resources.build` tokens are all held (or `emulator`); the ticket is skipped for a minute. A `Verify: device` ticket takes no token, so it never waits here |
 | `pq stop` says `no worker is running` | exit 3, nothing is written; a worker window may have been closed by force, see its state files in `run\` |
 | `paused - pq resume continues` | `PAUSE` is in the portfolio root: `pq resume` |

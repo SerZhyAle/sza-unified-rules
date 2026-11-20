@@ -283,6 +283,7 @@ param(
 . (Join-Path $PSScriptRoot '_release-wait.ps1')
 . (Join-Path $PSScriptRoot '_limit-hold.ps1')
 . (Join-Path $PSScriptRoot '_pass-usage.ps1')
+. (Join-Path $PSScriptRoot '_context-handoff.ps1')
 . (Join-Path $PSScriptRoot '_instance-settings.ps1')
 . (Join-Path $PSScriptRoot '..\spec_catalog\lib\complexity-grade.ps1')
 if ([string]::IsNullOrWhiteSpace($RepoRoot)) { $RepoRoot = Get-SzaProjectRoot }
@@ -1298,6 +1299,9 @@ function Read-ContextHandoff {
 
         Only a marker written after this child started counts; a consumed marker is moved into the
         run dir so it can never be read twice.
+
+        Reading is not believing: the caller passes the marker through Test-ContextHandoffClaim
+        (_context-handoff.ps1), and one without a token figure at or above the minimum is no handoff.
     #>
     param(
         [Parameter(Mandatory)][string] $Id,
@@ -1436,7 +1440,9 @@ $ranAny = $false
 $endedOnLimit = $false
 # Context handoffs (Read-ContextHandoff): the ticket to relaunch next, and how many times each
 # ticket has been handed back in this process. The cap keeps a child that crosses the threshold
-# right after its own start from being relaunched forever.
+# right after its own start from being relaunched forever. Only a marker that names a context of at least
+# $script:ContextHandoffMinTokens counts as a handoff at all (Test-ContextHandoffClaim); the cap is the
+# second line of defence behind that one.
 $relaunchId = $null
 $handoffCounts = @{}
 $providerErrorStreaks = @{}
@@ -2135,6 +2141,18 @@ while ($true) {
     # A handoff is an outcome only for a child that ended on its own terms; a killed or failed child
     # keeps its verdict, and its marker is still consumed so it cannot leak into the next run.
     $handoff = Read-ContextHandoff -Id $id -Since $started
+    # A marker is a claim that the child's context is large. Without a token figure at or above the minimum
+    # it is no handoff: the pass is judged like any other that ended with the status unchanged (an idle
+    # outcome, dropped for the rest of this run), not relaunched. One ticket handed back five times in six
+    # minutes at `tokens: 0` (2026-11-20), each pass ~50k tokens and ending at a planning phase boundary.
+    $handoffRejected = $null
+    if ($null -ne $handoff) {
+        $handoffClaim = Test-ContextHandoffClaim -Handoff $handoff
+        if (-not $handoffClaim.Valid) {
+            $handoffRejected = $handoffClaim.Reason
+            $handoff = $null
+        }
+    }
     if ($null -ne $handoff -and $outcome -eq 'ok' -and ($null -eq $exitCode -or [int]$exitCode -eq 0)) {
         $outcome = 'context-handoff'
     }
@@ -2237,6 +2255,9 @@ while ($true) {
     $colour = if ($moved) { 'Green' } elseif ($outcome -eq 'context-handoff') { 'Cyan' } elseif ($outcome -eq 'limit-hit') { 'Magenta' } elseif ($outcome -eq 'provider-error') { 'DarkYellow' } elseif ($outcome -ne 'ok') { 'Red' } else { 'Yellow' }
     Write-Host ''
     Write-Host ("  {0}{5}: {1} -> {2}   ({3}, {4} min)" -f $id, $statusBefore, $statusAfter, $outcome, $elapsed, $titleSuffix) -ForegroundColor $colour
+    if ($null -ne $handoffRejected) {
+        Write-Host ("  {0} left a context-handoff marker, but {1} - not a handoff: no relaunch, the pass counts as it ended." -f $id, $handoffRejected) -ForegroundColor DarkYellow
+    }
     if ($relaunch) {
         Write-Host ("  {0} handed back at {1} tokens ({2}) - relaunching with a fresh context, handoff {3} of {4}." -f `
                 $id, $handoff.tokens, $handoff.boundary, $handoffCounts[$id], $handoffCap) -ForegroundColor DarkCyan

@@ -217,6 +217,13 @@ class Documents(unittest.TestCase):
         (plan / "S0001_first-ticket").mkdir(parents=True)
         (plan / "S0001_first-ticket.md").write_text("# S0001_first-ticket\n")
         (plan / "S0001_first-ticket/attachment.md").write_text("# Attachment\n")
+        active_ticket = plan / "CANONR-0001_new-ticket"
+        (active_ticket / "attachments").mkdir(parents=True)
+        (plan / "CANONR-0001_new-ticket.md").write_text("# CANONR-0001_new-ticket\n")
+        (active_ticket / "attachments/evidence.md").write_text("# Active evidence\n")
+        archived_attachments = plan / "DONE/CANONR-0002_done-ticket/attachments"
+        archived_attachments.mkdir(parents=True)
+        (archived_attachments / "evidence.md").write_text("# Archived evidence\n")
         (plan / "NOTES.md").write_text("# Notes\n")
 
         def run(*extra):
@@ -230,8 +237,13 @@ class Documents(unittest.TestCase):
         self.assertIn("PLAN/NOTES.md", registered)
         self.assertIn("PLAN/S0001_first-ticket/attachment.md", registered)
         self.assertNotIn("PLAN/S0001_first-ticket.md", registered)
+        self.assertNotIn("PLAN/CANONR-0001_new-ticket.md", registered)
+        self.assertNotIn("PLAN/CANONR-0001_new-ticket/attachments/evidence.md", registered)
+        self.assertNotIn("PLAN/DONE/CANONR-0002_done-ticket/attachments/evidence.md", registered)
         # A ticket captured after the registry was written owes no row; any other document under PLAN does.
         (plan / "S0002_second-ticket.md").write_text("# S0002_second-ticket\n")
+        self.assertEqual(run().returncode, 0, run().stdout)
+        (plan / "CANONR-0003_second-ticket.md").write_text("# CANONR-0003_second-ticket\n")
         self.assertEqual(run().returncode, 0, run().stdout)
         (plan / "LATER.md").write_text("# Later\n")
         later = run()
