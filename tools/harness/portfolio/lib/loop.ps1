@@ -510,9 +510,10 @@ function Invoke-PqPassChild {
         [scriptblock]$StopWatcher,
         # Called about once a minute on the beat loop; emits pass.beat event and refreshes worker seen timestamp.
         [scriptblock]$OnBeat,
-        # Print what the agent does while the pass runs, read from its transcript (console.ps1, the built-in `pq tail`).
-        # Only a Claude pass writes one; for any other agent nothing is found and the minute line stays the only sign.
-        [switch]$Follow
+        # Print what the agent does while the pass runs (console.ps1, the built-in `pq tail`): 'claude' reads the session
+        # transcript (the z.ai agent is the same CLI), 'codex' the rollout file Codex writes. Empty = no view; an agent with
+        # no live file (Gemini, Mistral) keeps the minute line as its only sign.
+        [ValidateSet('', 'claude', 'codex')][string]$Follow = ''
     )
     # A registry record may spell the drive letter in lower case; the agent CLI would then see an untrusted workspace.
     $RepoPath = ConvertTo-PqFullPath $RepoPath
@@ -552,7 +553,7 @@ function Invoke-PqPassChild {
         $lastLineAt = 0.0
         $follower = $null
         if ($Follow -and (Get-Command Step-PqPassFollower -ErrorAction SilentlyContinue)) {
-            try { $follower = New-PqPassFollower -RepoPath $RepoPath -TicketId $TicketId -Since ([DateTime]::Now) } catch { $follower = $null }
+            try { $follower = New-PqPassFollower -RepoPath $RepoPath -TicketId $TicketId -Since ([DateTime]::Now) -Kind $Follow } catch { $follower = $null }
         }
         $titlePart = if ($TicketTitle) { " - $TicketTitle" } else { '' }
         try { $host.UI.RawUI.WindowTitle = "pass $Instance $TicketId$titlePart" } catch { }
@@ -2005,7 +2006,13 @@ function Start-PqLoop {
                 }
 
                 Write-Host "pass $passNum $repoKey`:$ticketId $statusBefore$titlePart$agentPart - started"
-                $childRes = Invoke-PqPassChild -Script $actualRunner -RepoPath $repoPath -TicketId $ticketId -TicketTitle $ticketTitle -Instance "pq$slot" -PermissionMode $permMode -OnStarted $onStarted -AgentArgs $agentArgs -OnTick $onTick -StopWatcher $stopWatcher -OnBeat $onBeat -Follow:($agentName -ceq 'claude' -and $env:SZA_PQ_FOLLOW -cne '0')
+                # The live view follows a Claude-CLI pass (claude, and z.ai which runs the same CLI) and a Codex pass; the others
+                # keep no file while they work. SZA_PQ_FOLLOW=0 turns it off.
+                $followKind = if ($env:SZA_PQ_FOLLOW -ceq '0') { '' }
+                    elseif ($agentName -cmatch '^codex') { 'codex' }
+                    elseif ([IO.Path]::GetFileNameWithoutExtension([string](Get-PqValue $pick.record 'command' '')) -ieq 'claude') { 'claude' }
+                    else { '' }
+                $childRes = Invoke-PqPassChild -Script $actualRunner -RepoPath $repoPath -TicketId $ticketId -TicketTitle $ticketTitle -Instance "pq$slot" -PermissionMode $permMode -OnStarted $onStarted -AgentArgs $agentArgs -OnTick $onTick -StopWatcher $stopWatcher -OnBeat $onBeat -Follow $followKind
                 $passSw.Stop()
                 $elapsedSec = [Math]::Round($passSw.ElapsedMilliseconds / 1000, 1)
                 Add-PqPassSessions -Ids @($pqPassSessions)

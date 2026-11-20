@@ -72,6 +72,9 @@ Use the store's header format and PROMOTION §8's sections. In particular:
 - Channels: every row of PROMOTION §5 that fits the shape, each planned, deferred with a revisit condition, or
   refused with the reason. Re-read a channel's rules page before relying on it; mark what could not be read
   `[unverified]`.
+- A **SourceForge** row (an open-source product, PROMOTION §5): read the catalog contract `SOURCEFORGE-CHANNEL` and plan
+  the row from [references/sourceforge-listing.md](references/sourceforge-listing.md), which carries the executor tags,
+  the order, the stops and the integrity script; cite the contract by id and rule number, never by path.
 - Acceptance criteria: PROMOTION §8's list as static predicates for this repo (the gate command, the API
   field, the file); criteria the shape voids are listed void with the reason.
 - The portfolio dependency: the hub ticket owns the host-root `robots.txt` and console property; cite it by repo

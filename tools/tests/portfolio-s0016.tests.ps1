@@ -13,7 +13,8 @@
           change, the drop fingerprint on the spec file, the wait `why` counts, drop-lift thrash.
       3.  Stop and console (R54-R56): level ranks, stop file parsing, the most severe applicable stop, busy targets,
           target completion (repo stop leaves a hold), pause, transcript record formatting, Read-PqTail offset/carry, the
-          pass follower the worker window prints from (older session from its end, handoff session from its start, cap).
+          pass follower the worker window prints from (older session from its end, handoff session from its start, cap),
+          and its Codex form (the headless rollout found by folder, ticket and start time; words, commands, patches, exits).
       4.  Analysis (R44-R48): run rows, stats, the n >= 5 split rule, findings with stable ids severity-first, seq gaps
           and unparsable/unsupported lines, trace, compare verdict, CSV.
       5.  The loop wiring of the 2026-11-10 pieces (source-level, as portfolio-occupancy case 4 does).
@@ -274,6 +275,41 @@ try {
             Check ((@(Step-PqPassFollower -State $st -MaxLines 2) -join '|') -ceq '> n1|> n2|(+3 more)') 'a burst is cut at the cap and the rest counted'
             Remove-Item -LiteralPath $leaseFile -Force
             Check (@(Step-PqPassFollower -State $st).Count -eq 0) 'no lease gives nothing and does not throw'
+        }
+        finally { $env:USERPROFILE = $homeBefore }
+    }
+    Case 'the Codex follower finds the headless rollout of the folder and ticket and shows words, commands, patches and failed exits' {
+        $homeBefore = $env:USERPROFILE
+        $env:USERPROFILE = Join-Path $scratch 'codex-home'
+        try {
+            $dir = Join-Path $env:USERPROFILE ('.codex\sessions\' + [datetime]::Now.ToString('yyyy\\MM\\dd'))
+            $null = [IO.Directory]::CreateDirectory($dir)
+            $mk = {
+                param($name, $cwd, $originator, $prompt)
+                $meta = @{ type = 'session_meta'; payload = @{ cwd = $cwd; originator = $originator } } | ConvertTo-Json -Compress -Depth 5
+                $user = @{ type = 'event_msg'; payload = @{ type = 'item_completed'; item = @{ type = 'UserMessage'; content = @(@{ type = 'text'; text = $prompt }) } } } | ConvertTo-Json -Compress -Depth 8
+                $p = Join-Path $dir $name
+                [IO.File]::WriteAllText($p, $meta + "`n" + $user + "`n")
+                $p
+            }
+            $add = { param($p, $o) [IO.File]::AppendAllText($p, (($o | ConvertTo-Json -Compress -Depth 8) + "`n")) }
+            $since = [datetime]::Now.AddSeconds(-1)
+            $ours = & $mk 'rollout-ours.jsonl' $repo 'codex_exec' 'argument string: S0001 - the ticket'
+            $null = & $mk 'rollout-other-ticket.jsonl' $repo 'codex_exec' 'argument string: S0002'
+            $null = & $mk 'rollout-other-repo.jsonl' (Join-Path $scratch 'elsewhere') 'codex_exec' 'argument string: S0001'
+            $null = & $mk 'rollout-interactive.jsonl' $repo 'codex_cli' 'argument string: S0001'
+            $older = & $mk 'rollout-old.jsonl' $repo 'codex_exec' 'argument string: S0001'
+            (Get-Item $older).CreationTimeUtc = [datetime]::UtcNow.AddHours(-3)
+            Check ((Find-PqCodexRollout -RepoPath $repo -TicketId 'S0001' -Since $since) -ceq $ours) 'only the headless rollout of this folder and ticket made since the start is found'
+            $st = New-PqPassFollower -RepoPath $repo -TicketId 'S0001' -Since $since -Kind codex
+            Check (@(Step-PqPassFollower -State $st).Count -eq 0) 'a rollout with no work yet shows nothing'
+            & $add $ours @{ type = 'response_item'; payload = @{ type = 'message'; role = 'assistant'; content = @(@{ type = 'output_text'; text = 'I open the spec' }) } }
+            & $add $ours @{ type = 'response_item'; payload = @{ type = 'message'; role = 'developer'; content = @(@{ type = 'input_text'; text = 'rules never shown' }) } }
+            & $add $ours @{ type = 'response_item'; payload = @{ type = 'custom_tool_call'; name = 'exec'; input = 'tools.exec_command({cmd:"git status --short",workdir:"P:/x"})' } }
+            & $add $ours @{ type = 'response_item'; payload = @{ type = 'custom_tool_call'; name = 'apply_patch'; input = "*** Begin Patch`n*** Update File: src/a.ps1`n@@`n-x`n+y`n*** End Patch" } }
+            & $add $ours @{ type = 'response_item'; payload = @{ type = 'custom_tool_call_output'; output = @(@{ type = 'input_text'; text = '{"value":{"exit_code":1}}' }) } }
+            Check ((@(Step-PqPassFollower -State $st) -join '|') -ceq '> I open the spec|. Shell git status --short|. Edit src/a.ps1|! exit code 1') 'words, command, patch file and failed exit are shown; developer text is not'
+            Check (@(Step-PqPassFollower -State $st).Count -eq 0) 'nothing new gives nothing'
         }
         finally { $env:USERPROFILE = $homeBefore }
     }

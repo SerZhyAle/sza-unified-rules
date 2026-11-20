@@ -505,3 +505,8 @@ account-name redaction (catalog `CAPTURE-OUTPUT` proposal of 2026-10-01 and `DIA
 ## Record split 2026-11-18 (canon ticket S0120)
 
 Every section of this file dated before this one was moved here verbatim from [../cyrflip.md](../cyrflip.md) when the record was split into facts and history. A line number quoted inside such a section counts lines of the record as it was before the move; relative links were deepened by one `../`; nothing else changed.
+
+## Promotion 2026-11-20 - SourceForge
+
+CYRFLP-0141: eligible W product with public MIT source; CYRFLP-0024 SourceForge row planned, listing draft prepared, creation awaits owner sign-in and a named go. Integrity check not run.
+

@@ -626,3 +626,5 @@ product asks.
 ## Record split 2026-11-18 (canon ticket S0120)
 
 Every section of this file dated before this one was moved here verbatim from [../epub_2_html.md](../epub_2_html.md) when the record was split into facts and history. A line number quoted inside such a section counts lines of the record as it was before the move; relative links were deepened by one `../`; nothing else changed.
+
+- 2026-11-20: D2HTML-0165 prepared the SourceForge channel draft; awaiting owner actions and separately named goes.

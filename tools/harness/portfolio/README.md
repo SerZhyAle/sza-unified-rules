@@ -745,13 +745,18 @@ writes as it works (`> the agent's words`, `. Read path` for a tool it called, `
 pass or on Ctrl+C and never touches the pass. The runner buffers another agent's output until its pass ends, so there is
 nothing to follow for a Codex or Gemini pass.
 
-The worker window follows its own Claude pass the same way, with no second window: every two seconds it prints the new
-records of the pass transcript, each with the time (`> the agent's words` in white, `. Read path` for a tool it called, `!
-text` for a tool error in red, `(+n more)` when a burst was cut at 30 lines). A session that existed before the pass began
-is shown from its end, never replayed; a new session of the same ticket (a context handoff) is shown from its start. The
-`pass <instance> <id> - still running` line then appears only after a minute with nothing printed, and it is the only sign
-for a Codex or Gemini pass. `SZA_PQ_FOLLOW=0` in the worker's environment turns the view off and restores the minute line
-alone. The view only reads: it holds no lock, writes nothing, and a failure in it ends the view, never the pass.
+The worker window follows its own pass the same way, with no second window: every two seconds it prints the new records of
+the pass's live file, each with the time (`> the agent's words` in white, `. Read path` or `. Shell command` for a tool it
+called, `. Edit path` for a patched file, `!` in red for a tool error or a failed exit, `(+n more)` when a burst was cut at
+30 lines). Two sources are read: the session transcript of a Claude-CLI pass (the `claude` and `zai` agents), and the
+`rollout-*.jsonl` file a Codex pass writes under `~\.codex\sessions\<yyyy>\<MM>\<dd>\` (`CODEX_HOME` moves it) - the one
+whose first record names the repository as its working folder and `codex_exec` as its originator, whose prompt names the
+ticket, and which was made after the pass began; a newer one of the same ticket (a second launch) is followed from its
+start. A Claude session that existed before the pass began is shown from its end, never replayed; a new session of the same
+ticket (a context handoff) is shown from its start. The `pass <instance> <id> - still running` line then appears only after
+a minute with nothing printed, and it is the only sign for a Gemini or Mistral pass (Gemini keeps its conversation in a
+database, Mistral's file was not looked at). `SZA_PQ_FOLLOW=0` in the worker's environment turns the view off and restores
+the minute line alone. The view only reads: it holds no lock, writes nothing, and a failure in it ends the view, never the pass.
 
 | Command | Shows |
 | --- | --- |
