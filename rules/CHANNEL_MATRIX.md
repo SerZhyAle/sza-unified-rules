@@ -25,7 +25,7 @@ publishes to a store/index (irreversible, one-way).
 | Chrome Web Store | `ext-cws-v*` tag push | [PAID] [PUBLIC] | CWS API creds + `cws-key` (git-ignored) | CRX / CWS | `extension/store/LISTING.md` | Chrome **item id** | store page shows version; installed copies update |
 | Edge Add-ons | `ext-edge-v*` tag push | [PAID] [PUBLIC] | Edge Partner API | Edge | same `extension/store/LISTING.md` | Edge **product id** (distinct from Chrome) | dashboard shows version; independent of Chrome |
 | VS Code Marketplace | **manual** `vsce publish` (only if the extension subtree changed) | [PUBLIC] | Marketplace PAT (Azure DevOps-backed) | Marketplace | `package.json` + `README.md` + `CHANGELOG.md` | extension id `<publisher>.<name>` | gallery shows version; installed copies auto-update |
-| Google Play (Android) | AAB upload to a track | [PUBLIC] | Play console / API key | Play App Signing | Play store fields | `applicationId` + upload key | track shows build; staged rollout; update over prior install |
+| Google Play (Android) | signed AAB to a track through the Play Developer API | [PUBLIC] | service account authorized for the app; `SZA_PLAY_SERVICE_ACCOUNT_JSON` for the shared probe | Play App Signing | Play store fields | `applicationId` + upload key | track read-back, review and public serving; update over prior install |
 | Sideload / direct APK | site/GitHub asset (self-host) | [PUBLIC] self-host | none | own release key | site + a per-variant feature inventory | `applicationId` (may be shared) | install + update on a real device |
 | VR store (Meta Horizon / Quest) | build upload to the VR store | [PUBLIC] | VR store dev console | store / own | VR store listing | `applicationId` (store binds listing to it) | store shows build; update over prior install |
 
@@ -164,8 +164,10 @@ Listing copy is the extension's own `package.json` (`displayName`/`description`/
 app and ships **only when its subtree changed**. Frozen anchor: the **extension id `<publisher>.<name>`** -
 changing publisher or name orphans installs. Reference: `CyrFlip`'s `SerZhyAle.cyrflip-vscode`.
 
-**Google Play (Android)** - AAB to the right track (internal -> closed -> production), staged rollout where
-appropriate. Play has no keyword field, so the description carries the functional phrasing. Foreground-service
+**Google Play (Android)** - upload the signed AAB through the Play Developer API to the right track (internal ->
+closed -> production), with a staged rollout where appropriate. The API publication procedure, credentials,
+edit and review boundaries are in the [store-publish skill's release procedure](../skills/store-publish/references/google-play.md#7-publishing-a-release-through-the-api);
+`GOOGLE-PLAY` binds the artifact and Play boundary. Play has no keyword field, so the description carries the functional phrasing. Foreground-service
 and permission declarations must match runtime use or Play rejects. `versionCode` must strictly increase. A secondary form-factor artifact (Wear, TV, Auto, XR) has its own store
 guidelines and its own rejections, and its criteria are proven on the store flavor, not by unit tests (see
 [PLATFORM_OVERLAYS.md](PLATFORM_OVERLAYS.md) Overlay B). The console app exists before the first AAB: the moment its
@@ -184,14 +186,15 @@ manifest defects an in-house gate missed - and note that the first upload freeze
 
 Every row above is recorded in the repository's release ledger ([RELEASE_AND_DISTRIBUTION.md](RELEASE_AND_DISTRIBUTION.md)
 §10) under a channel key, and each key names the probe kind that confirms it. A probe only reads; what it cannot
-see is confirmed by hand with the public URL as evidence.
+see is confirmed by hand with the public URL as evidence. The Play probe opens a transient edit, so it must
+not run concurrently with another edit for the same app: opening it can invalidate that edit.
 
 | Channel | Probe kind | What the probe reads | What it can see |
 | --- | --- | --- | --- |
 | GitHub Release | `github` | `gh release list` of the repository, tags `v<digit>..` | live; a draft as pending |
 | winget | `winget` | `microsoft/winget-pkgs` manifests folder and its open pull requests, through `gh` | live (merged); submitted (PR open) |
 | Microsoft Store | `msstore` | `msstore submission get <public product id>`, the same read-only call as the Store preflight | live; submitted (in certification); rejected (a failed status) |
-| Google Play | `play` | Play Developer API, one track, through a service account key named by `SZA_PLAY_SERVICE_ACCOUNT_JSON` (a transient edit is opened and deleted, nothing is committed) | live with the rollout fraction; withdrawn (halted); pending (draft) |
+| Google Play | `play` | Play Developer API, one track, through a service account key named by `SZA_PLAY_SERVICE_ACCOUNT_JSON` (the release lifecycle by a plain GET; the track configuration through a transient edit that is opened and deleted, nothing is committed) | nothing is recorded: the track's rollout status and fraction and each release's lifecycle are printed as readings of that one track and its version codes, never as `live`, withdrawn or in review. `live` is `confirm`ed by hand from the public store page; a tester install only under its tester channel key |
 | Chrome Web Store | `chrome` | the public update service for the item id | live only - a revision in review is recorded by the release flow |
 | Edge Add-ons | `edge` | the public product details for the crx id | live only - same |
 | VS Code Marketplace | `vscode` | the public gallery query for `<publisher>.<name>` | live, with every earlier version for `import` |

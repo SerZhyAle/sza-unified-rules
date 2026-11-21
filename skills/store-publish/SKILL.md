@@ -1,6 +1,6 @@
 ---
 name: store-publish
-description: Publish an SZA product to its distribution channels - GitHub Release, winget (microsoft/winget-pkgs), and the Microsoft Store via MSIX and Partner Center - and stand up an Android product's first public presence on GitHub, GitHub Pages and the Google Play Console (create the console app, fill App content, Data safety and the content rating, store settings, the listing, the Wear OS form factor). Resolves the repo's manifest paths, reserved identity and frozen anchors at run time, then runs each channel as its own one-way operation with its own pre-submit gates and recovery paths. Use when publishing or updating a winget manifest, building or uploading an MSIX, checking the Store submission machine channel or msstore preflight, reserving a Store identity, fixing a rejected winget PR or a rejected Partner Center listing import, onboarding a product to a store, creating a Google Play Console app or its GitHub repository and Pages site, or when asked to проверить Microsoft Store, настроить msstore, опубликовать в Store, создать приложение в Google Play, настроить Play Console, заполнить App content и листинг, создать репозиторий и сайт для Android-проекта.
+description: Publish an SZA product to its distribution channels - GitHub Release, winget (microsoft/winget-pkgs), Microsoft Store via MSIX and Partner Center, and Android AABs through the Play Developer API - and stand up an Android product's first public presence on GitHub, GitHub Pages and the Google Play Console (create the console app, fill App content, Data safety and the content rating, store settings, the listing, the Wear OS form factor). Resolves the repo's manifest paths, reserved identity and frozen anchors at run time, then runs each channel as its own one-way operation with its own pre-submit gates and recovery paths. Use when publishing or updating a winget manifest, building or uploading an MSIX, checking the Store submission machine channel or msstore preflight, reserving a Store identity, fixing a rejected winget PR or a rejected Partner Center listing import, onboarding a product to a store, publishing an Android release through Google Play, creating a Google Play Console app or its GitHub repository and Pages site, or when asked to проверить Microsoft Store, настроить msstore, опубликовать в Store, опубликовать Android в Google Play, создать приложение в Google Play, настроить Play Console, заполнить App content и листинг, создать репозиторий и сайт для Android-проекта.
 ---
 
 # Store publishing - four channels, four one-way operations
@@ -14,7 +14,7 @@ collapse them.
 | GitHub Release | `v*` tag push | `[PAID]` CI minutes | you (`.sha256` sidecar) | none | the tag push; a shipped release is immutable |
 | winget | PR to `microsoft/winget-pkgs` | `[PUBLIC]` | Microsoft re-hosts | `PackageIdentifier` (+ `PackageName` where an installer exists) | the **merge**; the PR itself is closable |
 | Microsoft Store | manual Partner Center upload | `[PUBLIC]` | **the Store re-signs at certification** | MSIX Identity `Name` + `Publisher` | publication; identity is permanent from name reservation |
-| Google Play | the console app first, then an AAB to a track | `[PUBLIC]` | Play App Signing (the upload key is yours) | `applicationId` + the upload key | **the create-app click binds the id**; a free app never becomes paid; then publication |
+| Google Play | console app setup, then a signed AAB to a track through the Play Developer API after the first-use checks | `[PUBLIC]` | Play App Signing (the upload key is yours) | `applicationId` + the upload key | **the create-app click binds the id**; a free app never becomes paid; then publication |
 
 **Ordering**: the GitHub Release must exist first - winget is hard-gated on a public release URL and its
 SHA256. The Store leg is independent and may run in parallel. winget goes last. Google Play is its own track: its
@@ -143,8 +143,8 @@ without the channel.
 (repository, Pages, console app, notices), the repository preconditions, the console click path with every App content
 declaration, the store settings, the three-locale listing and its graphics, the Wear OS form factor, and what is not part
 of the run. The Pages workflow is [templates/github-pages.yml](../../templates/github-pages.yml). This leg covers the
-public presence **before any bundle exists**; a bundle upload, a track and "Send for review" are the
-[release](../release/SKILL.md).
+public presence **before any bundle exists**. For a release, use [section 7 of that reference](references/google-play.md#7-publishing-a-release-through-the-api)
+for the API upload, track, declarations and review alongside the [release](../release/SKILL.md) gates.
 
 The four rules that decide most outcomes:
 
@@ -176,8 +176,9 @@ The four rules that decide most outcomes:
   `release-ledger publish -Key <channel> -Version <v> -State <state> -Ref <tag, PR#, submission> -Url <public page>`
   ([RELEASE_AND_DISTRIBUTION.md](../../rules/RELEASE_AND_DISTRIBUTION.md) §10); a channel with no probe (a forum post,
   a VR store) is `confirm`ed by hand with its URL. Then `release-ledger probe`: it reads each channel and records only
-  what changed, so a `submitted` leg turns `live` when the channel shows it. Put the coverage-gate result into the
-  note of the first event.
+  what changed, so a `submitted` leg turns `live` when the channel shows it - except Google Play, whose probe
+  prints the track and its release lifecycle and records nothing: a Play version is `confirm`ed `live` by hand
+  with the public store page as `-Url`. Put the coverage-gate result into the note of the first event.
 
 ## New product - the one-time path
 

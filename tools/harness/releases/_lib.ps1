@@ -1,7 +1,7 @@
 #requires -Version 7.0
 <#
 .SYNOPSIS
-    The release ledger's reader, writer, fold and renderer (RELEASE-LEDGER 0.1, canon S0092).
+    The release ledger's reader, writer, fold and renderer (RELEASE-LEDGER 0.2, canon S0092 and CANONR-0165).
 
 .DESCRIPTION
     Dot-sourced by release-ledger.ps1 and by the portfolio's lib/releases.ps1. Every function takes the ledger
@@ -27,6 +27,9 @@ $script:RlBuildKinds = @('release', 'test', 'debug')
 $script:RlSources = @('release', 'manual', 'probe', 'import')
 $script:RlIdPattern = '^[a-z0-9][a-z0-9-]*$'
 $script:RlUtf8 = [Text.UTF8Encoding]::new($false)
+# The note the pre-0.2 Play probe wrote on every row (RELEASE-LEDGER rule 12): "Play status <status>", then
+# ", versionCodes <codes>", behind the optional "channel shows <version>; " the probe verb put in front.
+$script:RlLegacyPlayNote = '^(?:channel shows .*?; )?Play status(?: [^\s,]+)?(?:, versionCodes \S+)?$'
 
 # The shipped defaults, read in an isolated module: _profile.ps1 caches one project root per process, and a
 # reader of several repositories must not inherit one (the same reason as portfolio/lib/ledger-watch.ps1).
@@ -331,9 +334,22 @@ function ConvertTo-RlView {
     return [pscustomobject]$v
 }
 
+function Test-RlLegacyPlayApiEvent {
+    # RELEASE-LEDGER rule 12: a row the pre-0.2 Play probe wrote from a track reading. All three must agree - the
+    # channel is of kind play, the source is automatic (probe or import), and the note is the old mapper's marker.
+    # A manual or release row, or any other note, is never legacy. $Row is the history row itself.
+    param([Parameter(Mandatory)]$Row, [AllowNull()][AllowEmptyString()][string]$Kind)
+    if ($Kind -cne 'play') { return $false }
+    if (@('probe', 'import') -cnotcontains [string](Get-RlProp $Row 'source')) { return $false }
+    return ([string](Get-RlProp $Row 'note') -cmatch $script:RlLegacyPlayNote)
+}
+
 function Get-RlChannelState {
     param([Parameter(Mandatory)]$Channel, [AllowEmptyCollection()][object[]]$Events = @())
-    $mine = @($Events | Where-Object { [string]$_.event.key -ceq $Channel.key -and [string]$_.event.package -ceq $Channel.package })
+    $kind = [string](Get-RlProp $Channel 'kind')
+    $own = @($Events | Where-Object { [string]$_.event.key -ceq $Channel.key -and [string]$_.event.package -ceq $Channel.package })
+    $mine = @($own | Where-Object { -not (Test-RlLegacyPlayApiEvent -Row $_.event -Kind $kind) })
+    $legacyApi = $own.Count - $mine.Count
     $ordered = @($mine | Sort-Object -Property @{ Expression = { $_.at.UtcTicks } }, @{ Expression = { $_.line } })
     $byVersion = [ordered]@{}
     foreach ($m in $ordered) { $byVersion[[string]$m.event.version] = $m }
@@ -362,6 +378,7 @@ function Get-RlChannelState {
         inFlight = [object[]]@($flight | ForEach-Object { ConvertTo-RlView $_ })
         last     = ConvertTo-RlView $last
         events   = $ordered.Count
+        legacyApi = $legacyApi
         versions = $versions
     }
 }
@@ -553,12 +570,17 @@ function Format-RlMarkdown {
         $sb.Add('| When | Package | Channel | Version | State | Source | Ref | Note |')
         $sb.Add('| --- | --- | --- | --- | --- | --- | --- | --- |')
         $newest = @($Events | Sort-Object -Property @{ Expression = { $_.at.UtcTicks } }, @{ Expression = { $_.line } } -Descending)
+        $kindOf = @{}
+        foreach ($s in $Snapshot.channels) { $kindOf["$($s.key)|$($s.package)"] = [string]$s.kind }
         foreach ($e in $newest) {
             $x = $e.event
             $note = [string](Get-RlProp $x 'note')
             $track = [string](Get-RlProp $x 'track')
             $rollout = Get-RlProp $x 'rollout'
             if ($track) { $note = "track $track" + $(if ($null -ne $rollout) { ", rollout $rollout" } else { '' }) + $(if ($note) { "; $note" } else { '' }) }
+            if (Test-RlLegacyPlayApiEvent -Row $x -Kind ([string]$kindOf["$($x.key)|$($x.package)"])) {
+                $note = 'not counted (legacy Play API reading)' + $(if ($note) { "; $note" } else { '' })
+            }
             $when = ([string]$x.at).Replace('T', ' ')
             $sb.Add("| $(Format-RlCell $when) | $(Format-RlCell $x.package) | $(Format-RlCell $x.key) | $(Format-RlCell $x.version) | $(Format-RlCell $x.state) | $(Format-RlCell $x.source) | $(Format-RlRef $x) | $(Format-RlCell $note) |")
         }

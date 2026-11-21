@@ -223,8 +223,10 @@ cadence). Match the coverage gate (§3) to the grain that fans out - per flavor 
 
 - **Windows desktop**: GitHub Release asset (`<App>-<version>-<platform>-setup.exe` / `.zip` + `.sha256`),
   winget-pkgs PR from `publishing/winget/`, Microsoft Store MSIX (Store re-signs).
-- **Android**: Play AAB to the right track (internal -> closed -> production), staged rollout where
-  appropriate, listing from the store fields; each store flavor to its own track/listing. A sideload-only
+- **Android**: Play AAB through the Play Developer API to the right track (internal -> closed -> production),
+  staged rollout where appropriate, listing from the store fields; each store flavor to its own track/listing.
+  Follow the [Play API release procedure](../skills/store-publish/references/google-play.md#7-publishing-a-release-through-the-api),
+  including the pre-flight, edit, declaration and review gates. A sideload-only
   flavor ships direct APK off the site/GitHub; a VR flavor ships to a VR store (Meta Horizon / Quest) - see
   the Sideload and VR-store rows in CHANNEL_MATRIX.
 - **Go CLI / Wails**: GitHub Release only (portable binary/ZIP + `.sha256`, optional installer).
@@ -259,7 +261,8 @@ A release is not "done" until proven live:
 - **Every channel step is recorded in the release ledger (§10)** as it happens - `pending`, `submitted`,
   `live`, `blocked`, `rejected`, `withdrawn`, `n/a` - never in prose and never from memory. `submitted` is not
   `live`: a store that keeps the previous revision published while the new one is in review is `submitted`,
-  and the ledger's probe moves it to `live` only when the channel shows it. Record every credential with a
+  and the ledger's probe moves it to `live` only when the channel shows it (Google Play is confirmed by
+  hand: its probe records nothing, §10). Record every credential with a
   fixed lifetime in the project's release doc, with its rotation date, and check it in the pre-flight (§2):
   the Edge Add-ons API key lasts about 72 days, and an expired one first shows as HTTP 401 at the one-way step.
 - Record the release: the version, the date and the channels shipped are the ledger's events; the
@@ -446,11 +449,15 @@ repository's forwarder (`tools/harness.ps1 releases/release-ledger <verb>`) or f
   submission as `-Ref` and the public page as `-Url`.
 - **A channel no probe can see** - a forum post, a VR store, a catalogue - is confirmed by hand with
   `confirm -Key -Version -State live -Url <where it can be seen>`; the URL is the evidence.
-- **`probe`** reads every declared channel - read-only: GitHub Releases and winget-pkgs through `gh`, the
+- **`probe`** reads every declared channel without committing store changes: GitHub Releases and winget-pkgs through `gh`, the
   Microsoft Store through `msstore submission get`, Google Play through the Play Developer API with a service
   account, Chrome, Edge and the VS Code Marketplace through their public endpoints, any public page by
   finding the version in it - and records only what changed. A channel it cannot see is reported
-  `unverified` with the reason and nothing is written. Run it after a release and whenever a `submitted`
+  `unverified` with the reason and nothing is written. The Play probe records nothing at all: it prints the
+  track configuration and the release lifecycle of its one track as readings, and a reading is neither public
+  serving nor a review verdict, so a Play version is `live` only through `confirm` with the public store page as
+  the URL. The Play probe opens an edit and can invalidate an active edit for that app; serialize it as
+  [CHANNEL_MATRIX.md](CHANNEL_MATRIX.md) says. Run the probe after a release and whenever a `submitted`
   publication is waiting for its review.
 - **`import`** backfills the history once, at adoption, from the same automatic sources.
 

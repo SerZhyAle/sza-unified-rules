@@ -86,3 +86,9 @@ Full 20-document re-sync from canon **2026.10.17.1** (`sha256:b467aefe..`, recon
   - Open question `Upload key and signing-key import` closed: completed 2026-11-17 (`docs/play/PLAY_RELEASE_RECORD.md` section 1).
   - Open question `Watch-face listing` closed as a source gap: `docs/play/PLAY_LISTING_WATCHFACE*.md` exists (`S0072`); watch-face upload waits on captured watch-face icons (`STRMOB-0099`).
 - **Verification:** `check-compliance.ps1` 0 error(s), 1 warning(s) (`SZA-CANON03`) before -> `0 error(s), 0 warning(s)` after, exit 0; `check-sync.ps1` exit 0 (`contract-sync: PASS (37 pointer versions)`); `contract-lag.ps1 -Product 'StreamsPlayer Android' -FailOnLag` exit 0 (`behind 0, unread 0, partial 19, current 11, n/a 1, pending 0, unparsed 0`).
+
+## Play API first-use correction (2026-11-21, CANONR-0164)
+
+- The canon facts record replaces the 0.2 declaration-after-draft-upload instructions with the first-use
+  stops in `GOOGLE-PLAY` 0.4 section 8C. This records the contract owner's disposition. StreamsPlayer's
+  adoption evidence remains the responsibility of its Android repository.

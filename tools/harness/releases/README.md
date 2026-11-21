@@ -40,12 +40,23 @@ In `paths.releasesDir` of the repository's profile, `docs/releases` by default, 
 | `github` | `gh release list` | `gh` signed in; `repo` or a github.com `origin`; `tagPrefix` (default `v`) |
 | `winget` | the `microsoft/winget-pkgs` manifests folder and its open pull requests | `gh`; `id` |
 | `msstore` | `msstore submission get <storeId>` - the only Store call the file can make | `msstore` configured; `storeId` |
-| `play` | the Play Developer API, one track, through a transient edit that is deleted | `SZA_PLAY_SERVICE_ACCOUNT_JSON` naming a service account key file outside every repository; `id`, `track` |
+| `play` | the Play Developer API, one track: the release lifecycle by a plain GET, the track configuration through a transient edit that is deleted - printed as readings, never recorded | `SZA_PLAY_SERVICE_ACCOUNT_JSON` naming a service account key file outside every repository; `id`, `track` |
 | `chrome` | the public update service | `id` |
 | `edge` | the public product details | `id` (the crx id) |
 | `vscode` | the public gallery query | `id` (`publisher.name`) |
 | `url` | the page as delivered, no script | `url`; `pattern` with one group, or a version the ledger already knows |
 | `manual`, any other | nothing - `confirm` by hand | - |
+
+The Play probe does not commit, but opening its edit can invalidate another active edit for the same app.
+Serialize probes, publishers and console changes per application id; do not call a probe while an edit is open.
+What it reads is a reading of that one track and of the version codes it names (`RELEASE-LEDGER` rule 12): the rollout
+status and fraction of the track configuration, and the lifecycle of each release (`IN_REVIEW`, `APPROVED_NOT_PUBLISHED`,
+`NOT_APPROVED`, `PUBLISHED`, or a value it does not know, shown as reported). The probe prints them and writes no event, so a
+`completed` or `PUBLISHED` track never becomes `live` in the ledger: `PUBLISHED` includes partial and halted rollouts, a
+track's review state is no app-wide review or policy verdict, and an empty or unreadable response is no verdict at all.
+A Play version is `live` only by `confirm` with the public store page as `-Url` (`GOOGLE-PLAY` rule 20), and a tester
+install only under its own channel key. Rows the earlier probe wrote (`source` `probe` or `import`, note `Play status ..`)
+stay in `history.jsonl` and are left out of the fold; `show` counts them and the render marks them.
 
 ## The build hook
 

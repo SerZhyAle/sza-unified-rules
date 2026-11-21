@@ -3,9 +3,9 @@
 Reference for `store-publish` (Leg 4) and `release`. Recorded from `deviceinfo_mob` on 2026-11-13 (DeviceInfo for
 Android and Wear OS, overlay B), where every step below ran for real on the owner's order; written so
 StreamsPlayer_mob, Tourist_mob, filler_mob and any new overlay-B product repeat it from this page and not from a copy.
-It covers what exists **before any bundle is uploaded**: the GitHub repository, the Pages site, the Play Console app with
-every App content declaration, the store settings, the listing, the form factors, and the notices to the family.
-Uploading a bundle, a track release and any "Send for review" are the release, not this page.
+Sections 0 to 6 cover what exists **before any bundle is uploaded**: the GitHub repository, the Pages site, the Play
+Console app, the store settings, the listing, the form factors, and the notices to the family. Section 7 covers the
+Play Developer API upload and its review boundary; it runs only as part of an authorized release.
 
 First re-run: `streamsplayer_mob`, 2026-11-13. Three corrections from it are folded in below (S0060): what `.gitignore`
 hides, the tracked `PLAN/` and `docs/` prose, and a Pages site that answers before its landing exists.
@@ -332,3 +332,72 @@ merged manifest is checked against them at its pre-flight.
 
 `CLAUDE.md` (the remote, Pages and the console app as dated facts), `docs/RELEASE.md` (the owner steps: what is done and
 what remains), `docs/play/PLAY_LISTING.md` (website = the landing) and the release ticket's DO list.
+
+## 7. Publishing a release through the API
+
+This procedure applies to every Android product shipping to Google Play, including a phone app, a Wear OS app and a
+watch face. The `release` skill supplies the release spine and pre-flight. Apply the `GOOGLE-PLAY` requirements,
+including the 0.4 amendment (section 8). Use the API for signed AAB transfer after the checks below. Use Play Console
+for app setup, App content declarations and the review or publication actions the release requires.
+
+1. **Bind the release.** The owner must have ordered this exact release. Require a written pre-flight PASS for the
+   version and each artifact, the frozen application id and upload signer, monotonic version codes, no reach regression,
+   the current target-API requirements, and the applicable `GOOGLE-PLAY` checks. Identify the exact signed AAB and
+   localized release notes from the release's own sources. A missing input or an unproven check stops the upload.
+2. **Bind access and check the publisher.** Use a service account authorized to upload and commit for every target app.
+   The shared release probe and new or updated publishers use `SZA_PLAY_SERVICE_ACCOUNT_JSON` to locate the key file
+   outside every repository. Keep key contents out of logs and commits. A successful track read establishes read access
+   only. Before opening the publishing edit, confirm that the client can send the required review guard in step 6 and
+   handle every artifact and track of the intended batch in a single edit. Stop if the client lacks either capability.
+3. **Serialize work by application id.** Coordinate one work session for each app across publishers, Play Console writes
+   and readers that open edits. A new edit replaces the same API user's active edit. Edits from different users can
+   coexist until one commits, and a Console write invalidates API edits for the app. Finish and delete any transient
+   track-discovery edit before opening the publishing edit. Treat an edit-deleted response as invalidation and reconcile
+   which operation changed the app state before proceeding.
+4. **Select the app, tracks and review batch.** Record the intended package, signed AAB, version code, release notes and
+   exact track id per artifact. Confirm each track against the target app before opening the publishing edit. Google's
+   guide lists `qa` and `wear:qa`, and `GOOGLE-PLAY` rule 12 cites `wear:internal` in its observations. First
+   testing uses the applicable internal track. Phone and Wear changes in the same release for one application id share
+   one edit and one successful commit. A watch face with its own id has its own edit and review batch. Apply rules 28-31
+   when planning separate phone and Wear releases for a shared id. Check Publishing overview for pending Console changes
+   that an automatic commit would send for review. Stop if that batch differs from the owner's release order.
+5. **Stop before unsupported first use.** For each application id, record evidence of an accepted prior artifact. Stop
+   before API bundle upload and commit if that history is missing. Google's edits guide describes a first APK in Play
+   Console. First-AAB acceptance through the API remains **Unverified**, including on an app whose tracks read empty.
+   Compare the merged release manifest with the previous release for new foreground-service types and permissions.
+   Save and confirm each required new declaration in App content before upload, outside any API edit. If the form is
+   unavailable or cannot save, stop before the API write sequence. Delete an already-open edit or let it expire before
+   any Console save. An API `draft` becomes inspectable after commit. Form visibility during an uncommitted upload and
+   acceptance of a first draft commit before declaring remain **Unverified**. Use draft and held commits only after the
+   first-use checks pass. A documented Console bootstrap needs separate authorization for the exact release and its
+   uploads, saves, commits and review submission. Record the observed results before resuming the API path.
+6. **Prepare and commit once.** In one edit, upload the same-app bundles, attach each to its chosen track with the release
+   notes, include changed listing content and validate when supported. If a version code is already present, verify the
+   stored artifact's identity before using it. Immediately before each commit request, verify the authorized batch and
+   confirm in Publishing overview that the entire app is clear of review, including other tracks and Console-only changes.
+   Send `changesInReviewBehavior=ERROR_IF_IN_REVIEW` on the automatic commit and on the held fallback. Use the fallback
+   with `changesNotSentForReview=true` only after the refusal that names that parameter under `GOOGLE-PLAY` rule 18.
+   An active or unknown review, missing guard or `CHANGES_ALREADY_IN_REVIEW` stops the commit path. Record the edit and
+   its ownership, the review observation, guard, mode and result. A lost or indeterminate commit response requires
+   independent read-back before another release action. Never retry that commit. An edit-based read waits until the
+   publishing edit has ended.
+7. **Read back and prove.** After the edit ends, verify each package, exact track, version code, rollout status and notes
+   languages. Record any available `applications.tracks.releases.list` summary with its track and observation time. This
+   GET opens no edit and reports a track's release lifecycle. Check Publishing overview for the app-wide batch and review
+   verdict and Console Policy status and App content for claims and declarations. Prove public serving on the store page
+   and with the served artifact. Verify an update over a real prior install when applicable. Keep each observation with
+   the authorized release and its signed artifact.
+
+The FastMediaSorter Python publisher inspected for this rollout commits each invocation, including `draft`, and omits
+the required review guard in both modes. Its local key lookup and metadata can differ from the target app's release
+inputs. Its `--dry-run` stops before API calls. This publisher is ineligible until it meets step 2. The product owns any
+publisher migration.
+
+Google's references: [edit concurrency](https://developers.google.com/android-publisher/concurrency-considerations),
+[commit and review behavior](https://developers.google.com/android-publisher/api-ref/rest/v3/edits/commit),
+[track status and form-factor identifiers](https://developers.google.com/android-publisher/api-ref/rest/v3/edits.tracks),
+[draft releases](https://developers.google.com/android-publisher/tracks),
+[the edits guide](https://developers.google.com/android-publisher/edits),
+[AAB upload](https://developers.google.com/android-publisher/api-ref/rest/v3/edits.bundles/upload),
+[foreground-service declarations](https://support.google.com/googleplay/android-developer/answer/13392821) and
+[release lifecycle read-back](https://developers.google.com/android-publisher/api-ref/rest/v3/applications.tracks.releases/list).

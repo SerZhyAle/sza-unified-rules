@@ -1,7 +1,7 @@
 #requires -Version 7.0
 <#
 .SYNOPSIS
-    The release ledger of one repository: last builds, publications per channel, their history (RELEASE-LEDGER 0.1).
+    The release ledger of one repository: last builds, publications per channel, their history (RELEASE-LEDGER 0.2).
 
 .DESCRIPTION
     The only writer of the ledger folder (HARNESS-PROFILE paths.releasesDir, default docs/releases): channels.json is
@@ -29,7 +29,9 @@
         rewrite RELEASES.md from the three source files
     release-ledger probe [-Key <k>] [-DryRun]
         read each channel and append an event only where what it shows differs from the ledger; a channel the probe
-        cannot see is reported as unverified with the reason and writes nothing
+        cannot see is reported as unverified with the reason and writes nothing. A Play channel is read as readings
+        (track configuration and release lifecycle of its one track) that are printed and never written: a Play
+        reading is not a publication (RELEASE-LEDGER rule 12), so confirm a Play version by hand
     release-ledger import [-Key <k>] [-DryRun]
         backfill: every version the automatic sources list (GitHub Releases, winget-pkgs, the stores' current live
         version, the Marketplace's versions), at the channel's own time where it gives one; a version already
@@ -117,6 +119,7 @@ function Format-RlStateLine($S) {
         $parts.Add("$($f.state) $($f.version) ($(Format-RlDay $f.at))$(if (Get-RlProp $f 'ref') { ' ' + $f.ref })")
     }
     if ($parts.Count -eq 0) { $parts.Add($(if ($S.status -ne 'none') { $S.status } else { 'nothing recorded' })) }
+    if ([int]$S.legacyApi -gt 0) { $parts.Add("$($S.legacyApi) legacy Play API row(s) not counted") }
     return ($parts -join '; ')
 }
 
@@ -124,7 +127,7 @@ function ConvertTo-RlPublicState($S) {
     # The JSON shape pq and PQShell read: the derived state without the per-version map.
     return [pscustomobject]@{
         key = $S.key; channel = $S.channel; kind = $S.kind; package = $S.package; title = $S.title; declared = $S.declared
-        status = $S.status; live = $S.live; inFlight = [object[]]$S.inFlight; last = $S.last; events = $S.events
+        status = $S.status; live = $S.live; inFlight = [object[]]$S.inFlight; last = $S.last; events = $S.events; legacyApi = $S.legacyApi
     }
 }
 
@@ -318,7 +321,17 @@ foreach ($c in $targets) {
     foreach ($b in $snap.builds) { if ([string](Get-RlProp $b 'package') -ceq $c.package -and -not $known.Contains([string](Get-RlProp $b 'version'))) { $known.Add([string](Get-RlProp $b 'version')) } }
     $res = Invoke-RlProbe -Channel $c -RepoRoot $root -Candidates ([string[]]@($known | Select-Object -Last 20)) -All:$isImport
     if (-not $res.ok) { Write-Output ("unverified  {0,-14} {1}" -f $c.key, $res.reason); continue }
-    if (@($res.observed).Count -eq 0) { Write-Output ("seen        {0,-14} nothing published$(if ($res.reason) { ' - ' + $res.reason })" -f $c.key); continue }
+    foreach ($d in @($res.diagnostics)) { Write-Output (Format-RlProbeDiagnostic -Key $c.key -Diagnostic $d) }
+    if ($c.kind -ceq 'play' -and @($res.observed).Count -gt 0) {
+        # RELEASE-LEDGER rule 12: a Play reading is never written as a publication, whoever returns it.
+        Write-Output ("ignored     {0,-14} {1} Play observation(s): a Play reading is not a publication" -f $c.key, @($res.observed).Count)
+        $res = New-RlProbeResult -Ok $res.ok -Reason $res.reason -Diagnostics @($res.diagnostics)
+    }
+    if (@($res.observed).Count -eq 0) {
+        $what = if (@($res.diagnostics).Count -gt 0) { 'readings only, no publication recorded' } else { 'nothing published' }
+        Write-Output ("seen        {0,-14} $what$(if ($res.reason) { ' - ' + $res.reason })" -f $c.key)
+        continue
+    }
     foreach ($o in @($res.observed)) {
         # The ledger's own spelling of a version wins over the channel's (26.1117.1450 recorded, 26.1117.1450.0 in
         # the Store): the observation is matched loosely and written under the recorded string.

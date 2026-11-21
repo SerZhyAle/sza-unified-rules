@@ -1,7 +1,7 @@
 #requires -Version 7.0
 <#
 .SYNOPSIS
-    Fast tests for the release ledger (RELEASE-LEDGER 0.1, canon S0092): tools/harness/releases.
+    Fast tests for the release ledger (RELEASE-LEDGER 0.2, canon S0092 and CANONR-0165): tools/harness/releases.
 
       1. channels.json: a valid declaration reads; an unknown probe kind is kept and handled as manual; a bad key, a
          repeated key and a channel with no package where two are declared are errors (rules 2, 3).
@@ -24,6 +24,20 @@
          no build says why.
      12. Empty GitHub probe/import (S0148): New-RlProbeResult keeps an empty [object[]] under StrictMode when
          parsers return nothing, and release-ledger probe/import exit 0 when gh release list returns [].
+     13. A Play track reading (CANONR-0165, RELEASE-LEDGER 0.2 rule 12): an edit-based response with completed,
+         inProgress, halted, draft and an unknown status keeps the exact track, release name, version codes and rollout,
+         and makes no state and no claim; an empty response gives nothing.
+     14. A Play lifecycle reading: IN_REVIEW, APPROVED_NOT_PUBLISHED, NOT_APPROVED, PUBLISHED and an unknown value are
+         kept as reported, scoped to the track and the version codes, PUBLISHED is not public serving; a missing
+         summary is no verdict.
+     15. A schema-1 history with legacy Play API rows: the production key keeps its confirmed 1.0 (also against a
+         legacy row on 1.0 itself), the tester key shows only its own confirmation, a github channel folds as without
+         them, history.jsonl is byte-identical, and the writer's show, the render and the portfolio reader agree.
+     16. The CLI over a Play channel: probe and import print readings and write nothing - twice, with an unavailable
+         response, with an empty one, and with an adapter that returns an observation anyway.
+
+    Cases 15 and 16 run the CLI in this process (the script's exit ends only the script), so the suite stays inside
+    the 5 s line of the fast tier.
 
     Everything is a throwaway folder; no real repository, no network, pwsh child processes for CLI checks.
     Takes -KeepScratch to leave the throwaway folder for inspection.
@@ -222,7 +236,8 @@ try {
         Assert-That ($none.ok -and $none.observed.Count -eq 0) 'Store with no live submission'
         $track = '{"track":"production","releases":[{"name":"2.61.1117","versionCodes":["261117"],"status":"inProgress","userFraction":0.2},{"name":"2.60.1","versionCodes":["260001"],"status":"completed"},{"versionCodes":["9"],"status":"halted"}]}' | ConvertFrom-Json
         $p = @(ConvertFrom-RlPlayTrack -Track $track -TrackName 'production' -AppId 'com.x')
-        Assert-That ($p.Count -eq 3 -and $p[0].state -ceq 'live' -and $p[0].rollout -eq 0.2 -and $p[1].rollout -eq $null -and $p[2].state -ceq 'withdrawn' -and $p[2].version -ceq '9') 'Play track'
+        Assert-That ($p.Count -eq 3 -and $p[0].rollout -eq 0.2 -and $p[1].rollout -eq $null -and $p[2].release -ceq '' -and ($p[2].versionCodes -join ',') -ceq '9') 'Play track readings'
+        Assert-That ($null -eq $p[0].PSObject.Properties['state'] -and $p[0].claim -ceq 'none') 'a Play track reading carries a state or a claim'
         $c = ConvertFrom-RlChromeUpdate -Id ('a' * 32) -Xml '<gupdate><app appid="x"><updatecheck codebase="u" version="26.1117.1543" status="ok"/></app></gupdate>'
         Assert-That ($c.ok -and $c.observed[0].version -ceq '26.1117.1543') 'Chrome'
         Assert-That (-not (ConvertFrom-RlChromeUpdate -Id ('a' * 32) -Xml '<updatecheck status="error-unknownApplication"/>').ok) 'Chrome unknown is not unverified'
@@ -269,8 +284,10 @@ try {
             Assert-That ($null -ne $rGh.observed -and $rGh.observed.Count -eq 0) 'empty GitHub releases returned null observed'
             $rWp = New-RlProbeResult -Ok $true -Observed (ConvertFrom-RlWingetPulls -Json '[]' -Id 'Pub.App')
             Assert-That ($null -ne $rWp.observed -and $rWp.observed.Count -eq 0) 'empty winget pulls returned null observed'
-            $rPlay = New-RlProbeResult -Ok $true -Observed (ConvertFrom-RlPlayTrack -Track ([pscustomobject]@{}) -TrackName 'production' -AppId 'com.x')
-            Assert-That ($null -ne $rPlay.observed -and $rPlay.observed.Count -eq 0) 'empty Play track returned null observed'
+            $rPlay = New-RlProbeResult -Ok $true -Diagnostics (ConvertFrom-RlPlayTrack -Track ([pscustomobject]@{}) -TrackName 'production' -AppId 'com.x')
+            Assert-That ($null -ne $rPlay.observed -and $rPlay.observed.Count -eq 0 -and $null -ne $rPlay.diagnostics -and $rPlay.diagnostics.Count -eq 0) 'empty Play track returned null observed or diagnostics'
+            $rLc = New-RlProbeResult -Ok $true -Diagnostics (ConvertFrom-RlPlayLifecycle -Response ([pscustomobject]@{}) -TrackName 'production')
+            Assert-That ($null -ne $rLc.diagnostics -and $rLc.diagnostics.Count -eq 0) 'an empty lifecycle response returned null diagnostics'
         }
         $emptyRepo = Join-Path $scratch 'empty-gh'
         New-Item -ItemType Directory -Path (Join-Path $emptyRepo 'docs/releases') -Force | Out-Null
@@ -288,6 +305,150 @@ try {
         Assert-That ($LASTEXITCODE -eq 0) "import exit $LASTEXITCODE`n$($outImport -join "`n")"
         Assert-That ((@($outImport) -join "`n") -match 'seen\s+github\s+nothing published') "unexpected import output: $($outImport -join "`n")"
         Assert-That (-not (Test-Path (Join-Path $emptyRepo 'docs/releases/history.jsonl'))) 'empty probe/import wrote history.jsonl'
+    }
+
+    Test-Case 'a Play track reading keeps the exact track, artifacts and rollout and claims nothing' {
+        $track = '{"track":"production","releases":[{"name":"2.0","versionCodes":["200"],"status":"completed"},{"name":"3.0","versionCodes":["300","301"],"status":"inProgress","userFraction":0.2},{"name":"4.0","versionCodes":["400"],"status":"halted","userFraction":0.5},{"versionCodes":["500"],"status":"draft"},{"name":"6.0","versionCodes":["600"],"status":"statusUnspecified"},{"status":"completed"}]}' | ConvertFrom-Json
+        $p = @(ConvertFrom-RlPlayTrack -Track $track -TrackName 'production' -AppId 'com.x')
+        Assert-That ($p.Count -eq 5) "expected 5 readings (a release with no name and no code is skipped), got $($p.Count)"
+        foreach ($r in $p) {
+            Assert-That ($r.track -ceq 'production' -and $r.claim -ceq 'none' -and $r.kind -ceq 'play-track') "a reading lost its track or carries a claim: $($r | ConvertTo-Json -Compress)"
+            Assert-That ($null -eq $r.PSObject.Properties['state'] -and $null -eq $r.PSObject.Properties['version']) 'a reading carries a state or a version, which would make it an observation'
+        }
+        Assert-That (($p | ForEach-Object status) -join ',' -ceq 'completed,inProgress,halted,draft,statusUnspecified') "statuses: $(($p | ForEach-Object status) -join ',')"
+        Assert-That (($p[1].versionCodes -join ',') -ceq '300,301' -and $p[1].rollout -eq 0.2 -and $p[2].rollout -eq 0.5 -and $null -eq $p[0].rollout) 'artifact ids or rollout details were not kept'
+        Assert-That ($p[3].release -ceq '' -and ($p[3].versionCodes -join ',') -ceq '500') 'a release known by its code only lost it'
+        $res = New-RlProbeResult -Ok $true -Diagnostics $p
+        Assert-That ($res.observed.Count -eq 0 -and $res.diagnostics.Count -eq 5) 'the readings became observations'
+        $line = Format-RlProbeDiagnostic -Key 'play' -Diagnostic $p[1]
+        Assert-That ($line -match "track production, release '3.0', status inProgress, versionCodes 300,301, rollout 0.2" -and $line -match 'no serving, withdrawal or review claim') "the printed line: $line"
+        Assert-That (@(ConvertFrom-RlPlayTrack -Track ([pscustomobject]@{}) -TrackName 'production' -AppId 'com.x').Count -eq 0) 'an empty response gave readings'
+        Assert-That (@(ConvertFrom-RlPlayTrack -Track ('{"track":"production"}' | ConvertFrom-Json) -TrackName 'production' -AppId 'com.x').Count -eq 0) 'a track with no releases gave readings'
+    }
+
+    Test-Case 'a Play lifecycle reading is scoped to its track and artifacts and is no serving or verdict' {
+        $lc = '{"releases":[{"releaseName":"2.0","track":"production","activeArtifacts":[{"versionCode":200}],"releaseLifecycleState":"RELEASE_LIFECYCLE_STATE_IN_REVIEW"},{"releaseName":"3.0","track":"production","activeArtifacts":[{"versionCode":300},{"versionCode":301}],"releaseLifecycleState":"RELEASE_LIFECYCLE_STATE_APPROVED_NOT_PUBLISHED"},{"releaseName":"4.0","activeArtifacts":[{"versionCode":400}],"releaseLifecycleState":"RELEASE_LIFECYCLE_STATE_NOT_APPROVED"},{"releaseName":"5.0","track":"internal","activeArtifacts":[{"versionCode":500}],"releaseLifecycleState":"RELEASE_LIFECYCLE_STATE_PUBLISHED"},{"releaseName":"6.0","activeArtifacts":[{"versionCode":600}],"releaseLifecycleState":"RELEASE_LIFECYCLE_STATE_SOMETHING_NEW"}]}' | ConvertFrom-Json
+        $l = @(ConvertFrom-RlPlayLifecycle -Response $lc -TrackName 'production' -AppId 'com.x')
+        Assert-That ($l.Count -eq 5) "expected 5 readings, got $($l.Count)"
+        Assert-That ((($l | ForEach-Object lifecycle) -join ',') -ceq 'IN_REVIEW,APPROVED_NOT_PUBLISHED,NOT_APPROVED,PUBLISHED,SOMETHING_NEW') "lifecycles: $(($l | ForEach-Object lifecycle) -join ',')"
+        Assert-That ((($l | ForEach-Object known) -join ',') -ceq 'True,True,True,True,False') 'the unknown value was read as known, or a known one was not'
+        Assert-That ((($l | ForEach-Object track) -join ',') -ceq 'production,production,production,internal,production') "tracks: $(($l | ForEach-Object track) -join ',')"
+        Assert-That (($l[1].versionCodes -join ',') -ceq '300,301' -and $l[3].versionCodes[0] -ceq '500') 'artifact version codes were not read as strings'
+        foreach ($r in $l) { Assert-That ($r.claim -ceq 'none' -and $null -eq $r.PSObject.Properties['state']) 'a lifecycle reading carries a claim' }
+        $pub = Format-RlProbeDiagnostic -Key 'play' -Diagnostic $l[3]
+        Assert-That ($pub -match 'lifecycle PUBLISHED' -and $pub -match 'not proof of public serving' -and $pub -match 'not an app-wide review verdict' -and $pub -match 'scoped to this track') "PUBLISHED line: $pub"
+        Assert-That ((Format-RlProbeDiagnostic -Key 'play' -Diagnostic $l[4]) -match 'lifecycle SOMETHING_NEW \(unrecognised\)') 'an unknown lifecycle was not marked unrecognised'
+        Assert-That (@(ConvertFrom-RlPlayLifecycle -Response ([pscustomobject]@{}) -TrackName 'production').Count -eq 0 -and @(ConvertFrom-RlPlayLifecycle -Response $null -TrackName 'production').Count -eq 0) 'a missing summary gave readings'
+        Assert-That ((Format-RlProbeDiagnostic -Key 'play' -Diagnostic (New-RlPlayGap -Track 'production' -What 'release lifecycle' -Reason 'no release is listed for the track')) -match 'no verdict, positive or negative') 'a gap was printed as a verdict'
+        Assert-That ((New-RlProbeResult -Ok $true -Diagnostics $l).observed.Count -eq 0) 'a lifecycle reading became an observation'
+    }
+
+    # The registry library is not loaded here; the two helpers Get-PqReleases needs are replaced by their plain form.
+    function Get-PqValue($Object, [string]$Name, $Default = $null) { $p = $Object.PSObject.Properties[$Name]; if ($null -eq $p) { return $Default }; return $p.Value }
+    function Get-PqRepoOrder($Registry) { $i = 0; @(foreach ($r in @($Registry.repos)) { [pscustomobject]@{ key = [string]$r.key; rank = 100; index = $i }; $i++ }) }
+    $rlCli = Join-Path $releases 'release-ledger.ps1'
+    function Invoke-RlCli([hashtable]$Arguments) {
+        $out = & $rlCli @Arguments 2>&1
+        return [pscustomobject]@{ code = $LASTEXITCODE; text = (@($out | ForEach-Object { "$_" }) -join "`n") }
+    }
+    function Get-FileSha([string]$Path) { return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash }
+
+    Test-Case 'schema-1 history with legacy Play API rows: the publication view keeps what was confirmed' {
+        $channels = '{"schema":"1","packages":[{"id":"app"}],"channels":[{"key":"play","channel":"play","id":"com.x","track":"production"},{"key":"play-internal","channel":"play","id":"com.x","track":"internal"},{"key":"github","channel":"github","repo":"o/r"}]}'
+        $githubRows = @(
+            '{"at":"2026-11-01T10:00:00+02:00","key":"github","package":"app","version":"9.0","state":"live","source":"release"}',
+            '{"at":"2026-11-02T10:00:00+02:00","key":"github","package":"app","version":"9.1","state":"submitted","source":"probe","note":"Play status completed"}'
+        )
+        $playRows = @(
+            '{"at":"2026-11-01T10:00:00+02:00","key":"play","package":"app","version":"1.0","state":"live","source":"manual","url":"https://play.google.com/store/apps/details?id=com.x"}',
+            '{"at":"2026-11-02T10:00:00+02:00","key":"play","package":"app","version":"2.0","state":"live","source":"probe","track":"production","note":"Play status completed, versionCodes 20"}',
+            '{"at":"2026-11-03T10:00:00+02:00","key":"play","package":"app","version":"3.0","state":"live","source":"probe","track":"production","rollout":0.2,"note":"Play status inProgress, versionCodes 30"}',
+            '{"at":"2026-11-04T10:00:00+02:00","key":"play","package":"app","version":"4.0","state":"submitted","source":"import","track":"production","note":"channel shows 4.0 (40); Play status statusUnspecified, versionCodes 40"}',
+            '{"at":"2026-11-05T10:00:00+02:00","key":"play","package":"app","version":"1.0","state":"withdrawn","source":"probe","track":"production","note":"Play status halted, versionCodes 10"}'
+        )
+        $testerRows = @(
+            '{"at":"2026-11-06T10:00:00+02:00","key":"play-internal","package":"app","version":"1.5","state":"live","source":"manual","track":"internal","note":"installed from the internal testing link"}',
+            '{"at":"2026-11-07T10:00:00+02:00","key":"play-internal","package":"app","version":"1.6","state":"live","source":"probe","track":"internal","note":"Play status completed, versionCodes 16"}',
+            '{"at":"2026-11-08T10:00:00+02:00","key":"play-internal","package":"app","version":"1.7","state":"submitted","source":"release","track":"internal","note":"Play status completed"}'
+        )
+        $repo = Join-Path $scratch 'legacy-repo'
+        $rd = Join-Path $repo 'docs/releases'
+        New-Item -ItemType Directory -Path $rd -Force | Out-Null
+        [IO.File]::WriteAllText((Join-Path $rd 'channels.json'), $channels)
+        foreach ($line in @($githubRows + $playRows + $testerRows)) { Add-Line $rd $line }
+        $histPath = Join-Path $rd 'history.jsonl'
+        $before = Get-FileSha $histPath
+
+        $snap = Get-RlSnapshot $rd
+        $play = @($snap.channels | Where-Object key -ceq 'play')[0]
+        Assert-That ($play.live.version -ceq '1.0' -and $play.status -ceq 'live' -and @($play.inFlight).Count -eq 0) "production: live $($play.live.version), status $($play.status), in flight $(@($play.inFlight).Count)"
+        Assert-That ($play.legacyApi -eq 4 -and $play.events -eq 1 -and -not $play.versions.Contains('2.0') -and -not $play.versions.Contains('1.5')) "production counts: legacy $($play.legacyApi), events $($play.events)"
+        $tester = @($snap.channels | Where-Object key -ceq 'play-internal')[0]
+        Assert-That ($tester.live.version -ceq '1.5' -and (($tester.inFlight | ForEach-Object version) -join ',') -ceq '1.7' -and $tester.legacyApi -eq 1) "tester: live $($tester.live.version), in flight $(($tester.inFlight | ForEach-Object version) -join ','), legacy $($tester.legacyApi)"
+        $gh = @($snap.channels | Where-Object key -ceq 'github')[0]
+        $alone = New-Ledger $channels
+        foreach ($line in $githubRows) { Add-Line $alone $line }
+        $ghAlone = @((Get-RlSnapshot $alone).channels | Where-Object key -ceq 'github')[0]
+        Assert-That ($gh.legacyApi -eq 0 -and $gh.live.version -ceq '9.0' -and (($gh.inFlight | ForEach-Object version) -join ',') -ceq '9.1') 'a github row with the Play note text was not counted'
+        Assert-That (($gh | ConvertTo-Json -Depth 8) -ceq ($ghAlone | ConvertTo-Json -Depth 8)) "another channel's fold changed"
+        Assert-That ((Read-RlHistory $rd).events.Count -eq 10 -and @((Read-RlHistory $rd).events | Where-Object { [string]$_.event.key -ceq 'play' }).Count -eq 5) 'raw history lost rows'
+
+        Assert-That (Write-RlRender $rd) 'the render wrote nothing'
+        $md = Get-Content (Join-Path $rd 'RELEASES.md') -Raw
+        Assert-That ($md -match '(?m)^\| app \| play \| play \| 1\.0 \| 2026-11-01 \| - \|') 'the rendered channel row does not show the confirmed 1.0'
+        Assert-That ([regex]::Matches($md, [regex]::Escape('not counted (legacy Play API reading)')).Count -eq 5) 'the rendered history does not mark exactly the five legacy rows'
+
+        $show = (Invoke-RlCli @{ Verb = 'show'; RepoRoot = $repo; Json = $true })
+        Assert-That ($show.code -eq 0) "show exit $($show.code)`n$($show.text)"
+        $showPlay = @(($show.text | ConvertFrom-Json).channels | Where-Object key -ceq 'play')[0]
+        Assert-That ($showPlay.live.version -ceq '1.0' -and $showPlay.legacyApi -eq 4) 'the CLI show -Json does not agree with the fold'
+        Assert-That ((Invoke-RlCli @{ Verb = 'show'; RepoRoot = $repo }).text -match '4 legacy Play API row\(s\) not counted') 'the CLI show text does not say that rows are not counted'
+        $hist = (Invoke-RlCli @{ Verb = 'history'; RepoRoot = $repo; Key = 'play'; Json = $true }).text | ConvertFrom-Json
+        Assert-That (@($hist).Count -eq 5 -and (@($hist | Where-Object { $_.source -ceq 'probe' -or $_.source -ceq 'import' }).Count -eq 4)) 'the CLI history is not the raw history'
+
+        $reg = [pscustomobject]@{ repos = @([pscustomobject]@{ key = 'legacy'; path = $repo }) }
+        $pq = (Get-PqReleases $reg).repos[0]
+        $pqPlay = @($pq.channels | Where-Object key -ceq 'play')[0]
+        Assert-That ($pq.hasLedger -and $pqPlay.live.version -ceq '1.0' -and $pqPlay.legacyApi -eq 4) 'the portfolio reader does not agree with the fold'
+        Assert-That ((Format-PqReleaseChannel $pqPlay) -match 'live 1\.0.*4 legacy Play API row\(s\) not counted') 'the portfolio line does not say that rows are not counted'
+
+        Assert-That ((Get-FileSha $histPath) -ceq $before) 'history.jsonl changed while it was only read'
+    }
+
+    Test-Case 'the CLI over a Play channel: probe and import print readings and write nothing' {
+        $repo = Join-Path $scratch 'play-repo'
+        $rd = Join-Path $repo 'docs/releases'
+        New-Item -ItemType Directory -Path $rd -Force | Out-Null
+        [IO.File]::WriteAllText((Join-Path $rd 'channels.json'), '{"schema":"1","packages":[{"id":"app"}],"channels":[{"key":"play","channel":"play","id":"com.x","track":"production"}]}')
+        Add-Line $rd '{"at":"2026-11-01T10:00:00+02:00","key":"play","package":"app","version":"1.0","state":"live","source":"manual"}'
+        Add-Line $rd '{"at":"2026-11-02T10:00:00+02:00","key":"play","package":"app","version":"2.0","state":"live","source":"probe","note":"Play status completed, versionCodes 20"}'
+        $histPath = Join-Path $rd 'history.jsonl'
+        $h0 = Get-FileSha $histPath
+        $stub = Join-Path $scratch 'play-stub.json'
+        $env:SZA_RELEASES_PROBE_STUB = $stub
+        $env:SZA_RELEASES_NOW = '2026-11-10T10:00:00+02:00'
+
+        [IO.File]::WriteAllText($stub, '{"play":{"ok":true,"observed":[],"diagnostics":[{"kind":"play-track","app":"com.x","track":"production","release":"2.0","status":"completed","versionCodes":["200"],"rollout":null,"claim":"none"},{"kind":"play-lifecycle","app":"com.x","track":"production","release":"2.0","lifecycle":"PUBLISHED","known":true,"meaning":"available to users on this track, not proof of public serving","versionCodes":["200"],"claim":"none"}]}}')
+        foreach ($verb in 'probe', 'probe', 'import') {
+            $r = Invoke-RlCli @{ Verb = $verb; RepoRoot = $repo }
+            Assert-That ($r.code -eq 0) "$verb exit $($r.code)`n$($r.text)"
+            Assert-That ($r.text -match "reading\s+play\s+track production, release '2\.0', status completed, versionCodes 200 - track configuration only") "$verb printed no track reading`n$($r.text)"
+            Assert-That ($r.text -match 'lifecycle PUBLISHED' -and $r.text -match 'readings only, no publication recorded') "$verb printed no lifecycle reading or recorded something`n$($r.text)"
+            Assert-That ((Get-FileSha $histPath) -ceq $h0) "$verb changed history.jsonl"
+        }
+
+        [IO.File]::WriteAllText($stub, '{"play":{"ok":false,"reason":"no Play Developer API credential"}}')
+        $r = Invoke-RlCli @{ Verb = 'probe'; RepoRoot = $repo }
+        Assert-That ($r.code -eq 0 -and $r.text -match 'unverified\s+play\s+no Play Developer API credential' -and (Get-FileSha $histPath) -ceq $h0) "an unavailable response: exit $($r.code), history changed or no unverified line`n$($r.text)"
+
+        [IO.File]::WriteAllText($stub, '{"play":{"ok":true,"observed":[],"diagnostics":[]}}')
+        $r = Invoke-RlCli @{ Verb = 'import'; RepoRoot = $repo }
+        Assert-That ($r.code -eq 0 -and $r.text -match 'seen\s+play\s+nothing published' -and (Get-FileSha $histPath) -ceq $h0) "an empty response: exit $($r.code), history changed`n$($r.text)"
+
+        [IO.File]::WriteAllText($stub, '{"play":{"ok":true,"observed":[{"version":"7.0","state":"live","track":"production"}]}}')
+        $r = Invoke-RlCli @{ Verb = 'probe'; RepoRoot = $repo }
+        Assert-That ($r.code -eq 0 -and $r.text -match 'ignored\s+play\s+1 Play observation\(s\)' -and (Get-FileSha $histPath) -ceq $h0) "an adapter observation was written or not reported`n$($r.text)"
+        Assert-That (-not (Test-Path (Join-Path $rd 'RELEASES.md'))) 'a probe that wrote nothing rendered RELEASES.md'
     }
 } finally {
     $env:SZA_RELEASES_NOW = $savedNow

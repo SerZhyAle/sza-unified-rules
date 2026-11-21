@@ -113,9 +113,11 @@ Recorded as the owner's session reported it; what the canon session measured its
   landing answers. Listing filled in en-US, ru-RU and uk (title, short and full description, 512 icon, 1024x500 feature
   graphic). Form factors: Wear OS added; Android XR left active by Google's default. App signing key `61:CF:..:F4:97`
   imported 2026-11-17; separate upload key `A8:68:..:FB:D0` reset valid 2026-11-19 16:20 (`docs/play/PLAY_RELEASE_RECORD.md`).
-- **Waiting for the first Play upload and console completion** (`STRMOB-0047`, `STRMOB-0072`): draft bundle upload, Foreground
-  service permissions declaration after the draft upload and before commit (`GOOGLE-PLAY` 0.2 rule 22), review account sign-in
-  details, target audience (18 and over), and Data safety submit.
+- **Waiting for the first Play upload and console completion** (`STRMOB-0047`, `STRMOB-0072`): establish accepted prior
+  artifact history or an authorized, documented bootstrap for each app before API upload. The phone app's new
+  foreground-service types require saved declarations before API writes. An unavailable form stops that path
+  (`GOOGLE-PLAY` 0.4 section 8C). Review account sign-in details, target audience (18 and over), and Data safety
+  submission are still pending for the phone app.
 - **Google Play Console, second app "StreamsPlayer Watch Face"**, package `com.sza.streamsplayer.watchface` (bound to the account
   on 2026-11-13), App, Free. Every App content item complete ("You're all caught up"): no restricted access, no ads, no data
   collected, IARC all No (Everyone, PEGI 3), target audience 13 and over. Category Personalization, contact `sza@ukr.net`, Wear
@@ -201,8 +203,7 @@ Open as of 2026-11-20 (each carried by its project ticket; none blocks the canon
 - **Watch-face captured icons (`STRMOB-0099`).** Replacing the drawn watch-face launcher vector and listing graphics with
   captures of the real face (`GOOGLE-PLAY` rule 25) before uploading `com.sza.streamsplayer.watchface` (`STRMOB-0072`).
 - **Pending Play publication steps (`STRMOB-0047`, `STRMOB-0072`).** Pre-release sweep PASS after drift/canon blockers,
-  first bundle upload, Foreground service permissions declaration after draft upload (`GOOGLE-PLAY` 0.2 rule 22), sign-in
-  details for the review account, target audience (18 and over), and Data safety submit.
+  followed by the first-use checks and Console inputs in the Play record above.
 
 Settled or superseded since 2026-10-02 and 2026-11-13: 4.3 distribution (play first, per the stamp's comment; a sideload
 channel is added when it opens), 4.4 watch-face composition (the second app exists and its listing source is

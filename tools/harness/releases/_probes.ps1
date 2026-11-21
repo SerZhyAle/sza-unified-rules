@@ -7,11 +7,14 @@
     One adapter per probe kind. Every adapter only READS: a public page, a public API, or a read-only call of the
     channel's own tool (gh, msstore). None of them uploads, submits, commits, merges or tags. An adapter returns
 
-        [pscustomobject]@{ ok; reason; observed = @( @{ version; state; at; ref; url; note; track; rollout } ) }
+        [pscustomobject]@{ ok; reason; observed = @( @{ version; state; at; ref; url; note; track; rollout } ); diagnostics = @( ... ) }
 
     ok = $false means "unverified" - the tool is missing, a credential is absent or refused, the page does not show a
     version without a script - and `reason` says which; the caller writes no event for it. `at` on an observation is
     the channel's own time when it gives one (used by `import`), else empty.
+
+    `diagnostics` are readings that are printed and never written (RELEASE-LEDGER 0.2 rule 12): the Play probe reports
+    the track configuration and the release lifecycle of one exact track there, and returns no observation at all.
 
     The parsers (ConvertFrom-Rl*) are pure functions over the channel's response text, so the fast suite checks them
     without the network. SZA_RELEASES_PROBE_STUB names a JSON file { "<channel key>": { ok, reason, observed } } that
@@ -24,9 +27,10 @@
 #>
 
 function New-RlProbeResult {
-    param([bool]$Ok, [string]$Reason = '', [AllowNull()][AllowEmptyCollection()][object[]]$Observed = @())
+    param([bool]$Ok, [string]$Reason = '', [AllowNull()][AllowEmptyCollection()][object[]]$Observed = @(), [AllowNull()][AllowEmptyCollection()][object[]]$Diagnostics = @())
     $items = [object[]]@($Observed | Where-Object { $null -ne $_ })
-    return [pscustomobject]@{ ok = $Ok; reason = $Reason; observed = $items }
+    $readings = [object[]]@($Diagnostics | Where-Object { $null -ne $_ })
+    return [pscustomobject]@{ ok = $Ok; reason = $Reason; observed = $items; diagnostics = $readings }
 }
 
 function New-RlObservation {
@@ -240,25 +244,96 @@ function Get-RlGoogleAccessToken {
     return [string]$resp.access_token
 }
 
+# The documented values of ReleaseLifecycleState of applications.tracks.releases.list, without the
+# RELEASE_LIFECYCLE_STATE_ prefix; anything else is kept as reported and read as unrecognised.
+$script:RlPlayLifecycle = [ordered]@{
+    UNSPECIFIED            = 'the release has no state yet'
+    DRAFT                  = 'a release that can still be edited'
+    NOT_SENT_FOR_REVIEW    = 'a release ready to be sent for review, waiting for the developer'
+    IN_REVIEW              = 'submitted and in review'
+    APPROVED_NOT_PUBLISHED = 'passed review and waits for the developer to publish it'
+    NOT_APPROVED           = 'rejected in review'
+    PUBLISHED              = 'available to users on this track, a partial or a resumable halted rollout included - not proof of public serving'
+}
+
 function ConvertFrom-RlPlayTrack {
-    # One track resource: completed -> live, inProgress -> live with its rollout fraction, halted -> withdrawn,
-    # draft -> pending. The version is the release name (what the console shows), else the version codes.
+    # One edits.tracks resource (RELEASE-LEDGER rule 12): the configuration of ONE track, kept as the API reports it -
+    # the release name, the status, the version codes and the rollout fraction. It is a reading, not a publication:
+    # no state, no serving, withdrawal or review claim comes out of it, whatever the status says.
     param([Parameter(Mandatory)]$Track, [Parameter(Mandatory)][string]$TrackName, [Parameter(Mandatory)][string]$AppId)
     $out = [System.Collections.Generic.List[object]]::new()
     foreach ($r in @(Get-RlProp $Track 'releases')) {
         if ($null -eq $r) { continue }
-        $codes = @(Get-RlProp $r 'versionCodes' | Where-Object { $_ })
+        $codes = [string[]]@(@(Get-RlProp $r 'versionCodes') | Where-Object { $_ } | ForEach-Object { [string]$_ })
         $name = [string](Get-RlProp $r 'name')
         if (-not $name -and $codes.Count -eq 0) { continue }
-        $version = if ($name) { $name } else { $codes -join ',' }
-        $st = [string](Get-RlProp $r 'status')
-        $state = switch ($st) { 'completed' { 'live' } 'inProgress' { 'live' } 'halted' { 'withdrawn' } 'draft' { 'pending' } default { 'submitted' } }
-        $fraction = Get-RlProp $r 'userFraction'
-        $note = "Play status $st" + $(if ($codes.Count -gt 0) { ", versionCodes $($codes -join ',')" } else { '' })
-        $out.Add((New-RlObservation -Version $version -State $state -Track $TrackName -Rollout $(if ($st -ceq 'inProgress' -and $null -ne $fraction) { $fraction } else { $null }) `
-                    -Url "https://play.google.com/store/apps/details?id=$AppId" -Note $note))
+        $out.Add([pscustomobject]@{
+                kind = 'play-track'; app = $AppId; track = $TrackName; release = $name; status = [string](Get-RlProp $r 'status')
+                versionCodes = $codes; rollout = (Get-RlProp $r 'userFraction'); claim = 'none'
+            })
     }
     return [object[]]$out.ToArray()
+}
+
+function ConvertFrom-RlPlayLifecycle {
+    # An applications.tracks.releases.list body (up to 20 non-obsolete releases of ONE track): the lifecycle of each
+    # release as Play reports it, scoped to that track and to the versionCode of its activeArtifacts. PUBLISHED is a
+    # track lifecycle value - it includes a partial or halted rollout - so it never confirms public serving, and a
+    # release's review state is no app-wide review or policy verdict. A body with no release gives nothing.
+    param([AllowNull()]$Response, [Parameter(Mandatory)][string]$TrackName, [string]$AppId = '')
+    $out = [System.Collections.Generic.List[object]]::new()
+    foreach ($r in @(Get-RlProp $Response 'releases')) {
+        if ($null -eq $r) { continue }
+        $raw = [string](Get-RlProp $r 'releaseLifecycleState')
+        $state = $raw -replace '^RELEASE_LIFECYCLE_STATE_', ''
+        $codes = [string[]]@(@(Get-RlProp $r 'activeArtifacts') | Where-Object { $null -ne $_ } | ForEach-Object { [string](Get-RlProp $_ 'versionCode') } | Where-Object { $_ })
+        $known = ($script:RlPlayLifecycle.Keys -ccontains $state)
+        $track = [string](Get-RlProp $r 'track'); if (-not $track) { $track = $TrackName }
+        $out.Add([pscustomobject]@{
+                kind = 'play-lifecycle'; app = $AppId; track = $track; release = [string](Get-RlProp $r 'releaseName'); lifecycle = $state
+                known = $known; meaning = $(if ($known) { [string]$script:RlPlayLifecycle[$state] } else { 'a value this reader does not know' })
+                versionCodes = $codes; claim = 'none'
+            })
+    }
+    return [object[]]$out.ToArray()
+}
+
+function New-RlPlayGap {
+    # A read that returned nothing, or could not be made: reported as it is, never as a negative verdict.
+    param([Parameter(Mandatory)][string]$Track, [Parameter(Mandatory)][string]$What, [Parameter(Mandatory)][string]$Reason)
+    return [pscustomobject]@{ kind = 'play-gap'; track = $Track; what = $What; reason = $Reason; claim = 'none' }
+}
+
+function Format-RlProbeDiagnostic {
+    # One output line for a probe reading; the claim it makes is always none (RELEASE-LEDGER rule 12).
+    param([Parameter(Mandatory)][string]$Key, [Parameter(Mandatory)]$Diagnostic)
+    $d = $Diagnostic
+    $bits = [System.Collections.Generic.List[string]]::new()
+    $tail = ''
+    switch ([string](Get-RlProp $d 'kind')) {
+        'play-track' {
+            $bits.Add("track $($d.track)")
+            if ($d.release) { $bits.Add("release '$($d.release)'") }
+            $bits.Add("status $(if ($d.status) { $d.status } else { 'not reported' })")
+            if (@($d.versionCodes).Count -gt 0) { $bits.Add("versionCodes $(@($d.versionCodes) -join ',')") }
+            if ($null -ne $d.rollout -and "$($d.rollout)" -ne '') { $bits.Add("rollout $($d.rollout)") }
+            $tail = 'track configuration only - no serving, withdrawal or review claim'
+        }
+        'play-lifecycle' {
+            $bits.Add("track $($d.track)")
+            if ($d.release) { $bits.Add("release '$($d.release)'") }
+            $bits.Add("lifecycle $(if ($d.lifecycle) { $d.lifecycle } else { 'not reported' })$(if (-not $d.known) { ' (unrecognised)' })")
+            if (@($d.versionCodes).Count -gt 0) { $bits.Add("versionCodes $(@($d.versionCodes) -join ',')") }
+            $tail = "$($d.meaning); scoped to this track and these version codes, not public serving and not an app-wide review verdict"
+        }
+        'play-gap' {
+            $bits.Add("track $($d.track)")
+            $bits.Add("$($d.what): $($d.reason)")
+            $tail = 'no verdict, positive or negative'
+        }
+        default { $bits.Add("reading $([string](Get-RlProp $d 'kind'))"); $tail = 'no publication claim' }
+    }
+    return ("reading     {0,-14} {1} - {2}" -f $Key, ($bits -join ', '), $tail)
 }
 
 function Invoke-RlProbePlay {
@@ -274,16 +349,47 @@ function Invoke-RlProbePlay {
     try { $token = Get-RlGoogleAccessToken -KeyFile $keyFile -Scope 'https://www.googleapis.com/auth/androidpublisher' }
     catch { return (New-RlProbeResult -Ok $false -Reason 'the service account token request was refused') }
     $h = @{ Authorization = "Bearer $token" }
-    try { $edit = Invoke-RestMethod -Method Post -Uri "$base/edits" -Headers $h -ContentType 'application/json' -Body '{}' -TimeoutSec 25 }
-    catch { return (New-RlProbeResult -Ok $false -Reason "the Play API refused to open a read edit for $appId (no access, or the app does not exist)") }
+    # RELEASE-LEDGER rule 12: both reads are readings of one exact track. They are reported as diagnostics and no
+    # event comes out of either, so a track that reads completed, published or halted never becomes live, withdrawn
+    # or in review in the ledger.
+    $diag = [System.Collections.Generic.List[object]]::new()
+    $lifecycleOk = $false
+    $trackOk = $false
+    $failed = [System.Collections.Generic.List[string]]::new()
+    # 1. The release lifecycle: a plain GET that opens no edit, so it cannot disturb another publisher.
     try {
-        $t = Invoke-RestMethod -Method Get -Uri "$base/edits/$($edit.id)/tracks/$track" -Headers $h -TimeoutSec 25
-        return (New-RlProbeResult -Ok $true -Observed @(ConvertFrom-RlPlayTrack -Track $t -TrackName $track -AppId $appId))
+        $lc = Invoke-RestMethod -Method Get -Uri "$base/tracks/$track/releases" -Headers $h -TimeoutSec 25
+        $lifecycleOk = $true
+        $rows = @(ConvertFrom-RlPlayLifecycle -Response $lc -TrackName $track -AppId $appId)
+        foreach ($d in $rows) { $diag.Add($d) }
+        if ($rows.Count -eq 0) { $diag.Add((New-RlPlayGap -Track $track -What 'release lifecycle' -Reason 'no release is listed for the track')) }
     } catch {
-        return (New-RlProbeResult -Ok $false -Reason "the Play API did not return track '$track'")
-    } finally {
-        try { Invoke-RestMethod -Method Delete -Uri "$base/edits/$($edit.id)" -Headers $h -TimeoutSec 25 | Out-Null } catch { Write-Verbose 'the transient edit expires by itself' }
+        $failed.Add("the Play API did not return the release lifecycle of track '$track'")
+        $diag.Add((New-RlPlayGap -Track $track -What 'release lifecycle' -Reason 'the read did not answer; nothing is known from it'))
     }
+    # 2. The track configuration: an edit is opened for the read and deleted again.
+    $edit = $null
+    try { $edit = Invoke-RestMethod -Method Post -Uri "$base/edits" -Headers $h -ContentType 'application/json' -Body '{}' -TimeoutSec 25 }
+    catch {
+        $failed.Add("the Play API refused to open a read edit for $appId (no access, or the app does not exist)")
+        $diag.Add((New-RlPlayGap -Track $track -What 'track configuration' -Reason 'no read edit could be opened; nothing is known from it'))
+    }
+    if ($null -ne $edit) {
+        try {
+            $t = Invoke-RestMethod -Method Get -Uri "$base/edits/$($edit.id)/tracks/$track" -Headers $h -TimeoutSec 25
+            $trackOk = $true
+            $rows = @(ConvertFrom-RlPlayTrack -Track $t -TrackName $track -AppId $appId)
+            foreach ($d in $rows) { $diag.Add($d) }
+            if ($rows.Count -eq 0) { $diag.Add((New-RlPlayGap -Track $track -What 'track configuration' -Reason 'the track lists no release')) }
+        } catch {
+            $failed.Add("the Play API did not return track '$track'")
+            $diag.Add((New-RlPlayGap -Track $track -What 'track configuration' -Reason 'the read did not answer; nothing is known from it'))
+        } finally {
+            try { Invoke-RestMethod -Method Delete -Uri "$base/edits/$($edit.id)" -Headers $h -TimeoutSec 25 | Out-Null } catch { Write-Verbose 'the transient edit expires by itself' }
+        }
+    }
+    if (-not $lifecycleOk -and -not $trackOk) { return (New-RlProbeResult -Ok $false -Reason ($failed -join '; ')) }
+    return (New-RlProbeResult -Ok $true -Diagnostics $diag.ToArray())
 }
 
 # ---- Chrome Web Store, Edge Add-ons, VS Code Marketplace (public endpoints, live version only) ----
@@ -391,7 +497,8 @@ function Invoke-RlProbe {
                 New-RlObservation -Version ([string]$_.version) -State ([string]$_.state) -At ([string](Get-RlProp $_ 'at')) -Ref ([string](Get-RlProp $_ 'ref')) `
                     -Url ([string](Get-RlProp $_ 'url')) -Note ([string](Get-RlProp $_ 'note')) -Track ([string](Get-RlProp $_ 'track')) -Rollout (Get-RlProp $_ 'rollout')
             })
-        return (New-RlProbeResult -Ok ([bool](Get-RlProp $stub 'ok')) -Reason ([string](Get-RlProp $stub 'reason')) -Observed $obs)
+        return (New-RlProbeResult -Ok ([bool](Get-RlProp $stub 'ok')) -Reason ([string](Get-RlProp $stub 'reason')) -Observed $obs `
+                -Diagnostics @(@(Get-RlProp $stub 'diagnostics') | Where-Object { $null -ne $_ }))
     }
     $spec = $Channel.spec
     switch ($Channel.kind) {

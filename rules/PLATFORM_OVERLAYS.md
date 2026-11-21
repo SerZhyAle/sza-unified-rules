@@ -118,8 +118,9 @@ per upload; derive it mechanically (e.g. from date/build counter) rather than ha
 flavor matrix (`standard` / `lite` / `photos` / `legacy` ..) maps to *different stores*, not just Play
 tracks: the store flavors go to **Google Play** (each a separate listing/track); a **sideload-only** flavor
 ships direct APK off the site/GitHub when it carries capabilities a store would reject; a **VR** flavor
-ships to a VR store (Meta Horizon / Quest). Build/upload via `.\a.ps1 r` (AAB built in a dedicated
-worktree). Play has no keyword field, so the description carries the functional phrasing; plus the product
+ships to a VR store (Meta Horizon / Quest). Play bundles go through the Play Developer API; the product's
+own build produces the signed AAB. See the [Play API release procedure](../skills/store-publish/references/google-play.md#7-publishing-a-release-through-the-api).
+Play has no keyword field, so the description carries the functional phrasing; plus the product
 site. Sibling **modules** of the same build (`:wear` for Wear OS, plus tooling modules) are a third axis -
 not flavors, not editions.
 

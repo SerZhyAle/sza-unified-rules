@@ -29,7 +29,7 @@ function Get-PqReleases($Registry) {
                 $row.builds = [object[]]$snap.builds
                 $row.lastBuild = @($snap.builds | Sort-Object -Property @{ Expression = { $t = ConvertTo-RlInstant ([string](Get-RlProp $_ 'builtAt')); if ($t) { $t.UtcTicks } else { 0 } } } -Descending) | Select-Object -First 1
                 $row.channels = [object[]]@($snap.channels | ForEach-Object {
-                        [pscustomobject]@{ key = $_.key; channel = $_.channel; kind = $_.kind; package = $_.package; title = $_.title; status = $_.status; live = $_.live; inFlight = [object[]]$_.inFlight; events = $_.events }
+                        [pscustomobject]@{ key = $_.key; channel = $_.channel; kind = $_.kind; package = $_.package; title = $_.title; status = $_.status; live = $_.live; inFlight = [object[]]$_.inFlight; events = $_.events; legacyApi = $_.legacyApi }
                     })
                 $row.unpublished = [object[]]$snap.unpublished
                 $row.events = $snap.events
@@ -71,5 +71,7 @@ function Format-PqReleaseChannel($C) {
     if ($null -ne $C.live) { $parts.Add("live $($C.live.version) ($(Format-RlDay $C.live.at))") }
     foreach ($f in @($C.inFlight)) { $parts.Add("$($f.state) $($f.version) ($(Format-RlDay $f.at))") }
     if ($parts.Count -eq 0) { $parts.Add($(if ($C.status -ne 'none') { $C.status } else { 'nothing recorded' })) }
+    $legacy = [int](Get-RlProp $C 'legacyApi')
+    if ($legacy -gt 0) { $parts.Add("$legacy legacy Play API row(s) not counted") }
     return ($parts -join '; ')
 }

@@ -292,7 +292,8 @@ Release's asset URL and SHA256:
    The preflight's sanitized JSON result omits identifiers and raw responses; the future submission
    evidence format remains part of the pending proposal (see the machine channel page in `store-publish`).
 4. **Any extra channel**: VS Code Marketplace (own semver clock, only if the subtree changed), Chrome/Edge
-   (independent reviews), Play tracks, sideload, VR.
+   (independent reviews), Play tracks, sideload, VR. For Play, follow the
+   [API release procedure](../store-publish/references/google-play.md#7-publishing-a-release-through-the-api).
 5. **Site publish**, if the repo serves one - see [feature-to-site](../feature-to-site/SKILL.md).
 
 Cross-cutting: if the artifact bundles third-party binaries, `THIRD-PARTY-NOTICES.txt` must be **inside every
