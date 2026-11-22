@@ -124,6 +124,15 @@ Test-Case '-StopAfter 1 stays one candidate: the lifted root, not the refused ti
         -HeadFilter (New-Filter @{ 'a:S1' = 'c:S7' }) -HeadLift (New-Lift @{ 'c:S7' = $rootC })
     Assert-That (@($r.candidates).Count -eq 1) "candidates: $($r.candidates | ForEach-Object { $_.repo + ':' + $_.id })"
     Assert-That ("$($r.candidates[0].repo):$($r.candidates[0].id)" -ceq 'c:S7') 'the first candidate is not the lifted root'
+    # When the lifted root is transiently excluded (e.g. noAgent aboveCeiling) while the blocked ticket stays in the walk,
+    # the walk passes over the excluded root to the next offerable ticket, and lifts the root again once its exclusion ends.
+    $rSkip = Get-PqRank -Registry (New-Registry) -Queue (New-Queue @('a:S1', 'a:S2', 'b:S4')) -HeadProvider (New-Provider) -Exclude @('c:S7') -Slots 1 -StopAfter 1 `
+        -HeadFilter (New-Filter @{ 'a:S1' = 'c:S7' }) -HeadLift (New-Lift @{ 'c:S7' = $rootC })
+    Assert-That ("$($rSkip.candidates[0].repo):$($rSkip.candidates[0].id)" -ceq 'a:S2') "expected a:S2 when lifted root is excluded, got $($rSkip.candidates[0].repo):$($rSkip.candidates[0].id)"
+    Assert-That (-not $rSkip.lifts[0].offered -and $rSkip.lifts[0].why -ceq 'excluded') "expected excluded lift why, got $($rSkip.lifts[0] | ConvertTo-Json -Compress)"
+    $rAgain = Get-PqRank -Registry (New-Registry) -Queue (New-Queue @('a:S1', 'a:S2', 'b:S4')) -HeadProvider (New-Provider) -Slots 1 -StopAfter 1 `
+        -HeadFilter (New-Filter @{ 'a:S1' = 'c:S7' }) -HeadLift (New-Lift @{ 'c:S7' = $rootC })
+    Assert-That ("$($rAgain.candidates[0].repo):$($rAgain.candidates[0].id)" -ceq 'c:S7') 'the root was not lifted again on the next rank'
 }
 
 Test-Case 'a named start, a root that is the refused ticket itself, and a throwing hook lift nothing' {

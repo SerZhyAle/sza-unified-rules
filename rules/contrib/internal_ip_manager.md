@@ -13,9 +13,9 @@ genuinely new material is exactly that shape: an **internal tool that consumes t
 core but none of the release/distribution/channel machinery**, distributed by a plain file copy to a
 local shared drop folder. Everything the shared docs already saturate for shipped Overlay A products
 (channels, MSIX remap, winget-portable, frozen anchors) is **N/A here, not CONFIRM** - there is
-nothing to ship. Also present but already-saturated: `Debug.WriteLine`-only logging, run-and-observe
-as the top of the evidence ladder, a `tasks/TASK-N.md` Markdown spec lifecycle (CONFIRM of the core's
-per-file `docs/specifications` model, no catalog CLI).
+nothing to ship. Also present: `Debug.WriteLine`-only logging, run-and-observe as the top of the
+evidence ladder, and the shipped harness task-flow (`tasks/INTIPM-####_<slug>.md`, legacy closed tickets
+keep `TASK-####`, `.sza-profile.json`, `tasks/spec-catalog.jsonl`, `tools/harness.ps1`, `r0`-`r3`, `rs`, `rm`, `rw`).
 
 > **Keep this note in the record.** Current facts, edited in place. Never append a dated section to this file:
 > what happened and when goes to the file of the same name under `history/`
@@ -26,15 +26,19 @@ per-file `docs/specifications` model, no catalog CLI).
 ## Overlay facts (verified against this repo)
 
 - **Source root & release-mechanics.** Source in `src/` (flat: `Form1.vb`, `Columns.vb`,
-  `AppSettings.vb`, `FormSettings.vb`, `RouterClient.vb`, `RouterSync.vb`); `.sln` at repo root.
+  `AppSettings.vb`, `FormSettings.vb`, `RouterClient.vb`, `RouterSync.vb`, plus UI/help/identity modules
+  `UiTokens.vb`, `Theme.vb`, `Palette.vb`, `UserMessages.vb`, `CommandRow.vb`, `HelpAsk.vb`,
+  `HelpContent.vb`, `HelpLayer.vb`, `HelpMap.vb`, `ProductIdentity.vb`, `DiagnosticReport.vb`, etc.); `.sln`
+  and task-flow launchers (`r0`-`r3`, `rs`, `rm`, `rw`, forwarding through `tools/harness.ps1`) at repo root.
   **No `publishing/` folder, no `tests/`, no `.github/`.** Release-mechanics is a single `build.ps1`
-  dotnet wrapper whose `publish` task emits a self-contained single-file `win-x64` exe to a **local
-  drop folder `C:\GD\tc\SZA\_APP`** - the entire "distribution" (evidence: `build.ps1:32-33,61-81`,
-  root `ls` shows no `publishing/`/`tests/`/`.github/`).
+  dotnet wrapper (`check` for <= 5 s fast checks including `scripts/check-help.ps1`; `rebuild`/`publish`
+  release-tier, recording builds in `docs/releases/` via `release-ledger.ps1`) whose `publish` task emits
+  a self-contained single-file `win-x64` exe to a **local drop folder `C:\GD\tc\SZA\_APP`** (evidence:
+  `build.ps1`, root `ls`).
 - **Version shape (+ padding choice).** **None.** The `.vbproj` sets no `<Version>`/`<AssemblyVersion>`;
   nothing is stamped, tagged, or date-shaped. An unversioned internal tool - DIVERGE from the Overlay A
   date-tag rule, legitimate because no update is ever correlated to an install (evidence:
-  `grep -i version src/internal_IP_manager.vbproj` -> no match; `git rev-list --count --all` -> 0).
+  `grep -i version src/internal_IP_manager.vbproj` -> no match).
 - **Channels + listing files.** **None.** No public channel; the only "publish" is `build.ps1 publish`
   copying the exe to `C:\GD\tc\SZA\_APP`. No listing files, no store copy, no README-as-listing
   (evidence: `build.ps1:77-81`).
@@ -67,14 +71,21 @@ Format: Channel | Trigger | Cost | Auth | Signer | Listing source | Frozen ancho
 - **AI_USAGE.md** - CONFIRM. Autonomy/evidence/memory/communication all match; the repo's `CLAUDE.md`
   is already an AI_USAGE-shaped rules file with skill routing (`.claude/commands/`) and native
   per-project memory (no in-repo `memory/`). Nothing beyond core.
-- **REPOSITORY_LAYOUT.md** - CONFIRM. `src/` + `docs/{...}` + `tasks/` + `tmp/` (gitignored) + root
-  `README`/`CHANGELOG`/`LICENSE`/`CLAUDE.md`; `.gitignore` points at `bin/`/`obj/`/`.vs/`/`tmp/`.
+- **REPOSITORY_LAYOUT.md** - CONFIRM. `src/` + `docs/` (with `docs/contracts/`, `docs/releases/`,
+  `docs/DOCUMENT_REGISTRY.jsonl`) + `tasks/` (gitignored, with `RELEASE_QUEUE.md`/`RELEASE_READY.md`/
+  `RELEASE_DONE.md`) + `temp/` + `tmp/` (gitignored) + root `README`/`CHANGELOG`/`LICENSE`/`CLAUDE.md`/
+  launchers (`r0`-`r3`, `rs`, `rm`, `rw`). Known warning `SZA-SEC05` on `src/UiTokens.vb` (`*token*` glob)
+  is tracked in `INTIPM-0022`.
 - **DEVELOPMENT.md / TESTING_AND_QA.md** - CONFIRM. `Debug.WriteLine`-only logging, ~500-line file
-  budget, run-and-observe as the top (and only) rung of the evidence ladder (no tests/linter/CI).
+  budget, fast static checks (`build.ps1 check`) between releases, full build and run-and-observe
+  reserved for release pre-flight (no tests/linter/CI; `.sza-profile.json` omits `commands.compileCheck`).
 - **DOCUMENTATION_CONCEPT.md** - CONFIRM. Single-source-of-truth `CHANGELOG.md [Unreleased]`;
-  `Col.*` constants as the column single-source-of-truth.
-- **GITHUB_INTERACTION.md** - N/A at survey time: the repo has **zero commits and no remote** (see
-  open questions).
+  `Col.*` constants as column single-source-of-truth; `docs/DOCUMENT_REGISTRY.jsonl` (31 records,
+  `docRegistryShape` 1).
+- **CONTRACTS.md / PROMOTION.md** - CONFIRM. No shared wire/data contract (`docs/contracts/NO-ROLE.md`,
+  `ipnew.txt` is private user data); consumes rule-adoption, UI, help, identity, doc-quality and
+  release-ledger contracts (`docs/contracts/README.md`). Internal tool with no remote: no promotion ticket.
+- **GITHUB_INTERACTION.md** - CONFIRM (local git only, 5 commits, no remote).
 
 ## Candidate core edits (PROPOSED - apply only on owner instruction)
 
@@ -89,10 +100,6 @@ Format: Channel | Trigger | Cost | Auth | Signer | Listing source | Frozen ancho
 - None required.
 
 ## Open questions for the owner
-- **Zero git history.** The repo is `git init`'d on `main` with **no commits and no remote** - every
-  file is untracked. A spread-back commit here is therefore the repository's **initial commit** (the
-  whole codebase), not an incremental one. Owner to confirm: make the initial commit now, or keep the
-  spread-back edits staged for a separate commit?
 - **No CI / no release pipeline by design?** Confirm the tool is meant to stay internal-only
   (file-copy distribution), so the missing `publishing/` + version stamp are a deliberate DIVERGE, not
   a gap to fill later.

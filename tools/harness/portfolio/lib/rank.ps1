@@ -121,6 +121,7 @@ function Get-PqNamedNotRunReason {
     if ($null -ne $xb -and $xb.ContainsKey($tk)) { return "it waits on a blocker in another project ($($xb[$tk].blocker))" }
     $tr = Get-PqRankValue $Marks 'transient'
     if ($null -ne $tr -and $tr.ContainsKey($tk)) {
+        if ([string]$tr[$tk].why -ceq 'noAgent') { return 'no provider of the order may take it now' }
         return 'it waits for a machine resource (build, emulator) that another pass holds'
     }
     $oc = Get-PqRankValue $Marks 'occupied'
@@ -450,6 +451,7 @@ function Get-PqRank {
                 $excluded.xrepo++
                 $headRefused.Add([ordered]@{ repo = $e.repo; id = $hid; status = [string](Get-PqRankValue $p.head 'status'); refusal = $refusal })
                 & $tryLift $e $hid $refusal
+                if ($StopAfter -gt 0 -and $walkFound.n -ge $StopAfter) { break }
                 $p = & $pickOne $e $false
             }
         }

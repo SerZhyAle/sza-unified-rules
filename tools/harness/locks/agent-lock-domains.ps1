@@ -73,12 +73,46 @@ foreach ($lockDomainDef in $Script:AgentLockDomainTable) {
 # S2402: the path -> domain rules are the project's (locks.pathRules, first match wins). A rule's
 # domain is a concrete domain, a bare type (= every domain of that type: the fail-closed answer),
 # or null (= exempt: the path is already serialised by something finer and takes no domain).
-$Script:AgentLockPathRules = @(
+function Get-AgentLockPathRules {
+    <#
+    .SYNOPSIS
+        The project's path -> domain rules (locks.pathRules, first match wins), with any declared
+        specs or spec-archive directory (paths.specsDir, paths.specArchiveDir) exempted when no
+        explicit path rule already names it.
+    .DESCRIPTION
+        The shipped default rule `^PLAN/ -> null` exempts the default specs directory because PLAN/
+        is already serialised per ticket (ticket-lease.ps1) and per journal (Enter-CatalogLock), and
+        every pass writes its tickets, queue files and ledger there. When a project declares a
+        different specsDir or specArchiveDir (e.g. `tasks`, `tasks/archive`) without rewriting
+        locks.pathRules, those directories hold the same files and are exempt for the same reason.
+        Read from the profile at call time rather than once at load time so a test or caller that
+        re-points SZA_PROJECT_ROOT after loading this library sees the active project's rules.
+    #>
+    $rules = [System.Collections.Generic.List[object]]::new()
+    $patterns = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
     foreach ($lockRuleDef in @(Get-SzaProfileValue 'locks.pathRules')) {
         $lockRuleDomain = if (Test-SzaHasProperty -Object $lockRuleDef -Name 'domain') { $lockRuleDef.domain } else { $null }
-        [pscustomobject]@{ Pattern = [string]$lockRuleDef.pattern; Domain = $(if ($null -eq $lockRuleDomain) { $null } else { [string]$lockRuleDomain }) }
+        $pat = [string]$lockRuleDef.pattern
+        [void]$patterns.Add($pat)
+        $rules.Add([pscustomobject]@{ Pattern = $pat; Domain = $(if ($null -eq $lockRuleDomain) { $null } else { [string]$lockRuleDomain }) })
     }
-)
+    $derivedExempt = [System.Collections.Generic.List[object]]::new()
+    foreach ($pathKey in 'specsDir', 'specArchiveDir') {
+        $rel = ''
+        try { $rel = ([string](Get-SzaProfileValue "paths.$pathKey")).Replace('\', '/').Trim().TrimEnd('/') } catch { $rel = '' }
+        if (-not $rel -or [System.IO.Path]::IsPathRooted($rel)) { continue }
+        $pat = '^' + [regex]::Escape($rel) + '/'
+        if ($patterns.Add($pat)) {
+            $derivedExempt.Add([pscustomobject]@{ Pattern = $pat; Domain = $null })
+        }
+    }
+    if ($derivedExempt.Count -gt 0) {
+        $rules.InsertRange(0, $derivedExempt)
+    }
+    return $rules.ToArray()
+}
+
+$Script:AgentLockPathRules = @(Get-AgentLockPathRules)
 
 function Get-AgentLockDomainTable {
     <#

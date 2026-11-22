@@ -5,9 +5,9 @@
       "package": "sza",
       "flavor": "default",
       "kind": "release",
-      "version": "2026.1121.1",
-      "builtAt": "2026-11-21T04:07:39+01:00",
-      "note": "rules: CHANNEL_MATRIX, PLATFORM_OVERLAYS, RELEASE_AND_DISTRIBUTION; tools 6, skills 3, contrib 2, docs 1"
+      "version": "2026.1122.1",
+      "builtAt": "2026-11-22T16:23:21+01:00",
+      "note": "tools 8, contrib 4, docs 1"
     }
   ]
 }

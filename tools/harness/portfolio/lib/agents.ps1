@@ -430,6 +430,52 @@ function Get-PqNoAgentSummary {
     return (@($parts) -join '; ')
 }
 
+# What the dispatcher loop does when Select-PqAgent finds no provider for a ticket: pass the ticket over (`passOver`
+# $true, with `until` for $transient) when at least one provider of the order is free right now for other work (it was
+# passed over for this ticket only because of `aboveCeiling`, `levelNotAllowed` or `noPipelineForm`, and is under its
+# `maxParallel`), so a lower-grade ticket or another repository in the queue can run on that free provider instead of
+# waiting behind this ticket; or wait in place (`passOver` $false) when every provider of the order is held by a usage
+# limit, at `maxParallel` or stopped.
+function Get-PqNoAgentHold {
+    param([Parameter(Mandatory)]$Pick, [Parameter(Mandatory)]$Registry, [DateTimeOffset]$Now = [DateTimeOffset]::UtcNow)
+    $byName = @{}
+    foreach ($a in @($Registry.agents)) { $byName[[string]$a.name] = $a }
+    $anyFreeForOther = $false
+    $earliestRelease = $null
+    $hasShortWait = $false
+    foreach ($fb in @($Pick.fallbacks)) {
+        $name = [string]$fb.from
+        $a = $byName[$name]
+        if ($null -eq $a) { continue }
+        $why = [string]$fb.why
+        if ($why -cin @('aboveCeiling', 'levelNotAllowed', 'noPipelineForm')) {
+            $max = [int](Get-PqValue $a 'maxParallel' 1)
+            if ((Get-PqAgentLiveCount $name) -lt $max) { $anyFreeForOther = $true }
+            else { $hasShortWait = $true }
+        }
+        elseif ($why -ceq 'maxParallel') {
+            $hasShortWait = $true
+        }
+        elseif ($why -ceq 'limit') {
+            $rel = Get-PqHoldRelease (Get-PqAgentHold $name) $a
+            if ($null -ne $rel -and $rel -gt $Now) {
+                if ($null -eq $earliestRelease -or $rel -lt $earliestRelease) { $earliestRelease = $rel }
+            }
+            else {
+                $hasShortWait = $true
+            }
+        }
+    }
+    if (-not $anyFreeForOther) {
+        return @{ passOver = $false; until = $Now.UtcDateTime.AddSeconds(30) }
+    }
+    $until = if ($hasShortWait) { $Now.UtcDateTime.AddSeconds(60) }
+    elseif ($null -ne $earliestRelease) { $earliestRelease.UtcDateTime }
+    else { $Now.UtcDateTime.AddSeconds(300) }
+    if ($until -lt $Now.UtcDateTime.AddSeconds(60)) { $until = $Now.UtcDateTime.AddSeconds(60) }
+    return @{ passOver = $true; until = $until }
+}
+
 # What the runner read of a pass that ended on a usage limit: the reset time it wrote to the repository's
 # limit-hold[.<agent>].json, as the ISO time the machine-wide hold takes (a minute's margin past it), or $null when the
 # limit named no time (the hold then polls). A time already past carries no information and is $null as well.

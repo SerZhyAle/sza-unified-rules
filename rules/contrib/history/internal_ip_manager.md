@@ -171,3 +171,18 @@ Canon **2026.10.17.1 -> 2026.11.12.3**, core digest `sha256:b467aefe..` -> `sha2
 ## Record split 2026-11-18 (canon ticket S0120)
 
 Every section of this file dated before this one was moved here verbatim from [../internal_ip_manager.md](../internal_ip_manager.md) when the record was split into facts and history. A line number quoted inside such a section counts lines of the record as it was before the move; relative links were deepened by one `../`; nothing else changed.
+
+
+## Canon re-sync 26-11-22 01:45 (ticket INTIPM-0021)
+
+Canon **2026.11.12.3 -> 2026.11.21.1**, core digest `sha256:af1470e6.. -> sha256:9fc6d1e6..`, and `canon.docDigests` (all 20 rule documents) recorded in `.sza-canon.json` (`schemaVersion: "1.0"`, `reconciledOn: "2026-11-22"`, `adoptedOn: "2026-08-18"` preserved).
+
+**What was reconciled and run:**
+
+- Re-read all 20 canon rule documents (`canon.docDigests` was absent before this run) against the `internal` Overlay A desktop shape.
+- Ran `adopt-canon` Step 6a (`init-task-flow.ps1`, `release-queue.ps1 -Seed -Release 1 -Apply`, `pq register`, `register-spec-commands.ps1`): added `tools/harness.ps1`, `r0`-`r3`, `rs`, `rm`, `rw`, `tasks/TICKET_TEMPLATE.md`, and `tasks/RELEASE_{QUEUE,READY,DONE}.md` (21 ready + 2 queued tickets).
+- Ran `contract-sync` for the five `behind` rule-adoption and documentation-quality rows (`REPO-STAMP` 0.14, `RULE-DELIVERY` 0.13, `HARNESS-PROFILE` 0.21, `REPO-LAYOUT` 0.11, `DOC-INTERNAL-QUALITY` 0.13), updating `docs/contracts/` pointers, `docs/contracts/README.md`, and `internal-ip` rows in `P:\Contracts\_meta\REGISTRY.md`.
+- Kept `commands.compileCheck` absent in `.sza-profile.json` (`HARNESS-PROFILE` 0.15 declared absence, matching `CLAUDE.md`'s 5 s line). Left `SZA-SEC05` (`src/UiTokens.vb` in `.gitignore`) out of scope under `INTIPM-0022`, and left `partial` UI rows with `INTIPM-0009`/`INTIPM-0014`/`INTIPM-0017`.
+- Updated `rules/contrib/internal_IP_manager.md` in place (5 local commits present, no remote; task-flow harness and release ledger live).
+
+**Verification:** `check-compliance.ps1 -IncludeUntracked` cleared `SZA-CANON03` (`0 error(s), 1 warning(s)`, remaining warning is `SZA-SEC05` under `INTIPM-0022`); `contract-lag.ps1 -Product internal-ip` reports `behind 0`; `spec_catalog/validate.ps1`, `release-queue -Validate`, `r0.ps1 -DryRun`, `document_registry/validate.ps1`, and `build.ps1 check` all pass.

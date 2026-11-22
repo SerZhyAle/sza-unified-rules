@@ -137,8 +137,16 @@ $skipCachePath = Join-Path $PSScriptRoot 'skip-cache.ps1'
 
 $eligibleStatuses = @(
     'Draft', 'Approved', 'Tactical', 'In Progress',
-    'Implemented', 'Partial', 'Broken', 'BlockByOtherTask'
+    'Partial', 'Broken', 'BlockByOtherTask'
 )
+# An unattended robot pass (the portfolio dispatcher's picker, SZA_PQ_PICKER=1) works only the queued statuses above:
+# a ticket that already reached `Implemented` has left the queue for `RELEASE_READY.md` and `PORTFOLIO_QUEUE.md` (its
+# implementation and Stage 5 self-audit already ran before `Implemented` was set, and what remains is release-tier
+# verification > 5 s), so offering `Implemented` to the portfolio dispatcher only burns idle audit passes until the
+# idle hold parks each one. Attended local runs (/spec-next and a local run-spec-queue.ps1) still include `Implemented`.
+if ($env:SZA_PQ_PICKER -cne '1') {
+    $eligibleStatuses += 'Implemented'
+}
 $excludeSet = @{}
 $normalizedExcludeIds = New-Object System.Collections.Generic.List[string]
 # Split comma-joined elements: native pwsh parses `-Exclude S0506,S0508` into an array, but

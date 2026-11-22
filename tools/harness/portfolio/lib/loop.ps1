@@ -45,7 +45,9 @@ function Get-PqNextRank {
         # Passed to Get-PqRank: refuse a head inside the walk (the loop's rule 52 check), see there.
         [scriptblock]$HeadFilter = $null,
         # Passed to Get-PqRank: offer the root of a refused ticket's blocker chain in its place (TASK-FLOW 0.38 section 16).
-        [scriptblock]$HeadLift = $null
+        [scriptblock]$HeadLift = $null,
+        # Complete-scan picker payloads kept across immediate dispatch.skip retries of the same turn.
+        [hashtable]$PickerCache = $null
     )
     if (-not $HarnessRoot) { $HarnessRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..')) }
     if (@($Occupied).Count -eq 0) {
@@ -76,7 +78,7 @@ function Get-PqNextRank {
     $queueArgs = @{ Path = $qp; KnownRepos = (Get-PqKnownKeys $Registry) }
     if (-not $NamedTicket) { $queueArgs.TicketLookup = $lookup }
     $queue = Read-PqQueueFile @queueArgs
-    $pickerCache = @{}
+    $pickerCache = if ($null -ne $PickerCache) { $PickerCache } else { @{} }
     $provider = {
         param($Repo, $Ex, $ForceId)
         $a = @{ RepoPath = [string]$Repo.path; HarnessRoot = $HarnessRoot; Cache = $pickerCache }
@@ -1280,6 +1282,8 @@ function Start-PqLoop {
     $lastRunErrText = ''
     $sameRunErrStreak = 0
     $loggedBadQueueRows = [hashtable]::new([StringComparer]::Ordinal)
+    $turnPickerCache = @{}
+    $rerankAfterSkip = $false
 
     try {
         while ($true) {
@@ -1415,80 +1419,89 @@ function Start-PqLoop {
                 foreach ($r in @($Registry.repos)) { $byKey[[string]$r.key] = $r }
                 $occupied = Get-PqOccupiedRepos $Registry
 
-                # New tickets of every repository join their project's rows of PORTFOLIO_QUEUE.md before the rank reads it. A failed
-                # sync (the owner saving the file at that moment) is retried on the next turn and never stops the loop.
-                try {
-                    $qpSync = Get-PqQueuePath $Registry
-                    # A named start and a -Repo worker (S0027) sync the target project only (-Key): other projects' ledgers
-                    # and rows are not touched; the target's own file->ledger registration (rule 65) still runs.
-                    $syncKey = if ($null -ne $named) { [string]$named.repo } else { [string]$OnlyRepo }
-                    if ([IO.File]::Exists($qpSync)) {
-                        if ($syncKey) { $null = Sync-PqRegisteredQueues -Path $qpSync -Registry $Registry -Key $syncKey -Log }
-                        else { $null = Sync-PqRegisteredQueues -Path $qpSync -Registry $Registry -Log }
+                if (-not $rerankAfterSkip) {
+                    # New tickets of every repository join their project's rows of PORTFOLIO_QUEUE.md before the rank reads it. A failed
+                    # sync (the owner saving the file at that moment) is retried on the next turn and never stops the loop.
+                    try {
+                        $qpSync = Get-PqQueuePath $Registry
+                        # A named start and a -Repo worker (S0027) sync the target project only (-Key): other projects' ledgers
+                        # and rows are not touched; the target's own file->ledger registration (rule 65) still runs.
+                        $syncKey = if ($null -ne $named) { [string]$named.repo } else { [string]$OnlyRepo }
+                        if ([IO.File]::Exists($qpSync)) {
+                            if ($syncKey) { $null = Sync-PqRegisteredQueues -Path $qpSync -Registry $Registry -Key $syncKey -Log }
+                            else { $null = Sync-PqRegisteredQueues -Path $qpSync -Registry $Registry -Log }
+                        }
+                    }
+                    catch { }
+
+                    # A dropped ticket the owner (or anyone) changed since its drop is offered again: one ledger read per
+                    # repository that holds a drop.
+                    if ($drops.Count -gt 0) {
+                        $snaps = @{}
+                        foreach ($dk in @($drops.Keys)) {
+                            $drop = $drops[$dk]
+                            $dropRepo = $byKey[$drop.repo]
+                            if ($null -eq $dropRepo) { continue }
+                            if (-not $snaps.ContainsKey($drop.repo)) {
+                                try { $snaps[$drop.repo] = Get-PqLedgerSnapshot -RepoPath ([string]$dropRepo.path) } catch { $snaps[$drop.repo] = $null }
+                            }
+                            if ($null -eq $snaps[$drop.repo]) { continue }
+                            $changed = Get-PqDropChange $drop.mark (Get-PqDropMark -RepoPath ([string]$dropRepo.path) -TicketId $drop.id -Snapshot $snaps[$drop.repo])
+                            if (-not $changed) { continue }
+                            # Thrash (S0016 R31): a ticket lifted three times within an hour keeps coming back unmoved, so
+                            # something rewrites its row after every pass. It stays dropped for an hour, then is tried again.
+                            if ($thrashUntil.ContainsKey($dk) -and $thrashUntil[$dk] -gt [DateTime]::UtcNow) { continue }
+                            $lift = Register-PqLift -Lifts $lifts -Key $dk -Now ([DateTime]::UtcNow)
+                            if ($lift.thrash) {
+                                $thrashUntil[$dk] = [DateTime]::UtcNow.AddMinutes(60)
+                                $null = Write-PqEvent -Log $log -Ev 'ticket.thrash' -Run $runId -Repo $drop.repo -Id $drop.id -Worker $slot -D ([ordered]@{ passes = $lift.count; window = 60; statuses = @([string]$drop.mark.status) })
+                                Write-Host "ticket $dk came back unmoved $($lift.count) times within an hour - held back for an hour"
+                                continue
+                            }
+                            $drops.Remove($dk)
+                            [void]$exclude.Remove($dk)
+                            $null = Write-PqEvent -Log $log -Ev 'ticket.dropLifted' -Run $runId -Repo $drop.repo -Id $drop.id -Worker $slot -D ([ordered]@{ changed = $changed })
+                            Write-Host "ticket $dk changed ($changed) - offered again"
+                        }
+                    }
+
+                    # A ticket held by a blocker in another repository (rule 52) is offered again once that blocker is released.
+                    foreach ($bk in @($xblocked.Keys)) {
+                        $held = $xblocked[$bk]
+                        $still = Get-PqXrepoBlock -Registry $Registry -RepoKey $held.repo -TicketId $held.id
+                        if ($null -ne $still) { continue }
+                        $xblocked.Remove($bk)
+                        [void]$exclude.Remove($bk)
+                        $null = Write-PqEvent -Log $log -Ev 'xrepo.resolve' -Run $runId -Repo $held.repo -Id $held.id -Worker $slot -D ([ordered]@{ blocked = $bk; blocker = $held.blocker; state = 'released' })
+                        $null = Write-PqEvent -Log $log -Ev 'ticket.unblocked' -Run $runId -Repo $held.repo -Id $held.id -Worker $slot -D ([ordered]@{ blocker = $held.blocker })
+                        Write-Host "ticket $bk - blocker $($held.blocker) released, offered again"
+                    }
+
+                    # What a poll compares against: taken after this turn's own writes (the queue sync above), so the loop's
+                    # own changes never look like the owner's.
+                    $lastFp = Get-PqFingerprint -Registry $Registry -PathsCache $pathsCache -Extra (Get-PqDropFingerprint $drops)
+                    $settling = $false
+                    $quietPolls = 0
+                    # Rule 59 (S0082): the first turn looks at every ledger once - a baseline where no look was saved, the
+                    # moves made while no robot ran where one was.
+                    if (-not $ledgerWatched) {
+                        $ledgerWatched = $true
+                        $null = Invoke-PqLedgerWatch -Registry $Registry -Log $log -Run $runId -Worker $slot -PathsCache $pathsCache
                     }
                 }
-                catch { }
 
-                # A dropped ticket the owner (or anyone) changed since its drop is offered again: one ledger read per
-                # repository that holds a drop.
-                if ($drops.Count -gt 0) {
-                    $snaps = @{}
-                    foreach ($dk in @($drops.Keys)) {
-                        $drop = $drops[$dk]
-                        $dropRepo = $byKey[$drop.repo]
-                        if ($null -eq $dropRepo) { continue }
-                        if (-not $snaps.ContainsKey($drop.repo)) {
-                            try { $snaps[$drop.repo] = Get-PqLedgerSnapshot -RepoPath ([string]$dropRepo.path) } catch { $snaps[$drop.repo] = $null }
-                        }
-                        if ($null -eq $snaps[$drop.repo]) { continue }
-                        $changed = Get-PqDropChange $drop.mark (Get-PqDropMark -RepoPath ([string]$dropRepo.path) -TicketId $drop.id -Snapshot $snaps[$drop.repo])
-                        if (-not $changed) { continue }
-                        # Thrash (S0016 R31): a ticket lifted three times within an hour keeps coming back unmoved, so
-                        # something rewrites its row after every pass. It stays dropped for an hour, then is tried again.
-                        if ($thrashUntil.ContainsKey($dk) -and $thrashUntil[$dk] -gt [DateTime]::UtcNow) { continue }
-                        $lift = Register-PqLift -Lifts $lifts -Key $dk -Now ([DateTime]::UtcNow)
-                        if ($lift.thrash) {
-                            $thrashUntil[$dk] = [DateTime]::UtcNow.AddMinutes(60)
-                            $null = Write-PqEvent -Log $log -Ev 'ticket.thrash' -Run $runId -Repo $drop.repo -Id $drop.id -Worker $slot -D ([ordered]@{ passes = $lift.count; window = 60; statuses = @([string]$drop.mark.status) })
-                            Write-Host "ticket $dk came back unmoved $($lift.count) times within an hour - held back for an hour"
-                            continue
-                        }
-                        $drops.Remove($dk)
-                        [void]$exclude.Remove($dk)
-                        $null = Write-PqEvent -Log $log -Ev 'ticket.dropLifted' -Run $runId -Repo $drop.repo -Id $drop.id -Worker $slot -D ([ordered]@{ changed = $changed })
-                        Write-Host "ticket $dk changed ($changed) - offered again"
-                    }
-                }
-
-                # A ticket held by a blocker in another repository (rule 52) is offered again once that blocker is released.
-                foreach ($bk in @($xblocked.Keys)) {
-                    $held = $xblocked[$bk]
-                    $still = Get-PqXrepoBlock -Registry $Registry -RepoKey $held.repo -TicketId $held.id
-                    if ($null -ne $still) { continue }
-                    $xblocked.Remove($bk)
-                    [void]$exclude.Remove($bk)
-                    $null = Write-PqEvent -Log $log -Ev 'xrepo.resolve' -Run $runId -Repo $held.repo -Id $held.id -Worker $slot -D ([ordered]@{ blocked = $bk; blocker = $held.blocker; state = 'released' })
-                    $null = Write-PqEvent -Log $log -Ev 'ticket.unblocked' -Run $runId -Repo $held.repo -Id $held.id -Worker $slot -D ([ordered]@{ blocker = $held.blocker })
-                    Write-Host "ticket $bk - blocker $($held.blocker) released, offered again"
-                }
-
-                # What a poll compares against: taken after this turn's own writes (the queue sync above), so the loop's
-                # own changes never look like the owner's.
-                $lastFp = Get-PqFingerprint -Registry $Registry -PathsCache $pathsCache -Extra (Get-PqDropFingerprint $drops)
-                $settling = $false
-                $quietPolls = 0
-                # Rule 59 (S0082): the first turn looks at every ledger once - a baseline where no look was saved, the
-                # moves made while no robot ran where one was.
-                if (-not $ledgerWatched) {
-                    $ledgerWatched = $true
-                    $null = Invoke-PqLedgerWatch -Registry $Registry -Log $log -Run $runId -Worker $slot -PathsCache $pathsCache
-                }
-
-                # What the loop itself holds back for a moment lapses on its own: a repository the owner works in, and a
-                # ticket that could not get its resource.
+                # What the loop itself holds back for a moment lapses on its own: a repository the owner works in, a
+                # ticket that could not get its resource, and a ticket no provider could take that now has one.
                 $nowUtc = [DateTime]::UtcNow
                 foreach ($mk in @($occupiedMarks.Keys)) { if ($occupiedMarks[$mk].until -le $nowUtc) { $occupiedMarks.Remove($mk) } }
-                foreach ($mk in @($transient.Keys)) { if ($transient[$mk].until -le $nowUtc) { $transient.Remove($mk); $transientSaid.Remove($mk) } }
+                foreach ($mk in @($transient.Keys)) {
+                    $tr = $transient[$mk]
+                    $due = ($tr.until -le $nowUtc)
+                    if (-not $due -and -not $rerankAfterSkip -and [string]$tr.why -ceq 'noAgent' -and $tr.repoPath) {
+                        $due = ($null -ne (Select-PqAgent -Registry $Registry -RepoPath ([string]$tr.repoPath) -Level ([string]$tr.level) -Skip $stopAgents -Score ([int]$tr.score)).agent)
+                    }
+                    if ($due) { $transient.Remove($mk); $transientSaid.Remove($mk) }
+                }
 
                 # A repository that is `concurrent` takes at most its maxWorkers workers (rule 60); one that is not is held
                 # by the repository lock, above. With fill `breadth` a repository that already has a worker waits for the
@@ -1510,7 +1523,7 @@ function Start-PqLoop {
                 # A `pq start -Repo` worker (TASK-FLOW 0.40 section 18) ranks one repository and does not wait for the
                 # owner's transcript in it, so it reads no transcript at all: the other repositories are never ranked, and
                 # a line about them (one per enabled repository) was noise on the console of a scoped start.
-                if ($null -eq $named -and -not $OnlyRepo) {
+                if (-not $rerankAfterSkip -and $null -eq $named -and -not $OnlyRepo) {
                     $ownerIn = Get-PqTranscriptOccupiedRepos -Registry $Registry -HarnessRoot $harness
                     foreach ($ownerKey in @($ownerIn.Keys)) {
                         $ownerOcc = $ownerIn[$ownerKey]
@@ -1533,7 +1546,9 @@ function Start-PqLoop {
 
                 # 4. Rank. The loop reads only the first candidate, so the walk ends at the first head found: one picker run
                 # per queue row costs minutes on a queue of a hundred rows.
-                if (-not $waiting) { Write-Host 'ranking the queue' }
+                $wasSkipRerank = $rerankAfterSkip
+                $rerankAfterSkip = $false
+                if (-not $waiting -and -not $noAgentSaid -and -not $wasSkipRerank) { Write-Host 'ranking the queue' }
                 $rankExclude = @($exclude) + @($transient.Keys) + @($stopTickets)
                 $rankOccupied = @($occupied) + @($occupiedMarks.Keys) + @($stopRepos) + @($capRepos)
                 $rank = $null
@@ -1583,24 +1598,27 @@ function Start-PqLoop {
                         $xrepoLift = { param($k, $i, $refusal) Get-PqLiftTarget -Registry $regForFilter -Refusal $refusal -Memo $liftMemo -Snapshots $xrepoSnaps }.GetNewClosure()
                     }
                     if ((Get-PqValue $Registry 'fill' 'depth') -ceq 'breadth' -and $busyRepos.Count -gt 0) {
-                        $rank = Get-PqNextRank -Registry $Registry -HarnessRoot $harness -Exclude $rankExclude -Occupied (@($rankOccupied) + @($busyRepos)) -Slots 1 -StopAfter 1 -HeadFilter $xrepoFilter -HeadLift $xrepoLift @repoOnly
+                        $rank = Get-PqNextRank -Registry $Registry -HarnessRoot $harness -Exclude $rankExclude -Occupied (@($rankOccupied) + @($busyRepos)) -Slots 1 -StopAfter 1 -HeadFilter $xrepoFilter -HeadLift $xrepoLift -PickerCache $turnPickerCache @repoOnly
                         if (@($rank.candidates).Count -eq 0) { $rank = $null }
                     }
-                    if ($null -eq $rank) { $rank = Get-PqNextRank -Registry $Registry -HarnessRoot $harness -Exclude $rankExclude -Occupied $rankOccupied -Slots 1 -StopAfter 1 -HeadFilter $xrepoFilter -HeadLift $xrepoLift @repoOnly }
+                    if ($null -eq $rank) { $rank = Get-PqNextRank -Registry $Registry -HarnessRoot $harness -Exclude $rankExclude -Occupied $rankOccupied -Slots 1 -StopAfter 1 -HeadFilter $xrepoFilter -HeadLift $xrepoLift -PickerCache $turnPickerCache @repoOnly }
                     $liftRows = @{}
                     foreach ($lf in @(Get-PqValue $rank 'lifts' @())) { $liftRows[[string]$lf.blocked] = $lf }
                     foreach ($hr in @(Get-PqValue $rank 'headRefused' @())) {
                         $xb = $hr.refusal
                         $xbKey = "$($hr.repo):$($hr.id)"
-                        if ($xblocked.ContainsKey($xbKey)) { continue }
-                        $exclude.Add($xbKey)
-                        $xblocked[$xbKey] = @{ repo = [string]$hr.repo; id = [string]$hr.id; blocker = $xb.blocker }
+                        $lf = if ($liftRows.ContainsKey($xbKey)) { $liftRows[$xbKey] } else { $null }
+                        $rootKey = if ($null -ne $lf) { [string]$lf.root } else { '' }
+                        # Not added to $exclude: keeping the refused ticket in the walk lets -HeadFilter and -HeadLift offer
+                        # its chain root on every turn while the blocker holds; $xblocked keeps the notice and event once per
+                        # (blocker, root).
+                        if ($xblocked.ContainsKey($xbKey) -and $xblocked[$xbKey].blocker -ceq $xb.blocker -and [string]$xblocked[$xbKey].root -ceq $rootKey) { continue }
+                        $xblocked[$xbKey] = @{ repo = [string]$hr.repo; id = [string]$hr.id; blocker = $xb.blocker; root = $rootKey }
                         # The root of the chain and what became of it (TASK-FLOW 0.38 section 16): optional keys of the event
                         # and a tail of the printed line, so the owner sees what the waiting ticket is really waiting for.
                         $xd = [ordered]@{ blocked = $xbKey; blocker = $xb.blocker; state = $xb.state; blockerStatus = $xb.status }
                         $liftTail = ''
-                        if ($liftRows.ContainsKey($xbKey)) {
-                            $lf = $liftRows[$xbKey]
+                        if ($null -ne $lf) {
                             $xd.root = [string]$lf.root
                             $xd.rootStatus = [string]$lf.status
                             $xd.lift = $(if ($lf.offered) { 'offered' } else { 'notOffered' })
@@ -1651,6 +1669,8 @@ function Start-PqLoop {
 
                 # 5. Handle empty candidates
                 if (@($rank.candidates).Count -eq 0) {
+                    $turnPickerCache.Clear()
+                    $noAgentSaid = ''
                     if ($null -ne $named) {
                         # Never waits and never takes another ticket: the loop's own mark (a blocker, a resource, the
                         # owner's occupancy, the worker cap) first, then what the rank said about the named ticket.
@@ -1690,7 +1710,6 @@ function Start-PqLoop {
                     }
                     $waitSw = [Diagnostics.Stopwatch]::StartNew()
                     $trigger = 'heartbeat'
-                    $heartbeatEvery = if (($transient.Count + $occupiedMarks.Count) -gt 0) { 1 } else { 10 }
                     while ($true) {
                         $sliceEnd = $waitSw.ElapsedMilliseconds + ([long]$poll * 1000)
                         $interrupted = $false
@@ -1719,7 +1738,19 @@ function Start-PqLoop {
                             break
                         }
                         $quietPolls++
-                        if ($quietPolls -ge $heartbeatEvery) {
+                        $pollUtc = [DateTime]::UtcNow
+                        $markDue = $false
+                        foreach ($mk in @($occupiedMarks.Keys)) { if ($occupiedMarks[$mk].until -le $pollUtc) { $markDue = $true; break } }
+                        if (-not $markDue) {
+                            foreach ($mk in @($transient.Keys)) {
+                                $tr = $transient[$mk]
+                                if ($tr.until -le $pollUtc) { $markDue = $true; break }
+                                if ([string]$tr.why -ceq 'noAgent' -and $tr.repoPath -and $null -ne (Select-PqAgent -Registry $Registry -RepoPath ([string]$tr.repoPath) -Level ([string]$tr.level) -Skip $stopAgents -Score ([int]$tr.score)).agent) {
+                                    $markDue = $true; break
+                                }
+                            }
+                        }
+                        if ($markDue -or $quietPolls -ge 10) {
                             $quietPolls = 0
                             $trigger = 'heartbeat'
                             Add-PqPollStat -Stats $pollStats -Log $log -Rerank -HeartbeatRerank
@@ -1764,6 +1795,7 @@ function Start-PqLoop {
                     if ($xb.state -ceq 'cycle') { $null = Write-PqEvent -Log $log -Ev 'xrepo.cycle' -Run $runId -Worker $slot -D ([ordered]@{ members = @($xbKey, $xb.blocker) }) }
                     $null = Write-PqEvent -Log $log -Ev 'ticket.blocked' -Run $runId -Repo $repoKey -Id $ticketId -Worker $slot -D ([ordered]@{ status = [string]$cand.status; why = (ConvertTo-PqCut $xb.why 80); blocker = $xb.blocker })
                     Write-Host "ticket $xbKey waits on $($xb.blocker) ($($xb.state): $($xb.why))"
+                    $rerankAfterSkip = $true
                     continue
                 }
 
@@ -1780,6 +1812,7 @@ function Start-PqLoop {
                         Write-Host "repository $repoKey is occupied ($($occ.by), $($occ.ageSeconds) s ago) - the robot waits for the owner"
                     }
                     $null = Write-PqEvent -Log $log -Ev 'dispatch.skip' -Run $runId -Repo $repoKey -Id $ticketId -Worker $slot -D ([ordered]@{ why = 'occupied' })
+                    $rerankAfterSkip = $true
                     continue
                 }
                 if ($occupancyState.ContainsKey($repoKey)) {
@@ -1843,9 +1876,22 @@ function Start-PqLoop {
                     # Said once per change, not every half minute: a weekly limit is a wait of days.
                     $noAgentWhy = Get-PqNoAgentSummary -Pick $pick -Registry $Registry
                     if ($null -ne $named) { $namedFail = "no provider of the order may take it now ($noAgentWhy)"; break }
-                    if ($noAgentWhy -cne $noAgentSaid) {
+                    $noAgentHold = Get-PqNoAgentHold -Pick $pick -Registry $Registry
+                    if ($noAgentHold.passOver) {
+                        $tk = "$repoKey`:$ticketId"
+                        $transient[$tk] = @{ until = $noAgentHold.until; why = 'noAgent'; repoPath = $repoPath; level = $(if ($ticketLevel) { $ticketLevel } else { 'medium' }); score = $ticketScore }
+                        if (-not $transientSaid.ContainsKey($tk)) {
+                            $transientSaid[$tk] = $true
+                            Write-Host "ticket $tk - no provider of the order may take it now ($noAgentWhy) - the next ticket is taken"
+                        }
+                        $rerankAfterSkip = $true
+                        continue
+                    }
+                    $turnPickerCache.Clear()
+                    $noAgentKey = "$repoKey`:$ticketId|$noAgentWhy"
+                    if ($noAgentKey -cne $noAgentSaid) {
                         Write-Host "ticket $repoKey`:$ticketId - no provider of the order may take it now ($noAgentWhy); checking again every 30 s"
-                        $noAgentSaid = $noAgentWhy
+                        $noAgentSaid = $noAgentKey
                     }
                     for ($w = 0; $w -lt 30 -and -not [IO.File]::Exists($stopPath); $w++) { Start-Sleep -Seconds 1 }
                     continue
@@ -1866,6 +1912,7 @@ function Start-PqLoop {
                         $transientSaid[$tk] = $true
                         Write-Host "ticket $tk is In Progress and primary provider '$($primaryWait.Agent)' resets in $([Math]::Round($primaryWait.DiffMinutes, 1)) min - waiting instead of fallback to '$($pick.agent)'"
                     }
+                    $rerankAfterSkip = $true
                     continue
                 }
                 $noAgentSaid = ''
@@ -1885,6 +1932,7 @@ function Start-PqLoop {
                 if (-not (Request-PqWorkerAssignment -Slot $slot -Repo $repoRec -Ticket $ticketId -Title $ticketTitle -Agent $agentName -AgentMax (Get-PqPassAgentMax $pick))) {
                     $occupiedMarks[$repoKey] = @{ until = [DateTime]::UtcNow.AddSeconds(5); why = 'workerCap' }
                     if ($script:PqAssignmentWhy -and (Test-PqSkipDue "$repoKey`:$ticketId`:$($script:PqAssignmentWhy)")) { $null = Write-PqEvent -Log $log -Ev 'dispatch.skip' -Run $runId -Repo $repoKey -Id $ticketId -Worker $slot -D ([ordered]@{ why = $script:PqAssignmentWhy }) }
+                    $rerankAfterSkip = $true
                     continue
                 }
                 # Rule 58 (S0082): the pick explained - the candidate, the alternatives the walk passed over, the agent.
@@ -1909,8 +1957,10 @@ function Start-PqLoop {
                         $transientSaid[$tk] = $true
                         Write-Host "ticket $tk waits for the $($resReq.resource) resource ($($resReq.heldCount) of $($resReq.cap) held) - the next ticket is taken"
                     }
+                    $rerankAfterSkip = $true
                     continue
                 }
+                $turnPickerCache.Clear()
                 if (@($resReq.held).Count -gt 0) {
                     $heldResources = @($resReq.held)
                     $heldResourcesRepo = $repoKey
@@ -2257,6 +2307,8 @@ function Start-PqLoop {
                 # unattended night must not stop on one bad payload. The ticket the turn held is dropped like a pass that
                 # did not move, and the loop pauses first, longer each time in a row, so a failure that repeats cannot spin.
                 $err = $_
+                $turnPickerCache.Clear()
+                $rerankAfterSkip = $false
                 if ($currentRepoLock) {
                     try { Unlock-PqRepo -LockFile $currentRepoLock } catch { }
                     $currentRepoLock = $null

@@ -21,6 +21,14 @@ documents, run `python tools/docs/check-documents.py --register --render`, then 
 metadata. Preserve more specific existing topics and triggers. Regenerate maps with `--render` after
 registry edits; map edits never become authoritative.
 
+When a registered document moves with its ticket, find its existing row in the registry for that corpus.
+Confirm the old path is absent, the new path exists, and no row already names the new path. Change only
+the row's `path`; preserve its topic, area, update triggers and role. For a local move, run
+`python tools/docs/check-documents.py --config dev/document-corpus.json --render`, then run the ordinary
+two-corpus check. For a published move, use the published registry and its configuration instead. The
+registrar matches by path, so running `--register` before this correction would replace the old metadata
+with defaults. Ticket status moves do not update these registries automatically.
+
 A new record gets one default trigger from the registrar, `Changes to the documented interface or workflow`.
 The gate counts the records that still carry only that default and prints one `warning:` line per registry
 before the verdict line; the count changes neither the verdict nor the exit code. A specific trigger is

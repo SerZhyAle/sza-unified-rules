@@ -1,4 +1,4 @@
-#requires -Version 7.0
+﻿#requires -Version 7.0
 # Tests for canon ticket S0139 (TASK-FLOW 0.32): the grade 0-9 of the `**Complexity:**` line, the agent routes and
 # the ceiling, the registry checks of routes/raters/escalateBy, the rater's answer and its run, the header rewrite,
 # and the escalation. Fast: no model is called - the rater runs are `cmd /c` stubs. Touches only a throwaway folder
@@ -112,6 +112,25 @@ try {
         $reg3 = [pscustomobject]@{ agents = @($zai); agentOrder = @('zai') }
         $p = Select-PqAgent -Registry $reg3 -RepoPath $scratch -Level 'hard' -Score 9
         if ($null -ne $p.agent) { throw 'grade 9 ran below its ceiling' }
+        $holdRes = Get-PqNoAgentHold -Pick $p -Registry $reg3
+        Assert-Eq $holdRes.passOver $true 'zai is free for <= 4, so grade 9 is passed over'
+        $untilIso = [DateTimeOffset]::UtcNow.AddMinutes(20).ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
+        Set-PqAgentHold -Name 'claude' -Source 'runner' -Detector 'regex' -Until $untilIso
+        try {
+            $reg4 = [pscustomobject]@{ agents = @($zai, $claude); agentOrder = @('claude', 'zai') }
+            $p4 = Select-PqAgent -Registry $reg4 -RepoPath $scratch -Level 'hard' -Score 8
+            Assert-Eq $p4.agent $null 'claude on limit and zai ceiling 4 leaves grade 8 with no agent'
+            $h4 = Get-PqNoAgentHold -Pick $p4 -Registry $reg4
+            Assert-Eq $h4.passOver $true 'free zai passes grade 8 over so lower-grade tickets can run'
+            Set-PqAgentHold -Name 'zai' -Source 'runner' -Detector 'regex' -Until $untilIso
+            $pAll = Select-PqAgent -Registry $reg4 -RepoPath $scratch -Level 'hard' -Score 8
+            $hAll = Get-PqNoAgentHold -Pick $pAll -Registry $reg4
+            Assert-Eq $hAll.passOver $false 'when every provider is on limit, the worker waits in place'
+        }
+        finally {
+            $null = Remove-PqAgentHold 'claude'
+            $null = Remove-PqAgentHold 'zai'
+        }
         $noRoutes = [pscustomobject]@{ name = 'claude'; command = 'claude'; maxParallel = 5 }
         $p = Select-PqAgent -Registry ([pscustomobject]@{ agents = @($noRoutes); agentOrder = @('claude') }) -RepoPath $scratch -Level 'hard'
         Assert-Eq (@(Get-PqClaudePassArgs $p).Count) 0 'claude without routes launches as before'

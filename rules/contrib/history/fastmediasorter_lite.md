@@ -690,3 +690,7 @@ Every section of this file dated before this one was moved here verbatim from [.
 - `release-ledger import` recorded 42 events across all 6 channels; `release-ledger probe` returned 0 new events with all 6 channels live (`26.11.13.0130`, `msstore` `26.1113.130.0`).
 - Added `tools/lib/ReleaseLedgerHook.ps1` (`Invoke-ReleaseLedgerBuild`, `Invoke-ReleaseLedgerPublish`) and hooked `build.ps1`, `tools/Build-Installer.ps1`, `tools/Build-ServerInstaller.ps1`, `tools/Build-OfflineRelease.ps1`, `publishing/msix/build-msix.ps1`, `exchange-server/build.ps1`, `tools/Release.ps1`, and `tools/Set-ReleaseManifest.ps1`; documented in `docs/guides/BUILD_AND_RELEASE.md`, `.claude/skills/release/SKILL.md`, `docs/contracts/RELEASE-LEDGER.md`, and `P:\Contracts\_meta\REGISTRY.md`.
 - Real full builds and release tag runs remain deferred to the next build/release (>5 s ceiling).
+
+## SourceForge channel row 2026-11-21 (FMSWIN-0382 / FMSWIN-0207)
+
+- `FMSWIN-0382` (`BlockQuestions`, extending `FMSWIN-0207`): verified Step 0 eligibility (`SerZhyAle/FastMediaSorter_Lite` public MIT repository, shape W), drafted `docs/specifications/done/207_promotion/outreach/sourceforge.md`, added `docs/contracts/SOURCEFORGE-CHANNEL.md`, and recorded `partial 0.1` in `P:\Contracts\_meta\REGISTRY.md`; live SourceForge sign-in, creation, imports, integrity check, and metadata save await owner session and go.

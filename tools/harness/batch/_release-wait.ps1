@@ -60,15 +60,34 @@ function Get-AuditCounts {
 function Test-AuditReleaseOnly {
     <#
     .SYNOPSIS
-        True when the audit left nothing a robot can work: FAIL 0, WARN 0, RELEASE of at least one.
+        True when the audit left nothing a robot can work: FAIL 0, WARN 0, RELEASE of at least one; or a primitive
+        spec's `## Last Audit` block that names a `RELEASE` item and no `FAIL` or `WARN`.
     .DESCRIPTION
         MANUAL and UNCHECKABLE do not lift the answer: a robot can close neither, so a re-audit
         cannot either. A WARN is a robot's work (a Partial's fix pass), and a FAIL even more so.
     #>
     param([Parameter(Mandatory)][string] $SpecPath)
     $counts = Get-AuditCounts -SpecPath $SpecPath
-    if ($null -eq $counts) { return $false }
-    return ($counts['FAIL'] -eq 0 -and $counts['WARN'] -eq 0 -and $counts['RELEASE'] -ge 1)
+    if ($null -ne $counts) {
+        return ($counts['FAIL'] -eq 0 -and $counts['WARN'] -eq 0 -and $counts['RELEASE'] -ge 1)
+    }
+    $abs = Resolve-ResearchSpecPath -PathRef $SpecPath
+    if (-not (Test-Path -LiteralPath $abs -PathType Leaf)) { return $false }
+    $lines = @()
+    try { $lines = @(Get-Content -LiteralPath $abs -Encoding UTF8 -ErrorAction Stop) } catch { return $false }
+    $section = @(Get-SpecSectionLines -Lines $lines -HeadingPattern (Get-AuditSectionHeadingPattern))
+    if ($section.Count -eq 0) { return $false }
+    $hasRelease = $false
+    foreach ($entry in $section) {
+        $t = $entry.Text
+        if ($t -match '(?i)\b(FAIL|WARN)\s*[:=]\s*[1-9]' -or $t -match '(?i)^\s*(?:[-*]|\d+\.)\s+\*{0,2}(FAIL|WARN)\b' -or $t -match '(?i)\b(Outcome|Verdict)\s*:\*{0,2}\s*`?(Partial|Broken)\b') {
+            return $false
+        }
+        if ($t -match '(?i)^\s*(?:[-*]|\d+\.|#{2,4})\s+\*{0,2}RELEASE\b' -or $t -match '(?i)\bnot built,\s*not tested until (?:the )?release\b') {
+            $hasRelease = $true
+        }
+    }
+    return $hasRelease
 }
 
 function Invoke-ReleaseWaitGit {
