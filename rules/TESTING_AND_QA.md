@@ -161,6 +161,35 @@ For anything a user sees or touches, drive it on real hardware or an emulator, n
 - Android reference: on-device UI drive + logcat harvest (`spec-test-device`), batch sweeps over pending
   tickets (`spec-sweep`), quick ad-hoc device chores via the adb wrapper. Beware emulator quirks
   (unindexed media store, untappable bottom-sheet items, touch wedges) - they cause false FAILs.
+- **A phone, a watch or an emulator is one session's at a time, on the whole machine - not per repository.** Sessions
+  of different projects share one adb server, the same attached devices and the same emulator ports, and `adb devices`
+  reports a target online whether or not somebody is mid-run on it, so the conflict is found by breaking something: a
+  sibling's APK replaced, its HOME switched, a running scenario taken over, and a false FAIL recorded for both (observed
+  in the reference project: an emulator showing a sibling session's running player). A **lease** marks a target as
+  driven. It lives in the portfolio root outside every repository (`SZA_PORTFOLIO_ROOT`, else
+  `%USERPROFILE%\.sza\portfolio\devices`), because a store under one repository is invisible to the other project, which
+  is the one that collides with it. The tool is the harness's `devices/device-lease.ps1`; the
+  [device-lease skill](../skills/device-lease/SKILL.md) is how a session is taught to use it.
+- **Claim before the first touch; release when the scenario ends, not the task.** A touch is anything that changes the
+  target or what it shows: install, uninstall, launch, input, a settings or density change, clearing app data,
+  `logcat -c`, a reboot, a port forward, starting or killing an emulator. Reading (`adb devices`, `getprop`, a logcat
+  read, a screenshot) needs no claim. The key of a physical target is its adb serial, and every other serial it answers
+  under, since USB and wireless are two. The key of an emulator is `avd:<name>`, taken before the process starts,
+  because its serial is a port and the port moves. Release on the failure path too. A long run claims again at each
+  stage, because a lease has a ceiling and past it is taken for abandoned.
+- **A lost claim means a different target or a deferred device stage - never a wait, a queue or a takeover.** A build
+  lock ends on its own and so queues ([DEVELOPMENT.md](DEVELOPMENT.md) §10); a sibling's scenario has no bound, so
+  waiting for it does not end. Do the work that needs no target first - build, static checks, specs - and come back.
+  Never delete a lease that is not yours: whoever reads next sweeps a lease whose session has gone quiet or that outlived
+  its ceiling, and a verdict of "cannot tell" removes nothing.
+- **A lease is advisory, and no lease is not "free".** It coordinates sessions that claim; it does not stop a raw `adb`
+  command, and a session that never claimed leaves nothing behind. Before the first touch of an unleased target, read
+  what it is showing (the foreground app, a screenshot): a scenario already on the screen is somebody's.
+- **Leave a target as you found it, and stop only what you started.** Keep the PID from the call that started an
+  emulator and stop that one - never an emulator by image name, never one you found running
+  ([DEVELOPMENT.md](DEVELOPMENT.md) §10). Put back what the scenario changed (font scale, density, locale, orientation,
+  permissions, the app's own data) before releasing, or write what is left behind into the ticket. A subagent shares its
+  parent's session and so its claim: the same call answers "already mine", and it never releases what the parent took.
 - **Before diagnosing "the fix does not work" on a device, confirm the device runs the new build.** Read
   the installed version back from the device; a same-version debug build can silently keep the old code,
   and the old behaviour then looks like a failed fix. Prove it positively, with a build-unique marker read

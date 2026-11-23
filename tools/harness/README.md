@@ -59,6 +59,19 @@ every publication event per channel, and the rendered `RELEASES.md`, in `paths.r
 verbs and the build-script hook are in [releases/README.md](releases/README.md); `pq releases` and PQShell's
 Releases tab read every registered repository's ledger.
 
+## Device lease
+
+`devices/device-lease.ps1` is the machine-wide lease on a test target - a phone, a watch or an emulator (canon
+[TESTING_AND_QA.md](../../rules/TESTING_AND_QA.md) §4, skill `device-lease`). Two sessions share one adb server and
+the same devices whatever project each works in, so the lease store is `<portfolio root>\devices` (`SZA_PORTFOLIO_ROOT`,
+else `%USERPROFILE%\.sza\portfolio`), outside every repository: a lease kept under one repository's `temp/` is invisible to
+the project that collides with it. The key is a plain name and nothing there talks to adb - an adb serial, or
+`avd:<name>` for an emulator. Verbs `Claim` (all keys or none; `-Any` takes the first free one), `Release` (owner-checked;
+`-All` gives back the session's own), `List`, `Status`, `Sweep`; exit 0 done, 1 error, 3 claim lost, 4 release refused.
+There is no queue: a lost claim means a different target or a deferred device stage. Ownership and liveness come from
+`locks/agent-lock.ps1` (the `Device` timings), so a lease is judged by its session, never by the clock alone.
+`pwsh -NoProfile -File tools/tests/device-lease.tests.ps1` checks it over a throwaway portfolio root.
+
 ## What is deliberately not here
 
 - **The test suites.** A `*.tests/Run-Tests.ps1` exercises the harness through one project's paths,

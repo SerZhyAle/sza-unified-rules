@@ -83,6 +83,7 @@ compliance gate read instead of guessing.
 | [`spec-all`](skills/spec-all/SKILL.md) (`/sa`) | one ticket from its current status to the audit in any project: lease, drift, the stage the status names (spec-to-audit), release - one ticket, then stop |
 | [`portfolio-queue`](skills/portfolio-queue/SKILL.md) | the robots over all projects (`pq`): which command answers what they are doing, why one is idle, how to stop, pause and steer them, and what they did this week; it never starts a worker on its own |
 | [`app-commands`](skills/app-commands/SKILL.md) | discover each product's command line and use it before driving its window or writing a one-off script, with the person's risk setting respected |
+| [`device-lease`](skills/device-lease/SKILL.md) | one phone, watch or emulator per session on the whole machine, across projects: claim before the first touch, a different target or a deferred device stage on a lost claim (never a wait), release when the scenario ends |
 | [`agent-cost`](skills/agent-cost/SKILL.md) | measuring what a session actually costs, with the five corrections without which every token figure is inflated roughly threefold - and the subagent model tier, the largest single lever that measurement reaches |
 | [`caveman`](skills/caveman/SKILL.md) | terse mode - prose compressed, every exact string and every gate reason left intact; plus the commit and review shapes |
 

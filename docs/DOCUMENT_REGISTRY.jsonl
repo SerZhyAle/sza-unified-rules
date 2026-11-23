@@ -68,6 +68,7 @@
 {"path": "skills/app-commands/SKILL.md", "topic": "Discover and use product commands", "area": "skills", "update_triggers": ["Changes to product command discovery or the agent risk policy"], "role": "source"}
 {"path": "skills/caveman/SKILL.md", "topic": "Caveman - terse mode", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "skills/contract-sync/SKILL.md", "topic": "Contract sync - align this repo with the shared catalog", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "skills/device-lease/SKILL.md", "topic": "Device lease - one target, one session, the whole machine", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "skills/feature-to-site/SKILL.md", "topic": "Feature to site - the ship-together fan-out", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "skills/portfolio-queue/SKILL.md", "topic": "Portfolio queue - the robots over all projects", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "skills/promote/SKILL.md", "topic": "Promote - make a finished product findable without spending money", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}

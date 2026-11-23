@@ -1592,9 +1592,17 @@ while ($true) {
     Write-Host ''
     Write-Host ('=' * 78) -ForegroundColor DarkGray
     Write-Host ("  {0}  [{1}]{2}   ticket {3} of {4}" -f $id, $statusBefore, $titleSuffix, ($handled + 1), $(if ($MaxTickets -gt 0) { $MaxTickets } else { '?' })) -ForegroundColor Cyan
-    Write-Host ("  started {0}   model {1}{2}   fresh context - this is a new process" -f `
-            $started.ToString('HH:mm:ss'), $(if ($childModel) { $childModel } else { 'CLI default' }),
-            $(if ($childComplexity) { " ($childComplexity)" } else { '' })) -ForegroundColor DarkGray
+    # The provider that took the ticket, so a pass of the subscription's claude, of claude-api (the plan's API credits) and of
+    # z.ai (which echoes any model name back) is never anonymous: the dispatcher names it (SZA_PQ_AGENT), else the agent record
+    # it passed, else the command this runner launches. Pure reads - the launch below is unchanged.
+    $providerLabel = if (-not [string]::IsNullOrWhiteSpace($env:SZA_PQ_AGENT)) { $env:SZA_PQ_AGENT }
+        elseif ($null -ne $script:AgentRecord -and (Test-SzaHasProperty -Object $script:AgentRecord -Name 'name') -and [string]$script:AgentRecord.name) { [string]$script:AgentRecord.name }
+        else { [IO.Path]::GetFileNameWithoutExtension($runnerCommand) }
+    $bannerEffort = Resolve-ChildEffort -RecordEffort $recordEffort -Model $childModel
+    Write-Host ("  started {0}   provider {1}   model {2}{3}{4}   fresh context - this is a new process" -f `
+            $started.ToString('HH:mm:ss'), $providerLabel, $(if ($childModel) { $childModel } else { 'CLI default' }),
+            $(if ($childComplexity) { " ($childComplexity)" } else { '' }),
+            $(if ($bannerEffort) { "   effort $bannerEffort" } else { '' })) -ForegroundColor DarkGray
     Write-Host ('=' * 78) -ForegroundColor DarkGray
     try { $host.UI.RawUI.WindowTitle = "$id$titleSuffix | run-spec-queue ($Instance)" } catch { }
 

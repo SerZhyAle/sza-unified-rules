@@ -515,7 +515,10 @@ function Invoke-PqPassChild {
         # Print what the agent does while the pass runs (console.ps1, the built-in `pq tail`): 'claude' reads the session
         # transcript (the z.ai agent is the same CLI), 'codex' the rollout file Codex writes. Empty = no view; an agent with
         # no live file (Gemini, Mistral) keeps the minute line as its only sign.
-        [ValidateSet('', 'claude', 'codex')][string]$Follow = ''
+        [ValidateSet('', 'claude', 'codex')][string]$Follow = '',
+        # The agent record that took the pass (claude, claude-api, zai, codex, ..). The runner prints it in its banner:
+        # a plain claude pass carries no -AgentJson, so without this the runner cannot tell which provider it works for.
+        [string]$Agent = ''
     )
     # A registry record may spell the drive letter in lower case; the agent CLI would then see an untrusted workspace.
     $RepoPath = ConvertTo-PqFullPath $RepoPath
@@ -532,6 +535,9 @@ function Invoke-PqPassChild {
     # A usage limit ends the pass instead of being waited out inside the runner: the worker holds that provider and
     # gives the ticket to the next one of agentOrder (rule 48).
     $psi.Environment['SZA_PQ_EXIT_ON_LIMIT'] = '1'
+    # Which provider this pass works for, for the runner's banner only. An environment variable, not a runner parameter, so
+    # a runner script that does not know it still starts; one left over from the worker's own environment is dropped.
+    if ($Agent) { $psi.Environment['SZA_PQ_AGENT'] = $Agent } else { [void]$psi.Environment.Remove('SZA_PQ_AGENT') }
     # One harness copy per pass (S0134): a repository's forwarder reads SZA_HARNESS_ROOT before the plugin cache, so
     # the agent's own ledger and lease calls run the copy this worker and its runner run. Set for the pass child only,
     # never in the user environment: a folder without a profile would then resolve this tree as its project root.
@@ -2028,7 +2034,11 @@ function Start-PqLoop {
                 $passSw = [Diagnostics.Stopwatch]::StartNew()
                 $passBegan = [DateTime]::Now
                 $titlePart = if ($ticketTitle) { " - $ticketTitle" } else { '' }
-                $agentPart = if ($agentName -cne 'claude') { " [$agentName]" } else { '' }
+                # Every pass names its provider, claude included - an untagged line left the owner guessing which of the
+                # subscription, the API credits or z.ai took the ticket. The route's model and effort follow when it names them
+                # (a plain claude pass names none here: the runner picks its model from the ticket, and its banner prints it).
+                $agentDetail = if ($pickModel -and $pickEffort) { "$pickModel/$pickEffort" } elseif ($pickModel) { [string]$pickModel } elseif ($pickEffort) { "effort $pickEffort" } else { '' }
+                $agentPart = " [$agentName$(if ($agentDetail) { ' ' + $agentDetail })]"
 
                 # The tickets of the repository before the pass: whatever is new after it, the pass filed (D5). The session the
                 # pass runs under is read from the lease the runner took for it, so its own transcript is never taken for the
@@ -2062,7 +2072,7 @@ function Start-PqLoop {
                     elseif ($agentName -cmatch '^codex') { 'codex' }
                     elseif ([IO.Path]::GetFileNameWithoutExtension([string](Get-PqValue $pick.record 'command' '')) -ieq 'claude') { 'claude' }
                     else { '' }
-                $childRes = Invoke-PqPassChild -Script $actualRunner -RepoPath $repoPath -TicketId $ticketId -TicketTitle $ticketTitle -Instance "pq$slot" -PermissionMode $permMode -OnStarted $onStarted -AgentArgs $agentArgs -OnTick $onTick -StopWatcher $stopWatcher -OnBeat $onBeat -Follow $followKind
+                $childRes = Invoke-PqPassChild -Script $actualRunner -RepoPath $repoPath -TicketId $ticketId -TicketTitle $ticketTitle -Instance "pq$slot" -PermissionMode $permMode -OnStarted $onStarted -AgentArgs $agentArgs -OnTick $onTick -StopWatcher $stopWatcher -OnBeat $onBeat -Follow $followKind -Agent $agentName
                 $passSw.Stop()
                 $elapsedSec = [Math]::Round($passSw.ElapsedMilliseconds / 1000, 1)
                 Add-PqPassSessions -Ids @($pqPassSessions)

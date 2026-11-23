@@ -377,7 +377,11 @@ empty: wait, see Waiting
   one `build` token, `emulator` a `build` and the `emulator` token, `device` takes no token and is worked like any other
   level: the robot does the work and parks the ticket in `BlockNeedUserTest` (the hardware check is yours). No line, or a word outside the four, is `build`. The caps are `resources.build` (3) and `resources.emulator`
   (1) in the registry; a token is a file `resources\<token>\<key>__<id>.json` of the dispatcher that holds it, and one
-  whose process is gone is cleared. A ticket that cannot get its token is skipped for a minute.
+  whose process is gone is cleared. A ticket that cannot get its token is skipped for a minute. **Device leases count
+  too** (TASK-FLOW 0.41): a session of yours that drives an emulator holds a lease in `<root>\devices` (the `device-lease`
+  skill, `tools/harness/devices/device-lease.ps1`), and the `emulator` count is the larger of the token files and the live
+  emulator leases, so a robot is not started on the emulator you are in. `pq status` lists the live leases. `build` and
+  `device` read none, and a lease the dispatcher cannot read is no lease.
 - **`concurrent` and `fill`.** A `concurrent` repository takes at most its `maxWorkers` workers at once. With `fill`
   `breadth` in the registry, a repository that already has a worker waits for the projects that have none; `depth` (the
   default) lets the project at the top take every worker it may have first.
@@ -527,6 +531,12 @@ order of 2026-11-23 puts it before `anthropic`, so the credits that expire are s
 balance is too low" (detector `unproven` until it is seen), a spent balance is polled every six hours (`limitPollMinutes`), and
 Console > Billing > Promotional credits shows the balance. Proven on 2026-11-23: one `claude -p --model sonnet --effort low` with the
 key took $0.04 off the promotional credit.
+
+Every pass names its provider on the console, `claude` included, because z.ai echoes any model name back and the subscription,
+the API credits and z.ai all run the same CLI. The worker line reads `pass 7 fms-a:S4835 Partial - title [claude-api sonnet/medium]
+- started` (the record, then the route's model and effort when it names them), and the runner's banner reads `started 15:49:31
+provider claude   model opus (hard)   effort xhigh`. The worker hands the record's name to the runner as `SZA_PQ_AGENT`, set for
+the pass child only; a runner started by hand prints the name of its command instead.
 
 z.ai is reached through Claude Code with `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN` (`%ZAI_API_KEY%`) and
 `API_TIMEOUT_MS` set **for that pass only**, as z.ai's own Claude Code guide describes. Do not put those in
@@ -869,6 +879,7 @@ environment values or keys.
 | `skip <key> - stopped`, `frozen` in the worker's wait line, a `Frozen:` line of `pq status`, or `repository <key> is stopped` in the worker's console | that repository's own queue stop file exists (its `rs`, or a release freeze) - see Stopping. A freeze that expired while nobody opened the repository leaves its stop in place for good, because the freeze clears itself only when something reads it and a skipped repository is never read: run the repository's own freeze Status (FMS_A: `scripts/utils/release-freeze.ps1 -Verb Status -Scope wear`, or `-Scope phone`), which removes the expired marker and the stop it asked for, or delete the file |
 | `repository <key> is occupied` | a session of yours wrote a transcript there within `occupiedMinutes`, or holds a live lease: the robot goes past it to the next repository and looks again when the window can have run out (never sooner than half a minute); a session that ended is seen as gone after the window. A `pq start -Repo <key>` worker never prints it for transcripts of `<key>` - start the worker that way when you work in the repository yourself |
 | `waits for the build resource` | `resources.build` tokens are all held (or `emulator`); the ticket is skipped for a minute. A `Verify: device` ticket takes no token, so it never waits here |
+| `waits for the emulator resource (1 of 1 held)` | an `emulator` token is held, or a live session of yours holds an emulator lease (`pq status` lists the `Device leases`); the ticket is skipped for a minute and goes on when the lease is released or its session has been quiet long enough to be swept |
 | `pq stop` says `no worker is running` | exit 3, nothing is written; a worker window may have been closed by force, see its state files in `run\` |
 | `paused - pq resume continues` | `PAUSE` is in the portfolio root: `pq resume` |
 

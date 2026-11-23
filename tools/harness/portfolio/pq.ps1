@@ -74,7 +74,8 @@
                                                    3 when no worker is running (no file is written)
     pq pause                                        no worker launches a new pass; passes in flight are not touched
     pq resume                                       undo pause
-    pq status [-Json] [-Next]                      workers, today's (the local day) pass outcomes, STOP and pause;
+    pq status [-Json] [-Next]                      workers, today's (the local day) pass outcomes, STOP and pause,
+                                                   the live device leases of the machine;
                                                    the rank runs only with -Next, which also prints the next ticket;
                                                    the last line is what waits for the owner -> pq inbox
     pq inbox [-Json]                               what waits for the owner across all projects, read-only: one line
@@ -1010,9 +1011,15 @@ function Invoke-PqStatus {
         }
     }
 
+    # TASK-FLOW 0.41 section 19 item D: the live device leases of the machine (canon TESTING_AND_QA section 4), read through
+    # the lease tool. A store with no lease file costs no child process; a tool that cannot be read shows none.
+    $deviceLeases = @()
+    try { $deviceLeases = @((Get-PqDeviceLeases).leases) } catch { $deviceLeases = @() }
+
     if ($Json) {
         $res = [ordered]@{
             stop = if ($stopPresent) { @{ present = $true; level = $stopLevel } } else { @{ present = $false } }
+            deviceLeases = @($deviceLeases | ForEach-Object { [ordered]@{ id = [string]$_.id; project = [string]$_.project; sessionId = [string]$_.sessionId; reason = [string]$_.reason; ageMinutes = $_.ageMinutes; lastSeenMinutes = $_.lastSeenMinutes; liveness = [string]$_.liveness } })
             targetStops = @($targetStops | ForEach-Object { [ordered]@{ kind = $_.kind; target = $_.target; level = $_.level } })
             paused = $paused
             holds = @($holds)
@@ -1054,6 +1061,13 @@ function Invoke-PqStatus {
     else {
         $parts = foreach ($k in $passesToday.Keys) { "$k`: $($passesToday[$k])" }
         "Passes today: $($parts -join ', ')"
+    }
+    if ($deviceLeases.Count -gt 0) {
+        'Device leases (a live one on an emulator holds the emulator resource):'
+        foreach ($l in $deviceLeases) {
+            $seenPart = if ($null -ne $l.lastSeenMinutes) { "seen $($l.lastSeenMinutes) min ago" } else { 'last activity unknown' }
+            "  {0}  {1}  {2}  {3}" -f $l.id, $(if ($l.project) { $l.project } else { 'unknown project' }), $seenPart, $l.reason
+        }
     }
     if ($Next) {
         if ($null -ne $nextCandidate) {
