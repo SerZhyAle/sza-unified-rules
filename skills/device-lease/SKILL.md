@@ -80,6 +80,10 @@ not has no use for MCP or adb tools at all ([AI_USAGE.md](../../rules/AI_USAGE.m
 
 - It does not stop a raw `adb` command. It coordinates sessions that claim.
 - It has no queue. A sibling's scenario has no bound, so a wait would not end.
+- The portfolio queue (`pq`) reads it: a robot ticket with `**Verify:** emulator` is not started while a live emulator lease
+  (`avd:<name>` or `emulator-<port>`) is held, and `pq status` lists the live leases. A robot pass is a session like any
+  other and claims through this tool. The other direction depends on that claim: you see a robot's emulator as a lease only
+  once its pass has claimed `avd:<name>`.
 - It does not decide which device a product may use. The product's own device roster is that authority (the shared
   `TEST-LAB-ANDROID` profile names the fleet), and a lease grants no right to install, clear or reconfigure a target.
 - A project that keeps its own repository-local lease script keeps using it for its own sessions - and claims here as well,

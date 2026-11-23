@@ -5,9 +5,9 @@
       "package": "sza",
       "flavor": "default",
       "kind": "release",
-      "version": "2026.1123.2",
-      "builtAt": "2026-11-23T16:20:23+01:00",
-      "note": "rules: TESTING_AND_QA; tools 10, docs 2, hooks 1, root 1, skills 1"
+      "version": "2026.1123.3",
+      "builtAt": "2026-11-23T16:31:59+01:00",
+      "note": "tools 3, docs 1, skills 1"
     }
   ]
 }

@@ -70,7 +70,9 @@ the project that collides with it. The key is a plain name and nothing there tal
 `-All` gives back the session's own), `List`, `Status`, `Sweep`; exit 0 done, 1 error, 3 claim lost, 4 release refused.
 There is no queue: a lost claim means a different target or a deferred device stage. Ownership and liveness come from
 `locks/agent-lock.ps1` (the `Device` timings), so a lease is judged by its session, never by the clock alone.
-`pwsh -NoProfile -File tools/tests/device-lease.tests.ps1` checks it over a throwaway portfolio root.
+`pwsh -NoProfile -File tools/tests/device-lease.tests.ps1` checks it over a throwaway portfolio root. The portfolio queue
+reads the leases (TASK-FLOW 0.41): an `emulator` ticket is not started while a live emulator lease is held, and `pq status`
+lists them; `tools/tests/portfolio-device-leases.tests.ps1` checks that side.
 
 ## What is deliberately not here
 

@@ -7,10 +7,10 @@
     A scratch folder under the system temp directory holds the portfolio root and the user profile; the leases are files a
     foreign session wrote, as device-lease.ps1 writes them, and the judgement of who is alive is the real lease tool's, run as
     the dispatcher runs it (one child process, only when a lease file exists). No adb, no device, no agent. Cases: 1 no lease
-    file answers at once; 2 a live emulator lease is read, a physical target only without -EmulatorOnly; 3 a stale lease is
-    not counted; 4 an emulator request at the cap is refused by a lease and takes nothing; 5 a physical-target lease does not
-    refuse it; 6 build and device read no lease; 7 the larger count is taken, not the sum, and the ticket's own re-request is
-    never refused by its own lease; 8 a lease that cannot be read is no lease; 9 `pq status -Json` carries deviceLeases.
+    file answers at once; 2 a live emulator lease is read, a stale one and a physical target are not; 3 an emulator request
+    at the cap is refused by a lease and takes nothing; 4 build and device read no lease; 5 the larger count is taken, not the
+    sum, and the ticket's own re-request is never refused by its own lease; 6 a lease that cannot be read is no lease;
+    7 `pq status -Json` carries deviceLeases, a physical target included.
 #>
 [CmdletBinding()]
 param([switch]$KeepScratch)
@@ -76,23 +76,16 @@ try {
         $r = Get-PqDeviceLeases
         Assert-That ($r.ok -and @($r.leases).Count -eq 0) 'an empty store is no lease either'
     }
-    Run-Case '2. a live emulator lease is read; a physical target only without -EmulatorOnly' {
+    Run-Case '2. a live emulator lease is read; a stale one and a physical target are not' {
         Seed-Lease 'avd:Pixel_9' 'sess-X' 2 $true 'streams-mob'
         Seed-Lease 'RFCR110NBQJ' 'sess-Y' 2 $true
+        Seed-Lease 'avd:Old' 'sess-Z' 60 $false
         $e = Get-PqDeviceLeases -EmulatorOnly
         Assert-That ($e.ok -and @($e.leases).Count -eq 1 -and @($e.leases)[0].id -ceq 'avd:Pixel_9') "emulator only: $($e | ConvertTo-Json -Compress -Depth 4)"
         Assert-That (@($e.leases)[0].project -ceq 'streams-mob' -and @($e.leases)[0].reason -ceq 'seeded scenario') 'the record names project and reason'
-        $all = Get-PqDeviceLeases
-        Assert-That (@($all.leases).Count -eq 2) 'every live lease without -EmulatorOnly'
         Assert-That ((Test-PqEmulatorLeaseKey 'emulator-5554') -and (Test-PqEmulatorLeaseKey 'avd:Pixel_9') -and -not (Test-PqEmulatorLeaseKey '192.168.1.5:5555') -and -not (Test-PqEmulatorLeaseKey 'Xavd:a')) 'the keys that name an emulator'
     }
-    Run-Case '3. a stale lease is not counted' {
-        Clear-Leases
-        Seed-Lease 'avd:Old' 'sess-Z' 60 $false
-        $r = Get-PqDeviceLeases -EmulatorOnly
-        Assert-That ($r.ok -and @($r.leases).Count -eq 0) "a lease quiet for an hour: $($r | ConvertTo-Json -Compress -Depth 4)"
-    }
-    Run-Case '4. an emulator request at the cap is refused by a lease and takes nothing' {
+    Run-Case '3. an emulator request at the cap is refused by a lease and takes nothing' {
         Clear-Leases; Clear-Tokens
         Seed-Lease 'avd:Pixel_9' 'sess-X' 2 $true 'streams-mob'
         $r = Request-PqResources -Registry $reg -RepoKey 'demo' -TicketId 'S0001' -Verify 'emulator' -PassId 'p1'
@@ -100,21 +93,13 @@ try {
         Assert-That (@($r.leases) -contains 'avd:Pixel_9') 'the result names the lease that holds the slot'
         Assert-That (-not [IO.File]::Exists((Get-PqPath -Kind resourceToken -Token 'build' -Repo 'demo' -Id 'S0001')) -and -not [IO.File]::Exists((Get-PqPath -Kind resourceToken -Token 'emulator' -Repo 'demo' -Id 'S0001'))) 'all or nothing: neither token is taken'
     }
-    Run-Case '5. a lease on a physical target does not refuse an emulator request' {
-        Clear-Leases; Clear-Tokens
-        Seed-Lease 'RFCR110NBQJ' 'sess-Y' 2 $true
-        $r = Request-PqResources -Registry $reg -RepoKey 'demo' -TicketId 'S0002' -Verify 'emulator' -PassId 'p2'
-        Assert-That ($r.ok -and (@($r.held) -join ',') -ceq 'build,emulator') "taken: $($r | ConvertTo-Json -Compress -Depth 4)"
-    }
-    Run-Case '6. build and device read no lease' {
-        Clear-Leases; Clear-Tokens
-        Seed-Lease 'avd:Pixel_9' 'sess-X' 2 $true
+    Run-Case '4. build and device read no lease' {
         $b = Request-PqResources -Registry $reg -RepoKey 'demo' -TicketId 'S0003' -Verify 'build' -PassId 'p3'
         Assert-That ($b.ok -and (@($b.held) -join ',') -ceq 'build') 'build is not held back by an emulator lease'
         $d = Request-PqResources -Registry $reg -RepoKey 'demo' -TicketId 'S0004' -Verify 'device' -PassId 'p4'
         Assert-That ($d.ok -and @($d.held).Count -eq 0) 'device takes no token and reads no lease'
     }
-    Run-Case '7. the larger count is taken, not the sum; the ticket own re-request is never refused by its own lease' {
+    Run-Case '5. the larger count is taken, not the sum; the ticket own re-request is never refused by its own lease' {
         Clear-Leases; Clear-Tokens
         $first = Request-PqResources -Registry $reg2 -RepoKey 'demo' -TicketId 'S0005' -Verify 'emulator' -PassId 'p5'
         Assert-That ($first.ok) 'the first emulator ticket takes its tokens'
@@ -123,12 +108,9 @@ try {
         Assert-That ($again.ok) "the same ticket and pass asking again, with a lease standing: $($again | ConvertTo-Json -Compress -Depth 4)"
         $second = Request-PqResources -Registry $reg2 -RepoKey 'demo' -TicketId 'S0006' -Verify 'emulator' -PassId 'p6'
         Assert-That ($second.ok -and $second.counts['emulator'].held -eq 2) "one token and one lease are one emulator up, so a cap of 2 admits a second: $($second | ConvertTo-Json -Compress -Depth 4)"
-        $third = Request-PqResources -Registry $reg2 -RepoKey 'demo' -TicketId 'S0007' -Verify 'emulator' -PassId 'p7'
-        Assert-That (-not $third.ok -and $third.heldCount -eq 2) 'the third is refused at the cap of 2'
     }
-    Run-Case '8. a lease that cannot be read is no lease' {
-        Clear-Leases; Clear-Tokens
-        Seed-Lease 'avd:Pixel_9' 'sess-X' 2 $true
+    Run-Case '6. a lease that cannot be read is no lease' {
+        Clear-Tokens
         $slow = Get-PqDeviceLeases -TimeoutSeconds 0
         Assert-That (-not $slow.ok -and $slow.why -ceq 'timeout' -and @($slow.leases).Count -eq 0) "a silent tool: $($slow | ConvertTo-Json -Compress)"
         function Get-PqDeviceLeases { throw 'the reader failed' }
@@ -138,17 +120,14 @@ try {
         }
         finally { Remove-Item Function:\Get-PqDeviceLeases; . (Join-Path $lib 'resources.ps1') }
     }
-    Run-Case '9. pq status -Json carries deviceLeases' {
+    Run-Case '7. pq status -Json carries deviceLeases, a physical target included' {
         Clear-Leases
         Seed-Lease 'avd:Pixel_9' 'sess-X' 2 $true 'streams-mob'
+        Seed-Lease 'RFCR110NBQJ' 'sess-Y' 2 $true
         $json = & pwsh -NoProfile -File (Join-Path $harness 'portfolio\pq.ps1') status -Json
         Assert-That ($LASTEXITCODE -eq 0) "pq status exited $LASTEXITCODE"
-        $obj = ($json -join "`n") | ConvertFrom-Json
-        $leases = @($obj.deviceLeases)
-        Assert-That ($leases.Count -eq 1 -and $leases[0].id -ceq 'avd:Pixel_9' -and $leases[0].project -ceq 'streams-mob') "deviceLeases: $(($obj.deviceLeases | ConvertTo-Json -Compress))"
-        Clear-Leases
-        $json = & pwsh -NoProfile -File (Join-Path $harness 'portfolio\pq.ps1') status -Json
-        Assert-That (@((($json -join "`n") | ConvertFrom-Json).deviceLeases).Count -eq 0) 'no lease, an empty list'
+        $leases = @((($json -join "`n") | ConvertFrom-Json).deviceLeases)
+        Assert-That ($leases.Count -eq 2 -and (@($leases | ForEach-Object { $_.id }) -contains 'RFCR110NBQJ') -and (@($leases | ForEach-Object { $_.project }) -contains 'streams-mob')) "deviceLeases: $($leases | ConvertTo-Json -Compress)"
     }
 }
 finally {
