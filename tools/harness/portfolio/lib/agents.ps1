@@ -663,6 +663,11 @@ function Get-PqLogLimitUntil {
 $script:PqProviders = @(
     @{ id = 'openai'; agent = 'codex'; label = 'OpenAI (Codex)'; aliases = @('openai', 'codex', 'gpt', 'chatgpt') }
     @{ id = 'anthropic'; agent = 'claude'; label = 'Anthropic (Claude)'; aliases = @('anthropic', 'claude') }
+    # The monthly API credits of a Max or Ultra plan ($100 or $200, linked to one Console organization) pay `claude -p`
+    # only when it runs with an API key of that organization; the signed-in subscription never spends them and never
+    # falls back to them (support.claude.com, "Monthly API credits for Max, Ultra, and Team plans"). So the credits are
+    # a provider of their own: the same Claude Code, the key set for that pass only, and a balance that ends in a stop.
+    @{ id = 'anthropic-api'; agent = 'claude-api'; label = 'Anthropic API credits (Claude)'; aliases = @('anthropicapi', 'claudeapi', 'apicredits', 'credits') }
     # `also` names the provider's further records, each a model with its own quota (rule 42 gives a non-Claude agent one
     # fixed model, so a second model is a second record): they follow the first in the order, and the next one takes the
     # ticket only while the earlier is at its limit.
@@ -726,6 +731,14 @@ function Find-PqProviderCli([string]$Id) {
         'anthropic' {
             if (Find-PqApplication 'claude') { return @{ found = $true; command = 'claude'; prefix = @(); note = '' } }
             return @{ found = $false; command = $null; prefix = @(); note = 'claude is not on PATH' }
+        }
+        'anthropic-api' {
+            # The key is a Console API key of the organization the plan's credits are linked to. Without it the pass would
+            # fall back to the signed-in subscription and spend the plan while the log said credits, so the provider is
+            # not usable until the variable exists.
+            if (-not (Find-PqApplication 'claude')) { return @{ found = $false; command = $null; prefix = @(); note = 'claude is not on PATH' } }
+            if (-not (Get-PqEnvValue 'ANTHROPIC_CREDITS_API_KEY')) { return @{ found = $false; command = $null; prefix = @(); note = 'set the user environment variable ANTHROPIC_CREDITS_API_KEY to an API key of the Console organization the plan credits are linked to (platform.claude.com/settings/keys)' } }
+            return @{ found = $true; command = 'claude'; prefix = @(); note = '' }
         }
         'openai' {
             $js = Find-PqNpmBin '@openai/codex' 'codex'
@@ -792,6 +805,29 @@ function New-PqProviderRecord([string]$Id, [string]$Agent = '') {
                 limitDetector = [ordered]@{ kind = 'transcript'; status = 'proven' }
             }
         }
+        'anthropic-api' {
+            # Claude Code with ANTHROPIC_API_KEY set for this pass only, as zai sets its own token: never in the user
+            # environment or ~/.claude/settings.json, where the key would override the subscription sign-in of every session
+            # (and interactive Claude Code is not covered by the credits). A named model, not modelByComplexity, because the
+            # record is not the subscription's `claude` (rule 42); the routes stop at grade 5 (Sonnet, effort by grade) so a
+            # hard ticket never spends the one shared balance and the next agent of the order takes it. Credits do not roll
+            # over, so a balance that ends is polled every six hours instead of every thirty minutes: the next credit
+            # arrives with the plan's billing date. The limit text is Anthropic's documented "credit balance is too low".
+            $rec = [ordered]@{
+                name = 'claude-api'; command = 'claude'
+                argsTemplate = @('-p', '{prompt}', '--permission-mode', '{permissionMode}', '--model', '{model}', '--effort', '{effort}')
+                headlessMatch = '(?i)\bclaude(\.exe)?\s.*(-p|--print)\b'; promptForm = 'slash'
+                env = [ordered]@{ ANTHROPIC_API_KEY = '%ANTHROPIC_CREDITS_API_KEY%' }
+                model = 'sonnet'; effort = 'high'; maxParallel = 2; contractFile = 'CLAUDE.md'
+                limitPollMinutes = 360
+                limitDetector = [ordered]@{ kind = 'transcript'; pattern = '(?i)credit balance (is )?too low|insufficient (credit|balance)'; status = 'unproven' }
+                routes = @(
+                    [ordered]@{ max = 2; model = 'sonnet'; effort = 'low' }
+                    [ordered]@{ max = 4; model = 'sonnet'; effort = 'medium' }
+                    [ordered]@{ max = 5; model = 'sonnet'; effort = 'high' }
+                )
+            }
+        }
         'openai' {
             $rec = [ordered]@{
                 name = 'codex'; command = $cli.command
@@ -828,19 +864,23 @@ function New-PqProviderRecord([string]$Id, [string]$Agent = '') {
             $rec = [ordered]@{
                 name = 'zai'; command = 'claude'
                 # --effort reaches GLM as its reasoning depth: glm-5.3 and glm-5.3-flash both accepted low and max through
-                # z.ai's Anthropic endpoint on 2026-11-20 (max visibly thought longer). The record's effort is a real CLI
-                # value, never 'default', because the template passes it as is when a route names none.
+                # z.ai's Anthropic endpoint on 2026-11-20 (max visibly thought longer), and glm-5.4 ran through Claude Code
+                # with --effort max on 2026-11-23 (exit 0). z.ai documents max as its default level and maps xhigh/max/ultra
+                # to it. The record's effort is a real CLI value, never 'default', because the template passes it as is when
+                # a route names none.
                 argsTemplate = @('-p', '{prompt}', '--permission-mode', '{permissionMode}', '--model', '{model}', '--effort', '{effort}')
                 headlessMatch = '(?i)\bclaude(\.exe)?\s.*(-p|--print)\b'; promptForm = 'slash'
                 # The model is named, never left to z.ai's server-side mapping of Claude Code's `opus`: that mapping is not
                 # disclosed, z.ai echoes the requested name back, so the console, the events log and the session transcript
                 # all said `opus` while a GLM model ran. The three aliases are pinned too, so a subagent that asks for
-                # `sonnet` or `haiku` is a named GLM model as well. Verified on 2026-11-16 against /v1/models and a live call.
+                # `sonnet` or `haiku` is a named GLM model as well. Verified on 2026-11-16 against /v1/models and a live call;
+                # glm-5.4 (listed by /v1/models from 2026-11-23, live for every Coding Plan tier per docs.z.ai/devpack/latest-model)
+                # took over the opus and sonnet slots and the record's model that day, and the haiku slot stays the Flash model.
                 env = [ordered]@{
                     ANTHROPIC_BASE_URL = 'https://api.z.ai/api/anthropic'; ANTHROPIC_AUTH_TOKEN = '%ZAI_API_KEY%'; API_TIMEOUT_MS = '3000000'
-                    ANTHROPIC_DEFAULT_OPUS_MODEL = 'glm-5.3'; ANTHROPIC_DEFAULT_SONNET_MODEL = 'glm-5.3'; ANTHROPIC_DEFAULT_HAIKU_MODEL = 'glm-5.3-flash'
+                    ANTHROPIC_DEFAULT_OPUS_MODEL = 'glm-5.4'; ANTHROPIC_DEFAULT_SONNET_MODEL = 'glm-5.4'; ANTHROPIC_DEFAULT_HAIKU_MODEL = 'glm-5.3-flash'
                 }
-                model = 'glm-5.3'; effort = 'high'; maxParallel = 2; contractFile = 'CLAUDE.md'
+                model = 'glm-5.4'; effort = 'max'; maxParallel = 2; contractFile = 'CLAUDE.md'
                 # Seen on 2026-11-10 (a real pass, exit 0, 197 s): "API Error: Request rejected (429) · [1308][Usage limit reached
                 # for 5 hour. Your limit will reset at 2026-11-11 00:34:51]". The clock is China time, UTC+8.
                 limitDetector = [ordered]@{ kind = 'transcript'; pattern = '(?i)usage limit reached|limit (will )?reset|limit exhausted|rate limit reached|insufficient balance|no resource package|package has expired'; status = 'proven'; resetOffset = '+08:00' }

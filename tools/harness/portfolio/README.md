@@ -511,10 +511,27 @@ A provider that is installed but not signed in (Gemini without a sign-in, z.ai w
 checked: such a pass would end in a second with no limit text and count as a failed one. The key is read from this process
 first and then from your user and machine environment, so a key set with `setx` reaches a worker that was already running.
 
+`anthropic-api` (record `claude-api`) spends the monthly API credits of a Max or Ultra plan (Ultra: $200, linked to one Console
+organization, expiring each billing cycle with no rollover). Anthropic pays those credits for `claude -p` and the Agent SDK only
+when they run with an API key of the linked organization, never for the signed-in subscription and never for interactive
+Claude Code or a run started by an IDE extension, the desktop app or a GitHub Action (support.claude.com, "Monthly API
+credits for Max, Ultra, and Team plans"). So the record is Claude Code with `ANTHROPIC_API_KEY=%ANTHROPIC_CREDITS_API_KEY%` set
+**for that pass only**; the provider is refused while that user environment variable does not exist, because a pass without the
+key would fall back to the subscription and spend it under the credits' name. Never put the key in `~/.claude/settings.json` or
+in the user environment as `ANTHROPIC_API_KEY`: it overrides the subscription sign-in of every session, and those sessions are not
+covered. The key is made in the Console in the workspace `pq-robots` (monthly spend limit $150 of the one shared $200 balance),
+set to never expire, and moved into the variable from the clipboard, never printed. Start the workers from a terminal or
+PQShell, not from an IDE-extension session. Routes stop at grade 5 (`sonnet`, effort `low`, `medium`, `high` by grade), so a hard
+ticket never spends the shared balance and the next agent of the order takes it; raise the last row to spend more. The owner's
+order of 2026-11-23 puts it before `anthropic`, so the credits that expire are spent first. The limit text is Anthropic's documented "credit
+balance is too low" (detector `unproven` until it is seen), a spent balance is polled every six hours (`limitPollMinutes`), and
+Console > Billing > Promotional credits shows the balance. Proven on 2026-11-23: one `claude -p --model sonnet --effort low` with the
+key took $0.04 off the promotional credit.
+
 z.ai is reached through Claude Code with `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN` (`%ZAI_API_KEY%`) and
 `API_TIMEOUT_MS` set **for that pass only**, as z.ai's own Claude Code guide describes. Do not put those in
 `~/.claude/settings.json` or your user environment: `anthropic` would then spend z.ai's plan too. The record names
-the GLM model itself (`glm-5.3`) and pins Claude Code's `opus`, `sonnet` and `haiku` aliases with
+the GLM model itself (`glm-5.4`) and pins Claude Code's `opus`, `sonnet` and `haiku` aliases with
 `ANTHROPIC_DEFAULT_*_MODEL`, because z.ai echoes whatever name it was asked for: left to its own mapping of `opus`,
 the console, the events log and the transcript all say `opus` and nothing shows which GLM model ran. `GET
 https://api.z.ai/api/anthropic/v1/models` lists the names the account accepts; `model` in the record switches it.
@@ -543,12 +560,15 @@ vendors' own positioning (Google sets Neon against Opus 5.5 and GPT-6.2 Sol), no
 |---|---|---|---|---|
 | Codex (ChatGPT Plus) | `gpt-6-luna` - fast and affordable, for easier tasks | `gpt-6.1-terra` - efficient, the record's model | `gpt-6.2-sol`; `gpt-6.1-sol` until the CLI is newer than 0.165 | `gpt-6.2-astra`, `gpt-6-astra` |
 | Gemini (Google AI Pro) | `gemini-4-hydrogen-high` - the `gemini` record | `gemini-4-argon-high` - the `gemini-argon` record | `gemini-4-neon-high` - the `gemini-neon` record | `gemini-4-carbon-*` (Ultra, not in this account's `agy models`) |
-| z.ai (GLM Coding plan) | `glm-5.3-flash` - weaker, nearly free to the owner | `glm-5.3` - the record's model | - | - |
+| z.ai (GLM Coding plan) | `glm-5.3-flash` - weaker, nearly free to the owner | `glm-5.4` - the record's model, picked by the owner on 2026-11-23 (z.ai states no level for it); `glm-5.3` is the one before it | - | - |
 
-z.ai takes the light grades only (ceiling 4): `glm-5.3-flash` at 0-1, `glm-5.3` at 2-4 with the effort rising by grade.
-The `zai` record passes `--effort`, which z.ai's Anthropic endpoint takes as GLM's reasoning depth - both models accepted
-`low` and `max` on 2026-11-20 - so its own `effort` is a real value (`high`), never `default`, which the template would
-pass as is.
+z.ai takes the light grades only (ceiling 4): `glm-5.3-flash` at 0-1, `glm-5.4` at 2-4, all three rows at `max` effort (the
+owner's order of 2026-11-23; lower the rows of grades 2 and 3 to spend z.ai's 5-hour window slower).
+The `zai` record passes `--effort`, which z.ai's Anthropic endpoint takes as GLM's reasoning depth - `glm-5.3` and
+`glm-5.3-flash` accepted `low` and `max` on 2026-11-20 and `glm-5.4` ran with `max` through Claude Code on 2026-11-23 - so
+its own `effort` is a real value (`max`), never `default`, which the template would pass as is. z.ai documents `max` as its
+default level and maps `xhigh`, `max` and `ultra` to it (docs.z.ai/devpack/latest-model). Its `[1m]` model-name suffix and
+`CLAUDE_CODE_AUTO_COMPACT_WINDOW` are not set: the plain names are what the record was proven with.
 
 Codex answers `codex debug models` with the catalog of its own client version: 0.165 lists `gpt-6.1-terra`, `gpt-6.1-sol`,
 `gpt-6-astra`, `gpt-6-sol`, `gpt-6-luna` and the `gpt-5.6-*` family, while the VS Code extension's 0.169 also lists

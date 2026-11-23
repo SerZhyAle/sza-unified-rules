@@ -33,3 +33,8 @@ Completion of the bootstrap adoption against canon **2026.11.10.1** (stamp versi
 ## Record split 2026-11-18 (canon ticket S0120)
 
 Every section of this file dated before this one was moved here verbatim from [../deviceinfo_mob.md](../deviceinfo_mob.md) when the record was split into facts and history. A line number quoted inside such a section counts lines of the record as it was before the move; relative links were deepened by one `../`; nothing else changed.
+
+## Promotion campaign initialized 2026-11-22 (DEVINF-0060 / DEVINF-0064)
+
+- **Campaign ticket created:** `PLAN/DEVINF-0064_free-promotion-campaign.md` (`Draft`) initialized as the single free-promotion campaign ticket for `deviceinfo_mob` (`PROMOTION` section 8), with measured read-only baseline and full shape-`A` channel matrix (`SourceForge import` planned pending owner gate; `AlternativeTo` and `awesome-*` planned/deferred; `IzzyOnDroid` and `Obtainium` deferred; `F-Droid` refused on proprietary `play-services-wearable` dependency; `APKMirror`/`APKPure` refused as non-channels).
+- **SourceForge channel row (`DEVINF-0060`):** Step 0 eligibility verified (`MIT`, public `SerZhyAle/DeviceInfo_Android`, shape `A`, slug `deviceinfo-android` HTTP `404`), `PLAN/DEVINF-0064_free-promotion-campaign/outreach/sourceforge.md` drafted (`66`-byte Short Summary, plain-text Full Description, `Files` + `Git` at mount point `git`, `A`/`A->O`/`A-GO` tags, adapted `v\d+\.\d+\.\d+\.\d+` checksum verification script), and `DEVINF-0060` parked in `BlockQuestions` pending owner decision on `S0008` Play-only scope, `.sha256` release sidecars, SourceForge login/PIN (`A->O`), and `A-GO` approvals; `P:\Contracts\_meta\REGISTRY.md` left unmutated until answered.
