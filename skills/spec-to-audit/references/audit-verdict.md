@@ -128,3 +128,38 @@ Two audit lessons worth generalizing:
 - **A guard test must itself be provable-failable.** A walk that inspects nothing passes just as quietly as a
   clean one.
 - **A rebuild-type bug needs a repeated rebuild** - the first one can never fail.
+
+## The self-audit checklist
+
+Each question has a mechanical answer.
+
+1. **Contract coverage** - does every goal, constraint and acceptance criterion map to a check I ran, or to an
+   explicit `out-of-scope: <reason>`? An unmapped line is FAIL, not a rounding error.
+2. **Freshness** - was every check run *in this run*? Name the command, its exit code, expected|actual.
+3. **Rung match** - is the evidence the cheapest rung that actually proves *this* change, and did I climb high
+   enough?
+4. **Green integrity** - did I read the verdict line of the operation that matters, not a wrapper's exit code?
+   Was every known-red named so it cannot mask my regression?
+5. **Entry precondition** - does the headline behaviour work end to end? If not, the status is In Progress.
+6. **No open manual item under a green.**
+7. **Probe invariant** - a ticket-id probe exists in code iff the ticket is in the needs-manual-test status.
+8. **Scope purity** - every edit inside the declared Files Touched; everything found outside scope was parked
+   and reported, not fixed inline; the active ticket never switched.
+9. **Hygiene gates** - the diff passes them, and this change deleted what it made dead.
+10. **Recurrence** - is this defect type one I have now hit more than once? Propose promoting it to a
+    mechanical gate rather than re-catching it by eye.
+11. **Doc sync** - registry records stated, ship-together surfaces touched, ledger written, catalogs
+    regenerated once.
+12. **House style** - prose and UI only: `..`, plain hyphen, `ё`. Code untouched by these rules.
+13. **Filesystem safety** - no writes to the repo root; scratch under `temp/<ticket>/`; nothing left behind.
+14. **Persona pass** (user-visible changes) - zero jargon, zero mandatory configuration before first success,
+    every failure states a human next step. **For a destructive action the pass condition inverts**: the
+    confirmation fires and cannot be force-bypassed for dangerous targets, and a `--force`/`-y` flag skips
+    only the prompt, never the safety checks.
+15. **Coverage and reach** - does anything here reduce supported platforms, countries, age rating, minimum OS,
+    or device coverage? **Hard stop.**
+16. **Contract boundary** - if the diff changes what another product reads, writes or reproduces, the
+    catalog amendment exists with its version bump, and the conformance vectors ran against the catalog's
+    copy at that version. Code ahead of its contract is FAIL, whatever the tests say.
+17. **Claim audit** - re-read my own final message and delete every "should / probably / seems / looks fixed".
+    Each is either replaced with a cited result or the claim is withdrawn.

@@ -550,3 +550,13 @@ The decision is the owner's: split now, or accept `SZA-RULES05` as a standing no
 ## Record split 2026-11-18 (canon ticket S0120)
 
 Every section of this file dated before this one was moved here verbatim from [../filedo.md](../filedo.md) when the record was split into facts and history. A line number quoted inside such a section counts lines of the record as it was before the move; relative links were deepened by one `../`; nothing else changed.
+
+## Recommendation decisions 2026-11-23 (CANONR-0172)
+
+WINDOWS_PACKAGING carries the shared delivery-shape guidance.
+
+### Candidate NEW docs (not in any shared doc yet)
+- **None required.** Every FileDO delta fits an existing doc via the surgical edits above. If the
+  installer-role + winget-portable + Go-hardening notes grow, a short **`WINDOWS_PACKAGING.md`** appendix
+  (Inno-vs-WiX, setup.exe-vs-portable-zip, MSIX two-app package, PE stamping) could consolidate them - but
+  it is not warranted yet; keep them inline in the overlay + DEVELOPMENT.

@@ -624,3 +624,30 @@ notice's "now" column before the session ran and a version may not be pinned to 
 ## Record split 2026-11-18 (canon ticket S0120)
 
 Every section of this file dated before this one was moved here verbatim from [../universal_agent_kit.md](../universal_agent_kit.md) when the record was split into facts and history. A line number quoted inside such a section counts lines of the record as it was before the move; relative links were deepened by one `../`; nothing else changed.
+
+## Recommendation decisions 2026-11-23 (CANONR-0172)
+
+The canon describes reference adoption for the source repository and content audit of its public adaptation. The root instructions were established on 2026-08-05. The public kit keeps its generalized validation guidance.
+
+### Candidate core edits (PROPOSED - apply only on owner instruction)
+
+- **README.md "How a project consumes these rules"**: add a third bullet next to reference/mirror -
+  **sibling distillation**: a separate public repo that re-expresses the canon (or a subset) in
+  obfuscated form for an outside audience; kept aligned by hand, never carries a canon pointer, and is
+  spread into by alignment audit rather than by the SPREAD_BACK prompt. Names the relationship this
+  repo has so the next survey does not try to treat it as a consumer.
+- **SPREAD_BACK_PROMPT.md Notes**: one line that sibling-distillation repos (universal-agent-kit) are
+  audited for alignment, not run through the consumption steps, and carry no canon pointer.
+
+### Candidate NEW docs (not in any shared doc yet)
+
+- None required.
+
+### Open questions for the owner
+
+- **Private dev rules file (option C, deferred this session).** The repo has no root dev-`CLAUDE.md`
+  governing development of the kit itself - only `kit/CLAUDE.md`/`kit/AGENTS.md`, which are the
+  *shipped artifact* (a `<PLACEHOLDER>` template). A private, git-ignored root `CLAUDE.md` could carry
+  the canon pointer safely (never entering the zip or the site). Decision pending.
+- **Canon §6 doc-context loop.** Keep it omitted from the public kit (current recommendation - it is a
+  portfolio-specific mechanism), or fold in a generalized "document registry" doc? No action taken.

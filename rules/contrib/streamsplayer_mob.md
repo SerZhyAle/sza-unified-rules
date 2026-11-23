@@ -158,40 +158,6 @@ AI_USAGE, AUTHOR, CHANNEL_MATRIX, DEVELOPMENT, DOCUMENTATION_CONCEPT, GITHUB_INT
 NEW_PROJECT_CHECKLIST, PLATFORM_OVERLAYS, PROMOTION, REPOSITORY_LAYOUT, SECURITY_AND_PRIVACY, SITE_CONFIGURATION,
 SUPPORT_AND_FEEDBACK, UI_UX; WINDOWS_PACKAGING is not applicable to overlay B.
 
-## Candidate core edits (PROPOSED - apply only on owner instruction)
-
-- **Harness `close` deletes the spec header's `**Status note:**` line (`tools/harness/spec_catalog/_lib.ps1`,
-  `Sync-SpecHeaderStatus`, found by the StreamsPlayer Android session 2026-10-10, still present at line 2064 on 2026-11-20):**
-  the parameter is `[string] $StatusNote = $null`, and an omitted `[string]` parameter binds as `''`
-  (the type coerces the absent value; measured in pwsh 7.5 - `$null -eq $StatusNote` is `False` even with
-  the default removed), so the caller that omits it - `close.ps1`, `archive.ps1`, `bulk-update.ps1` -
-  reaches the `elseif ($StatusNote -eq '')` "Clear note line" branch, never the documented
-  "$null - preserve" branch. Every `spec_catalog/close` therefore rewrites the header block as the
-  status line alone. Observed twice on 2026-10-10: S0001 and S0002 closed to Verified and both spec
-  headers lost their note line (the journal note survives - the journal is the source of truth, but the
-  header is the half the owner reads at a glance). The function's own comment on the adjacent `[ref]`
-  parameter documents exactly this coercion class. Proposed exact diff:
-
-  ```diff
-  -        if ($null -ne $StatusNote -and $StatusNote -ne '') {
-  +        if ($PSBoundParameters.ContainsKey('StatusNote') -and $StatusNote -ne '') {
-               # Upsert note
-               $newBlock = $newStatusLine + $lineEnd + '**Status note:** ' + $StatusNote + $lineEnd
-  -        } elseif ($StatusNote -eq '') {
-  +        } elseif ($PSBoundParameters.ContainsKey('StatusNote') -and $StatusNote -eq '') {
-               # Clear note line
-               $newBlock = $newStatusLine + $lineEnd
-           } else {
-  ```
-
-  (`$PSBoundParameters.ContainsKey` is how `update.ps1` already distinguishes omitted from explicit
-  empty - `NoteSupplied` - so the fix reuses the corpus's own idiom. The `= $null` default on the
-  parameter declaration should also go: it is the same trap the `[ref]` comment warns about.)
-
-## Candidate NEW docs (not in any shared doc yet)
-
-- None required.
-
 ## Open questions for the owner
 
 Open as of 2026-11-20 (each carried by its project ticket; none blocks the canon):
@@ -210,5 +176,3 @@ channel is added when it opens), 4.4 watch-face composition (the second app exis
 `docs/play/PLAY_LISTING_WATCHFACE*.md`), 4.5 GitHub remote (created 2026-11-13), 4.7 site (Pages is live; the landing is
 STRMOB-0045), public `PLAN/` (local and gitignored by owner decision of 2026-11-16), app signing key import and separate
 upload key registration (completed 2026-11-17, valid 2026-11-19).
-
-

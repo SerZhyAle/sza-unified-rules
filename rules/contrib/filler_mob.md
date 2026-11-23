@@ -65,16 +65,6 @@ Recorded as the owner's session reported it; what the canon session measured its
 ### No delta
 INVARIANTS, NEW_PROJECT_CHECKLIST, DEVELOPMENT section 8 (ticket grammar and Complexity line), SECURITY_AND_PRIVACY (no permission is declared; `sensitiveAccess` is false on the remote stamp, per the owner's report).
 
-## Candidate core edits (PROPOSED - apply only on owner instruction)
-
-- **`tools/harness.ps1` forwarder / adopt-canon step 8:** the forwarder's candidate directories all end in `tools/harness`, so the canon's own compliance gate (`<plugin>/tools/check-compliance.ps1`) cannot be run through it, and every adopter's agent file has to describe how to resolve the plugin root by hand from `installed_plugins.json`. Forward `check-compliance` (and `-PrintDigest`) the same way as the harness scripts, or ship a one-line `tools/check-canon.ps1` in the scaffold. Prevents each repo writing a different plugin-root recipe into its rules file; evidence: `tools/harness.ps1` lines 34-55 of this repository's forwarder.
-- **`spec_catalog/release-queue.ps1` header, line 24:** documents the marker as `current-release:`, while the script reads and writes `current-next-release:` (lines 177, 182, 252) and the scaffold seeds that spelling. Fix the header comment. Evidence: `grep -n "current-" release-queue.ps1` on plugin 2026.1110.1.
-- **adopt-canon step 6a, item 1:** it says a repo with a profile, a ledger and launchers "stands" on day 0 and otherwise runs the scaffold; Tourist_mob carries neither `r0.ps1` nor an `a.ps1` (checked 2026-11-10), so the step as written reads as a gap in an adopted repository; StreamsPlayer_mob has no `r0.ps1` but an `a.ps1` whose `r0` target was not inspected. Say whether the launchers are mandatory for repositories that are worked only through `pq`, or let the FLOW gate (still advisory behind `-CheckTaskFlow`) report them uniformly.
-
-## Candidate NEW docs (not in any shared doc yet)
-
-- None required.
-
 ## Open questions for the owner
 
 Decided on 2026-11-13 and therefore closed here: the application id, the signing mode, the license, the distribution channel, the public remote, the store name and the branding (section `Public presence 2026-11-13`).
@@ -84,4 +74,3 @@ Decided on 2026-11-13 and therefore closed here: the application id, the signing
 - **Contact address.** The owner's contact address is set on the app and is not written into this record. Say if it should be.
 - **Still before publication (the product's own steps, not decided here):** the switch from the provisional id and its release guard (filler-mob:S0007), the creation of the app signing key and the upload key (the owner's step), the 2018 notice and the console review steps (filler-mob:S0022), and the family notices (`hub:S0012`, one footer-grid ticket per map consumer).
 - **Form of the parity inventory against S4521** - decided in the plan pass of S0003, after the upstream has been re-inventoried (carried from 2026-11-10, unchanged).
-

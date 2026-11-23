@@ -209,17 +209,9 @@ owner these rules describe), LOCALIZATION (EN/RU/UK READMEs + site, already core
 (Pages from root - the Overlay A default), SUPPORT_AND_FEEDBACK (`AppFileLogger` current.log intake -
 standard).
 
-## Candidate NEW docs (not in any shared doc yet)
-- **None required.** Every delta fits an existing doc. The dual-runtime shape, the winget failure list, and
-  the runtime-migration pins are all Overlay-A / DEVELOPMENT / CHANNEL_MATRIX inline additions. (If the
-  Windows-packaging notes across FileDO's WiX-vs-Inno + portable-winget and this repo's winget failure list
-  keep growing, a shared `WINDOWS_PACKAGING.md` appendix would consolidate them - same conclusion FileDO
-  reached; still not warranted.)
-
 ## Open questions for the owner (project-specific, not folded into the core)
 - **Stale CLAUDE.md vs live `.gitignore`**: the FMS rules file says the worker is gitignored / absent on a
   fresh clone, but the live `.gitignore` negation commits it. The **universal** rule ("`.gitignore` and the
   rules file must agree; a claim of gitignored-while-committed is drift to fix") landed in
   REPOSITORY_LAYOUT.md, but the concrete CLAUDE.md fix is a project edit outside this collection phase - fix
   the rules file to say "committed", or revert to gitignored? (Owner's call; not a core-doc change.)
-

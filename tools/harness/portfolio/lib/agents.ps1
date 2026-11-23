@@ -809,10 +809,12 @@ function New-PqProviderRecord([string]$Id, [string]$Agent = '') {
             # Claude Code with ANTHROPIC_API_KEY set for this pass only, as zai sets its own token: never in the user
             # environment or ~/.claude/settings.json, where the key would override the subscription sign-in of every session
             # (and interactive Claude Code is not covered by the credits). A named model, not modelByComplexity, because the
-            # record is not the subscription's `claude` (rule 42); the routes stop at grade 5 (Sonnet, effort by grade) so a
-            # hard ticket never spends the one shared balance and the next agent of the order takes it. Credits do not roll
-            # over, so a balance that ends is polled every six hours instead of every thirty minutes: the next credit
-            # arrives with the plan's billing date. The limit text is Anthropic's documented "credit balance is too low".
+            # record is not the subscription's `claude` (rule 42); the routes follow the owner's ladder of `claude` (Sonnet
+            # to grade 5, Opus above, effort by grade) up to the ceiling 9 - a ceiling of 5 sent every hard ticket past this
+            # provider to the next one of the order even when it stood first (owner, 2026-11-23). The workspace's monthly
+            # spend limit is what bounds the spend, not the ceiling. Credits do not roll over, so a balance that ends is
+            # polled every six hours instead of every thirty minutes: the next credit arrives with the plan's billing date.
+            # The limit text is Anthropic's documented "credit balance is too low".
             $rec = [ordered]@{
                 name = 'claude-api'; command = 'claude'
                 argsTemplate = @('-p', '{prompt}', '--permission-mode', '{permissionMode}', '--model', '{model}', '--effort', '{effort}')
@@ -825,6 +827,10 @@ function New-PqProviderRecord([string]$Id, [string]$Agent = '') {
                     [ordered]@{ max = 2; model = 'sonnet'; effort = 'low' }
                     [ordered]@{ max = 4; model = 'sonnet'; effort = 'medium' }
                     [ordered]@{ max = 5; model = 'sonnet'; effort = 'high' }
+                    [ordered]@{ max = 6; model = 'opus'; effort = 'low' }
+                    [ordered]@{ max = 7; model = 'opus'; effort = 'medium' }
+                    [ordered]@{ max = 8; model = 'opus'; effort = 'xhigh' }
+                    [ordered]@{ max = 9; model = 'opus'; effort = 'max' }
                 )
             }
         }

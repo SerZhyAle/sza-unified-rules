@@ -68,21 +68,9 @@ Recorded as the owner's session reported it; nothing below was re-measured from 
 
 INVARIANTS, NEW_PROJECT_CHECKLIST, DEVELOPMENT section 8 (ticket grammar and Complexity line).
 
-## Candidate core edits (PROPOSED - apply only on owner instruction)
-
-- Applied by S0057 on the owner's order, no longer candidates: the `core.autocrlf` line (SITE_CONFIGURATION section 4) and the application-id line (PLATFORM_OVERLAYS overlay B, store-publish skill). The full Google Play channel section, the new-product checklist step and the runbook were folded into the canon by S0058 on 2026-11-13: `skills/store-publish/references/google-play.md` (the runbook as written from this repository's session), `templates/github-pages.yml` (this repository's `pages.yml` without its product literals), the overlay B, CHANNEL_MATRIX, NEW_PROJECT_CHECKLIST, SITE_CONFIGURATION and INVARIANTS lines, and the `spec-draft` exit-2 row. This repository is the reference for all of them.
-- **`r0.ps1` template, `-DryRun`:** a dry run that only prints the order still resolves the child command and exits 2 with "r0: command 'claude' not found" when `claude` is not on the shell's PATH. Observed 2026-11-10 in an unattended session: `claude.exe` lives in `%USERPROFILE%\.local\bin`, which the tool shell's PATH does not carry; the same call exits 0 once that folder is on PATH and prints `child: C:\Users\serzh\.local\bin\claude.exe -p ..`. Either print the order with the command name unresolved, or name `-Command` in adopt-canon step 6a item 3, so "prove it" does not depend on the caller's PATH. Evidence: `r0.ps1` line 80 (`$Command = 'claude'`) and the two runs. Recorded 2026-11-10; not re-observed.
-- **Scaffold default prompts:** the child prompt `r0.ps1` prints says "Work ticket {id} through ONE step of the task lifecycle .. advance it by exactly one status transition .. and stop", while the profile-less default the scaffold announces for `r1`-`r3` says "take this one ticket as far as it goes". Two meanings of one pass under one runner family; an owner reading `-DryRun` output of `r0` and the note of the scaffold sees both in one terminal. Say which is intended, or render both from one string. Evidence: `init-task-flow.ps1 -WhatIf` output, note line, and `r0.ps1 -DryRun` output, `child:` line, 2026-11-10. Recorded 2026-11-10; not re-observed.
-- Confirmed unchanged from `filler_mob.md`, not repeated: the `tools/harness.ps1` forwarder cannot forward `check-compliance`; the `release-queue.ps1` header spells the marker `current-release:` where the script reads `current-next-release:`; adopt-canon step 6a item 1 reads as a gap in repositories worked only through `pq`.
-
-## Candidate NEW docs (not in any shared doc yet)
-
-- None required.
-
 ## Open questions for the owner
 
 - Signing: where the upload keystore lives, and the Play App Signing key import at the first upload - the owner's, not started.
 - Screenshots from a real phone and a real watch (that repository's S0007 device check), the first bundles, the Wear OS opt-in through a testing track, and the first release - all the owner's, all after this record.
 - `PLAN/` is tracked in a now-public repository (21 files, 2026-11-13). Keep it public, or move it to the ignore list as the canon's own repository does - the owner's call; nothing here changes it.
 - The account-level trader status declaration (every existing account by 2027-02-01) - the owner's, not this product's.
-

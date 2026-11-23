@@ -43,7 +43,7 @@
 #   -List [-Release N] [-WithLeases]
 #                         Print the queue, optionally one release block. -WithLeases marks each
 #                         taken row inline and appends the holder detail block.
-#   -SetCurrent N         Point the "current-release:" marker at package N. A label only: the queue
+#   -SetCurrent N         Point the "current-next-release:" marker at package N. A label only: the queue
 #                         ranking reads package headings and line order, never this marker. Holds the
 #                         catalog lock for the read and the rewrite, like -Reconcile (S0144).
 #   -Ship -Release N      Move block N into PLAN/RELEASE_QUEUE_DONE.md and advance the marker. Holds the

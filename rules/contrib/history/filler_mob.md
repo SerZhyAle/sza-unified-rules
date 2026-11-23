@@ -25,3 +25,17 @@ Every section of this file dated before this one was moved here verbatim from [.
 
 - `FILLER-0064` (`PLAN/FILLER-0064_product-promotion-campaign.md`): baseline measured (GitHub `SerZhyAle/Filler_Android`: MIT, 0 stars, 0 forks, 0 releases, `homepage: null`, `usesCustomOpenGraphImage: true`, 11 topics; 14d views 1, clones 50; live Pages root 404, `privacy.html` 200, `sitemap.xml` 200, host-root `robots.txt` 200 without `Filler_Android`), positioning worksheet and derived-fields audit written from `docs/SPECIFICATION_POSITIONING.md`, shape-A channels and tactical phases recorded, cross-repo `SEARCH-INDEXING` ticket filed as `hub:HUBSIT-0028`, parked in `BlockByOtherTask` (`FILLER-0022`, `FILLER-0060`, `FILLER-0061`, `hub:HUBSIT-0028`).
 - `FILLER-0061` (`PLAN/FILLER-0061_sourceforge-channel-row.md`): owner reversed the 2026-11-13 Google-Play-only rule in quiz mode (2026-11-22) to plan SourceForge (`Files` + `Git` at mount point `git`, tentative slug `filler-android`) and GitHub Releases (signed APKs + `.sha256`); updated `CLAUDE.md`, `.sza-canon.json` (`channels: ["github", "play"]`), `tools/site/check-site.ps1`, `docs/releases/channels.json`, `tools/release/preflight.ps1` (`.sha256` sidecars), `docs/contracts/` (`SOURCEFORGE-CHANNEL.md`, `INSTALL-TRUST.md`, `README.md`), `P:\Contracts\_meta\REGISTRY.md` (`SOURCEFORGE-CHANNEL` `partial 0.1`, `INSTALL-TRUST` reopened `pending`), and `FILLER-0064`, and parked `FILLER-0065` (`Draft`) for `INSTALL-TRUST` adoption; parked `FILLER-0061` in `BlockByOtherTask` (`FILLER-0060`, `FILLER-0022`, `FILLER-0056`) pending `identity-manifest.json`, first release assets, live landing, and the owner's `A-GO` sitting.
+
+## Recommendation decisions 2026-11-23 (CANONR-0172)
+
+The scaffolded forwarder can call check-compliance and the release-queue help names current-next-release. Adopt-canon step 6a defines R0 and the project launcher route.
+
+### Candidate core edits (PROPOSED - apply only on owner instruction)
+
+- **`tools/harness.ps1` forwarder / adopt-canon step 8:** the forwarder's candidate directories all end in `tools/harness`, so the canon's own compliance gate (`<plugin>/tools/check-compliance.ps1`) cannot be run through it, and every adopter's agent file has to describe how to resolve the plugin root by hand from `installed_plugins.json`. Forward `check-compliance` (and `-PrintDigest`) the same way as the harness scripts, or ship a one-line `tools/check-canon.ps1` in the scaffold. Prevents each repo writing a different plugin-root recipe into its rules file; evidence: `tools/harness.ps1` lines 34-55 of this repository's forwarder.
+- **`spec_catalog/release-queue.ps1` header, line 24:** documents the marker as `current-release:`, while the script reads and writes `current-next-release:` (lines 177, 182, 252) and the scaffold seeds that spelling. Fix the header comment. Evidence: `grep -n "current-" release-queue.ps1` on plugin 2026.1110.1.
+- **adopt-canon step 6a, item 1:** it says a repo with a profile, a ledger and launchers "stands" on day 0 and otherwise runs the scaffold; Tourist_mob carries neither `r0.ps1` nor an `a.ps1` (checked 2026-11-10), so the step as written reads as a gap in an adopted repository; StreamsPlayer_mob has no `r0.ps1` but an `a.ps1` whose `r0` target was not inspected. Say whether the launchers are mandatory for repositories that are worked only through `pq`, or let the FLOW gate (still advisory behind `-CheckTaskFlow`) report them uniformly.
+
+### Candidate NEW docs (not in any shared doc yet)
+
+- None required.

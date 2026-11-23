@@ -207,3 +207,17 @@ together with the re-sync so the record exists. Per the canon, committing is on 
 ## Record split 2026-11-18 (canon ticket S0120)
 
 Every section of this file dated before this one was moved here verbatim from [../oneclickrunner.md](../oneclickrunner.md) when the record was split into facts and history. A line number quoted inside such a section counts lines of the record as it was before the move; relative links were deepened by one `../`; nothing else changed.
+
+## Recommendation decisions 2026-11-23 (CANONR-0172)
+
+Overlay A records the GitHub Releases-only portable ZIP and its empty frozen-anchor set.
+
+### Candidate core edits (PROPOSED - apply only on owner instruction)
+- **PLATFORM_OVERLAYS.md Overlay A ("no-installer variant" paragraph)**: note that when a portable-zip app
+  ships through **GitHub Release only** (no winget, no Store), the frozen-anchor set is **empty** - there is
+  no update-correlation id to reserve at all. The current text stops at `{winget PackageIdentifier, MSIX
+  Identity}`; add the GitHub-Release-only end of the spectrum so a single-channel portable reads as
+  compliant with zero anchors (evidence: `release.ps1`; OneClickRunner).
+
+### Candidate NEW docs (not in any shared doc yet)
+- **None required.** The one new fact (undistributed shape) is a one-line addition to Overlay A.

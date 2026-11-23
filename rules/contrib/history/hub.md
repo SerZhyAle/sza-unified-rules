@@ -233,3 +233,15 @@ on the intent to monetise: a network-surface row for third-party scripts in SECU
 ## Record split 2026-11-18 (canon ticket S0120)
 
 Every section of this file dated before this one was moved here verbatim from [../hub.md](../hub.md) when the record was split into facts and history. A line number quoted inside such a section counts lines of the record as it was before the move; relative links were deepened by one `../`; nothing else changed.
+
+## Recommendation decisions 2026-11-23 (CANONR-0172)
+
+The shared-kit role is recorded in the project facts. The shared site guidance is carried by SITE_CONFIGURATION.
+
+### Candidate core edits (PROPOSED - apply only on owner instruction)
+
+- **REPOSITORY_LAYOUT.md or SITE_CONFIGURATION.md**: none required. The "shared-kit home" role (one repo hosting `Unified_Rules/` + `kit/`) is repo-specific, not a universal rule - it belongs in this record, not the core.
+
+### Candidate NEW docs (not in any shared doc yet)
+
+- None required. The Web overlay is already carried by SITE_CONFIGURATION.md.

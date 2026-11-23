@@ -59,6 +59,11 @@ Portability rules:
   / `NestedInstallerType: portable`), there is no `installer/` folder and no Inno `AppId` / WiX
   `UpgradeCode` to reserve - the frozen-anchor set collapses to {winget `PackageIdentifier`, MSIX Identity
   `Name`/`Publisher`}. Reference: `StreamsPlayer` (portable-zip + winget-portable + MSIX).
+- **GitHub Releases-only portable ZIP.** The frozen-anchor set is empty for this distribution shape.
+  Reserve channel anchors when the product adds the channel that owns them.
+- **Internal file-copy distribution.** A private tool may adopt the Overlay A source shape with an
+  empty public channel list, an empty frozen-anchor set and no public tag grammar. Apply the version
+  and anchor rules of a public channel when the product adds it.
 
 **Version shape.** Date tag `YY.MMDD.HHmm` (for example, `26.1007.1435`) - monotonic, unique per minute,
 sortable, no manual bump, stamped into every exe at build. Compute it in the portfolio time zone

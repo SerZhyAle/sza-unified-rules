@@ -17,6 +17,9 @@ all. A stamp cannot drift from the repo it lives in, and `tools/check-compliance
 pwsh -File tools/check-compliance.ps1 -RepoRoot <repo>
 ```
 
+For a public adaptation of the canon, use the [public distillation guidance](README.md#how-a-project-consumes-these-rules)
+to align the published payload.
+
 Historical note: the records under [contrib/](contrib/) refer to "SPREAD_BACK_PROMPT" because that is what
 the flow was called when they were written. Those entries are accurate accounts of what happened; only the
 mechanism changed.

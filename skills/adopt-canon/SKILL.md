@@ -284,7 +284,9 @@ Note the digest deliberately covers the **rule docs only** - not `README.md`, no
 ## Step 8 - Verify with evidence
 
 Run the repo's build and gates. Cite exit codes and output. **No completion claim without a fresh run.**
-Re-run the compliance gate and show the before/after counts.
+Re-run the compliance gate and show the before/after counts. With the installed plugin and a
+scaffolded forwarder, run `pwsh -NoProfile -File tools/harness.ps1 check-compliance`.
+For a bootstrap run, use the gate command from step 1.
 
 ## Step 9 - Record and commit
 

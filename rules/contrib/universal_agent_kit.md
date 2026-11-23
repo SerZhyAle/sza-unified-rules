@@ -88,27 +88,3 @@ Core docs with nothing to add for this repo: PLATFORM_OVERLAYS, RELEASE_AND_DIST
 CHANNEL_MATRIX, WINDOWS_PACKAGING, DEVELOPMENT, TESTING_AND_QA, GITHUB_INTERACTION, LOCALIZATION
 (the site's RU/EN/UK is content, not the string-parity workflow), SECURITY_AND_PRIVACY,
 SUPPORT_AND_FEEDBACK, SITE_CONFIGURATION, AUTHOR.
-
-## Candidate core edits (PROPOSED - apply only on owner instruction)
-
-- **README.md "How a project consumes these rules"**: add a third bullet next to reference/mirror -
-  **sibling distillation**: a separate public repo that re-expresses the canon (or a subset) in
-  obfuscated form for an outside audience; kept aligned by hand, never carries a canon pointer, and is
-  spread into by alignment audit rather than by the SPREAD_BACK prompt. Names the relationship this
-  repo has so the next survey does not try to treat it as a consumer.
-- **SPREAD_BACK_PROMPT.md Notes**: one line that sibling-distillation repos (universal-agent-kit) are
-  audited for alignment, not run through the consumption steps, and carry no canon pointer.
-
-## Candidate NEW docs (not in any shared doc yet)
-
-- None required.
-
-## Open questions for the owner
-
-- **Private dev rules file (option C, deferred this session).** The repo has no root dev-`CLAUDE.md`
-  governing development of the kit itself - only `kit/CLAUDE.md`/`kit/AGENTS.md`, which are the
-  *shipped artifact* (a `<PLACEHOLDER>` template). A private, git-ignored root `CLAUDE.md` could carry
-  the canon pointer safely (never entering the zip or the site). Decision pending.
-- **Canon §6 doc-context loop.** Keep it omitted from the public kit (current recommendation - it is a
-  portfolio-specific mechanism), or fold in a generalized "document registry" doc? No action taken.
-

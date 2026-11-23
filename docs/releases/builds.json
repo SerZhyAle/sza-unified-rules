@@ -5,9 +5,9 @@
       "package": "sza",
       "flavor": "default",
       "kind": "release",
-      "version": "2026.1123.3",
-      "builtAt": "2026-11-23T16:31:59+01:00",
-      "note": "tools 3, docs 1, skills 1"
+      "version": "2026.1123.4",
+      "builtAt": "2026-11-23T18:03:47+01:00",
+      "note": "CANONR-0172: Apply and archive canon recommendations"
     }
   ]
 }

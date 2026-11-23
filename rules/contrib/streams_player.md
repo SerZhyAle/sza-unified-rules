@@ -158,11 +158,6 @@ saturated by fastmediasorter_lite/epub/filedo and are NOT repeated.
 ## No delta
 README.md, NEW_PROJECT_CHECKLIST.md, GITHUB_INTERACTION.md, SUPPORT_AND_FEEDBACK.md, AUTHOR.md.
 
-## Candidate NEW docs (not in any shared doc yet)
-- None. Everything fits the existing 16. (Optional: a *consumer-side* mirror of a consumed data-bank contract could live
-  as `docs/contracts/CONTRACT_*.md` even though the consumer does not own the format - worth a one-line mention in
-  PLATFORM_OVERLAYS rather than a new doc.)
-
 ## Open questions for the owner (project-specific; deliberately NOT folded into core)
 The universal truths behind these already landed in core; what remains is StreamsPlayer-repo action the shared docs cannot decide:
 - **MSIX version doc bug (repo-local):** the *universal* remap rule now lives in PLATFORM_OVERLAYS Overlay A, but the
@@ -173,4 +168,3 @@ The universal truths behind these already landed in core; what remains is Stream
   spread-back.
 - **Product-UI locale set:** core now *permits* per-surface coverage (LOCALIZATION §1); whether StreamsPlayer's app
   should add UK to match the site is an owner call.
-

@@ -543,3 +543,12 @@ Full canon reconciliation to **2026.10.02.5** (core digest `sha256:1a8cbbb109975
 ## Record split 2026-11-18 (canon ticket S0120)
 
 Every section of this file dated before this one was moved here verbatim from [../streams_player.md](../streams_player.md) when the record was split into facts and history. A line number quoted inside such a section counts lines of the record as it was before the move; relative links were deepened by one `../`; nothing else changed.
+
+## Recommendation decisions 2026-11-23 (CANONR-0172)
+
+A consumer uses a catalog pointer under docs/contracts, as specified by CONTRACTS section 3.
+
+### Candidate NEW docs (not in any shared doc yet)
+- None. Everything fits the existing 16. (Optional: a *consumer-side* mirror of a consumed data-bank contract could live
+  as `docs/contracts/CONTRACT_*.md` even though the consumer does not own the format - worth a one-line mention in
+  PLATFORM_OVERLAYS rather than a new doc.)

@@ -51,6 +51,9 @@ launcher is standalone: it reads the ledger and the queue file and starts one fr
 it keeps working on a machine that has no harness. The `task-flow-init` skill drives all of this with its
 rehearsal; the rules are the `TASK-FLOW` contract in the shared catalog.
 
+Run the canon gate for this project with `pwsh -NoProfile -File tools/harness.ps1 check-compliance`.
+The same entry point accepts the gate options, including `-PrintDigest` and `-Json`.
+
 ## Release ledger
 
 `releases/release-ledger.ps1` is the one writer of a repository's release ledger (the `RELEASE-LEDGER` contract,

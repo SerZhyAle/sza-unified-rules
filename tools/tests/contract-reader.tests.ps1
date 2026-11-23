@@ -33,12 +33,17 @@ function Write-Json([string]$Path, $Value) {
     $Value | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $Path -Encoding utf8
 }
 try {
+    $contractVersions = @{ 'REPO-STAMP' = '0.14'; 'HARNESS-PROFILE' = '0.22'; 'RULE-DELIVERY' = '0.13' }
+    $lifecycleSkill = 'skills/spec-to-audit/SKILL.md'
     $sources = @('tools/check-compliance.ps1', 'tools/harness/_profile.ps1', 'tools/lib/schema-carrier.ps1',
         'tools/lib/registry-tables.ps1', 'tools/check-contracts.ps1', 'tools/contract-lag.ps1',
-        'templates/.sza-canon.json', 'tools/tests/contract-reader.tests.ps1')
+        'templates/.sza-canon.json', 'tools/tests/contract-reader.tests.ps1', $lifecycleSkill)
     foreach ($file in $sources) {
         if (-not (Test-Path (Join-Path $SourceRoot $file))) { throw "Missing prerequisite: $file" }
     }
+    $skillText = Get-Content -LiteralPath (Join-Path $SourceRoot $lifecycleSkill) -Raw
+    $unattended = [regex]::Match($skillText, '(?ms)^## Unattended pass[^\r\n]*\r?\n(.*?)(?=^## |\z)').Groups[1].Value
+    Assert-That ($unattended -match 'commands\.compileCheck' -and $unattended -match 'no compile command') 'Unattended guidance lost the compile gate'
     $scratch = Join-Path $PSScriptRoot ('../../temp/S0011_contract-reader-follow-up/readers-' + [guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Force $scratch | Out-Null
     $env:SZA_PROFILE_PATH = $null
@@ -57,7 +62,9 @@ catch { Write-Output $_.Exception.Message; exit 2 }
     if ($CatalogRoot) {
         $vectorDir = Join-Path $CatalogRoot 'rule-adoption/vectors'
         $manifest = Get-Content (Join-Path $vectorDir 'manifest.json') -Raw | ConvertFrom-Json
-        Assert-That ($manifest.contracts.'REPO-STAMP' -eq '0.13' -and $manifest.contracts.'HARNESS-PROFILE' -eq '0.17') 'Stale catalog versions'
+        foreach ($id in $contractVersions.Keys) {
+            Assert-That ($manifest.contracts.$id -eq $contractVersions[$id]) "Stale catalog version for $id"
+        }
         Assert-That ($manifest.files.Count -eq 2 -and $manifest.sources.Count -eq $sources.Count) 'Incomplete artifact manifest'
         foreach ($entry in $manifest.files) {
             Assert-That ($entry.path -in @('reader-cases.json', 'reader-verdicts.json')) 'Unexpected vector artifact path'
@@ -155,9 +162,7 @@ catch { Write-Output $_.Exception.Message; exit 2 }
                 if ($case.accepted) {
                     $p = $result.output | ConvertFrom-Json
                     Assert-That ($p.modules.names.Count -eq 0 -and $null -eq $p.paths.changelog -and $p.future -eq 42) 'Payload replacement changed'
-                    # S0040: the default prompt names commands.compileCheck, so an unattended pass
-                    # sees the compile gate whether the repo declares a command or none.
-                    Assert-That ([string]$p.runner.promptTemplate -match 'commands\.compileCheck') 'Unattended prompt lost the compile gate'
+                    Assert-That ([string]$p.runner.promptTemplate -match '^/sza:spec-to-audit .*"Unattended pass"') 'Default prompt no longer points to the unattended guidance'
                     if ($case.compileCheck) {
                         Assert-That ([string]$p.commands.compileCheck -ceq 'pwsh -NoProfile -File tools/Invoke-Tests.ps1 -Build modern' -and
                             $null -ne $p.commands.statusCommands.Implemented -and $null -ne $p.commands.aliases) 'commands.compileCheck declared case wrong'
@@ -275,7 +280,7 @@ artifacts: none
         Write-Json $verdictFile @($observed.ToArray())
         $sourceHashes = foreach ($source in $sources) { @{ path = $source; sha256 = (Get-TextHash (Join-Path $SourceRoot $source)) } }
         Write-Json (Join-Path $ExportDirectory 'manifest.json') @{
-            contracts = @{ 'REPO-STAMP' = '0.13'; 'HARNESS-PROFILE' = '0.17'; 'RULE-DELIVERY' = '0.12' }
+            contracts = $contractVersions
             command = 'pwsh -NoProfile -File tools/tests/export-contract-vectors.ps1 -CatalogRoot <catalog>'
             sourceHash = 'SHA-256 of the source file with CRLF read as LF, so a checkout under any autocrlf setting matches; the files below are catalog-resident and hashed as stored'
             sources = @($sourceHashes); files = @(

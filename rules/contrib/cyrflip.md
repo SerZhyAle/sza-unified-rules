@@ -196,12 +196,6 @@ canonical workflow - matches core §5 and the epub/filedo/streams per-user model
 SUPPORT_AND_FEEDBACK (issue tracker + `serzhyale@gmail.com` in winget `PublisherSupportUrl`, site, About -
 standard), SITE_CONFIGURATION (Pages from `/docs`, no CNAME - already core via filedo/streams).
 
-## Candidate NEW docs (not in any shared doc yet)
-- **None required.** Every delta fits an existing doc (CHANNEL_MATRIX row + MSIX playbook, PLATFORM_OVERLAYS
-  co-shipping shape, RELEASE cost-levers, DOCUMENTATION_CONCEPT ledger shape). The recurring
-  `WINDOWS_PACKAGING.md` appendix idea (raised by filedo/fastmediasorter_lite) plus this repo's VS-Code-channel
-  and CI-cost material would consolidate nicely if that surface keeps growing - still not warranted.
-
 ## Open questions for the owner (project-specific, not folded into core)
 - **No CI tag-format gate.** `release.yml`/`release.ps1` don't validate the `v*` tag shape or parse it as a
   real date (the `^v\d{2}\.\d{4}\.\d{4}$` + `ParseExact` gate StreamsPlayer landed in core). Adopt the same
@@ -216,4 +210,3 @@ standard), SITE_CONFIGURATION (Pages from `/docs`, no CNAME - already core via f
 - **House-style slip.** `docs/index.html:6` `<title>` uses an em-dash (`CyrFlip — fix wrong-layout text`) -
   the house style is a plain hyphen (and CyrFlip is not a book-typography case that would earn the scoped
   allowlist). Fix in the touched line at the next docs edit.
-

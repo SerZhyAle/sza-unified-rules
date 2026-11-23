@@ -104,16 +104,6 @@ DEVELOPMENT, TESTING_AND_QA, GITHUB_INTERACTION, RELEASE_AND_DISTRIBUTION, CHANN
 SECURITY_AND_PRIVACY, LOCALIZATION (single-language app), SUPPORT_AND_FEEDBACK - verified, nothing to add
 beyond what the desktop reference repos already carry.
 
-## Candidate core edits (PROPOSED - apply only on owner instruction)
-- **PLATFORM_OVERLAYS.md Overlay A ("no-installer variant" paragraph)**: note that when a portable-zip app
-  ships through **GitHub Release only** (no winget, no Store), the frozen-anchor set is **empty** - there is
-  no update-correlation id to reserve at all. The current text stops at `{winget PackageIdentifier, MSIX
-  Identity}`; add the GitHub-Release-only end of the spectrum so a single-channel portable reads as
-  compliant with zero anchors (evidence: `release.ps1`; OneClickRunner).
-
-## Candidate NEW docs (not in any shared doc yet)
-- **None required.** The one new fact (undistributed shape) is a one-line addition to Overlay A.
-
 ## Open questions for the owner
 - **Distribution intent** -> **RESOLVED 2026-07-23:** stand up a **GitHub Release** channel. Done -
   `release.ps1` added, first release cut (see follow-up). No frozen anchors needed (GitHub-Release-only).
@@ -123,4 +113,3 @@ beyond what the desktop reference repos already carry.
   it is not the release path, so this is low urgency.
 - **Framework-dependent release** needs the .NET 8 Desktop Runtime on the target. Keep it (small zip), or
   switch to self-contained for a zero-prereq download? `release.ps1 -SelfContained` already supports it.
-

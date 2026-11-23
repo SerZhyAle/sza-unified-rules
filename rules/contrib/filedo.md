@@ -223,14 +223,7 @@ Format: Channel | Trigger | Cost | Auth | Signer | Listing source | Frozen ancho
 NEW_PROJECT_CHECKLIST, RELEASE_AND_DISTRIBUTION (single-edition fan-out confirmed above), AUTHOR (same
 owner profile these rules were written from).
 
-## Candidate NEW docs (not in any shared doc yet)
-- **None required.** Every FileDO delta fits an existing doc via the surgical edits above. If the
-  installer-role + winget-portable + Go-hardening notes grow, a short **`WINDOWS_PACKAGING.md`** appendix
-  (Inno-vs-WiX, setup.exe-vs-portable-zip, MSIX two-app package, PE stamping) could consolidate them - but
-  it is not warranted yet; keep them inline in the overlay + DEVELOPMENT.
-
 ## Open questions for the owner (still open)
 - None. The one live decision (localized "Version History" vs one English source) was **resolved by the
   owner on 2026-07-23: migrate to an English-source-rendered-per-locale changelog** (see Spread-back
   below). The migration itself is a scheduled follow-up, not yet executed.
-

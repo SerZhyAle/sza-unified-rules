@@ -525,9 +525,11 @@ key would fall back to the subscription and spend it under the credits' name. Ne
 in the user environment as `ANTHROPIC_API_KEY`: it overrides the subscription sign-in of every session, and those sessions are not
 covered. The key is made in the Console in the workspace `pq-robots` (monthly spend limit $150 of the one shared $200 balance),
 set to never expire, and moved into the variable from the clipboard, never printed. Start the workers from a terminal or
-PQShell, not from an IDE-extension session. Routes stop at grade 5 (`sonnet`, effort `low`, `medium`, `high` by grade), so a hard
-ticket never spends the shared balance and the next agent of the order takes it; raise the last row to spend more. The owner's
-order of 2026-11-23 puts it before `anthropic`, so the credits that expire are spent first. The limit text is Anthropic's documented "credit
+PQShell, not from an IDE-extension session. Routes follow the ladder of `claude` up to the ceiling 9 (`sonnet` to grade 5, `opus`
+above, effort by grade); the ceiling was 5 first, and a provider standing first in the order then passed every hard ticket to
+the next one (owner, 2026-11-23: codex took them), so the workspace's spend limit is what bounds the spend and a route row
+is how to hold a grade back. The owner's
+order of 2026-11-23 puts it first, so the credits that expire are spent first. The limit text is Anthropic's documented "credit
 balance is too low" (detector `unproven` until it is seen), a spent balance is polled every six hours (`limitPollMinutes`), and
 Console > Billing > Promotional credits shows the balance. Proven on 2026-11-23: one `claude -p --model sonnet --effort low` with the
 key took $0.04 off the promotional credit.

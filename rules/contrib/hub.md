@@ -40,16 +40,7 @@ Format: Channel | Trigger | Cost | Auth | Signer | Listing source | Frozen ancho
 
 Core docs verified with nothing to add: REPOSITORY_LAYOUT (root-served static site fits the layout model), RELEASE_AND_DISTRIBUTION / CHANNEL_MATRIX / WINDOWS_PACKAGING (no releases, no store, no installer - N/A for a site), TESTING_AND_QA (no build/test suite; the gate here is `Unified_Rules/tools/check-rules.ps1` for the canon, and visual review for the page), SECURITY_AND_PRIVACY (static site, no secrets, `.gitignore` drops `*.gsite`/`*.gdoc` Drive pointers and `.research/`), SUPPORT_AND_FEEDBACK / GITHUB_INTERACTION / AUTHOR / AI_USAGE (portfolio-wide, no hub delta).
 
-## Candidate core edits (PROPOSED - apply only on owner instruction)
-
-- **REPOSITORY_LAYOUT.md or SITE_CONFIGURATION.md**: none required. The "shared-kit home" role (one repo hosting `Unified_Rules/` + `kit/`) is repo-specific, not a universal rule - it belongs in this record, not the core.
-
-## Candidate NEW docs (not in any shared doc yet)
-
-- None required. The Web overlay is already carried by SITE_CONFIGURATION.md.
-
 ## Open questions for the owner
 
 - **Canon co-hosting.** `Unified_Rules/` currently ships inside the hub repo, so it is published to Pages along with the site. The spread-back model treats the canon as read-only from *target* repos, but here it is not a separate repo. Keep it co-hosted, or split the canon into its own repo (e.g. `universal-agent-kit` neighbour) so the site deploy and the canon have independent clocks?
 - **`index.html` / `embed.html` duplication.** The two are byte-identical today (maintained in lockstep by hand). Should one be the canonical source and the other a generated copy (to remove the drift risk of editing one and forgetting the other), or is the duplication intentional (two stable entry-point URLs)?
-

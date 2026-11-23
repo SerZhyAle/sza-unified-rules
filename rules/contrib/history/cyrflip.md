@@ -510,3 +510,12 @@ Every section of this file dated before this one was moved here verbatim from [.
 
 CYRFLP-0141: eligible W product with public MIT source; CYRFLP-0024 SourceForge row planned, listing draft prepared, creation awaits owner sign-in and a named go. Integrity check not run.
 
+## Recommendation decisions 2026-11-23 (CANONR-0172)
+
+Windows packaging guidance is carried by WINDOWS_PACKAGING and the channel references.
+
+### Candidate NEW docs (not in any shared doc yet)
+- **None required.** Every delta fits an existing doc (CHANNEL_MATRIX row + MSIX playbook, PLATFORM_OVERLAYS
+  co-shipping shape, RELEASE cost-levers, DOCUMENTATION_CONCEPT ledger shape). The recurring
+  `WINDOWS_PACKAGING.md` appendix idea (raised by filedo/fastmediasorter_lite) plus this repo's VS-Code-channel
+  and CI-cost material would consolidate nicely if that surface keeps growing - still not warranted.

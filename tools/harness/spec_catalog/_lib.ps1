@@ -2061,7 +2061,7 @@ function Sync-SpecHeaderStatus {
     param(
         [Parameter(Mandatory)][string] $PathRef,
         [Parameter(Mandatory)][string] $Status,
-        [string] $StatusNote = $null,
+        [object] $StatusNote,
         # No ` = $null` default: PowerShell coerces a parameter's DEFAULT through its type, and
         # [ref] refuses $null with "Reference type is expected in argument" - so a default would
         # have thrown on every caller that omits this, which is archive.ps1 and bulk-update.ps1,

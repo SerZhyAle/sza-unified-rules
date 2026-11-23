@@ -695,3 +695,14 @@ Every section of this file dated before this one was moved here verbatim from [.
 
 - `FMSWIN-0382` (`BlockQuestions`, extending `FMSWIN-0207`): verified Step 0 eligibility (`SerZhyAle/FastMediaSorter_Lite` public MIT repository, shape W), drafted `docs/specifications/done/207_promotion/outreach/sourceforge.md`, added `docs/contracts/SOURCEFORGE-CHANNEL.md`, and recorded `partial 0.1` in `P:\Contracts\_meta\REGISTRY.md`; live SourceForge sign-in, creation, imports, integrity check, and metadata save await owner session and go.
 - `2026-11-22` (`FMSWIN-0382` quiz & follow-up): owner chose URL name `fastmediasorter` (dated `SOURCEFORGE-CHANNEL` rule-3 exception recorded in `docs/contracts/SOURCEFORGE-CHANNEL.md` and `P:\Contracts\_meta\REGISTRY.md` Section 3), granted go for `Create`, `Files`/`Git@git` import, and `Metadata` save, and deferred the live SourceForge sitting until after release 46 (`BlockQuestions` on the post-release-46 `DO:` sign-in).
+
+## Recommendation decisions 2026-11-23 (CANONR-0172)
+
+WINDOWS_PACKAGING and the winget reference carry the proposed shared packaging guidance.
+
+### Candidate NEW docs (not in any shared doc yet)
+- **None required.** Every delta fits an existing doc. The dual-runtime shape, the winget failure list, and
+  the runtime-migration pins are all Overlay-A / DEVELOPMENT / CHANNEL_MATRIX inline additions. (If the
+  Windows-packaging notes across FileDO's WiX-vs-Inno + portable-winget and this repo's winget failure list
+  keep growing, a shared `WINDOWS_PACKAGING.md` appendix would consolidate them - same conclusion FileDO
+  reached; still not warranted.)

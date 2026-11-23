@@ -42,14 +42,6 @@ Format: Channel | Trigger | Cost | Auth | Signer | Listing source | Frozen ancho
 
 Core docs verified with nothing to add: INVARIANTS.md, DEVELOPMENT.md, TESTING_AND_QA.md, REPOSITORY_LAYOUT.md, DOCUMENTATION_CONCEPT.md.
 
-## Candidate core edits (PROPOSED - apply only on owner instruction)
-
-None required.
-
-## Candidate NEW docs (not in any shared doc yet)
-
-None required.
-
 ## Open questions for the owner
 
 None. All reversible technical choices assumed and confirmed.

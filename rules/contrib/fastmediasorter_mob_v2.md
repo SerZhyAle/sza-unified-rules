@@ -180,35 +180,3 @@ notes), NEW_PROJECT_CHECKLIST, AUTHOR (same owner these rules were written from)
 Pages workflow; nothing epub/filedo/the core don't cover), LOCALIZATION (the `set-android-string.ps1` +
 `check_strings_localized.ps1` parity tooling and EN/RU/UK set are already the core's Android reference; this
 repo uses the ISO `uk`, confirming the core against filedo's non-ISO `ua`).
-
-## Candidate core edits (PROPOSED - do not apply yet)
-- **PLATFORM_OVERLAYS Overlay B**: flavors fan out across multiple stores (Play + sideload + Meta Horizon
-  Store), not just Play tracks; add the sibling-module axis (`:wear`); note the sanctioned shared-`applicationId`
-  exception. Prevents modelling Android as single-channel. Evidence: `build.gradle.kts:304-491`.
-- **PLATFORM_OVERLAYS Editions + Cross-project contracts**: cross-link them - **cross-repo** editions sync by
-  a frozen wire contract (`CONTRACT_*`/`.fmscfg`), **in-repo** editions by `PARITY.md` + gate. Prevents the
-  false impression that all editions live in one repo. Evidence: `fms_companion/docs/CONFIG_FORMAT.md`.
-- **CHANNEL_MATRIX**: add **Sideload / direct-APK** and **Meta Horizon Store / Quest** rows. Evidence: this
-  project ships both.
-- **DEVELOPMENT §9**: add the gate-infrastructure trio - **ratchet baselines** (fail on net-new only),
-  **batched fast-gates** (one process), **diff-scoped dirty-tree closure** (`-ScopeToFile`) - and the
-  **one-call closure facade** (`post-change.ps1`). Prevents each project reinventing gate plumbing and
-  big-bang cleanups. Evidence: Rule 19, §9, §12, `scripts/post-change.ps1`.
-- **DEVELOPMENT (new sub-point) or a "scripting hygiene" note**: **reachable exit codes** under PS `Stop`.
-  Portfolio-wide PowerShell gotcha. Evidence: CLAUDE.md §7 S1070.
-- **DEVELOPMENT §8 / TESTING §4**: the **status-gated debug probe** technique (probe exists iff ticket in a
-  needs-device-test state; never ships; no ticket id in permanent logs). Evidence: CLAUDE.md §2.
-- **AI_USAGE §3**: **subagent MCP isolation** (disable MCP tools for non-UI subagents). §4: record that
-  **committed vs per-user memory is a per-project choice** (both exist in the portfolio). Evidence: CLAUDE.md
-  §6; this repo commits `agent-memory`, epub/filedo do not.
-- **DOCUMENTATION_CONCEPT §2**: add the **structured validated inventory** (`ALL_FEATURES.jsonl`) as a third
-  internal-ledger shape feeding the curated showcase. §5: note a surfaces manifest can be **gated**
-  (settings doc-sync). Evidence: CLAUDE.md §11, Rule 22.
-
-## Candidate NEW docs (not in any shared doc yet)
-- **QUALITY_GATES.md** (LOW confidence - may instead be a DEVELOPMENT §9 expansion): the gate subsystem is
-  rich enough to arguably stand alone - ratchet-baseline authoring, the fast-gates batch, the post-change
-  facade, diff-scoped dirty-tree closure, reachable-exit-code contract, and "promote a recurring finding to
-  an `assert-*` gate". If §9 gets crowded, split it out; otherwise fold in. Evidence: `scripts/quality/`,
-  `scripts/post-change.ps1`, CLAUDE.md §7/§12/Rule 19.
-

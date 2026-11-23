@@ -87,55 +87,6 @@ portfolio product whose artifact is a web application, neither an installed prog
 
 INVARIANTS (beyond the overlay E equivalents below), NEW_PROJECT_CHECKLIST (overlay choice aside), AI_USAGE.
 
-## Candidate core edits (PROPOSED - apply only on owner instruction)
-
-- **adopt-canon step 1 / step 8 - the gate on a repository with no commit:** `check-compliance.ps1` judges only
-  tracked files (`git ls-files`), so on a brand-new repository with an empty index it reports SZA-RULES01 "no
-  agent-instructions file" while `CLAUDE.md` is on disk, and skips every RULES check. Adoption runs before the first
-  commit by design (the handoff forbids committing). This run verified on a scratch copy with a staged index (`git
-  init` and `git add -A` in the session scratchpad, `-RepoRoot` pointed there). A `-IncludeUntracked` switch, or the
-  step saying "stage into a scratch copy", would save every new repository the detour. Evidence: the baseline run on
-  the repository gave 3 errors (CANON01, LAY01, RULES01) with `CLAUDE.md` present; the staged copy gave 0.
-- **SZA-CANON04 fix text:** "Declare one of A B C D" is the only overlay guidance a new repository sees. When none
-  fits, NEW_PROJECT_CHECKLIST step 0 says "draft a new overlay", but the gate's text does not, and nothing says where a
-  draft lives until the canon adopts it (this run: the contrib record plus a stamp `$comment`).
-- **Harness forwarder in `templates/`** - unchanged from `tourist_mob.md`: this repository copied `tools/harness.ps1`
-  from Tourist, the third adopter to do so.
-
-## Candidate NEW docs (not in any shared doc yet)
-
-- **PLATFORM_OVERLAYS "Overlay E - browser application (static files, no install)"**, drafted from this repository;
-  the canon session decides its letter and wording.
-  - **Source root and release mechanics.** A static file set under one source root (`web/` or `src/`), vendored
-    dependencies, an optional build step; served as files. No `publishing/` umbrella: the serving shapes below are the
-    release mechanics, each a folder or a script beside the source.
-  - **Version shape.** Derived mechanically and frozen for the product's life (invariant 8): the desktop date tag
-    `YY.MMDD.HHmm` fits, stamped into the files at build or at packaging. The page shows it in its About view and in
-    every diagnostic report. A Service Worker that caches the page compares the version of the page it holds with a
-    small version file fetched with `cache: no-store` on each start (or reacts to its own `updatefound`), and tells the
-    person that a new version is ready; it never swaps the page under a running session. "Update a real prior install"
-    (invariant 6) becomes: a cached prior page and its stored state (IndexedDB, the Service Worker cache, the
-    non-extractable keys) survive the new version.
-  - **Distribution channels.** Each free: (1) a free static host (GitHub Pages, or any host the owner already has);
-    (2) the copy served by another product's server, when that product carries the files (for FMS_Web, the exchange
-    server - a server change, proposed through the catalog); (3) PWA install from either, through the web app
-    manifest. No store channel; discoverability is the product page, if any.
-  - **Frozen anchors.** The **origin** - scheme, host and port. IndexedDB, the non-extractable device key, granted
-    permissions, the Service Worker and the PWA install all hang on it, so moving the page to another origin turns
-    every browser into a new device of its account and orphans every install: the web analogue of a changed
-    `applicationId`. With it: the web app manifest `id` (the install's identity; when absent it falls back to
-    `start_url`, so set it explicitly at first publish) and the Service Worker scope and `start_url` path. The visible
-    name rides on top and may change.
-  - **Web equivalents of invariants 13 and 14.** Request a browser permission (camera, microphone, clipboard read,
-    notifications, persistent storage, a folder handle) only at the moment the function that needs it is used, each
-    with a one-sentence justification on screen; never at load. Keep the privacy page and the list of permissions the
-    page can request saying the same thing; claim "no telemetry" only if the page sends nothing to any address but the
-    one the person chose (no analytics, no font or script CDN that logs visitors).
-  - **Traps.** No raw sockets; TLS and certificate trust belong to the browser, so a self-signed server needs a trust
-    story (FMS_Web S0006); support differs per engine (File System Access write-back, BarcodeDetector, streamed upload
-    are Chromium-only) and nearly every iOS browser is WebKit; clearing site data or storage eviction erases the
-    device; an `https:` page cannot load `http:` LAN resources (mixed content).
-
 ## Open questions for the owner
 
 - Stack (S0003), public name, remote and visibility (S0021), site (S0022), where the exchange page lives (S0004),
@@ -143,4 +94,3 @@ INVARIANTS (beyond the overlay E equivalents below), NEW_PROJECT_CHECKLIST (over
   deletion address (S0019) - each attached to its ticket and asked once, right before the phase that needs it.
 - The first-release function set, the browser support floor (with "IE" read as Microsoft Edge) and the order of the
   local and exchange tracks - asked in S0002.
-

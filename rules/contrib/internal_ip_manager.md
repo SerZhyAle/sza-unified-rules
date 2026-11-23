@@ -87,20 +87,7 @@ Format: Channel | Trigger | Cost | Auth | Signer | Listing source | Frozen ancho
   release-ledger contracts (`docs/contracts/README.md`). Internal tool with no remote: no promotion ticket.
 - **GITHUB_INTERACTION.md** - CONFIRM (local git only, 5 commits, no remote).
 
-## Candidate core edits (PROPOSED - apply only on owner instruction)
-
-- **PLATFORM_OVERLAYS.md, Overlay A**: add a one-line "internal / private tool" note - an Overlay A
-  source-shape app may legitimately ship to **no public channel**, with no version shape and no frozen
-  anchors (distribution = a file copy to a local/shared path). Distinguishes "unshipped internal tool"
-  from the already-documented "no-installer but still winget+Store" variant. Prevents an agent from
-  fabricating a version stamp / winget manifest for a tool that deliberately has none. Evidence:
-  `build.ps1:32-33,61-81`.
-
-## Candidate NEW docs (not in any shared doc yet)
-- None required.
-
 ## Open questions for the owner
 - **No CI / no release pipeline by design?** Confirm the tool is meant to stay internal-only
   (file-copy distribution), so the missing `publishing/` + version stamp are a deliberate DIVERGE, not
   a gap to fill later.
-

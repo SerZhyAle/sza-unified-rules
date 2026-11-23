@@ -186,3 +186,19 @@ Canon **2026.11.12.3 -> 2026.11.21.1**, core digest `sha256:af1470e6.. -> sha256
 - Updated `rules/contrib/internal_IP_manager.md` in place (5 local commits present, no remote; task-flow harness and release ledger live).
 
 **Verification:** `check-compliance.ps1 -IncludeUntracked` cleared `SZA-CANON03` (`0 error(s), 1 warning(s)`, remaining warning is `SZA-SEC05` under `INTIPM-0022`); `contract-lag.ps1 -Product internal-ip` reports `behind 0`; `spec_catalog/validate.ps1`, `release-queue -Validate`, `r0.ps1 -DryRun`, `document_registry/validate.ps1`, and `build.ps1 check` all pass.
+
+## Recommendation decisions 2026-11-23 (CANONR-0172)
+
+Overlay A permits the private file-copy shape. The product decision for IP Manager includes GitHub Releases and WinGet, with the family recorded in PACKAGE-VERSIONING 0.10.
+
+### Candidate core edits (PROPOSED - apply only on owner instruction)
+
+- **PLATFORM_OVERLAYS.md, Overlay A**: add a one-line "internal / private tool" note - an Overlay A
+  source-shape app may legitimately ship to **no public channel**, with no version shape and no frozen
+  anchors (distribution = a file copy to a local/shared path). Distinguishes "unshipped internal tool"
+  from the already-documented "no-installer but still winget+Store" variant. Prevents an agent from
+  fabricating a version stamp / winget manifest for a tool that deliberately has none. Evidence:
+  `build.ps1:32-33,61-81`.
+
+### Candidate NEW docs (not in any shared doc yet)
+- None required.

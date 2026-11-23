@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Contract | `HARNESS-PROFILE` |
-| Version | 0.21, draft; source reader verified at 0.13; rules 9 to 12 and 14 to 16 implemented, rule 8 in part |
+| Version | 0.22, draft; source reader verified at 0.13; rules 9 to 12 and 14 to 16 implemented, rule 8 in part |
 | Home | the shared contracts catalog, domain `rule-adoption/` (the path is in [CLAUDE.md](../../CLAUDE.md)) |
 | Role | **consumer**, and the schema's owner. Each repository running the harness writes its own profile |
 

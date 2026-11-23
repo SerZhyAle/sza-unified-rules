@@ -98,6 +98,11 @@ This folder is the **source of truth**; a project never re-authors the conventio
 words - however deliberately - has forked them, and the copy will diverge silently. That is the failure this
 whole arrangement exists to end.
 
+**Public distillation.** A repository such as `universal-agent-kit` uses reference adoption for its own
+development and publishes a scrubbed adaptation of the canon as its product. The root instructions
+carry the canon pointer. Align the published payload through a content audit and keep the payload
+portable for its audience.
+
 Each adopting repo records what it adopted in a `.sza-canon.json` stamp at its root. That stamp, not a table
 in this folder, is the live map of adoption - `tools/check-compliance.ps1` reads it and reports staleness.
 

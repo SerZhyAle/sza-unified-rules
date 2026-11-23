@@ -32,3 +32,15 @@ Re-audit of WINSUT-0001 (formerly S0001) on fresh gates found the stamp stale an
 
 - `WINSUT-0046` (Draft, promotion campaign): created as the product's single promotion ticket (`PROMOTION` section 8; `promote` skill Steps 0-4) with 2026-11-22 read-only baseline (public GitHub repo currently empty, 0 releases, `site.kind: "none"`), positioning worksheet, `W + C` channel table, `outreach/sourceforge.md`, and `GO_LEDGER.md`.
 - `WINSUT-0044` (BlockByOtherTask -> `WINSUT-0024`, `WINSUT-0043`): decided SourceForge row as `planned` (MIT `LICENSE`, `W + C` shape, `sza-windows-suite` 404-verified), drafted listing texts (59-byte summary, 978-char description), added `docs/contracts/SOURCEFORGE-CHANNEL.md` + `win-suite` `SOURCEFORGE-CHANNEL` `partial 0.1` registry row; live SourceForge project creation, GitHub imports, identity-manifest logo, metadata save, and SHA-256 verification await `WINSUT-0024`, `WINSUT-0043`, and the owner's SourceForge sitting.
+
+## Recommendation decisions 2026-11-23 (CANONR-0172)
+
+The existing documents cover the project shape.
+
+### Candidate core edits (PROPOSED - apply only on owner instruction)
+
+None required.
+
+### Candidate NEW docs (not in any shared doc yet)
+
+None required.

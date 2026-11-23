@@ -305,7 +305,8 @@ release rungs it skipped.
 ## Stage 5 - Self-audit
 
 **Load [references/audit-verdict.md](references/audit-verdict.md)** for the outcome vocabulary, the scoring
-table, the grep rules, and the `## Last Audit` block format.
+table, the grep rules, and the `## Last Audit` block format. Complete the
+[self-audit checklist](references/audit-verdict.md#the-self-audit-checklist) there.
 
 The self-audit is a **separate, static pass** against the spec's own contract - not a re-run of the build.
 That is what keeps it cheap enough to actually run.
@@ -412,7 +413,8 @@ Load [references/audit-campaign.md](references/audit-campaign.md) for the method
 An unattended pass runs without human interaction in a headless queue session.
 
 - **The ticket and tool are named up front**: the ticket is `<spec path>` in `<repo root>`; change its status only with `<update.ps1 path> -Id <id> -Status <s>`, never by editing the `**Status:**` line.
-- **Strict repo boundary**: never read or change a ticket of another repository.
+- **Repository scope**: work within this repository. For a cross-repository blocker, follow the
+  filing and waiting-status procedure in Stage 1.
 - **Foreground execution only**: this is a headless pass: start no background agent or command, wait for each in the foreground, and set the status before your last message. In headless mode the end of the turn is the end of the pass; orphaned background work fails.
 - **Compile gate (S0040)**: if this pass edited compiled source, run the repository's declared
   compile-only command - `commands.compileCheck` in this repo's `.sza-profile.json` - once, in the
@@ -423,41 +425,6 @@ An unattended pass runs without human interaction in a headless queue session.
 - **Autonomous stopping**: take this one ticket as far as it goes and do not start another. When it cannot move, set the matching `Block*` status with a `statusNote` naming what is missing.
 - **Claim**: a lease on the ticket whose reason is `run-spec-queue` followed by an instance name is the claim the runner made for you: it is yours.
 - **Context handoff for in-progress work**: the one reason to end a pass early is a context that has really grown - a figure you can read of at least 150000 tokens. Then write `<tempDir>/<id>/context-handoff.json` (`id`; `tokens`, that figure as a plain number; `boundary`, what is done and the next step) and end; the runner relaunches the ticket with a fresh context, up to `handoffCap`. A marker whose `tokens` is missing, zero or under 150000 is no handoff: the runner does not relaunch it, and the pass is counted like any other that ended with the status unchanged (an idle run, the ticket dropped for the rest of the run). A phase boundary is not a reason to stop - plan research, the surface inventory and the plan self-review are steps of one pass, not passes. A child that has no reading of its own context size does not hand off: it takes the ticket as far as it goes and sets the status the work honestly reached.
-
-## The self-audit checklist
-
-Each question has a mechanical answer.
-
-1. **Contract coverage** - does every goal, constraint and acceptance criterion map to a check I ran, or to an
-   explicit `out-of-scope: <reason>`? An unmapped line is FAIL, not a rounding error.
-2. **Freshness** - was every check run *in this run*? Name the command, its exit code, expected|actual.
-3. **Rung match** - is the evidence the cheapest rung that actually proves *this* change, and did I climb high
-   enough?
-4. **Green integrity** - did I read the verdict line of the operation that matters, not a wrapper's exit code?
-   Was every known-red named so it cannot mask my regression?
-5. **Entry precondition** - does the headline behaviour work end to end? If not, the status is In Progress.
-6. **No open manual item under a green.**
-7. **Probe invariant** - a ticket-id probe exists in code iff the ticket is in the needs-manual-test status.
-8. **Scope purity** - every edit inside the declared Files Touched; everything found outside scope was parked
-   and reported, not fixed inline; the active ticket never switched.
-9. **Hygiene gates** - the diff passes them, and this change deleted what it made dead.
-10. **Recurrence** - is this defect type one I have now hit more than once? Propose promoting it to a
-    mechanical gate rather than re-catching it by eye.
-11. **Doc sync** - registry records stated, ship-together surfaces touched, ledger written, catalogs
-    regenerated once.
-12. **House style** - prose and UI only: `..`, plain hyphen, `ё`. Code untouched by these rules.
-13. **Filesystem safety** - no writes to the repo root; scratch under `temp/<ticket>/`; nothing left behind.
-14. **Persona pass** (user-visible changes) - zero jargon, zero mandatory configuration before first success,
-    every failure states a human next step. **For a destructive action the pass condition inverts**: the
-    confirmation fires and cannot be force-bypassed for dangerous targets, and a `--force`/`-y` flag skips
-    only the prompt, never the safety checks.
-15. **Coverage and reach** - does anything here reduce supported platforms, countries, age rating, minimum OS,
-    or device coverage? **Hard stop.**
-16. **Contract boundary** - if the diff changes what another product reads, writes or reproduces, the
-    catalog amendment exists with its version bump, and the conformance vectors ran against the catalog's
-    copy at that version. Code ahead of its contract is FAIL, whatever the tests say.
-17. **Claim audit** - re-read my own final message and delete every "should / probably / seems / looks fixed".
-    Each is either replaced with a cited result or the claim is withdrawn.
 
 ## Composition with the repo's own skills
 
