@@ -119,10 +119,6 @@ if (-not [string]::IsNullOrWhiteSpace($ClaimAs)) {
 # every ranking.
 . (Get-SzaHarnessScript 'batch/_idle-runs.ps1')
 
-# TASK-FLOW 0.24 rule 67: a ticket whose audit left only release-tier work is not offered again on the
-# same code tree. The audit is static, so a second one over the same files says nothing new.
-. (Get-SzaHarnessScript 'batch/_release-wait.ps1')
-
 <# TASK-FLOW rules 18 and 44: in a repository registered with the portfolio, the order of its tickets is the line
    order of its rows in the portfolio queue file; the plan files order only the tickets that file does not name. #>
 . (Join-Path $PSScriptRoot '_portfolio-order.ps1')
@@ -430,27 +426,6 @@ foreach ($cand in $rankedLive) {
             reason = 'idle-hold'
             detail = ("{0} run(s) in a row did not move the status, last outcome '{1}' at {2} - held until the spec file is edited or a run moves the status; an explicit id is never held" -f `
                     $idleSeries.Count, $idleSeries.LastOutcome, $idleSeries.LastFinishedAt)
-        }
-        continue
-    }
-
-    # Rule 67. Tested after the idle hold (a ticket in both states keeps the older, plainer reason) and
-    # before the verdict, as it always was. Only a ticket whose newest journal row stamped a tree
-    # pays for a stamp of the tree now; every other candidate costs one string test. A throw here must not
-    # stall the ranking: no answer reads as "not withheld".
-    $awaitsRelease = $false
-    if (-not [string]::IsNullOrWhiteSpace([string]$idleSeries.LastAwaitsRelease)) {
-        try {
-            $awaitsRelease = Test-AwaitsRelease -SpecPath ([string]$cand.file) -Status ([string]$cand.status) -RecordedStamp ([string]$idleSeries.LastAwaitsRelease)
-        } catch {
-            $awaitsRelease = $false
-        }
-    }
-    if ($awaitsRelease) {
-        $autoSkipped += [PSCustomObject]@{
-            id     = $cand.id
-            reason = 'awaits-release'
-            detail = 'its last audit left only release-tier work (FAIL 0, WARN 0, RELEASE >= 1) and the code tree is the one stamped when that pass ended - held until the tree changes or the status moves; an explicit id is never held'
         }
         continue
     }

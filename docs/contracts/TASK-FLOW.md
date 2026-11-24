@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Contract | `TASK-FLOW` |
-| Version | 0.42, draft |
+| Version | 0.43, draft |
 | Home | the shared contracts catalog, domain `task-flow/` (the path is in [CLAUDE.md](../../CLAUDE.md)) |
 | Role | **shared implementation, partial**: `tools/harness/` supplies the ticket tools, repository runner and day-0 scaffold; `tools/harness/portfolio/` supplies the S0015 dispatcher, registry, queue, rank and event log. Remaining portfolio features belong to S0016. The owner is `shared`, so this repository edits the contract only through the canon session |
 
@@ -191,3 +191,12 @@
   works an `Implemented` ticket; the `Implemented` entry of `commands.statusCommands` is read by that path and by
   `release-plan.ps1` only. The PQShell panel's list of runnable statuses drops `Implemented` too (source edit, not
   compiled). Covered by `tools/tests/picker-eligibility.tests.ps1` (5 cases, fast).
+- 0.43 (2026-11-24, CANONR-0176): rule 67, the hold of a ticket that waits for the release, is withdrawn and keeps its
+  number - after 0.42 no ranking offers an `Implemented` ticket, so nothing was left to hold. `batch/_release-wait.ps1`
+  and its suite `tools/tests/release-wait.tests.ps1` are deleted; `spec-next-preflight.ps1` no longer names the reason
+  `awaits-release`; `run-spec-queue.ps1` no longer writes the run-row field `awaitsRelease` and takes no code-tree stamp
+  after a pass; `_idle-runs.ps1` no longer reads it; `portfolio/lib/rank.ps1` no longer writes the `excluded` count
+  `awaitsRelease` (eight counts, `EVENTS.md` section 11). The idle hold of rule 24 is unchanged. Checked by
+  `picker-eligibility.tests.ps1` and `idle-hold.tests.ps1` (fast), a dry run of the runner and a direct call of
+  `Get-PqRank` (8 checks, 4 of them fail against the previous `rank.ps1`); `portfolio-queue.tests.ps1` was edited and
+  not run (release tier).

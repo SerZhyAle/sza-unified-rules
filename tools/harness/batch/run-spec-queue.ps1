@@ -280,7 +280,6 @@ param(
 
 . (Join-Path $PSScriptRoot '..\_profile.ps1')
 . (Join-Path $PSScriptRoot '_idle-runs.ps1')
-. (Join-Path $PSScriptRoot '_release-wait.ps1')
 . (Join-Path $PSScriptRoot '_limit-hold.ps1')
 . (Join-Path $PSScriptRoot '_pass-usage.ps1')
 . (Join-Path $PSScriptRoot '_context-handoff.ps1')
@@ -574,7 +573,7 @@ function Get-TicketTitle {
         }
         try {
             # S0084 / TASK-FLOW rule 70: a finished ticket's spec file has left paths.specsDir with its status, so the
-            # file is resolved from the ledger row's own `file` first (as Get-TicketSpecFile does), then both
+            # file is resolved from the ledger row's own `file` first, then both
             # directories. Get-SzaSpecTitleFromFile reads with ReadAllLines: leaving a foreach over ReadLines by
             # return keeps the spec open in this long-lived runner, and the agent's write of the same spec is
             # then refused.
@@ -816,22 +815,6 @@ function Get-TicketStatus {
         $raw = & pwsh -NoProfile -File $select -Id $Id -Format json 2>$null | Out-String
         if ([string]::IsNullOrWhiteSpace($raw)) { return $null }
         return ($raw | ConvertFrom-Json).status
-    } catch {
-        return $null
-    }
-}
-
-function Get-TicketSpecFile {
-    # The repo-relative spec file of a ticket, from the same select call as Get-TicketStatus; $null
-    # when it cannot be read (a missing answer, never a failed runner).
-    param([string] $Id)
-    try {
-        $raw = & pwsh -NoProfile -File $select -Id $Id -Format json 2>$null | Out-String
-        if ([string]::IsNullOrWhiteSpace($raw)) { return $null }
-        $rec = $raw | ConvertFrom-Json
-        if ($rec -is [array]) { $rec = $rec[0] }
-        if ([string]::IsNullOrWhiteSpace([string] $rec.file)) { return $null }
-        return [string] $rec.file
     } catch {
         return $null
     }
@@ -1163,10 +1146,7 @@ function Add-RunRecord {
         $ExitCode,
         [int] $Minutes,
         [string] $Complexity = '',
-        $Usage = $null,
-        # TASK-FLOW 0.24 rule 67: the code-tree stamp of a pass that ended at Implemented with nothing
-        # left but release work. Empty = not written; absent never reads as "nothing awaits".
-        [string] $AwaitsRelease = ''
+        $Usage = $null
     )
     $record = [pscustomobject][ordered]@{
         id           = $Id
@@ -1187,9 +1167,6 @@ function Add-RunRecord {
         exitCode     = $ExitCode
         minutes      = $Minutes
         finishedAt   = (Get-Date).ToString('s')
-    }
-    if (-not [string]::IsNullOrWhiteSpace($AwaitsRelease)) {
-        Add-Member -InputObject $record -NotePropertyName 'awaitsRelease' -NotePropertyValue $AwaitsRelease
     }
     if ($null -ne $Usage) {
         Add-Member -InputObject $record -NotePropertyName 'usage' -NotePropertyValue ([pscustomobject]$Usage.usage)
@@ -2232,33 +2209,15 @@ while ($true) {
         }
     }
 
-    # TASK-FLOW 0.24 rule 67: a pass that ended at Implemented with an audit that left only release work
-    # stamps the code tree into its row, and the picker then withholds the ticket until the tree differs.
-    # Taken only after a pass that ran to its end - a killed or failed child leaves the tree in flux.
-    # A failure to read or stamp is no stamp, never a failed runner.
-    $passAwaitsRelease = ''
-    if ($outcome -in @('ok', 'no-progress-or-claim-lost') -and $statusAfter -ceq 'Implemented') {
-        try {
-            $passSpecFile = Get-TicketSpecFile -Id $id
-            if ($passSpecFile) { $passAwaitsRelease = Get-AwaitsReleaseStamp -SpecPath $passSpecFile -StatusAfter $statusAfter }
-        } catch {
-            $passAwaitsRelease = ''
-        }
-    }
-
     $runRecord = Add-RunRecord -Id $id -ChildModel $childModel -StatusBefore $statusBefore `
             -StatusAfter $statusAfter -Moved $moved -Outcome $outcome -ExitCode $exitCode `
-            -Minutes $elapsed -Complexity $childComplexity -Usage $passUsage `
-            -AwaitsRelease $passAwaitsRelease
+            -Minutes $elapsed -Complexity $childComplexity -Usage $passUsage
 
     # Read AFTER the row is written, and forced fresh, so the series includes the run that just
     # ended. The count is attached to the in-memory record only - the journal is the input to this
     # number, so writing it back into the journal would make the series feed on itself.
     $series = Get-IdleRunSeries -Id $id -Refresh
     Add-Member -InputObject $runRecord -NotePropertyName 'idle' -NotePropertyValue $series.Count -Force
-    if ($passAwaitsRelease) {
-        Write-Host ("  {0} waits for the release (only release-tier work is left) - automatic ranking passes it over while the code tree is unchanged." -f $id) -ForegroundColor Cyan
-    }
 
     $colour = if ($moved) { 'Green' } elseif ($outcome -eq 'context-handoff') { 'Cyan' } elseif ($outcome -eq 'limit-hit') { 'Magenta' } elseif ($outcome -eq 'provider-error') { 'DarkYellow' } elseif ($outcome -ne 'ok') { 'Red' } else { 'Yellow' }
     Write-Host ''

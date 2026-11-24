@@ -147,7 +147,6 @@ function Get-PqNamedNotRunReason {
         'notOffered' { return 'the picker does not offer the ticket now' }
         'pickerFailed' { return 'the picker failed' }
         'idle-hold' { return 'the picker holds it (idle-run hold)' }
-        'awaits-release' { return 'the picker holds it (only release-tier work is left and the code tree is unchanged since its last audit)' }
         'owner-gate' { return 'the picker holds it (owner gate)' }
         '' { return 'it is not offered' }
         default { return "the picker holds it ($why)" }
@@ -198,9 +197,9 @@ function Get-PqRank {
     $sw = [Diagnostics.Stopwatch]::StartNew()
     if (-not $Fill) { $Fill = [string](Get-PqRankValue $Registry 'fill' 'depth') }
     if ($Slots -lt 0) { $Slots = [int](Get-PqRankValue $Registry 'maxWorkers' 5) }
-    # Nine counts (TASK-FLOW, the EVENTS.md amendment "the counts of rank.result"): the five that had no writer are
-    # gone and the release wait has a count of its own.
-    $excluded = [ordered]@{ blocked = 0; leased = 0; held = 0; gated = 0; malformed = 0; idleHold = 0; awaitsRelease = 0
+    # Eight counts (TASK-FLOW, EVENTS.md sections 10 and 11): the five that had no writer are gone, and so is the count
+    # of the release wait that rule 67 withdrew in 0.43.
+    $excluded = [ordered]@{ blocked = 0; leased = 0; held = 0; gated = 0; malformed = 0; idleHold = 0
         xrepo = 0; occupied = 0 }
     $autoSkip = [ordered]@{}
     $skipped = [Collections.Generic.List[object]]::new()
@@ -286,8 +285,6 @@ function Get-PqRank {
                 if ($autoSkip.Contains($reason)) { $autoSkip[$reason]++ } else { $autoSkip[$reason] = 1 }
                 switch ($reason) {
                     'idle-hold' { $excluded.idleHold++ }
-                    # TASK-FLOW rule 67 as amended: counted apart from the idle hold (EVENTS.md, "the counts of rank.result").
-                    'awaits-release' { $excluded.awaitsRelease++ }
                     'owner-gate' { $excluded.gated++ }
                     default { $excluded.blocked++ }
                 }

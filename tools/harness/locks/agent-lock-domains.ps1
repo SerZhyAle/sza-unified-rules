@@ -57,9 +57,8 @@ if ($MyInvocation.InvocationName -ne '.') {
 # S2402: the table is the project's (locks.domains in the profile: name, type, rank); the
 # rank rule and the fail-closed resolution below are the canon's and do not move.
 # The loop variables below are named for this file on purpose. It is dot-sourced, so a bare `$d` or `$r`
-# lands in the CALLER's scope and silently overwrites the caller's own variable of that name - which the
-# release-wait library (batch/_release-wait.ps1) made a live hazard by loading this file into the picker
-# and the runner, both of which use `$d` and `$r` at the top level.
+# lands in the CALLER's scope and silently overwrites the caller's own variable of that name; a caller that
+# uses `$d` and `$r` at the top level (the picker and the runner do) must never be hit by that.
 $Script:AgentLockDomainTable = @(
     foreach ($lockDomainDef in @(Get-SzaProfileValue 'locks.domains')) {
         [pscustomobject]@{ Domain = [string]$lockDomainDef.name; Type = [string]$lockDomainDef.type; Rank = [int]$lockDomainDef.rank }
@@ -199,27 +198,6 @@ function Sort-AgentLockDomains {
     foreach ($name in $unique) { [void](Assert-AgentLockDomainName -Name $name) }
     return @(Get-AgentLockDomainTable | Where-Object { $unique -contains $_.Domain } |
         ForEach-Object { $_.Domain })
-}
-
-function Test-AgentLockPathExempt {
-    <#
-    .SYNOPSIS
-        True when the project's own path rules exempt this path from every code domain.
-    .DESCRIPTION
-        The same rule Resolve-CodeDomainsForPaths applies (locks.pathRules, first match wins, a rule
-        whose domain is null = exempt), asked of one path. It exists so a second reader of "what
-        counts as the code tree" - the release-wait stamp (batch/_release-wait.ps1) - reads the
-        project's rules instead of keeping a list of its own (the S1621 rule). A path no rule names
-        is NOT exempt: this is the fail-closed answer, and for that reader it means "counts as a
-        change", the safe direction to be wrong.
-    #>
-    param([Parameter(Mandatory)][string]$Path)
-
-    $normalised = (($Path -replace '\\', '/').Trim() -replace '^\./')
-    foreach ($candidate in $Script:AgentLockPathRules) {
-        if ($normalised -match $candidate.Pattern) { return ($null -eq $candidate.Domain) }
-    }
-    return $false
 }
 
 function Resolve-CodeDomainsForPaths {

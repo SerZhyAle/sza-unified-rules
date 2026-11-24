@@ -17,7 +17,9 @@
   rows that rule 12 names, counts them as `legacyApi` and never edits them; the render marks them.
 - Every probe in `tools/harness/releases/_probes.ps1` only reads (rule 8): `gh` read verbs, `msstore submission get`
   behind an allow-list, a transient Play edit that is deleted, public endpoints. A missing tool or credential is
-  `unverified` on the output and never an event.
+  `unverified` on the output and never an event. The Play edit is opened only under the application's Play lock
+  (`tools/harness/releases/_play-lock.ps1`, the section "The Play lock" of that folder's README, `GOOGLE-PLAY` rule 19):
+  one try, and no edit when a publisher holds it.
 - The Play probe writes no event (rule 12): the track configuration and the release lifecycle of its one track are
   printed as readings scoped to that track and its version codes, and a Play version is `live` only by a `confirm`
   with the public store page.

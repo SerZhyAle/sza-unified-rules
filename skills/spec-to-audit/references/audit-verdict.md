@@ -81,12 +81,11 @@ audit file per run, which accumulates noise nobody reads.
 - [ ] <the check a human must run, and what would count as passing>
 ```
 
-**The `**Counts:**` line is read by a machine, so write it in exactly that shape** - all seven words and a number
-after each, on one line, as the first such line of the block. When an audit ends with `FAIL 0`, `WARN 0` and
-`RELEASE` of at least one on a ticket that stays `Implemented`, the portfolio runner stamps the code tree and the
-picker stops offering the ticket until the tree changes (TASK-FLOW rule 67): a second static audit of the same
-files could not say anything new. A block that holds the verdict only as prose, or leaves `RELEASE` out, is read as
-unknown, and the ticket is offered again until the idle hold stops it.
+**Write the `**Counts:**` line in exactly that shape** - all seven words and a number after each, on one line, as the
+first such line of the block - so that a script can read the tally. The canon's harness no longer acts on it: a ticket
+that stays `Implemented` is not offered by the automatic ranking whatever its counts say (TASK-FLOW rule 18), and the
+hold that once stamped the code tree after a release-only audit is withdrawn (rule 67, 0.43). What stops a pass that
+works a ticket without moving it is the idle hold of rule 24.
 
 ## The probe-invariant sweep
 

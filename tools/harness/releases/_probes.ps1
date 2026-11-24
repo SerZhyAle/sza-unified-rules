@@ -23,8 +23,14 @@
     Credentials: the Play probe reads a Google service account key from the file SZA_PLAY_SERVICE_ACCOUNT_JSON names,
     outside every repository; nothing a probe reads or receives is written to the ledger except the public facts.
 
+    The Play probe opens a transient edit, which Play counts as the application's one edit and which can delete a
+    publisher's: it takes the per-application lock of `_play-lock.ps1` around that read, tries once, and opens no edit when
+    it cannot take it (GOOGLE-PLAY rule 19, CANONR-0174).
+
     Exit codes: none - a dot-sourced library.
 #>
+
+. (Join-Path $PSScriptRoot '_play-lock.ps1')
 
 function New-RlProbeResult {
     param([bool]$Ok, [string]$Reason = '', [AllowNull()][AllowEmptyCollection()][object[]]$Observed = @(), [AllowNull()][AllowEmptyCollection()][object[]]$Diagnostics = @())
@@ -337,9 +343,10 @@ function Format-RlProbeDiagnostic {
 }
 
 function Invoke-RlProbePlay {
-    param($Spec)
+    param($Spec, [Parameter(Mandatory)][string]$RepoRoot)
     $appId = [string](Get-RlProp $Spec 'id')
     if (-not $appId) { return (New-RlProbeResult -Ok $false -Reason 'no applicationId (id) in channels.json') }
+    if (-not (Test-RlApplicationId $appId)) { return (New-RlProbeResult -Ok $false -Reason "'$appId' in channels.json is not an application id") }
     $track = [string](Get-RlProp $Spec 'track'); if (-not $track) { $track = 'production' }
     $keyFile = [string]$env:SZA_PLAY_SERVICE_ACCOUNT_JSON
     if (-not $keyFile -or -not (Test-Path -LiteralPath $keyFile -PathType Leaf)) {
@@ -367,25 +374,38 @@ function Invoke-RlProbePlay {
         $failed.Add("the Play API did not return the release lifecycle of track '$track'")
         $diag.Add((New-RlPlayGap -Track $track -What 'release lifecycle' -Reason 'the read did not answer; nothing is known from it'))
     }
-    # 2. The track configuration: an edit is opened for the read and deleted again.
-    $edit = $null
-    try { $edit = Invoke-RestMethod -Method Post -Uri "$base/edits" -Headers $h -ContentType 'application/json' -Body '{}' -TimeoutSec 25 }
-    catch {
-        $failed.Add("the Play API refused to open a read edit for $appId (no access, or the app does not exist)")
-        $diag.Add((New-RlPlayGap -Track $track -What 'track configuration' -Reason 'no read edit could be opened; nothing is known from it'))
-    }
-    if ($null -ne $edit) {
+    # 2. The track configuration: an edit is opened for the read and deleted again. Play keeps one edit per application,
+    # so the application's lock (GOOGLE-PLAY rule 19) is held from before the edit opens until it is deleted. One try, no
+    # wait: when a publisher or another probe holds it, no edit is opened and the gap says so.
+    $lock = Enter-RlPlayAppLock -RepoRoot $RepoRoot -AppId $appId
+    if (-not $lock.held) {
+        $lockName = if ($lock.path) { ConvertTo-RlRepoPath -RepoRoot $RepoRoot -Path $lock.path } else { "of $appId" }
+        $failed.Add("no edit was opened for $appId because its Play lock $lockName is not ours ($($lock.reason))")
+        $diag.Add((New-RlPlayGap -Track $track -What 'track configuration' -Reason "no read edit was opened, so as not to delete another edit: the Play lock $lockName is not ours ($($lock.reason)); nothing is known from it"))
+    } else {
         try {
-            $t = Invoke-RestMethod -Method Get -Uri "$base/edits/$($edit.id)/tracks/$track" -Headers $h -TimeoutSec 25
-            $trackOk = $true
-            $rows = @(ConvertFrom-RlPlayTrack -Track $t -TrackName $track -AppId $appId)
-            foreach ($d in $rows) { $diag.Add($d) }
-            if ($rows.Count -eq 0) { $diag.Add((New-RlPlayGap -Track $track -What 'track configuration' -Reason 'the track lists no release')) }
-        } catch {
-            $failed.Add("the Play API did not return track '$track'")
-            $diag.Add((New-RlPlayGap -Track $track -What 'track configuration' -Reason 'the read did not answer; nothing is known from it'))
+            $edit = $null
+            try { $edit = Invoke-RestMethod -Method Post -Uri "$base/edits" -Headers $h -ContentType 'application/json' -Body '{}' -TimeoutSec 25 }
+            catch {
+                $failed.Add("the Play API refused to open a read edit for $appId (no access, or the app does not exist)")
+                $diag.Add((New-RlPlayGap -Track $track -What 'track configuration' -Reason 'no read edit could be opened; nothing is known from it'))
+            }
+            if ($null -ne $edit) {
+                try {
+                    $t = Invoke-RestMethod -Method Get -Uri "$base/edits/$($edit.id)/tracks/$track" -Headers $h -TimeoutSec 25
+                    $trackOk = $true
+                    $rows = @(ConvertFrom-RlPlayTrack -Track $t -TrackName $track -AppId $appId)
+                    foreach ($d in $rows) { $diag.Add($d) }
+                    if ($rows.Count -eq 0) { $diag.Add((New-RlPlayGap -Track $track -What 'track configuration' -Reason 'the track lists no release')) }
+                } catch {
+                    $failed.Add("the Play API did not return track '$track'")
+                    $diag.Add((New-RlPlayGap -Track $track -What 'track configuration' -Reason 'the read did not answer; nothing is known from it'))
+                } finally {
+                    try { Invoke-RestMethod -Method Delete -Uri "$base/edits/$($edit.id)" -Headers $h -TimeoutSec 25 | Out-Null } catch { Write-Verbose 'the transient edit expires by itself' }
+                }
+            }
         } finally {
-            try { Invoke-RestMethod -Method Delete -Uri "$base/edits/$($edit.id)" -Headers $h -TimeoutSec 25 | Out-Null } catch { Write-Verbose 'the transient edit expires by itself' }
+            Exit-RlPlayAppLock $lock
         }
     }
     if (-not $lifecycleOk -and -not $trackOk) { return (New-RlProbeResult -Ok $false -Reason ($failed -join '; ')) }
@@ -505,7 +525,7 @@ function Invoke-RlProbe {
         'github' { return (Invoke-RlProbeGithub -Spec $spec -RepoRoot $RepoRoot -Limit $(if ($All) { 100 } else { 5 })) }
         'winget' { return (Invoke-RlProbeWinget -Spec $spec -All:$All) }
         'msstore' { return (Invoke-RlProbeMsstore -Spec $spec) }
-        'play' { return (Invoke-RlProbePlay -Spec $spec) }
+        'play' { return (Invoke-RlProbePlay -Spec $spec -RepoRoot $RepoRoot) }
         'chrome' { return (Invoke-RlProbeChrome -Spec $spec) }
         'edge' { return (Invoke-RlProbeEdge -Spec $spec) }
         'vscode' { return (Invoke-RlProbeVscode -Spec $spec -All:$All) }

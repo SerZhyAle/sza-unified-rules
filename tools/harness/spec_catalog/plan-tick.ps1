@@ -128,7 +128,7 @@ if ($State -eq 'Manual' -and [string]::IsNullOrWhiteSpace($Note)) {
 # S0084 / TASK-FLOW rule 70: where the ticket's plan lives is not a fixed directory. A ticket entering Implemented,
 # Verified or BlockNeedUserTest takes its spec file and folder into paths.specArchiveDir, and a tick of its steps still
 # has to find them (a literal `PLAN` plus a glob exited 2 "nothing to tick" for exactly those tickets). The ledger row's
-# `file` names the directory first, as Get-TicketSpecFile does for rule 67; paths.specsDir and paths.specArchiveDir
+# `file` names the directory first; paths.specsDir and paths.specArchiveDir
 # follow for a ticket with no row. The first directory that holds either shape wins, so the folder and the compact file
 # of one ticket are never taken from two places.
 $planFolder = $null
