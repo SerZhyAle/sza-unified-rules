@@ -1,20 +1,18 @@
 #requires -Version 7.0
 <#
     Fast tests for the Play probe's per-application lock (tools/harness/releases/_play-lock.ps1 and Invoke-RlProbePlay in
-    _probes.ps1; GOOGLE-PLAY 0.4 rule 19, canon ticket CANONR-0174).
-     1. The lock path is <repo>/temp/play-lock/<applicationId>.lock by default and only an application id is accepted,
-        because the id becomes a file name.
-     2. The lock is the one the product publishers hold, in both directions: a handle opened the way they open theirs
-        (OpenOrCreate, ReadWrite, FileShare.None) stops Enter-RlPlayAppLock, the probe's held lock stops such an open, and
-        Exit frees it.
+    _probes.ps1, GOOGLE-PLAY 0.5 section 9).
+     1. The default path uses the shared Play state directory, tests can override it, and only an application id is
+        accepted as the file name.
+     2. A no-sharing open stops Enter-RlPlayAppLock, the probe's held lock stops a second no-sharing open, and Exit
+        frees it.
      3. With the lock free the probe reads the lifecycle, opens one edit, reads the track and deletes the edit, and the
         lock is free again afterwards.
-     4. With the lock held, reached through Invoke-RlProbe (which must hand the repository root on), the probe still reads
-        the lifecycle, opens NO edit and prints the track configuration as a gap that names the lock; with the lifecycle
-        read also failing the result is not ok and its reason names the lock.
+     4. With the lock held or its file inaccessible, Invoke-RlProbe keeps the lifecycle read and reports the track
+        configuration gap with the lock path. If the lifecycle read also fails it reports an unsuccessful probe.
      5. The lock is freed when the track read throws, and the edit is still deleted.
      6. An id that is not an application id opens nothing and creates no lock folder.
-     7. A repository profile that moves paths.tempDir moves the lock folder with it; an unreadable profile keeps the default.
+     7. Checkouts with a moved scratch folder or an unreadable profile resolve the same default lock path.
     No network and no credential: Invoke-RestMethod and Get-RlGoogleAccessToken are replaced by functions of the same name
     in this script's scope, and SZA_PLAY_SERVICE_ACCOUNT_JSON names a dummy file. A throwaway folder; -KeepScratch leaves it. #>
 [CmdletBinding()]
@@ -30,6 +28,7 @@ $run = 0; $passed = 0; $failed = 0
 function Assert-That([bool]$Condition, [string]$Reason) { if (-not $Condition) { throw $Reason } }
 function Test-Case([string]$Name, [scriptblock]$Body) {
     $script:run++
+    $script:RlPlayLockDirOverride = Join-Path $scratch "case-$script:run"
     Write-Host -NoNewline "CASE  $Name ... "
     try { & $Body; $script:passed++; Write-Host 'PASS' -ForegroundColor Green }
     catch { $script:failed++; Write-Host 'FAIL' -ForegroundColor Red; Write-Host "      $($_.Exception.Message)" -ForegroundColor DarkRed }
@@ -52,12 +51,11 @@ function Invoke-RestMethod {
     throw "unexpected call: $Method $Uri"
 }
 function Reset-Stubs { $script:calls.Clear(); $script:failLifecycle = $false; $script:failTrack = $false }
-function Open-LikeAPublisher([string]$Path) {
-    # The call both product publishers make, verbatim in its arguments.
+function Open-Exclusive([string]$Path) {
     return [IO.File]::Open($Path, 'OpenOrCreate', 'ReadWrite', 'None')
 }
-function Test-LockFree([string]$Repo, [string]$App) {
-    $l = Enter-RlPlayAppLock -RepoRoot $Repo -AppId $App
+function Test-LockFree([string]$App) {
+    $l = Enter-RlPlayAppLock -AppId $App
     $free = $l.held
     Exit-RlPlayAppLock $l
     return $free
@@ -74,64 +72,74 @@ $env:SZA_RELEASES_PROBE_STUB = $null
 function New-Repo([string]$Name) { $d = Join-Path $scratch $Name; New-Item -ItemType Directory -Path $d -Force | Out-Null; return $d }
 $app = 'com.example.app'
 $spec = [pscustomobject]@{ id = $app; track = 'production' }
+$channel = [pscustomobject]@{ key = 'play'; kind = 'play'; spec = $spec }
+$defaultPath = if ($IsWindows) { Join-Path $env:LOCALAPPDATA "sza/play-publishing/$app.lock" }
+    else { Join-Path $HOME ".local/state/sza/play-publishing/$app.lock" }
+$defaultPath = [IO.Path]::GetFullPath($defaultPath)
 try {
-    Test-Case 'the lock path is <repo>/temp/play-lock/<applicationId>.lock and only an application id is accepted' {
-        $r = New-Repo 'c1'
-        Assert-That ((Get-RlPlayLockPath -RepoRoot $r -AppId $app) -ceq [IO.Path]::GetFullPath("$r\temp\play-lock\$app.lock")) "the path is '$(Get-RlPlayLockPath -RepoRoot $r -AppId $app)'"
+    Test-Case 'the lock path uses the shared Play state directory and supports a test override' {
+        $override = $script:RlPlayLockDirOverride
+        $path = Get-RlPlayLockPath -AppId $app
+        Assert-That ($path -ceq (Join-Path $override "$app.lock")) "the override resolved to '$path'"
+        $script:RlPlayLockDirOverride = $null
+        try {
+            $path = Get-RlPlayLockPath -AppId $app
+            Assert-That ($path -ceq $defaultPath) "the default resolved to '$path' instead of '$defaultPath'"
+        } finally { $script:RlPlayLockDirOverride = $override }
         foreach ($ok in 'com.example.app', 'a.b', 'com.example_1.app2') { Assert-That (Test-RlApplicationId $ok) "'$ok' was refused" }
-        foreach ($bad in '', 'com', 'com..x', '..\x', 'com.example/x', 'com.1x.y', 'C:\x.y', 'com.x.', ' com.x', 'com.x ') { Assert-That (-not (Test-RlApplicationId $bad)) "'$bad' was accepted" }
-        $none = Enter-RlPlayAppLock -RepoRoot $r -AppId '..\evil'
+        foreach ($bad in '', 'com', 'com..x', '..\x', 'com.example/x', 'com.1x.y', 'C:\x.y', 'com.x.', ' com.x', 'com.x ', "com.x`n") { Assert-That (-not (Test-RlApplicationId $bad)) "'$bad' was accepted" }
+        $none = Enter-RlPlayAppLock -AppId '..\evil'
         Assert-That (-not $none.held -and $none.reason -match 'not an application id') "a bad id gave held=$($none.held), '$($none.reason)'"
-        Assert-That (-not (Test-Path -LiteralPath (Join-Path $r 'temp'))) 'a refused id still created the lock folder'
+        Assert-That (-not (Test-Path -LiteralPath $override)) 'a refused id still created the lock folder'
     }
 
-    Test-Case 'the lock is the publishers'' lock in both directions, and Exit frees it' {
-        $r = New-Repo 'c2'
-        $path = Get-RlPlayLockPath -RepoRoot $r -AppId $app
+    Test-Case 'exclusive opens contend in both directions, and Exit frees the lock' {
+        $path = Get-RlPlayLockPath -AppId $app
         New-Item -ItemType Directory -Force -Path (Split-Path $path) | Out-Null
-        $theirs = Open-LikeAPublisher $path
+        $theirs = Open-Exclusive $path
         try {
-            $blocked = Enter-RlPlayAppLock -RepoRoot $r -AppId $app
+            $blocked = Enter-RlPlayAppLock -AppId $app
             Assert-That (-not $blocked.held -and $null -eq $blocked.stream) 'a lock held by a publisher did not stop the probe'
-            Assert-That ($blocked.reason -match 'another publisher or probe holds it' -and $blocked.path -ceq $path) "the refusal reads '$($blocked.reason)' at '$($blocked.path)'"
+            Assert-That ($blocked.reason -and $blocked.path -ceq $path) "the refusal reads '$($blocked.reason)' at '$($blocked.path)'"
+            if ($IsWindows) {
+                Assert-That ($blocked.reason -ceq 'another publisher or probe holds it') "the sharing violation was reported as '$($blocked.reason)'"
+            }
         } finally { $theirs.Dispose() }
-        $ours = Enter-RlPlayAppLock -RepoRoot $r -AppId $app
+        $ours = Enter-RlPlayAppLock -AppId $app
         try {
             Assert-That ($ours.held -and $ours.path -ceq $path) 'the lock was not taken once the publisher let go'
             $threw = $false
-            try { $x = Open-LikeAPublisher $path; $x.Dispose() } catch [System.IO.IOException] { $threw = $true }
-            Assert-That $threw 'the probe''s held lock did not stop a publisher-style open'
+            try { $x = Open-Exclusive $path; $x.Dispose() } catch [System.IO.IOException] { $threw = $true }
+            Assert-That $threw 'the probe''s held lock did not stop a second exclusive open'
         } finally { Exit-RlPlayAppLock $ours }
         Assert-That ($null -eq $ours.stream) 'Exit left the stream set'
         Exit-RlPlayAppLock $ours
-        Assert-That (Test-LockFree $r $app) 'the lock stayed held after Exit'
+        Assert-That (Test-LockFree $app) 'the lock stayed held after Exit'
         Assert-That ((Get-Content -LiteralPath $path -Raw) -match '^pid \d+ since \S+ \(release-ledger probe\)$') 'the holder note is not in the file'
     }
 
     Test-Case 'with the lock free the probe reads the lifecycle, opens one edit, reads the track and deletes it' {
         Reset-Stubs
-        $r = New-Repo 'c3'
-        $res = Invoke-RlProbePlay -Spec $spec -RepoRoot $r
+        $res = Invoke-RlProbePlay -Spec $spec
         Assert-That $res.ok "the probe was not ok: $($res.reason)"
         $want = 'get /tracks/production/releases|post /edits|get /edits/edit-1/tracks/production|delete /edits/edit-1'
         Assert-That (($script:calls -join '|') -ceq $want) "the calls were '$($script:calls -join '|')'"
-        Assert-That (Test-LockFree $r $app) 'the lock stayed held after the probe'
+        Assert-That (Test-LockFree $app) 'the lock stayed held after the probe'
     }
 
-    Test-Case 'with the lock held the probe opens no edit, keeps the lifecycle read and names the lock' {
+    Test-Case 'when the lock cannot be taken, the probe keeps the lifecycle read and names the lock' {
         Reset-Stubs
         $r = New-Repo 'c4'
-        $path = Get-RlPlayLockPath -RepoRoot $r -AppId $app
+        $path = Get-RlPlayLockPath -AppId $app
         New-Item -ItemType Directory -Force -Path (Split-Path $path) | Out-Null
-        $channel = [pscustomobject]@{ key = 'play'; kind = 'play'; spec = $spec }
-        $theirs = Open-LikeAPublisher $path
+        $theirs = Open-Exclusive $path
         try {
             $res = Invoke-RlProbe -Channel $channel -RepoRoot $r
             Assert-That ($res.ok) "the probe was not ok although the lifecycle answered: $($res.reason)"
             Assert-That (($script:calls -join '|') -ceq 'get /tracks/production/releases') "the calls were '$($script:calls -join '|')', not the lifecycle read alone"
             $gap = @($res.diagnostics | Where-Object { $_.kind -ceq 'play-gap' -and $_.what -ceq 'track configuration' })
             Assert-That ($gap.Count -eq 1) "expected one track-configuration gap, got $($gap.Count)"
-            Assert-That ($gap[0].reason -match "Play lock temp/play-lock/$([regex]::Escape($app))\.lock is not ours \(another publisher or probe holds it\)") "the gap reads '$($gap[0].reason)'"
+            Assert-That ($gap[0].reason.Contains("Play lock $path is not ours (")) "the gap reads '$($gap[0].reason)'"
             Assert-That ((Format-RlProbeDiagnostic -Key 'play' -Diagnostic $gap[0]) -match 'lock') 'the printed line does not mention the lock'
             Reset-Stubs
             $script:failLifecycle = $true
@@ -139,40 +147,50 @@ try {
             Assert-That (-not $down.ok -and $down.reason -match 'Play lock') "with both reads out the result was ok=$($down.ok), '$($down.reason)'"
             Assert-That (@($script:calls | Where-Object { $_ -match '^post ' }).Count -eq 0) 'an edit was opened while the lock was held'
         } finally { $theirs.Dispose() }
+
+        Reset-Stubs
+        $script:RlPlayLockDirOverride = Join-Path $scratch 'unopenable'
+        $path = Get-RlPlayLockPath -AppId $app
+        [void][IO.Directory]::CreateDirectory($path)
+        $res = Invoke-RlProbe -Channel $channel -RepoRoot $r
+        Assert-That ($res.ok -and ($script:calls -join '|') -ceq 'get /tracks/production/releases') 'an unopenable lock file did not leave only the lifecycle read'
+        $gap = @($res.diagnostics | Where-Object { $_.kind -ceq 'play-gap' -and $_.what -ceq 'track configuration' })
+        Assert-That ($gap.Count -eq 1 -and $gap[0].reason.Contains($path)) 'the open failure did not name the lock file'
     }
 
     Test-Case 'the lock is freed when the track read throws, and the edit is still deleted' {
         Reset-Stubs
         $script:failTrack = $true
-        $r = New-Repo 'c5'
-        $res = Invoke-RlProbePlay -Spec $spec -RepoRoot $r
+        $res = Invoke-RlProbePlay -Spec $spec
         Assert-That ($res.ok) "the lifecycle answered and the probe was not ok: $($res.reason)"
         Assert-That (@($script:calls | Where-Object { $_ -match '^delete /edits/edit-1' }).Count -eq 1) "the edit was not deleted: $($script:calls -join '|')"
-        Assert-That (Test-LockFree $r $app) 'the lock stayed held after a failed track read'
+        Assert-That (Test-LockFree $app) 'the lock stayed held after a failed track read'
     }
 
     Test-Case 'an id that is not an application id opens nothing and creates no lock folder' {
         Reset-Stubs
-        $r = New-Repo 'c6'
-        $res = Invoke-RlProbePlay -Spec ([pscustomobject]@{ id = '..\evil'; track = 'production' }) -RepoRoot $r
+        $res = Invoke-RlProbePlay -Spec ([pscustomobject]@{ id = '..\evil'; track = 'production' })
         Assert-That (-not $res.ok -and $res.reason -match 'not an application id') "the result was ok=$($res.ok), '$($res.reason)'"
         Assert-That ($script:calls.Count -eq 0) "a call was made: $($script:calls -join '|')"
-        Assert-That (-not (Test-Path -LiteralPath (Join-Path $r 'temp'))) 'a lock folder was created'
+        Assert-That (-not (Test-Path -LiteralPath $script:RlPlayLockDirOverride)) 'a lock folder was created'
     }
 
-    Test-Case 'a profile that moves paths.tempDir moves the lock, and an unreadable profile keeps the default' {
+    Test-Case 'a moved scratch directory and an unreadable profile both keep the shared lock path' {
         $r = New-Repo 'c7'
         Set-Content -LiteralPath (Join-Path $r '.sza-profile.json') -Value '{"paths":{"tempDir":"scratch-x"}}' -Encoding utf8
-        $moved = Get-RlPlayLockPath -RepoRoot $r -AppId $app
-        Assert-That ($moved -ceq [IO.Path]::GetFullPath("$r\scratch-x\play-lock\$app.lock")) "the moved path is '$moved'"
-        $l = Enter-RlPlayAppLock -RepoRoot $r -AppId $app
-        try { Assert-That ($l.held -and (Test-Path -LiteralPath $moved)) 'the lock is not under the moved folder' } finally { Exit-RlPlayAppLock $l }
-        Assert-That (-not (Test-Path -LiteralPath (Join-Path $r 'temp'))) 'the default folder was created as well'
         $b = New-Repo 'c7b'
         Set-Content -LiteralPath (Join-Path $b '.sza-profile.json') -Value '{ not json' -Encoding utf8
-        Assert-That ((Get-RlPlayLockPath -RepoRoot $b -AppId $app) -ceq [IO.Path]::GetFullPath("$b\temp\play-lock\$app.lock")) 'an unreadable profile did not keep the default'
+        $script:RlPlayLockDirOverride = $null
+        foreach ($repo in $r, $b) {
+            Push-Location -LiteralPath $repo
+            try {
+                $path = Get-RlPlayLockPath -AppId $app
+                Assert-That ($path -ceq $defaultPath) "the path from '$repo' resolved to '$path' instead of '$defaultPath'"
+            } finally { Pop-Location }
+        }
     }
 } finally {
+    $script:RlPlayLockDirOverride = $null
     $env:SZA_PLAY_SERVICE_ACCOUNT_JSON = $savedKey
     $env:SZA_RELEASES_PROBE_STUB = $savedStub
     if (-not $KeepScratch) { Remove-Item -LiteralPath $scratch -Recurse -Force -ErrorAction SilentlyContinue }

@@ -24,8 +24,8 @@
     outside every repository; nothing a probe reads or receives is written to the ledger except the public facts.
 
     The Play probe opens a transient edit, which Play counts as the application's one edit and which can delete a
-    publisher's: it takes the per-application lock of `_play-lock.ps1` around that read, tries once, and opens no edit when
-    it cannot take it (GOOGLE-PLAY rule 19, CANONR-0174).
+    publisher's: it takes the machine-wide per-application lock of `_play-lock.ps1` around that read, tries once, and
+    opens no edit when it cannot take it (GOOGLE-PLAY 0.5 section 9).
 
     Exit codes: none - a dot-sourced library.
 #>
@@ -343,7 +343,7 @@ function Format-RlProbeDiagnostic {
 }
 
 function Invoke-RlProbePlay {
-    param($Spec, [Parameter(Mandatory)][string]$RepoRoot)
+    param($Spec)
     $appId = [string](Get-RlProp $Spec 'id')
     if (-not $appId) { return (New-RlProbeResult -Ok $false -Reason 'no applicationId (id) in channels.json') }
     if (-not (Test-RlApplicationId $appId)) { return (New-RlProbeResult -Ok $false -Reason "'$appId' in channels.json is not an application id") }
@@ -377,9 +377,9 @@ function Invoke-RlProbePlay {
     # 2. The track configuration: an edit is opened for the read and deleted again. Play keeps one edit per application,
     # so the application's lock (GOOGLE-PLAY rule 19) is held from before the edit opens until it is deleted. One try, no
     # wait: when a publisher or another probe holds it, no edit is opened and the gap says so.
-    $lock = Enter-RlPlayAppLock -RepoRoot $RepoRoot -AppId $appId
+    $lock = Enter-RlPlayAppLock -AppId $appId
     if (-not $lock.held) {
-        $lockName = if ($lock.path) { ConvertTo-RlRepoPath -RepoRoot $RepoRoot -Path $lock.path } else { "of $appId" }
+        $lockName = if ($lock.path) { $lock.path } else { "of $appId" }
         $failed.Add("no edit was opened for $appId because its Play lock $lockName is not ours ($($lock.reason))")
         $diag.Add((New-RlPlayGap -Track $track -What 'track configuration' -Reason "no read edit was opened, so as not to delete another edit: the Play lock $lockName is not ours ($($lock.reason)); nothing is known from it"))
     } else {
@@ -525,7 +525,7 @@ function Invoke-RlProbe {
         'github' { return (Invoke-RlProbeGithub -Spec $spec -RepoRoot $RepoRoot -Limit $(if ($All) { 100 } else { 5 })) }
         'winget' { return (Invoke-RlProbeWinget -Spec $spec -All:$All) }
         'msstore' { return (Invoke-RlProbeMsstore -Spec $spec) }
-        'play' { return (Invoke-RlProbePlay -Spec $spec -RepoRoot $RepoRoot) }
+        'play' { return (Invoke-RlProbePlay -Spec $spec) }
         'chrome' { return (Invoke-RlProbeChrome -Spec $spec) }
         'edge' { return (Invoke-RlProbeEdge -Spec $spec) }
         'vscode' { return (Invoke-RlProbeVscode -Spec $spec -All:$All) }

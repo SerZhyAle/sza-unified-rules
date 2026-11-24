@@ -61,35 +61,30 @@ stay in `history.jsonl` and are left out of the fold; `show` counts them and the
 
 ## The Play lock
 
-Play keeps one open edit per application, and a second `edits.insert` for the same application deletes the first
-(`GOOGLE-PLAY` rule 19). The lock that serializes the processes which open one is a file, the same one the product
-publishers already hold for the life of their edit:
+Play keeps one open edit per application, and a second `edits.insert` for the same application deletes the first.
+`GOOGLE-PLAY` 0.5 section 9 defines one file per application id shared across repositories and checkouts for the OS user.
 
 | | |
 | --- | --- |
-| Where | `<repository root>/<paths.tempDir>/play-lock/<applicationId>.lock` - `temp` unless the repository's own profile moves it; the publishers written so far hard-code `temp`, which every profile of the portfolio keeps, so a profile that moves it moves the probe's lock and its publisher has to follow |
-| Name | the Android application id (`com.example.app.lock`); an id of any other shape is refused |
-| Mechanism | an open file handle, `FileMode.OpenOrCreate`, `FileAccess.ReadWrite`, `FileShare.None`: the operating system refuses every second open and drops the handle when the process ends, so a crash leaves no stale lock |
+| Windows | `%LOCALAPPDATA%\sza\play-publishing\<applicationId>.lock` |
+| Other platforms | `~/.local/state/sza/play-publishing/<applicationId>.lock` |
+| Name | the validated Android application id with a `.lock` suffix, for example `com.example.app.lock` |
+| Mechanism | the probe opens the file with `FileMode.OpenOrCreate`, `FileAccess.ReadWrite` and `FileShare.None`. On Windows it also contends with a publisher's byte-lock handle. The OS releases the hold when the process ends |
 | Held for | from before the edit is inserted until it is committed, deleted or abandoned |
-| Note | the file holds `pid N since <time> (<who>)` for a person; it cannot be read while the lock is held, and the file stays on disk between runs |
+| Note | the probe writes `pid N since <time> (<who>)` for diagnostics. The file stays on disk between runs |
 
-The probe takes the lock around its edit read only (the lifecycle GET opens no edit and stays outside it), tries once and
-never waits. When it cannot take the lock - a publisher or another probe holds it, or the folder cannot be created - it
-opens no edit, still prints the release lifecycle, prints the track configuration as a gap that names the lock, and
-reports `unverified` only when the lifecycle read failed too. A publisher takes the same lock this way, or by
-dot-sourcing `_play-lock.ps1` from the plugin and calling `Enter-RlPlayAppLock` and `Exit-RlPlayAppLock`:
+The probe reads the lifecycle independently and tries the lock once before opening the edit. Any failure to prepare or
+open the lock skips the edit. The probe prints the lifecycle reading and a track configuration gap that names the lock.
+It reports `unverified` when both reads fail. A PowerShell publisher can use the same helper from the harness.
 
 ```powershell
-$lockDir = Join-Path (Join-Path $repoRoot 'temp') 'play-lock'   # 'temp' is the profile's paths.tempDir by default
-New-Item -ItemType Directory -Force -Path $lockDir | Out-Null
-try { $lock = [IO.File]::Open((Join-Path $lockDir "$applicationId.lock"), 'OpenOrCreate', 'ReadWrite', 'None') }
-catch [System.IO.IOException] { throw "another publisher or probe holds the Play lock of $applicationId" }
-try { <# insert, upload and commit or delete the edit #> } finally { $lock.Dispose() }
+. (Join-Path $harnessRoot 'releases/_play-lock.ps1')
+$lock = Enter-RlPlayAppLock -AppId $applicationId -Holder 'Play publisher'
+if (-not $lock.held) { throw "Play lock for $applicationId is unavailable ($($lock.reason))" }
+try { <# insert, upload and commit or delete the edit #> } finally { Exit-RlPlayAppLock $lock }
 ```
 
-What the lock does not cover: it is one machine and one checkout - a second checkout of the same repository, or another
-machine, has its own folder - and a Console write by a person is not a process. Both stay the product's own
-serialization.
+Each product coordinates edits between machines and manual Console changes under `GOOGLE-PLAY` rule 19.
 
 ## The build hook
 
