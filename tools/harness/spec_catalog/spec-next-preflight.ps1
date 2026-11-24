@@ -135,18 +135,18 @@ $pwshExe = if (Test-Path "$env:ProgramFiles\PowerShell\7\pwsh.exe") {
 $driftPath = Join-Path $PSScriptRoot 'drift-check.ps1'
 $skipCachePath = Join-Path $PSScriptRoot 'skip-cache.ps1'
 
+# TASK-FLOW 0.42 rule 18 (CANONR-0175): the ranking offers the queued statuses and no others, in every run mode - an
+# attended /spec-next, a repository's own run-spec-queue.ps1 and the dispatcher's picker (SZA_PQ_PICKER=1) rank one set.
+# A ticket that reached `Implemented` has left the queue for `RELEASE_READY.md` and `PORTFOLIO_QUEUE.md` (its
+# implementation and Stage 5 self-audit already ran before `Implemented` was set, and what remains is release-tier
+# verification > 5 s), so offering it only burns idle audit passes until the idle hold parks each one, and shows the
+# owner runners working tickets that are not in the queue file. Verified, BlockNeedUserTest and the other Block*
+# statuses are not here either. An explicit id is not ranking: `/spec-all <id>` (spec-preamble.ps1), `pq start -Ticket`
+# and an id list given to the runner never pass through this script, so a named `Implemented` ticket is still worked.
 $eligibleStatuses = @(
     'Draft', 'Approved', 'Tactical', 'In Progress',
     'Partial', 'Broken', 'BlockByOtherTask'
 )
-# An unattended robot pass (the portfolio dispatcher's picker, SZA_PQ_PICKER=1) works only the queued statuses above:
-# a ticket that already reached `Implemented` has left the queue for `RELEASE_READY.md` and `PORTFOLIO_QUEUE.md` (its
-# implementation and Stage 5 self-audit already ran before `Implemented` was set, and what remains is release-tier
-# verification > 5 s), so offering `Implemented` to the portfolio dispatcher only burns idle audit passes until the
-# idle hold parks each one. Attended local runs (/spec-next and a local run-spec-queue.ps1) still include `Implemented`.
-if ($env:SZA_PQ_PICKER -cne '1') {
-    $eligibleStatuses += 'Implemented'
-}
 $excludeSet = @{}
 $normalizedExcludeIds = New-Object System.Collections.Generic.List[string]
 # Split comma-joined elements: native pwsh parses `-Exclude S0506,S0508` into an array, but

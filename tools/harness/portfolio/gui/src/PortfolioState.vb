@@ -482,7 +482,7 @@ Public Class PortfolioState
     ' which it offers only once the blocker is closed - in a night's queue almost never. A row with no status column
     ' is counted: the ledger, not the file, decides it.
     Private Shared ReadOnly RunnableStatuses As New HashSet(Of String)(
-        {"Draft", "Approved", "Tactical", "In Progress", "Implemented", "Partial", "Broken"}, StringComparer.Ordinal)
+        {"Draft", "Approved", "Tactical", "In Progress", "Partial", "Broken"}, StringComparer.Ordinal)
 
     ' A ticket row the runner would take, judged from the queue file alone; pq dry-run asks the pickers for the exact plan.
     Public Shared Function IsRunnable(row As QueueRow) As Boolean

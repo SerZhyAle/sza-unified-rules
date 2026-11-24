@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Contract | `TASK-FLOW` |
-| Version | 0.41, draft |
+| Version | 0.42, draft |
 | Home | the shared contracts catalog, domain `task-flow/` (the path is in [CLAUDE.md](../../CLAUDE.md)) |
 | Role | **shared implementation, partial**: `tools/harness/` supplies the ticket tools, repository runner and day-0 scaffold; `tools/harness/portfolio/` supplies the S0015 dispatcher, registry, queue, rank and event log. Remaining portfolio features belong to S0016. The owner is `shared`, so this repository edits the contract only through the canon session |
 
@@ -184,3 +184,10 @@
   and `deploy.ps1` calls it for the canon after `publish -State live`. Rows under `--` are not shipped. Covered by
   the `ship-package` case of `tools/tests/ledger-rules.tests.ps1` (release tier, not yet run) and by case 9 of
   `tools/tests/deploy-release-ledger.tests.ps1`.
+- 0.42 (2026-11-24, CANONR-0175): rule 18 fixes the eligible set of the ranking - the seven queued statuses, never
+  `Implemented`, in every run mode. `spec_catalog/spec-next-preflight.ps1` no longer adds `Implemented` unless it runs as
+  the dispatcher's picker, so `/spec-next`, a repository's own runner and `pq` rank one set and agree with the queue
+  file. An explicit id (`/spec-all <id>`, `pq start -Ticket`, an id list given to the runner) does not rank and still
+  works an `Implemented` ticket; the `Implemented` entry of `commands.statusCommands` is read by that path and by
+  `release-plan.ps1` only. The PQShell panel's list of runnable statuses drops `Implemented` too (source edit, not
+  compiled). Covered by `tools/tests/picker-eligibility.tests.ps1` (5 cases, fast).
