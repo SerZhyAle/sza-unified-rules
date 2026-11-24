@@ -529,10 +529,16 @@ PQShell, not from an IDE-extension session. Routes follow the ladder of `claude`
 above, effort by grade); the ceiling was 5 first, and a provider standing first in the order then passed every hard ticket to
 the next one (owner, 2026-11-23: codex took them), so the workspace's spend limit is what bounds the spend and a route row
 is how to hold a grade back. The owner's
-order of 2026-11-23 puts it first, so the credits that expire are spent first. The limit text is Anthropic's documented "credit
-balance is too low" (detector `unproven` until it is seen), a spent balance is polled every six hours (`limitPollMinutes`), and
-Console > Billing > Promotional credits shows the balance. Proven on 2026-11-23: one `claude -p --model sonnet --effort low` with the
-key took $0.04 off the promotional credit.
+order of 2026-11-23 puts it first, so the credits that expire are spent first. That run showed what the spend limit is: the
+workspace's $150 went in about five hours once the routes reached `opus` (Anthropic mailed the owner, then answered every request
+with HTTP 400 `You have reached your specified workspace API usage limits. You will regain access on 2026-12-01 at 00:00 UTC.`; a
+`claude -p` ends with exit 1 on `API Error: 400 ..`, and its transcript record is an API error message with `apiErrorStatus` 400 and
+error `unknown`, not the 429 `rate_limit` record of a plan). The runner reads that record through the record's detector pattern
+(`Get-LimitSignal -Pattern`: the last assistant record counts when it is an API error message and its text matches) and times the
+hold from the text (`regain access on <date> at <time> UTC`); raising the limit in Console > Limits lifts the pause earlier, and the
+hold then ends at the probe. Anthropic's documented "credit balance is too low" is the other text the pattern knows (still unseen),
+a spent balance is polled every six hours (`limitPollMinutes`), and Console > Billing > Promotional credits shows the balance. Proven
+on 2026-11-23: one `claude -p --model sonnet --effort low` with the key took $0.04 off the promotional credit.
 
 Every pass names its provider on the console, `claude` included, because z.ai echoes any model name back and the subscription,
 the API credits and z.ai all run the same CLI. The worker line reads `pass 7 fms-a:S4835 Partial - title [claude-api sonnet/medium]

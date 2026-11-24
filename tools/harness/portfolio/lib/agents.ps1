@@ -568,7 +568,16 @@ function ConvertFrom-PqLimitText {
     # message ends it, so within one form the LAST match counts, never the first. Across forms the order stands
     # as it was - ISO time, dated time, clock time, span - and the span form reads its last match too.
     $isoAll = [regex]::Matches($Text, '(?i)reset(?:s)?\s+(?:at|on)\s+(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}(?::\d{2})?)')
-    if ($isoAll.Count -gt 0) {
+    # `You will regain access on 2026-12-01 at 00:00 UTC.` (a workspace's monthly spend limit): a clock time in UTC.
+    $regainAll = [regex]::Matches($Text, '(?i)regain access on\s+(\d{4}-\d{2}-\d{2})\s+at\s+(\d{1,2}:\d{2})(?::\d{2})?\s*UTC')
+    if ($regainAll.Count -gt 0) {
+        $m = $regainAll[$regainAll.Count - 1]
+        $parsed = [datetime]::MinValue
+        if ([datetime]::TryParse("$($m.Groups[1].Value)T$($m.Groups[2].Value)", [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref]$parsed)) {
+            $at = [DateTimeOffset]::new($parsed, [TimeSpan]::Zero)
+        }
+    }
+    elseif ($isoAll.Count -gt 0) {
         $m = $isoAll[$isoAll.Count - 1]
         $stamp = "$($m.Groups[1].Value)T$($m.Groups[2].Value)"
         $parsed = [datetime]::MinValue
@@ -814,7 +823,10 @@ function New-PqProviderRecord([string]$Id, [string]$Agent = '') {
             # provider to the next one of the order even when it stood first (owner, 2026-11-23). The workspace's monthly
             # spend limit is what bounds the spend, not the ceiling. Credits do not roll over, so a balance that ends is
             # polled every six hours instead of every thirty minutes: the next credit arrives with the plan's billing date.
-            # The limit text is Anthropic's documented "credit balance is too low".
+            # The limit texts: Anthropic's documented "credit balance is too low", and the one seen live on 2026-11-23 when the
+            # workspace's monthly spend limit was reached - `API Error: 400 You have reached your specified workspace API usage
+            # limits. You will regain access on 2026-12-01 at 00:00 UTC.` (exit 1, a transcript record that is an API error
+            # message with status 400, not 429; Get-LimitSignal reads it through this pattern and times it from the text).
             $rec = [ordered]@{
                 name = 'claude-api'; command = 'claude'
                 argsTemplate = @('-p', '{prompt}', '--permission-mode', '{permissionMode}', '--model', '{model}', '--effort', '{effort}')
@@ -822,7 +834,7 @@ function New-PqProviderRecord([string]$Id, [string]$Agent = '') {
                 env = [ordered]@{ ANTHROPIC_API_KEY = '%ANTHROPIC_CREDITS_API_KEY%' }
                 model = 'sonnet'; effort = 'high'; maxParallel = 2; contractFile = 'CLAUDE.md'
                 limitPollMinutes = 360
-                limitDetector = [ordered]@{ kind = 'transcript'; pattern = '(?i)credit balance (is )?too low|insufficient (credit|balance)'; status = 'unproven' }
+                limitDetector = [ordered]@{ kind = 'transcript'; pattern = '(?i)credit balance (is )?too low|insufficient (credit|balance)|reached your specified workspace API usage limits?'; status = 'unproven' }
                 routes = @(
                     [ordered]@{ max = 2; model = 'sonnet'; effort = 'low' }
                     [ordered]@{ max = 4; model = 'sonnet'; effort = 'medium' }

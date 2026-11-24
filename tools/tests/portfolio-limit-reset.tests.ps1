@@ -349,8 +349,48 @@ try {
     if (-not $loopSrc.Contains('if (-not $NamedTicket) { $Exclude = [string[]]@(@($Exclude) + @(Get-PqIntakeCapped $Registry)) }')) { throw 'Get-PqNextRank does not exclude the robot-filed tickets past the cap' }
     Write-Host " PASS" -ForegroundColor Green
 
+    # -----------------------------------------------------------------------------------------
+    # Case 8: a workspace's spend limit (HTTP 400, error `unknown`) is a limit through the provider's pattern, and is timed
+    # -----------------------------------------------------------------------------------------
+    Write-Host "Case 8: workspace spend limit read from the transcript record and timed from its text..." -NoNewline
+    $spendPattern = '(?i)credit balance (is )?too low|insufficient (credit|balance)|reached your specified workspace API usage limits?'
+    $regainDay = [DateTimeOffset]::UtcNow.AddDays(3).ToString('yyyy-MM-dd')
+    $spendText = "API Error: 400 You have reached your specified workspace API usage limits. You will regain access on $regainDay at 00:00 UTC."
+    $makeRecord = {
+        param([string]$Text, [bool]$IsApiError)
+        (ConvertTo-Json -Compress -Depth 6 ([ordered]@{
+            parentUuid = 'p1'; isSidechain = $false; type = 'assistant'; uuid = 'u1'
+            message = [ordered]@{ role = 'assistant'; model = '<synthetic>'; content = @([ordered]@{ type = 'text'; text = $Text }) }
+            error = 'unknown'; isApiErrorMessage = $IsApiError; apiErrorStatus = 400 }))
+    }
+    $writeTranscript = {
+        param([string]$Name, [string]$Record)
+        $p = Join-Path $scratch $Name
+        [IO.File]::WriteAllText($p, ((@('{"type":"user","message":{"role":"user","content":"hi"}}', $Record, '{"type":"last-prompt","lastPrompt":"hi"}')) -join "`n") + "`n")
+        $p
+    }
+    $spendFile = & $writeTranscript 'spend.jsonl' (& $makeRecord $spendText $true)
+    $sigSpend = Get-LimitSignal -TranscriptPath $spendFile -ExitCode 1 -Pattern $spendPattern
+    if ($null -eq $sigSpend) { throw 'Expected the spend-limit record to be a limit with the provider pattern, got null' }
+    if ($sigSpend.Source -ne 'transcript') { throw "Expected Source 'transcript', got '$($sigSpend.Source)'" }
+    $expectUnix = [DateTimeOffset]::Parse("${regainDay}T00:00:00Z").ToUnixTimeSeconds()
+    if ($sigSpend.ResetsAt -ne $expectUnix) { throw "Expected ResetsAt $expectUnix from the text, got '$($sigSpend.ResetsAt)'" }
+    # Without the pattern the same record is no limit (claude's own prose decides there), and a record that is not an API error
+    # message - the model writing ABOUT the limit - is none either.
+    if ($null -ne (Get-LimitSignal -TranscriptPath $spendFile -ExitCode 1)) { throw 'Expected no limit for the record without a provider pattern' }
+    $aboutFile = & $writeTranscript 'about.jsonl' (& $makeRecord $spendText $false)
+    if ($null -ne (Get-LimitSignal -TranscriptPath $aboutFile -ExitCode 0 -Pattern $spendPattern)) { throw 'Expected no limit for a record that is not an API error message' }
+    # The time forms: the clock time in UTC, a time already past, and the pq side's reader of a pass log.
+    if ($null -ne (ConvertFrom-LimitAbsoluteText 'You will regain access on 2020-01-01 at 00:00 UTC.')) { throw 'Expected a past clock time to give no reset' }
+    $pqIso = ConvertFrom-PqLimitText -Text $spendText -Now ([DateTimeOffset]::UtcNow)
+    if ($null -eq $pqIso) { throw 'Expected ConvertFrom-PqLimitText to read the regain-access time' }
+    $pqAt = [DateTimeOffset]::Parse($pqIso)
+    $expectAt = [DateTimeOffset]::Parse("${regainDay}T00:01:00Z")
+    if ($pqAt -ne $expectAt) { throw "Expected $($expectAt.ToString('o')) (the time + the minute's margin), got $($pqAt.ToString('o'))" }
+    Write-Host " PASS" -ForegroundColor Green
+
     Write-Host ""
-    Write-Host "All 7 test cases passed successfully." -ForegroundColor Green
+    Write-Host "All 8 test cases passed successfully." -ForegroundColor Green
 }
 finally {
     $env:SZA_PORTFOLIO_ROOT = $origEnv

@@ -215,6 +215,36 @@ function ConvertFrom-LimitRetryText {
     return ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds() + $total)
 }
 
+function ConvertFrom-LimitAbsoluteText {
+    <#
+    .SYNOPSIS
+        The reset time a message names as a clock time in UTC - "You will regain access on 2026-12-01 at 00:00 UTC"
+        (a workspace's monthly spend limit) - as unix seconds, or $null when the text carries none or names a time
+        already past. The last match counts: a log quotes older messages above the real one.
+    #>
+    param([string] $Text)
+    if ([string]::IsNullOrWhiteSpace($Text)) { return $null }
+    $all = [regex]::Matches($Text, '(?i)regain access on\s+(\d{4}-\d{2}-\d{2})\s+at\s+(\d{1,2}:\d{2})(?::\d{2})?\s*UTC')
+    if ($all.Count -eq 0) { return $null }
+    $m = $all[$all.Count - 1]
+    $parsed = [datetime]::MinValue
+    $styles = [System.Globalization.DateTimeStyles]::AssumeUniversal -bor [System.Globalization.DateTimeStyles]::AdjustToUniversal
+    if (-not [datetime]::TryParse(('{0}T{1}' -f $m.Groups[1].Value, $m.Groups[2].Value), [System.Globalization.CultureInfo]::InvariantCulture, $styles, [ref]$parsed)) { return $null }
+    $unix = [DateTimeOffset]::new([datetime]::SpecifyKind($parsed, [DateTimeKind]::Utc)).ToUnixTimeSeconds()
+    if ($unix -le [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()) { return $null }
+    return (ConvertTo-LimitUnixSeconds $unix)
+}
+
+function Get-LimitRecordText {
+    # The text of an assistant record's content blocks, '' when it has none.
+    param($Record)
+    $message = Get-LimitJsonProperty $Record 'message'
+    $parts = foreach ($block in @(Get-LimitJsonProperty $message 'content')) {
+        if ($block -is [string]) { $block } elseif ([string](Get-LimitJsonProperty $block 'type') -eq 'text') { [string](Get-LimitJsonProperty $block 'text') }
+    }
+    return (@($parts) -join "`n")
+}
+
 function Get-LimitSignal {
     <#
     .SYNOPSIS
@@ -224,6 +254,13 @@ function Get-LimitSignal {
         record is a limit hit when its apiError is `usage_limit_reached`, or its error is
         `rate_limit` with apiErrorStatus 429. A limit record FOLLOWED by ordinary assistant work is a
         past event the child survived, so only the last record counts.
+
+        A provider's own limit may not look like either: a workspace that spent its monthly limit answers HTTP 400
+        and the record carries error `unknown`, apiErrorStatus 400 and isApiErrorMessage true, with the message
+        ("API Error: 400 You have reached your specified workspace API usage limits. You will regain access on
+        2026-12-01 at 00:00 UTC.") as its only text. With -Pattern (the agent record's limitDetector.pattern) such
+        a last record - an API error message whose text matches - is a limit hit too, and the reset time is read
+        from that text (seen live on 2026-11-23, the claude-api provider).
 
         Without a transcript, and only for a child that did not exit 0, the tail of the captured log
         is matched for `hit your .{1,40} limit`. The tail and the exit code are what keep a child
@@ -249,6 +286,11 @@ function Get-LimitSignal {
         $error_ = [string](Get-LimitJsonProperty $record 'error')
         $status = [string](Get-LimitJsonProperty $record 'apiErrorStatus')
         $isLimit = ($apiError -eq 'usage_limit_reached') -or ($error_ -eq 'rate_limit' -and $status -eq '429')
+        $patternText = ''
+        if (-not $isLimit -and -not [string]::IsNullOrWhiteSpace($Pattern) -and [bool](Get-LimitJsonProperty $record 'isApiErrorMessage')) {
+            $patternText = Get-LimitRecordText $record
+            if ($patternText -match $Pattern) { $isLimit = $true }
+        }
         if (-not $isLimit) { return $null }
 
         # The same facts repeat under apiErrorParams.rate_limit_info, so either spelling is enough.
@@ -259,6 +301,12 @@ function Get-LimitSignal {
         $type = [string](Get-LimitJsonProperty $quota 'rateLimitType')
         if ([string]::IsNullOrWhiteSpace($type)) { $type = [string](Get-LimitJsonProperty $info 'rateLimitType') }
         if ([string]::IsNullOrWhiteSpace($type)) { $type = 'unknown' }
+        if ($patternText) {
+            # The provider's own message: its text names the reset time, as a clock time in UTC or as a span.
+            if ($null -eq $resetsAt) { $resetsAt = ConvertFrom-LimitAbsoluteText $patternText }
+            if ($null -eq $resetsAt) { $resetsAt = ConvertFrom-LimitRetryText $patternText }
+            return [pscustomobject]@{ Source = 'transcript'; ResetsAt = $resetsAt; RateLimitType = 'usage'; Pattern = $Pattern }
+        }
         return [pscustomobject]@{ Source = 'transcript'; ResetsAt = $resetsAt; RateLimitType = $type; Pattern = $null }
     }
 
@@ -272,7 +320,9 @@ function Get-LimitSignal {
         elseif ($tail -match $Pattern) {
             $type = if ($Matches.Count -gt 1) { ([string]$Matches[1]).Trim() } else { '' }
             if ([string]::IsNullOrWhiteSpace($type)) { $type = 'usage' }
-            return [pscustomobject]@{ Source = 'log'; ResetsAt = (ConvertFrom-LimitRetryText $tail); RateLimitType = $type; Pattern = $Pattern }
+            $logReset = ConvertFrom-LimitRetryText $tail
+            if ($null -eq $logReset) { $logReset = ConvertFrom-LimitAbsoluteText $tail }
+            return [pscustomobject]@{ Source = 'log'; ResetsAt = $logReset; RateLimitType = $type; Pattern = $Pattern }
         }
     }
     return $null
