@@ -5,6 +5,10 @@ Fires only when the working directory belongs to a repo that has adopted the can
 stamp at the repo root). That keeps the injection self-limiting: an unrelated project never pays for it,
 and an SZA project always carries the twenty lines it must not break.
 
+It also appends the type memory of the session's user (tools/memory/memory.ps1): the index of every
+<memory root>/types/<tag>/ whose type.json matches this stamp's overlay, channels, site kind or role. The memory
+root is SZA_MEMORY_ROOT, else <claude home>/memory; no folder there means nothing is appended.
+
 Exits 0 with the SessionStart hookSpecificOutput shape, or 0 with no output when the repo is not an
 adopter. It can never block a session.
 #>
@@ -40,12 +44,45 @@ try {
 
     $overlay = ''
     $model = ''
+    $parsed = $null
     try {
         $parsed = Get-Content -LiteralPath $stamp -Raw | ConvertFrom-Json
         if ($parsed.overlay) { $overlay = " Overlay $($parsed.overlay -join ',')." }
         if ($parsed.canon -and $parsed.canon.model) { $model = " Consumption model: $($parsed.canon.model)." }
     }
     catch { }
+
+    # Type memory (tools/memory/memory.ps1): the index of every memory type whose type.json matches this stamp.
+    # The global index reaches every session through the user's CLAUDE.md import; a type index has no such
+    # route, because it depends on the project, so it rides here. A broken type folder is skipped, never fatal.
+    $typeMemory = ''
+    try {
+        $claudeHome = if ($env:CLAUDE_CONFIG_DIR) { $env:CLAUDE_CONFIG_DIR } else { Join-Path ([Environment]::GetFolderPath('UserProfile')) '.claude' }
+        $memRoot = if ($env:SZA_MEMORY_ROOT) { $env:SZA_MEMORY_ROOT } else { Join-Path $claudeHome 'memory' }
+        $typesDir = Join-Path $memRoot 'types'
+        if ($parsed -and (Test-Path -LiteralPath $typesDir)) {
+            $have = @{ overlay = @($parsed.overlay); channels = @($parsed.channels); site = @($parsed.site.kind); role = @($parsed.role) }
+            foreach ($t in Get-ChildItem -LiteralPath $typesDir -Directory | Sort-Object Name) {
+                try {
+                    $spec = Join-Path $t.FullName 'type.json'
+                    $index = Join-Path $t.FullName 'MEMORY.md'
+                    if (-not (Test-Path -LiteralPath $spec) -or -not (Test-Path -LiteralPath $index)) { continue }
+                    $def = Get-Content -LiteralPath $spec -Raw | ConvertFrom-Json
+                    $hit = $false
+                    foreach ($key in 'overlay', 'channels', 'site', 'role') {
+                        $want = @($def.match.$key)
+                        if ($want.Count -and @($want | Where-Object { $have[$key] -contains $_ }).Count) { $hit = $true }
+                    }
+                    if (-not $hit) { continue }
+                    $lines = (Get-Content -LiteralPath $index -Raw -Encoding utf8).TrimEnd()
+                    if (-not $lines) { continue }
+                    $typeMemory += "`n## Type memory: $($t.Name) - $($def.title)`nFiles in ``$($t.FullName)``; read one before acting on its line.`n$lines`n"
+                }
+                catch { }
+            }
+        }
+    }
+    catch { $typeMemory = '' }
 
     $header = @"
 This repository has adopted the SZA Unified Rules canon.$overlay$model
@@ -61,7 +98,7 @@ The lines below are the hard invariants; everything else lives in the reference 
     $payload = [pscustomobject]@{
         hookSpecificOutput = [pscustomobject]@{
             hookEventName    = 'SessionStart'
-            additionalContext = $header + $text
+            additionalContext = $header + $text + $typeMemory
         }
     }
     $json = $payload | ConvertTo-Json -Depth 5 -Compress

@@ -25,7 +25,7 @@ name, so a repo may keep its inventory wherever it documents hooks.
 
 | Hook | Event | Verdict | What it does | Canon home |
 | --- | --- | --- | --- | --- |
-| [`session-start.ps1`](session-start.ps1) | `SessionStart` | injects | the twenty hard invariants, in an adopting repo only | [INVARIANTS.md](../rules/INVARIANTS.md) |
+| [`session-start.ps1`](session-start.ps1) | `SessionStart` | injects | the twenty hard invariants and the matching type memory, in an adopting repo only | [INVARIANTS.md](../rules/INVARIANTS.md) |
 | [`guard-bash.ps1`](guard-bash.ps1) | `PreToolUse` (Bash) | refuses | five things that cannot work in Bash on Windows, plus one that corrupts silently | [GITHUB_INTERACTION.md](../rules/GITHUB_INTERACTION.md) section 6 |
 | [`guard-fire-and-forget.ps1`](guard-fire-and-forget.ps1) | `PreToolUse` (Bash) | refuses | backgrounding a gate, a closure facade or a catalog mutator | [AI_USAGE.md](../rules/AI_USAGE.md) section 1 |
 | [`guard-uncapped-read.ps1`](guard-uncapped-read.ps1) | `PreToolUse` (Read) | rewrites | windows an uncapped read of a file over 500 lines, and says so | [AI_USAGE.md](../rules/AI_USAGE.md) sections 3 and 5 |
@@ -131,7 +131,10 @@ top of any of them.
 ## Two scopes, on purpose
 
 **`session-start.ps1` is self-limiting.** It fires only in a repo carrying an `.sza-canon.json` stamp, so
-an unrelated project never pays for the injection.
+an unrelated project never pays for the injection. In the same payload it appends the **type memory** of the
+user - the index of each `~/.claude/memory/types/<tag>/` whose `type.json` matches the stamp's overlay, channels,
+site kind or role ([tools/memory/README.md](../tools/memory/README.md)). The global memory index does not ride here: it
+reaches every session, adopter or not, through an import in the user's own `CLAUDE.md`.
 
 **The guards and the advisories are not.** Each enforces a property of the operating system or of the
 harness, not of a project's conventions: an orphaned `find.exe` floods handles on any Windows checkout, a
