@@ -165,6 +165,20 @@ Eight rules, all measured:
 8. Re-sending a field you did not need to change is another chance to have a language rejected. Prefer a
    terms-only mode that writes only the SearchTerm rows.
 
+Three more, measured on two products:
+
+- **"We couldn't process this .csv file" with an empty "View errors" page is not a format problem by default.** Once it
+  was one language's search terms totalling 23 words: the ceiling is **21 words across a language's seven terms** (count
+  tokens - Urdu writes "keyboard" as two). The progress label "Saving N of 13 languages <x>" names where the saver is,
+  not the offender. Check the word count in the builder before every import.
+- **Never probe a failing import by blanking other languages' cells.** A probe with twelve languages blanked emptied
+  their Description, ShortDescription, Features and ReleaseNotes in the draft. Recover by re-importing the last export
+  unchanged; bisect with complete files - the last accepted re-export with only some fields or languages replaced.
+- **Screenshots from the repository go through the folder import.** The flat CSV refuses a file name (rule 4) and with it
+  every language in the file; importing a folder (or zip) that holds the CSV and the images beside it resolves the names
+  and attaches the assets. After each import, export again and adopt that file as the listing source - an accepted file
+  comes back byte-identical.
+
 `ReleaseNotes` is left alone by the CSV flow and filled per submission in the UI.
 
 **The builder self-test**: where a repo automates the listing, it should commit a real export with the copy

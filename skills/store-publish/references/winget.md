@@ -162,11 +162,30 @@ manifests into place, commits, and opens a PR titled `<PackageId> version <versi
 browser auth over `--token`; `wingetcreate` itself warns the token may be logged. Scope `public_repo` only.
 If a PAT ever leaks into a transcript, revoke it immediately.
 
+**When the fork cannot be synced, open the PR without syncing it.** `wingetcreate submit` stops with "The forked
+repository could not be synced with the upstream commits" once the fork is thousands of commits behind, and `gh repo
+sync` answers that upstream workflow changes need the `workflow` scope a `repo`-scoped token lacks. That is not a dead
+end and not an owner step: a PR is diffed from the merge-base, so a branch made from the fork's own master holds only the
+new files. With `gh api` on the fork: read the **fork's** `master` sha (a ref at an upstream sha answers 404), create one
+blob per manifest (base64 of CRLF bytes without BOM - every manifest upstream is CRLF), one tree with `base_tree`, one
+commit with the fork master as parent, then `POST git/refs` for the branch and check its exit code. The fork's
+compare of `master` with the branch must list exactly the package's files; then `gh pr create --repo microsoft/winget-pkgs --head <owner>:<branch>`.
+One commit, never one contents-PUT per file. Measured in four products, 2026-09-20 to 2026-11-19.
+
+**Before any submit, check for an open PR of the package** (`gh pr list --repo microsoft/winget-pkgs --state open
+--search "<PackageIdentifier> in:title"`). An open one makes a checklist box false. Never close a stale PR to resubmit
+- it loses its place in the moderation queue - and never remove an old merged version.
+
 **PR body is mandatory, not polish.** `wingetcreate` submits Microsoft's template untouched - empty
-description, every box unticked - which reads as "nothing was verified" and stalls review. Generate the body
-from the checks you actually ran, tick only those boxes, mark "Linked to an issue" as not applicable, apply
-with `gh pr edit <n> --repo microsoft/winget-pkgs --body-file <file>`, then **re-read it to confirm**.
-Never tick "tested with winget install locally" if you did not.
+description, every box unticked - which reads as "nothing was verified" and stalls review. **Fetch the live template
+at submit time** (`gh api repos/microsoft/winget-pkgs/contents/.github/PULL_REQUEST_TEMPLATE.md --jq .content`,
+base64) and keep its sections and exact wording; Microsoft edits it, and a checklist written from memory has been wrong
+every time (count, wording, the "only one manifest" item). The prose half copies the shape of the **last merged PR of
+the same package** (`gh pr view <n> --json body`): old -> new version, the fields that changed (diff the merged upstream
+manifests first - locale files drift), "What's new", a labelled Links block. Generate the boxes from the checks you
+actually ran, tick only those, mark "Linked to an issue" as not applicable, apply with `gh pr edit <n> --repo
+microsoft/winget-pkgs --body-file <file>`, then **re-read it to confirm** - the PR is unfinished until `gh pr view`
+shows the filled text. Never tick "tested with winget install locally" if you did not.
 
 **Automated checks** (~10-30 min): ManifestValidation, InstallerValidation (downloads, verifies SHA256,
 SmartScreen, sandbox install), URLValidation, DefenderScan. Then `Validation-Completed` and a human moderator

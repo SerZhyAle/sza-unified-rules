@@ -113,6 +113,10 @@ every test tier, the release tier above 5 s included. Between releases nothing s
 ([TESTING_AND_QA.md](../../rules/TESTING_AND_QA.md) §2), so this run is the first proof of every `RELEASE`
 item the tickets since the last release recorded - a red here is expected news, not a surprise to explain away. If the repo has a local
 CI-parity build, run it: a failure discovered here is free, a failure discovered in a paid Windows job is not.
+Where the release workflow tests on a runner and a CI workflow can be dispatched by hand, **dry-run it on the pushed
+HEAD before the tag** and read `gh run view <id> --log-failed`: a runner differs from the dev machine (a 1024 px
+display, a small slow machine, no foreground rights), and a green local gate once still left three burnt tags with no
+GitHub Release.
 Judge a **detached worktree of HEAD**, never the working tree: the tree is dirty by design, and `[skip ci]`
 commits mean this is the only clean-room run before the paid one.
 
@@ -222,7 +226,8 @@ one line and the gate is `n/a`.
 
 This is the anti-loss phase and the reason this skill exists.
 
-1. **Gather**: `git describe --tags --abbrev=0`, then `git log <last-tag>..HEAD`, plus any accreted
+1. **Gather**: the last *published* release (`gh release list`, or the channel's own record) - not merely the last
+   tag, because a failed release run leaves a tag with no release - then `git log <that-tag>..HEAD`, plus any accreted
    `## [Unreleased]` bullets. Distil into user-facing bullets. *Every meaningful commit becomes a line or is
    deliberately dropped* - that is the standard, not just the command.
    **Where the repo keeps a release package plan, its ready block for the current package *is* the scope of
