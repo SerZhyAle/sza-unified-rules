@@ -1,0 +1,31 @@
+---
+paths:
+  - "rules/**"
+  - "skills/**"
+  - ".claude-plugin/**"
+  - "memory/**"
+  - "AGENTS.md"
+---
+
+# Canon content and plugin layout
+
+Moved verbatim from [CLAUDE.md](../../CLAUDE.md) on 2026-11-25. The always-on rules stay there; in the text below "this file" means `CLAUDE.md`.
+
+- **Changing a rule doc changes the digest**, which marks every adopting repo stale. That is intended: a
+  differing digest is a warning at any age, and the gate names the rule docs that changed since the stamp was
+  written (`canon.docDigests`), so a reconciliation re-reads those and nothing else - neither the version number
+  nor the stamp's age decides anything (`RULE-DELIVERY` rule 5). This repo, role `canon-home`, is never stale
+  against itself.
+- **Editing a skill**: the SKILL.md body is what loads on trigger; heavy payload goes in `references/`
+  beside it. Keep the frontmatter `description` written in the words the owner actually uses to ask for the
+  task, in both languages where that is how the request arrives - it is the trigger, not a summary.
+
+- `.claude-plugin/` holds **both** `marketplace.json` and `plugin.json` - the repo is its own marketplace,
+  with the plugin at `source: "./"`.
+- Paths inside skills resolve through `${CLAUDE_PLUGIN_ROOT}` at run time and through relative links
+  (`../../rules/...`) when read as files. Keep both working: a skill is read as a document *and* executed.
+- `rules/` was moved here from the `sza.od.ua` site repo with its history intact (`git subtree split`). The
+  site repo keeps a pointer, not a copy.
+- [AGENTS.md](../../AGENTS.md) is the Codex entry point: a delegating stub that sends the agent to this file, plus the
+  Codex-only routing bullets. It repeats no command, tier or style rule, so nothing here has a second copy to keep
+  in step. `memory/` holds that agent's notes.

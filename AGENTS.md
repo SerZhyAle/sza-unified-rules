@@ -14,3 +14,5 @@ Read [`CLAUDE.md`](CLAUDE.md) in full; it is the authoritative agent contract an
 - Keep files below roughly 1,500 lines unless a documented cohesive exception exists. This tooling repository has no generic app build/run command or unified logger contract.
 - Durable, non-obvious memory belongs under `memory/`. Read `memory/MEMORY.md` when relevant; do not duplicate facts already derivable from the repository or `CLAUDE.md`.
 - Commit on the checked-out branch (`main`) and do not create a branch for a commit unless the owner asks: a deploy pushed from another branch reaches no consumer, because the plugin follows `main`. This repository takes no pull requests.
+
+**Area rules.** The detail behind `CLAUDE.md` lives in `.claude/rules/*.md`. Only Claude Code loads those files by itself. Every other agent opens them by hand: each file starts with a `paths:` list, and before the first edit, review or command in a matching area you read the whole file. The table in `CLAUDE.md` names them.

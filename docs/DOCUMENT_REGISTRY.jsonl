@@ -1,3 +1,8 @@
+{"path": ".claude/rules/canon-content.md", "topic": "Canon content and plugin layout", "area": "repository", "update_triggers": ["Changes to rule or skill editing conventions, the plugin layout or the digest"], "role": "source"}
+{"path": ".claude/rules/contracts.md", "topic": "Contracts this repo owns", "area": "repository", "update_triggers": ["Changes to the contracts this repo owns or implements"], "role": "source"}
+{"path": ".claude/rules/deploy.md", "topic": "Deploy and delivery", "area": "repository", "update_triggers": ["Changes to deploy.ps1, the version pair, the release ledger or the plugin update"], "role": "source"}
+{"path": ".claude/rules/harness.md", "topic": "Payload, root files and harness", "area": "repository", "update_triggers": ["Changes to the harness layout, pq, the forwarder or the root files"], "role": "source"}
+{"path": ".claude/rules/tests-and-gates.md", "topic": "Tests and gates", "area": "repository", "update_triggers": ["Changes to test tiers, the tier runner or the compliance gate rules"], "role": "source"}
 {"path": "AGENTS.md", "topic": "Repository Guidelines", "area": "repository", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "CLAUDE.md", "topic": "CLAUDE.md - sza-unified-rules (the canon and its plugin)", "area": "repository", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "EXPERIENCE_MAP.md", "topic": "Experience map - sza-unified-rules", "area": "repository", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}

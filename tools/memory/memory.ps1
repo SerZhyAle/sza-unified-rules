@@ -263,9 +263,13 @@ switch ($Command) {
         $drift = New-Object System.Collections.Generic.List[object]
         $stale = New-Object System.Collections.Generic.List[object]
         $noScope = @{}
+        $big = New-Object System.Collections.Generic.List[object]
         $cut = (Get-Date).AddDays(-$StaleDays)
         foreach ($f in $folders) {
             $files = Get-MemoryFiles $f.Dir
+            # The index is the part every session loads (AI_USAGE.md section 4): 8,000 characters.
+            $idxFile = Join-Path $f.Dir 'MEMORY.md'
+            if (Test-Path -LiteralPath $idxFile) { $len = [IO.File]::ReadAllText($idxFile).Length; if ($len -gt 8000) { $big.Add([pscustomobject]@{ Folder = $f.Label; Characters = $len }) } }
             $listed = @{}
             foreach ($line in (Get-IndexLines $f.Dir)) { $t = Get-LineTarget $line; if ($t) { $listed[$t] = $true } }
             foreach ($t in $listed.Keys) { if (-not ($files.Name -contains $t)) { $drift.Add([pscustomobject]@{ Folder = $f.Label; Issue = 'index line, no file'; File = $t }) } }
@@ -314,6 +318,7 @@ switch ($Command) {
             Drift      = $drift.ToArray()   # @() of an EMPTY generic List throws "Argument types do not match" here
             NoScope    = $noScope
             Stale      = $stale.ToArray()
+            OverBudget = $big.ToArray()
         }
         if ($Json) { $report | ConvertTo-Json -Depth 5; break }
         "memories: $($mems.Count) in $($folders.Count) folders (root $(Get-MemoryRoot))"
@@ -321,6 +326,8 @@ switch ($Command) {
         $report.Duplicates | ForEach-Object { '  {0:N2}  {1}  <>  {2}' -f $_.Score, $_.A, $_.B }
         "`nindex drift: $($drift.Count)"
         $drift | ForEach-Object { '  {0}: {1} - {2}' -f $_.Folder, $_.Issue, $_.File }
+        "`nindexes over 8000 characters: $($big.Count)"
+        $big | ForEach-Object { '  {0}: {1}' -f $_.Folder, $_.Characters }
         "`nmemories without a scope line, per folder:"
         $noScope.GetEnumerator() | Sort-Object Name | ForEach-Object { '  {0}: {1}' -f $_.Name, $_.Value }
         "`n*-state memories older than $StaleDays days (cleanup candidates):"

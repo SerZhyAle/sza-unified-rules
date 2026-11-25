@@ -573,6 +573,62 @@ try {
         }
     }
 
+    # SZA-RULES07 - the always-loaded set has a budget, because every request pays for it (AI_USAGE.md
+    # section 5). A set is a head file, what it imports with an @ line, a second root file it tells every
+    # session to read, and, for Claude, each rule file that has no `paths:` list. Characters, not bytes.
+    $ruleFiles = @($tracked | Where-Object { $_ -match '^\.claude/rules/.+\.md$' -and (Test-RepoPath $_) })
+    $ruleTexts = @{}
+    foreach ($rf in $ruleFiles) { $ruleTexts[$rf] = [IO.File]::ReadAllText((Join-RepoPath $rf)) }
+    $largest = $null
+    foreach ($head in @('CLAUDE.md', 'AGENTS.md')) {
+        if ($agentFiles -notcontains $head) { continue }
+        $other = if ($head -eq 'CLAUDE.md') { 'AGENTS.md' } else { 'CLAUDE.md' }
+        $parts = [ordered]@{ $head = [IO.File]::ReadAllText((Join-RepoPath $head)) }
+        foreach ($m in [regex]::Matches($parts[$head], '(?m)^@([^\s]+\.md)\s*$')) {
+            $imp = $m.Groups[1].Value -replace '^\./', ''
+            if (Test-RepoPath $imp) { $parts[$imp] = [IO.File]::ReadAllText((Join-RepoPath $imp)) }
+        }
+        $otherName = [regex]::Escape($other)
+        if ($agentFiles -contains $other -and
+            ($parts[$head] -match "(?i)\b(read|see)\s+\[?``?$otherName[^\n]{0,80}(in full|first|it is the)" -or
+             $parts[$head] -match "(?i)$otherName[^\n]{0,60}read it (first|in full)")) {
+            $parts[$other] = [IO.File]::ReadAllText((Join-RepoPath $other))
+        }
+        if ($head -eq 'CLAUDE.md') {
+            foreach ($rf in $ruleFiles) {
+                if ($ruleTexts[$rf] -notmatch '(?s)\A\uFEFF?---\r?\n.*?\bpaths\s*:.*?\r?\n---') { $parts[$rf] = $ruleTexts[$rf] }
+            }
+        }
+        $size = 0
+        foreach ($v in $parts.Values) { $size += $v.Length }
+        if (-not $largest -or $size -gt $largest.size) {
+            $largest = @{ head = $head; size = $size; detail = (($parts.Keys | ForEach-Object { "$_ $($parts[$_].Length)" }) -join ', ') }
+        }
+    }
+    if ($largest -and $largest.size -gt 20000) {
+        $sev = if ($largest.size -gt 40000) { 'error' } else { 'warn' }
+        Add-Finding -Id 'SZA-RULES07' -Severity $sev -Path $largest.head `
+            -Message "always-loaded rules are $($largest.size) characters ($($largest.detail)); budget 20000, hard limit 40000" `
+            -Fix 'Move detail verbatim into .claude/rules/<area>.md with a paths: list, or into a tracked document, and keep one line or table row in the core (AI_USAGE.md section 5).'
+    }
+
+    # SZA-RULES08 - one huge area file only moves the cost to the first touch of the area.
+    foreach ($rf in $ruleFiles) {
+        if ($ruleTexts[$rf].Length -gt 40000) {
+            Add-Finding -Id 'SZA-RULES08' -Severity 'warn' -Path $rf `
+                -Message "area rule file is $($ruleTexts[$rf].Length) characters" `
+                -Fix 'Split it by area with narrower paths: lists (AI_USAGE.md section 5).'
+        }
+    }
+
+    # SZA-RULES09 - only Claude Code loads .claude/rules by itself.
+    if ($ruleFiles.Count -gt 0 -and
+        -not ($agentFiles -contains 'AGENTS.md' -and [IO.File]::ReadAllText((Join-RepoPath 'AGENTS.md')) -match '\.claude[/\\]rules')) {
+        Add-Finding -Id 'SZA-RULES09' -Severity 'warn' -Path 'AGENTS.md' `
+            -Message "$($ruleFiles.Count) area rule file(s), but AGENTS.md does not send other agents to .claude/rules" `
+            -Fix 'Add the area-rules paragraph from templates/agent-rules.md to AGENTS.md.'
+    }
+
     # --------------------------------------------------------- group MEM
 
     # SZA-MEM01 - a committed agent-memory index that outgrew what the agent reads. Claude Code loads the

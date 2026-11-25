@@ -219,6 +219,10 @@ shares. Reconciled against the portfolio; per-project records in `contrib/`.
   move the bodies to topic files. When the index outgrows its cap, **split it, never truncate it**:
   second-level `INDEX_<topic>.md` files, each new pointer routed to the index that owns its topic, only
   preconditions at the top level, and no hook cut off mid-phrase.
+  - **The budget of a per-user index is 8,000 characters** (`memory.ps1 audit` reports a larger one). Owner
+    preferences, standing orders and traps stay in the index; a note that records the state of a ticket or a
+    campaign goes to `state/` beside it, with its line in `state/INDEX.md`. The index names that file as plain
+    text, not as a markdown link, so that the index resync keeps the line.
 - **A memory that records a moment writes its own expiry condition, and pruning reads that condition -
   not age, and not the liveness of the ticket it came from.** A trap found on a ticket outlives the ticket:
   measured on the reference project, a dead-ticket-anchor rule flagged 269 of 342 memory files, and 3 of
@@ -233,6 +237,25 @@ shares. Reconciled against the portfolio; per-project records in `contrib/`.
 - Each repo carries an agent rules file at root (reference: `CLAUDE.md`, with a parallel `AGENTS.md`
   for non-Claude agents; import order defined, stricter wins). It is the authoritative operating
   manual - these Unified Rules are its cross-project backbone.
+- **The always-loaded set has a budget: 20,000 characters, hard limit 40,000.** The set is the rules file a
+  session starts with, every file it imports, a second file it tells every session to read, and every
+  `.claude/rules` file without a `paths:` list. Every request pays for all of it. Measured on this portfolio
+  (2026-11-25): one repository's rules file had grown to 304,000 characters, about 80,000 tokens per request,
+  and twelve repositories shrank to 10,000-23,000 characters with the text moved, not deleted. The gate is
+  `check-compliance.ps1` `SZA-RULES07`; at the write itself the plugin's
+  [`guard-rules-budget`](../hooks/README.md) hook refuses growth past the hard limit.
+  - **New knowledge goes to its area, never to the core by default.** Detail belongs in
+    `.claude/rules/<area>.md` with a `paths:` list that matches only the files it is about, or in a tracked
+    document; the core gets at most one line or one row of its "read before touching" table. A ticket never
+    appends its narrative to the rules file - history belongs to the ticket and the changelog.
+  - **The core keeps what must hold before any area file is opened:** identity, prohibitions whose violation
+    does damage, the everyday commands, and the table of area files.
+  - **A rule file is split by area before it reaches 40,000 characters** (`SZA-RULES08`): one huge area file
+    only moves the cost.
+  - **Every agent has to reach the area files.** Only Claude Code loads `.claude/rules` by itself, so
+    `AGENTS.md` says that every other agent opens, before the first edit or command in an area, each file whose
+    `paths:` match, and the core's table names every file (`SZA-RULES09`). Where `.claude/` is ignored by git,
+    the moved text lives in a tracked document instead.
 - Repetitive workflows are **named skills / slash-commands** (build, release, spec lifecycle, doc sync,
   log analysis..) so a routine has one canonical procedure instead of ad-hoc reinvention. Author a new
   rule/gate/skill only after observing the failure it prevents; keep it minimal and trigger-focused.

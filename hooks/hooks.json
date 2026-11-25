@@ -26,6 +26,17 @@
     ],
     "PreToolUse": [
       {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "input=$(cat); case \"$input\" in *CLAUDE.md*|*AGENTS.md*|*MEMORY.md*) printf \"%s\" \"$input\" | pwsh -NoProfile -File \"${CLAUDE_PLUGIN_ROOT}/hooks/guard-rules-budget.ps1\" ;; esac",
+            "shell": "bash",
+            "timeout": 10
+          }
+        ]
+      },
+      {
         "matcher": "Bash",
         "hooks": [
           {

@@ -29,6 +29,7 @@ name, so a repo may keep its inventory wherever it documents hooks.
 | [`guard-bash.ps1`](guard-bash.ps1) | `PreToolUse` (Bash) | refuses | five things that cannot work in Bash on Windows, plus one that corrupts silently | [GITHUB_INTERACTION.md](../rules/GITHUB_INTERACTION.md) section 6 |
 | [`guard-fire-and-forget.ps1`](guard-fire-and-forget.ps1) | `PreToolUse` (Bash) | refuses | backgrounding a gate, a closure facade or a catalog mutator | [AI_USAGE.md](../rules/AI_USAGE.md) section 1 |
 | [`guard-uncapped-read.ps1`](guard-uncapped-read.ps1) | `PreToolUse` (Read) | rewrites | windows an uncapped read of a file over 500 lines, and says so | [AI_USAGE.md](../rules/AI_USAGE.md) sections 3 and 5 |
+| [`guard-rules-budget.ps1`](guard-rules-budget.ps1) | `PreToolUse` (Edit, Write) | refuses, warns | refuses growth of a rules file past its hard limit; warns over the budget of a rules file or a memory index | [AI_USAGE.md](../rules/AI_USAGE.md) sections 4 and 5 |
 | [`on-user-prompt.ps1`](on-user-prompt.ps1) | `UserPromptSubmit` | warns, nudges | context size past the band; a micro-task reaching for the full pipeline | [AI_USAGE.md](../rules/AI_USAGE.md) sections 3 and 5 |
 
 Why the inventory is a rule and not tidiness: **a hook is invisible by construction.** It fires inside a
