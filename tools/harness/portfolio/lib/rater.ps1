@@ -12,23 +12,32 @@
 #   Get-PqGradeLadderLines -Registry
 #       one line per grade 0-9: the first agent of agentOrder whose route takes it, its model, effort and parallel axis.
 #   ConvertFrom-PqRaterAnswer -Text
-#       @{ ok; score; reason; confidence; why } from the LAST JSON object of the output that names a score: score an
-#       integer 0-9, confidence high/medium/low (absent reads medium), low raises the score by one (at most 9).
+#       @{ ok; score; reason; confidence; why } from the LAST JSON object of the output that names a score (braces
+#       inside its strings included): score an integer 0-9, confidence high/medium/low (absent reads medium), low raises
+#       the score by one (at most 9).
 #   Invoke-PqRaterRecord -Rater -Prompt [-WorkingDirectory]
-#       one rater record run: @{ ok; text; why } (why timeout, launchFailed, exit), the prompt on the standard input
-#       unless argsTemplate carries {prompt}.
+#       one rater record run: @{ ok; text; why } (why timeout, launchFailed, noAnswer), the prompt on the standard input
+#       unless argsTemplate carries {prompt}. timeoutSeconds covers the writing of the prompt and the answer together.
+#   Test-PqSpecRatingDue -SpecPath
+#       whether the file's line, read now, is still one a rater may write: absent, unrecognised or the capture default.
 #   Set-PqSpecComplexity -SpecPath -Line [-AllowPinned]
 #       rewrite the `**Complexity:**` header line, or insert it after the header lines; the file's byte-order mark and
-#       line ends are kept. A pinned line is never rewritten (returns $false). Returns $true when it wrote.
+#       every line end are kept. A pinned line is never rewritten and a file that is not valid UTF-8 is never touched
+#       (returns $false). Returns $true when it wrote.
 #   Invoke-PqTicketRating -Registry -Info -RepoKey -TicketId -Log -Run -Worker
 #       ask each rater in turn, write the grade and ticket.complexity (by rater), or rater.fail. @{ ok; score; rater }.
+#       One worker rates a ticket at a time: a second one waits, and asks nothing when it waited or the line is graded.
+#   Test-PqGradeRewritten -Before -After
+#       whether a pass changed the ticket's grade itself (two level infos), so the escalation leaves it alone.
 #   Get-PqEscalatedScore -Info -Outcome -StatusAfter -By
-#       the raised grade after a failed pass, or -1 when nothing is to be raised.
+#       the raised grade after a failed pass, or -1 when nothing is to be raised; a neutral end raises nothing.
 #   Invoke-PqTicketEscalation -Registry -Info -Outcome -StatusAfter -RepoKey -TicketId -Log -Run -Pass -Worker -Agent
 #       write the raised grade and ticket.complexity (by escalation). Returns the new grade or -1.
 
 $script:PqRaterPromptFile = Join-Path $PSScriptRoot '..\rater\RATER_PROMPT.md'
 $script:PqRaterFailureOutcomes = @('child-failed', 'no-progress', 'timeout')
+# Ends nothing counts against the ticket (TASK-FLOW 0.44 section 20 item D): no escalation, whatever status they leave.
+$script:PqRaterNeutralOutcomes = @('limit-hit', 'launch-failed', 'claim-lost-before-launch', 'provider-error', 'killed', 'halted')
 # The arguments of a rater record that names none: Claude Code in print mode with no built-in tool, no MCP server and no
 # saved session, the prompt on the standard input (rule 71: the rater is given no tools).
 $script:PqRaterDefaultArgs = @('-p', '--model', '{model}', '--tools', '', '--strict-mcp-config', '--no-session-persistence')
@@ -98,13 +107,49 @@ function Get-PqGradeLadderLines($Registry) {
     return $lines.ToArray()
 }
 
+# The index of the brace that closes the one at Start, braces inside JSON strings not counted; -1 when none does.
+function Find-PqJsonObjectEnd([string]$Text, [int]$Start) {
+    $depth = 0
+    $inString = $false
+    for ($i = $Start; $i -lt $Text.Length; $i++) {
+        $c = $Text[$i]
+        if ($inString) {
+            if ($c -eq '\') { $i++ }
+            elseif ($c -eq '"') { $inString = $false }
+        }
+        elseif ($c -eq '"') { $inString = $true }
+        elseif ($c -eq '{') { $depth++ }
+        elseif ($c -eq '}') {
+            $depth--
+            if ($depth -eq 0) { return $i }
+        }
+    }
+    return -1
+}
+
+# The JSON object of the output that has a `score` member of its own and ends last, or $null: an earlier draft loses to
+# the final object, and an object nested in a scored one loses to the one around it.
+function Find-PqRaterObject([string]$Text) {
+    $best = $null
+    $bestEnd = -1
+    foreach ($m in [regex]::Matches($Text, '\{(?=\s*")')) {
+        $end = Find-PqJsonObjectEnd $Text $m.Index
+        if ($end -le $bestEnd) { continue }
+        $json = $Text.Substring($m.Index, $end - $m.Index + 1)
+        if (-not $json.Contains('"score"')) { continue }
+        try { $obj = ConvertFrom-Json -InputObject $json -ErrorAction Stop } catch { continue }
+        if (@($obj.PSObject.Properties.Name) -cnotcontains 'score') { continue }
+        $best = $obj
+        $bestEnd = $end
+    }
+    return $best
+}
+
 function ConvertFrom-PqRaterAnswer([string]$Text) {
     $res = @{ ok = $false; score = -1; reason = ''; confidence = ''; why = 'noAnswer' }
     if ([string]::IsNullOrWhiteSpace($Text)) { return $res }
-    $found = [regex]::Matches($Text, '\{[^{}]*"score"[^{}]*\}')
-    if ($found.Count -eq 0) { $res.why = 'invalid'; return $res }
-    $obj = $null
-    try { $obj = ConvertFrom-Json -InputObject $found[$found.Count - 1].Value } catch { $res.why = 'invalid'; return $res }
+    $obj = Find-PqRaterObject $Text
+    if ($null -eq $obj) { $res.why = 'invalid'; return $res }
     $s = $obj.score
     $n = -1
     if ($s -is [int] -or $s -is [long]) { $n = [int]$s }
@@ -152,39 +197,65 @@ function Invoke-PqRaterRecord($Rater, [string]$Prompt, [string]$WorkingDirectory
     $proc = $null
     try { $proc = [Diagnostics.Process]::Start($psi) } catch { return @{ ok = $false; text = ''; why = 'launchFailed' } }
     try {
+        # One time budget from here: a CLI that never reads its standard input blocks the write once the pipe is full.
+        $clock = [Diagnostics.Stopwatch]::StartNew()
+        $left = { [int][Math]::Max(0, $timeout * 1000 - $clock.ElapsedMilliseconds) }
         $out = $proc.StandardOutput.ReadToEndAsync()
         $err = $proc.StandardError.ReadToEndAsync()
+        $write = $null
+        $inTime = $true
         if (-not $viaArg) {
             $bytes = [Text.Encoding]::UTF8.GetBytes($Prompt)
-            $proc.StandardInput.BaseStream.Write($bytes, 0, $bytes.Length)
-            $proc.StandardInput.BaseStream.Flush()
+            $write = $proc.StandardInput.BaseStream.WriteAsync($bytes, 0, $bytes.Length)
+            $inTime = $write.Wait((& $left))
+            if ($inTime) {
+                $write = $proc.StandardInput.BaseStream.FlushAsync()
+                $inTime = $write.Wait((& $left))
+            }
         }
-        $proc.StandardInput.Close()
-        if (-not $proc.WaitForExit($timeout * 1000)) {
+        if ($inTime) {
+            $proc.StandardInput.Close()
+            $inTime = $proc.WaitForExit((& $left))
+        }
+        if (-not $inTime) {
             & taskkill.exe /PID $proc.Id /T /F 2>&1 | Out-Null
+            # The killed child breaks the pipe, which ends a pending write.
+            if ($null -ne $write) { try { $null = $write.Wait(2000) } catch { } }
             return @{ ok = $false; text = ''; why = 'timeout' }
         }
         $proc.WaitForExit()
         $text = [string]$out.Result
-        if ($proc.ExitCode -ne 0 -and -not $text.Trim()) { $text = [string]$err.Result; return @{ ok = $false; text = $text; why = 'exit' } }
+        if ($proc.ExitCode -ne 0 -and -not $text.Trim()) { $text = [string]$err.Result; return @{ ok = $false; text = $text; why = 'noAnswer' } }
         return @{ ok = $true; text = $text; why = '' }
     }
     catch { return @{ ok = $false; text = ''; why = 'launchFailed' } }
-    finally { if ($null -ne $proc) { $proc.Dispose() } }
+    finally { if ($null -ne $proc) { try { $proc.Dispose() } catch { } } }
+}
+
+function Test-PqSpecRatingDue([string]$SpecPath) {
+    try { $lines = [string[]][IO.File]::ReadAllLines($SpecPath, [Text.Encoding]::UTF8) } catch { return $false }
+    $hit = Find-SzaComplexityLine $lines
+    if ($hit.index -lt 0) { return $true }
+    $g = ConvertFrom-SzaComplexityValue $hit.value
+    if (-not $g.recognised) { return $true }
+    return (-not $g.numeric -and $g.level -ceq 'medium' -and $hit.value -imatch 'not assessed at capture')
 }
 
 function Set-PqSpecComplexity([string]$SpecPath, [string]$Line, [switch]$AllowPinned) {
     $bytes = [IO.File]::ReadAllBytes($SpecPath)
     $bom = ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)
-    $text = [Text.UTF8Encoding]::new($false).GetString($bytes, $(if ($bom) { 3 } else { 0 }), $bytes.Length - $(if ($bom) { 3 } else { 0 }))
-    $nl = if ($text.Contains("`r`n")) { "`r`n" } else { "`n" }
-    $lines = [Collections.Generic.List[string]]::new([string[]][regex]::Split($text, '\r?\n'))
-    $hit = Find-SzaComplexityLine ([string[]]$lines)
+    $skip = if ($bom) { 3 } else { 0 }
+    # Strict decoding: a file in another encoding would lose its non-ASCII characters on the way back.
+    try { $text = [Text.UTF8Encoding]::new($false, $true).GetString($bytes, $skip, $bytes.Length - $skip) } catch { return $false }
+    # The captured separators keep every line's own end: even places hold the lines, odd places the ends.
+    $parts = [Collections.Generic.List[string]]::new([string[]][regex]::Split($text, '(\r\n|\n)'))
+    $lines = [string[]]@(for ($i = 0; $i -lt $parts.Count; $i += 2) { $parts[$i] })
+    $hit = Find-SzaComplexityLine $lines
     if ($hit.index -ge 0) {
         $old = ConvertFrom-SzaComplexityValue $hit.value
         if ($old.pinned -and -not $AllowPinned) { return $false }
         if ($lines[$hit.index] -ceq $Line) { return $false }
-        $lines[$hit.index] = $Line
+        $parts[2 * $hit.index] = $Line
     }
     else {
         # After the header lines: the last `**Label:**` line of the first block that follows the title.
@@ -195,9 +266,17 @@ function Set-PqSpecComplexity([string]$SpecPath, [string]$Line, [switch]$AllowPi
             if ($lines[$i] -match '^\*\*[^*]+:\*\*') { $at = $i }
         }
         if ($at -lt 0) { $at = 0 }
-        $lines.Insert($at + 1, $Line)
+        $end = 2 * $at + 1
+        if ($end -lt $parts.Count) {
+            # The new line goes after that line's end and takes the same one.
+            $parts.InsertRange($end + 1, [string[]]@($Line, $parts[$end]))
+        }
+        else {
+            $nl = if ($text.Contains("`r`n")) { "`r`n" } else { "`n" }
+            $parts.AddRange([string[]]@($nl, $Line))
+        }
     }
-    $outText = [string]::Join($nl, $lines)
+    $outText = [string]::Join('', $parts)
     $enc = [Text.UTF8Encoding]::new($bom)
     $tmp = "$SpecPath.rate.tmp"
     [IO.File]::WriteAllText($tmp, $outText, $enc)
@@ -212,7 +291,37 @@ function Get-PqComplexityDirection([int]$From, [int]$To) {
     return 'set'
 }
 
+function Get-PqRatingLockName([string]$RepoKey, [string]$TicketId) {
+    $key = ((Get-PqRoot) + '|rate|' + $RepoKey + ':' + $TicketId).ToLowerInvariant()
+    return 'sza-pq-rate-' + [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($key)))
+}
+
 function Invoke-PqTicketRating($Registry, $Info, [string]$RepoKey, [string]$TicketId, $Log, [string]$Run, $Worker) {
+    $nothing = @{ ok = $false; score = -1; rater = '' }
+    # Longer than the whole chain of raters may take in the worker that holds the lock.
+    $waitMs = 30000
+    foreach ($r in @(Get-PqRaters $Registry)) { $waitMs += 1000 * [int](Get-PqValue $r 'timeoutSeconds' 120) }
+    $mutex = [Threading.Mutex]::new($false, (Get-PqRatingLockName $RepoKey $TicketId))
+    $held = $false
+    $waited = $false
+    try {
+        try {
+            $held = $mutex.WaitOne(0)
+            if (-not $held) { $held = $mutex.WaitOne($waitMs); $waited = $held }
+        }
+        # The holder died in the middle of its rating: nobody has answered, so this worker asks.
+        catch [Threading.AbandonedMutexException] { $held = $true }
+        if (-not $held -or $waited -or -not (Test-PqSpecRatingDue $Info.spec)) { return $nothing }
+        return Invoke-PqRaterChain $Registry $Info $RepoKey $TicketId $Log $Run $Worker
+    }
+    finally {
+        if ($held) { $mutex.ReleaseMutex() }
+        $mutex.Dispose()
+    }
+}
+
+# The rating itself, run under the ticket's lock by Invoke-PqTicketRating alone.
+function Invoke-PqRaterChain($Registry, $Info, [string]$RepoKey, [string]$TicketId, $Log, [string]$Run, $Worker) {
     $tried = [Collections.Generic.List[string]]::new()
     $lastWhy = 'noAnswer'
     $prompt = $null
@@ -229,6 +338,8 @@ function Invoke-PqTicketRating($Registry, $Info, [string]$RepoKey, [string]$Tick
             $model = [string](Get-PqValue $r 'model' '')
             $reason = if ($ans.reason) { $ans.reason } else { 'no reason given' }
             $line = Format-SzaComplexityLine -Score $ans.score -Reason ("rated by {0} ({1}): {2}" -f $model, $ans.confidence, $reason)
+            # Read again: the owner or a pass may have written a grade while the model was answering.
+            if (-not (Test-PqSpecRatingDue $Info.spec)) { return @{ ok = $false; score = -1; rater = '' } }
             $wrote = $false
             try { $wrote = Set-PqSpecComplexity -SpecPath $Info.spec -Line $line } catch { $wrote = $false }
             if (-not $wrote) { $lastWhy = 'invalid'; break }
@@ -251,9 +362,23 @@ function Invoke-PqTicketRating($Registry, $Info, [string]$RepoKey, [string]$Tick
     return @{ ok = $false; score = -1; rater = '' }
 }
 
+# The runner writes `no-progress-or-claim-lost` for an unmoved run it cannot tell apart; a reader treats it as
+# `no-progress` (TASK-FLOW rule 23).
+function ConvertTo-PqEscalationOutcome([string]$Outcome) {
+    if ($Outcome -ceq 'no-progress-or-claim-lost') { return 'no-progress' }
+    return $Outcome
+}
+
+function Test-PqGradeRewritten($Before, $After) {
+    if ($null -eq $Before -or $null -eq $After) { return $false }
+    return ([int]$Before.score -ne [int]$After.score) -or ([bool]$Before.numeric -ne [bool]$After.numeric)
+}
+
 function Get-PqEscalatedScore($Info, [string]$Outcome, [string]$StatusAfter, [int]$By) {
     if ($By -le 0 -or $null -eq $Info) { return -1 }
     if (-not $Info.numeric -or $Info.pinned) { return -1 }
+    $Outcome = ConvertTo-PqEscalationOutcome $Outcome
+    if ($script:PqRaterNeutralOutcomes -ccontains $Outcome) { return -1 }
     $failed = ($script:PqRaterFailureOutcomes -ccontains $Outcome) -or ($StatusAfter -ceq 'Broken')
     if (-not $failed) { return -1 }
     $to = [Math]::Min(9, [int]$Info.score + $By)
@@ -263,6 +388,7 @@ function Get-PqEscalatedScore($Info, [string]$Outcome, [string]$StatusAfter, [in
 
 function Invoke-PqTicketEscalation($Registry, $Info, [string]$Outcome, [string]$StatusAfter, [string]$RepoKey, [string]$TicketId, $Log, [string]$Run, [string]$Pass, $Worker, [string]$Agent) {
     $by = [int](Get-PqValue $Registry 'escalateBy' 2)
+    $Outcome = ConvertTo-PqEscalationOutcome $Outcome
     $to = Get-PqEscalatedScore -Info $Info -Outcome $Outcome -StatusAfter $StatusAfter -By $by
     if ($to -lt 0 -or -not $Info.spec) { return -1 }
     $hit = Find-SzaComplexityLine ([string[]][IO.File]::ReadAllLines($Info.spec, [Text.Encoding]::UTF8))

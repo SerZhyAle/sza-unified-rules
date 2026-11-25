@@ -354,8 +354,12 @@ function Select-PqAgent {
 
 # The model and effort a pick launches with (TASK-FLOW 0.32 item B): the route's, else the record's fixed ones (for
 # claude the record names none, so '' - the runner then chooses by the level, as before). @{ model; effort }.
-function Get-PqPickLaunch($Pick) {
+# -Status: a claude pass on an audit status takes neither (Get-PqClaudePassArgs), so both are '' whatever the route.
+function Get-PqPickLaunch($Pick, [string]$Status = '') {
     $model = ''; $effort = ''
+    if ($null -ne $Pick -and [string]$Pick.agent -ceq 'claude' -and $Status -and $script:PqClaudeShapeStatuses -ccontains $Status) {
+        return @{ model = $model; effort = $effort }
+    }
     if ($null -ne $Pick -and $null -ne $Pick.record) {
         $model = [string](Get-PqValue $Pick.record 'model' '')
         $effort = [string](Get-PqValue $Pick.record 'effort' '')

@@ -6,9 +6,10 @@
 #
 #   ConvertFrom-SzaComplexityValue -Value <text after the label>
 #       @{ recognised; level; score; numeric; pinned; reason }. A grade is one digit 0-9 at the start, optionally
-#       followed by the word `pinned`; a word is light/medium/hard or its Russian spelling. The level is the band of
-#       the grade (0-3 light, 4-6 medium, 7-9 hard); a word reads as the grade 1, 5 or 8. Anything else is not
-#       recognised: level '' and score -1, never a guess.
+#       followed by the word `pinned`, and then the end of the value or ` - <reason>`; a word is light/medium/hard or
+#       its Russian spelling. The level is the band of the grade (0-3 light, 4-6 medium, 7-9 hard); a word reads as
+#       the grade 1, 5 or 8. Anything else (`5pinned`, `7-9`, `0/10`, `3 files`) is not recognised: level '' and
+#       score -1, never a guess.
 #   Get-SzaComplexityBand -Score <0-9>       the level word of a grade
 #   Get-SzaComplexityWordScore -Level <word> the grade a level word reads as (1, 5, 8), or -1
 #   Find-SzaComplexityLine -Lines <string[]> @{ index; value } of the line within the first 40 lines, index -1 if none
@@ -37,8 +38,8 @@ function ConvertFrom-SzaComplexityValue([string]$Value) {
     $r = [pscustomobject]@{ recognised = $false; level = ''; score = -1; numeric = $false; pinned = $false; reason = '' }
     if ([string]::IsNullOrWhiteSpace($Value)) { return $r }
     $v = $Value.Trim()
-    # A grade: one digit, not followed by another digit, then an optional `pinned`, then the rest.
-    $m = [regex]::Match($v, '^(?<n>[0-9])(?![0-9.,])(?:\s+(?<pin>pinned)\b)?(?<rest>.*)$', 'IgnoreCase')
+    # A grade: one digit, an optional `pinned`, then nothing or ` - <reason>`. Anything glued to either is no grade.
+    $m = [regex]::Match($v, '^(?<n>[0-9])(?:\s+(?<pin>pinned))?(?<rest>\s+-(?:\s.*)?)?$', 'IgnoreCase')
     if ($m.Success) {
         $r.recognised = $true
         $r.numeric = $true

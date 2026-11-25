@@ -5,9 +5,9 @@
       "package": "sza",
       "flavor": "default",
       "kind": "release",
-      "version": "2026.1125.6",
-      "builtAt": "2026-11-25T23:59:22+01:00",
-      "note": "rules: AI_USAGE, NEW_PROJECT_CHECKLIST, README; tools 17, docs 8, skills 7, hooks 5, contrib 2, root 2, templates 2, .claude 1"
+      "version": "2026.1126.1",
+      "builtAt": "2026-11-26T00:13:58+01:00",
+      "note": "tools 9"
     }
   ]
 }

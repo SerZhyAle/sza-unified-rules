@@ -675,7 +675,10 @@ rewrites. An agent record may carry `routes`, rows of `{ max, model?, effort? }`
 `max` is at or above the ticket's grade serves it, with that row's model and effort when it names them, and the last row's
 `max` is the agent's ceiling. The worker passes over an agent with no row for the grade (`agent.fallback` why
 `aboveCeiling`) and takes the next one of `agentOrder`; a ticket no agent may take waits. A record without `routes` takes
-every grade and launches as before.
+every grade and launches as before. A `claude` pass on an `Implemented` or `BlockNeedUserTest` ticket is an audit: it
+takes neither the row's model nor its effort, and the log and the console name none for it.
+
+A grade is written `<digit>[ pinned] - <reason>`; anything else (`5pinned`, `7-9`, `5 (medium)`) is no declaration.
 
 ```json
 "agentOrder": ["zai", "gemini", "codex", "claude"],
@@ -691,7 +694,8 @@ every grade and launches as before.
 "escalateBy": 2
 ```
 
-With `raters` present, a ticket whose line is absent, unrecognised or the capture default is graded once before its pass:
+With `raters` present, a ticket whose line is absent, unrecognised or the capture default is graded once before its pass
+(one worker at a time per ticket; a second one waits and asks nothing):
 the first rater record that answers in time with a valid JSON grade wins, the line becomes
 `**Complexity:** <n> - rated by <model> (<confidence>): <reason>`, and `ticket.complexity` (by `rater`) records it. The
 prompt is `rater/RATER_PROMPT.md` beside this guide plus the start of the spec; before the ticket it carries the ladder
@@ -699,10 +703,14 @@ of what each grade launches now - for each grade 0-9 the first agent of `agentOr
 effort and parallel axis - so the rater sees what a grade one step too high costs. Limit holds do not enter that ladder:
 the grade is written into the spec for good and must not follow a quota that resets in hours. A record without `argsTemplate` runs
 `claude -p --model <model> --tools "" --strict-mcp-config --no-session-persistence` in a temporary folder, the prompt on
-the standard input, so the rater gets no tools and never reads the project. No valid answer
-from any record leaves the line alone and the ticket runs at the grade 5 (`rater.fail`). A pass that ends `child-failed`,
-`no-progress` or `timeout`, or leaves the ticket `Broken`, raises a numeric, unpinned grade by `escalateBy` (default 2, at
-most 9; 0 turns it off), so the next pass goes to an agent that takes the higher grade.
+the standard input, so the rater gets no tools and never reads the project. `timeoutSeconds` covers sending the prompt and
+receiving the answer. No valid answer
+from any record leaves the line alone and the ticket runs at the grade 5 (`rater.fail`). The write keeps the file's
+byte-order mark and every line end, and a file that is not UTF-8 is left untouched. A pass that ends `child-failed`,
+`no-progress` (also spelled `no-progress-or-claim-lost`) or `timeout`, or leaves the ticket `Broken`, raises a numeric,
+unpinned grade by `escalateBy` (default 2, at most 9; 0 turns it off), so the next pass goes to an agent that takes the
+higher grade. Nothing is raised when the pass changed the grade itself, or ended neutrally: `limit-hit`, `launch-failed`,
+`claim-lost-before-launch`, `provider-error`, or the owner's halt or kill.
 
 `rate-ticket.ps1 -Project <key> -Id <id>` runs the rater by hand and prints the grade (`-Write` writes it,
 `-PromptOnly` prints the prompt without a model call). `-Anchors <file.json>`, a list of
@@ -715,7 +723,9 @@ unless the owner writes it. A pass is then a workflow (several agents side by si
 owner, never by the rater - and the ticket is at a build stage (`Approved`, `Tactical`, `In Progress`, `Partial`,
 `Broken`). A spec pass and an audit stay single. The runner (`run-spec-queue.ps1 -Parallel ultracode`) leaves the prompt
 `/spec-all <id>` as it is and appends the opt-in to the child's system prompt (`--append-system-prompt`), capped at 10
-agents; `pass.launch` records `parallel`. Read the first such pass's cost in `runs.jsonl` before turning it on widely.
+agents; a template that already carries that flag keeps its own text after the opt-in, and a CLI that does not list it
+runs the pass single and says so. The request to grade an ungraded ticket travels the same way. `pass.launch` records the
+`parallel` the worker asked for. Read the first such pass's cost in `runs.jsonl` before turning it on widely.
 
 ```json
 { "name": "claude", "routes": [ { "max": 2, "model": "haiku" }, { "max": 5, "model": "sonnet" }, { "max": 9, "model": "opus", "parallel": "ultracode" } ] }

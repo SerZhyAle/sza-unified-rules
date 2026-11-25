@@ -17,6 +17,11 @@
 #  10  parallel (S0140): the spec flag, the route key on a build pass only, registry refusals, the runner's opt-in
 #  11  settings write (S0141): pq agents -Apply's Set-PqAgentSettings - merge, unknown keys kept, refusal writes
 #      nothing, empty removes, read back; the GUI dialog still calls -Settings and -Apply
+#  12  one rating per ticket: a graded line is not asked about, a worker that waited asks nothing, a free one writes
+#
+# Canon ticket CANONR-0194 added to 1 the strict grade form, to 4 the audit pass that names no route, to 6 braces
+# inside the answer's strings, to 7 an exit with no answer and a CLI that never reads its input, to 8 kept line ends
+# and refused bytes, to 9 the neutral ends, the unmoved spelling and a grade the pass rewrote, to 10 the system prompt.
 $ErrorActionPreference = 'Stop'
 $harness = Join-Path (Split-Path $PSScriptRoot -Parent) 'harness'
 $pqLib = Join-Path $harness 'portfolio/lib'
@@ -52,9 +57,10 @@ try {
         Assert-Eq (ConvertFrom-SzaComplexityValue 'Light').score 1 'Light'
         Assert-Eq (ConvertFrom-SzaComplexityValue 'medium - not assessed at capture').score 5 'capture default'
         Assert-Eq (ConvertFrom-SzaComplexityValue ([regex]::Unescape('сложный'))).level 'hard' 'Russian hard'
-        foreach ($bad in @('10 - x', '7.5 - x', 'Complex (spec)', '', 'lightweight')) {
+        foreach ($bad in @('10 - x', '7.5 - x', 'Complex (spec)', '', 'lightweight', '5x - a', '7-9 - range', '3 files change', '0/10', '5pinned - o', '5 (medium) - x', '4 pinned: x')) {
             if ((ConvertFrom-SzaComplexityValue $bad).recognised) { throw "'$bad' was recognised" }
         }
+        Assert-Eq "$((ConvertFrom-SzaComplexityValue '5 pinned').pinned)/$((ConvertFrom-SzaComplexityValue '5 -').score)/$((ConvertFrom-SzaComplexityValue '6 - a - b').reason)" 'True/5/a - b' 'bare forms'
         Assert-Eq (Format-SzaComplexityLine -Score 4 -Reason "a`nb" -Pinned) '**Complexity:** 4 pinned - a b' 'format'
     }
 
@@ -105,6 +111,16 @@ try {
         Assert-Eq ($ca -join ' ') '-ModelPolicy fixed -Model opus' 'claude opus args'
         Assert-Eq (Get-PqPickModel $p) 'opus' 'pick model'
         Assert-Eq (@(Get-PqClaudePassArgs $p 'Implemented').Count) 0 'an Implemented audit keeps the shape cap'
+        foreach ($audit in @('Implemented', 'BlockNeedUserTest')) {
+            Assert-Eq "$(Get-PqPickModel $p $audit)/$((Get-PqPickLaunch $p $audit).effort)" '/' "the log of an $audit pass names no route"
+        }
+        Assert-Eq (Get-PqPickModel $p 'Approved') 'opus' 'a build pass names its route'
+        $audited = @{ agent = 'codex'; record = $codex; route = (Get-PqAgentRoute $codex 2) }
+        Assert-Eq (Get-PqPickLaunch $audited 'Implemented').effort 'medium' 'the exception is claude alone'
+        $loopSrc = [IO.File]::ReadAllText((Join-Path $pqLib 'loop.ps1'))
+        foreach ($need in @('Get-PqPickModel $pick ([string]$cand.status)', 'Get-PqPickLaunch $pick ([string]$cand.status)')) {
+            if (-not $loopSrc.Contains($need)) { throw "loop.ps1 lost '$need'" }
+        }
         $reg2 = [pscustomobject]@{ agents = @($zai, $codex, $claude); agentOrder = @('claude') }
         $p = Select-PqAgent -Registry $reg2 -RepoPath $scratch -Level 'medium' -Score 4
         $ca = @(Get-PqClaudePassArgs $p)
@@ -185,8 +201,16 @@ try {
         if ($null -eq $fn) { throw 'run-spec-queue.ps1 has no Get-ParallelOptIn' }
         . ([scriptblock]::Create($fn.Extent.Text))
         if ((Get-ParallelOptIn 'ultracode') -notmatch '^ultracode - .*Workflow tool') { throw 'the opt-in text lost its keyword or the tool name' }
+        $fn = $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -ceq 'Add-ChildSystemPrompt' }, $true) | Select-Object -First 1
+        if ($null -eq $fn) { throw 'run-spec-queue.ps1 has no Add-ChildSystemPrompt' }
+        . ([scriptblock]::Create($fn.Extent.Text))
+        Assert-Eq (@(Add-ChildSystemPrompt -ChildArgs @('-p', '/spec-all S1') -Lead 'L' -Tail 'T') -join '|') '-p|/spec-all S1|--append-system-prompt|L T' 'added, the prompt untouched'
+        Assert-Eq (@(Add-ChildSystemPrompt -ChildArgs @('--append-system-prompt', 'house', '-p', 'x') -Lead 'L' -Tail 'T') -join '|') '--append-system-prompt|L house T|-p|x' 'merged with the template'
+        Assert-Eq (@(Add-ChildSystemPrompt -ChildArgs @('--append-system-prompt=house') -Lead 'L') -join '|') '--append-system-prompt=L house' 'merged with the = form'
+        Assert-Eq (@(Add-ChildSystemPrompt -ChildArgs @('-p', 'x')) -join '|') '-p|x' 'nothing to add'
         $src = [IO.File]::ReadAllText($runner)
-        if ($src -notmatch "'--append-system-prompt', \(Get-ParallelOptIn \`$Parallel\)") { throw 'the runner does not append the opt-in' }
+        if (-not $src.Contains('Add-ChildSystemPrompt -ChildArgs $childArgs -Lead $optIn -Tail $gradeAsk')) { throw 'the runner does not append the opt-in' }
+        if ($src -match '\$prompt \+=') { throw 'the runner still adds words after the prompt' }
     }
 
     Test-Case '11 settings write (S0141)' {
@@ -240,6 +264,11 @@ try {
         Assert-Eq (ConvertFrom-PqRaterAnswer '{"score": 4, "confidence": "sure"}').why 'invalid' 'confidence'
         Assert-Eq (ConvertFrom-PqRaterAnswer 'no json here').why 'invalid' 'no json'
         Assert-Eq (ConvertFrom-PqRaterAnswer '').why 'noAnswer' 'empty'
+        Assert-Eq (ConvertFrom-PqRaterAnswer '{"score":7,"reason":"touches the {id} template","confidence":"high"}').score 7 'brace in the reason'
+        Assert-Eq (ConvertFrom-PqRaterAnswer '{"score":2,"reason":"draft"} then {"score":7,"reason":"fix {x}"}').score 7 'last object with a brace'
+        Assert-Eq (ConvertFrom-PqRaterAnswer '{"score":5,"reason":"a \"}\" mark"} and a { stray').score 5 'escaped quote and stray brace'
+        Assert-Eq (ConvertFrom-PqRaterAnswer '{"score":6,"detail":{"score":1}}').score 6 'the outer object'
+        Assert-Eq (ConvertFrom-PqRaterAnswer '{"result":{"score":3}}').score 3 'a wrapped object'
     }
 
     Test-Case '7 rater run' {
@@ -248,8 +277,10 @@ try {
         $ok = Invoke-PqRaterRecord -Rater ([pscustomobject]@{ name = 'stub'; command = 'cmd'; model = 'm'; argsTemplate = @('/c', 'type', $ans) }) -Prompt 'ignored'
         if (-not $ok.ok -or (ConvertFrom-PqRaterAnswer $ok.text).score -ne 2) { throw "stub answer: $($ok.why) [$($ok.text)]" }
         $sw = [Diagnostics.Stopwatch]::StartNew()
-        $slow = Invoke-PqRaterRecord -Rater ([pscustomobject]@{ name = 'slow'; command = 'cmd'; model = 'm'; timeoutSeconds = 1; argsTemplate = @('/c', 'ping', '-n', '5', '127.0.0.1') }) -Prompt 'x'
+        # ping never reads its input, and the prompt is far larger than a pipe buffer: the write itself must time out.
+        $slow = Invoke-PqRaterRecord -Rater ([pscustomobject]@{ name = 'slow'; command = 'cmd'; model = 'm'; timeoutSeconds = 1; argsTemplate = @('/c', 'ping', '-n', '5', '127.0.0.1') }) -Prompt ('x' * 300000)
         Assert-Eq $slow.why 'timeout' 'timeout'
+        Assert-Eq (Invoke-PqRaterRecord -Rater ([pscustomobject]@{ name = 'out'; command = 'cmd'; model = 'm'; argsTemplate = @('/c', 'exit', '1') }) -Prompt '').why 'noAnswer' 'a non-zero exit with no answer'
         if ($sw.Elapsed.TotalSeconds -gt 3) { throw "timeout took $($sw.Elapsed.TotalSeconds) s" }
         Assert-Eq (Invoke-PqRaterRecord -Rater ([pscustomobject]@{ name = 'x'; command = 'no-such-rater-cmd'; model = 'm' }) -Prompt 'x').why 'launchFailed' 'missing command'
     }
@@ -272,6 +303,19 @@ try {
         [IO.File]::WriteAllText($pin, "# S0003`n**Complexity:** 7 pinned - owner`n", [Text.UTF8Encoding]::new($false))
         if (Set-PqSpecComplexity -SpecPath $pin -Line '**Complexity:** 2 - x') { throw 'pinned line rewritten' }
         if ([IO.File]::ReadAllText($pin) -notmatch '7 pinned') { throw 'pinned file changed' }
+        $mixed = Join-Path $scratch 'S0004_mixed.md'
+        [IO.File]::WriteAllText($mixed, "# S0004`r`n**Complexity:** 2 - x`n`nbody`r`nlast`n", [Text.UTF8Encoding]::new($false))
+        $null = Set-PqSpecComplexity -SpecPath $mixed -Line '**Complexity:** 4 - y'
+        Assert-Eq ([IO.File]::ReadAllText($mixed)) "# S0004`r`n**Complexity:** 4 - y`n`nbody`r`nlast`n" 'mixed ends kept'
+        $short = Join-Path $scratch 'S0005_short.md'
+        [IO.File]::WriteAllText($short, "# S0005`n**Status:** Draft", [Text.UTF8Encoding]::new($false))
+        $null = Set-PqSpecComplexity -SpecPath $short -Line '**Complexity:** 1 - z'
+        Assert-Eq ([IO.File]::ReadAllText($short)) "# S0005`n**Status:** Draft`n**Complexity:** 1 - z" 'inserted after the last line'
+        $ansi = Join-Path $scratch 'S0006_ansi.md'
+        $raw = [Text.Encoding]::ASCII.GetBytes("# S0006`n**Complexity:** 2 - x`ncaf") + [byte[]](0xE9, 0x0A)
+        [IO.File]::WriteAllBytes($ansi, $raw)
+        if (Set-PqSpecComplexity -SpecPath $ansi -Line '**Complexity:** 4 - y') { throw 'a file that is not UTF-8 was rewritten' }
+        Assert-Eq ([Convert]::ToHexString([IO.File]::ReadAllBytes($ansi))) ([Convert]::ToHexString($raw)) 'bytes untouched'
     }
 
     Test-Case '9 escalation' {
@@ -286,6 +330,42 @@ try {
         Assert-Eq (Get-PqEscalatedScore $num 'no-progress' '' 2) -1 'already 9'
         Assert-Eq (Get-PqEscalatedScore ([pscustomobject]@{ numeric = $false; pinned = $false; score = 5 }) 'child-failed' '' 2) -1 'word grade'
         Assert-Eq (Get-PqEscalatedScore ([pscustomobject]@{ numeric = $true; pinned = $true; score = 5 }) 'child-failed' '' 2) -1 'pinned'
+        $num.score = 3
+        Assert-Eq (Get-PqEscalatedScore $num 'no-progress-or-claim-lost' 'In Progress' 2) 5 'a quick unmoved pass'
+        Assert-Eq (ConvertTo-PqEscalationOutcome 'no-progress-or-claim-lost') 'no-progress' 'the spelling written'
+        foreach ($neutral in @('limit-hit', 'launch-failed', 'claim-lost-before-launch', 'provider-error', 'killed', 'halted')) {
+            Assert-Eq (Get-PqEscalatedScore $num $neutral 'Broken' 2) -1 "neutral $neutral on a Broken ticket"
+        }
+        $g6 = [pscustomobject]@{ numeric = $true; score = 6 }
+        Assert-Eq (Test-PqGradeRewritten $g6 ([pscustomobject]@{ numeric = $true; score = 4 })) $true 'lowered inside the band'
+        Assert-Eq (Test-PqGradeRewritten $g6 ([pscustomobject]@{ numeric = $true; score = 6 })) $false 'same grade'
+        Assert-Eq (Test-PqGradeRewritten ([pscustomobject]@{ numeric = $false; score = 5 }) ([pscustomobject]@{ numeric = $true; score = 5 })) $true 'a word made a grade'
+        if (-not [IO.File]::ReadAllText((Join-Path $pqLib 'loop.ps1')).Contains('if (-not (Test-PqGradeRewritten $levelInfo $afterInfo))')) { throw 'the worker does not ask whether the pass rewrote the grade' }
+    }
+
+    Test-Case '12 one rating per ticket' {
+        $ans = Join-Path $scratch 'answer12.txt'
+        [IO.File]::WriteAllText($ans, '{"score": 2, "reason": "one file", "confidence": "high"}')
+        $regR = [pscustomobject]@{ raters = @([pscustomobject]@{ name = 'stub'; command = 'cmd'; model = 'm'; argsTemplate = @('/c', 'type', $ans) }) }
+        $spec = Join-Path $scratch 'S0012_rate.md'
+        $capture = "# S0012`n**Complexity:** medium - not assessed at capture`n"
+        $info = [pscustomobject]@{ spec = $spec; level = 'medium'; numeric = $false; score = 5 }
+        [IO.File]::WriteAllText($spec, "# S0012`n**Complexity:** 7 - written meanwhile`n")
+        Assert-Eq (Invoke-PqTicketRating -Registry $regR -Info $info -RepoKey 'k' -TicketId 'S0012').ok $false 'graded since the info was read'
+        if ([IO.File]::ReadAllText($spec) -notmatch '7 - written meanwhile') { throw 'a graded line was overwritten' }
+        [IO.File]::WriteAllText($spec, $capture)
+        $ready = [Threading.ManualResetEventSlim]::new($false)
+        $other = [powershell]::Create()
+        try {
+            $null = $other.AddScript({ param($name, $ready) $m = [Threading.Mutex]::new($false, $name); $null = $m.WaitOne(); $ready.Set(); [Threading.Thread]::Sleep(250); $m.ReleaseMutex(); $m.Dispose() }).AddArgument((Get-PqRatingLockName 'k' 'S0012')).AddArgument($ready)
+            $job = $other.BeginInvoke()
+            if (-not $ready.Wait(2000)) { throw 'the other worker never took the lock' }
+            Assert-Eq (Invoke-PqTicketRating -Registry $regR -Info $info -RepoKey 'k' -TicketId 'S0012').ok $false 'the one that waited'
+            $null = $other.EndInvoke($job)
+        }
+        finally { $other.Dispose(); $ready.Dispose() }
+        Assert-Eq ([IO.File]::ReadAllText($spec)) $capture 'the one that waited asked nothing'
+        Assert-Eq (Invoke-PqTicketRating -Registry $regR -Info $info -RepoKey 'k' -TicketId 'S0012').score 2 'a free worker rates'
     }
 }
 finally {

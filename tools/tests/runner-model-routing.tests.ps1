@@ -60,6 +60,7 @@ if "%~1"=="--help" (
   echo   --session-id ^<uuid^>                 Use a specific session ID
   echo   --strict-mcp-config                 Only use MCP servers from --mcp-config
   echo   --disallowedTools, --disallowed-tools ^<tools...^>
+  echo   --append-system-prompt ^<prompt^>     Append a system prompt
   exit /b 0
 )
 pwsh -NoProfile -File "%~dp0fake-child.ps1" %*
@@ -250,7 +251,7 @@ try {
             Assert-That ($a.caching -eq '') "$($e.id) got FORCE_PROMPT_CACHING_5M with the trial off"
         }
         $noLine = $byArgs[$script:fixtures.noLine]
-        Assert-That ($noLine.args -match 'Before other ticket work, research the ticket') 'the ungraded pass was not asked to assess complexity first'
+        Assert-That ($noLine.args -match '--append-system-prompt Before other ticket work, research the ticket') 'the ungraded pass was not asked, in its system prompt, to assess complexity first'
         Assert-That ($byArgs[$script:fixtures.unrecognised].args -match 'Before other ticket work, research the ticket') 'the unrecognised pass was not asked to assess complexity first'
         Assert-That ($byArgs[$script:fixtures.light].args -notmatch 'Before other ticket work, research the ticket') 'a declared ticket was asked for an initial assessment'
         Assert-That ($noLine.args -notmatch '--strict-mcp-config') 'the trial flag appeared with the trial off'

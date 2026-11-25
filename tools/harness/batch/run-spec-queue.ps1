@@ -109,7 +109,8 @@
     tiered order whose decision-status test answered strong: measured over 2026-10-28..11-10, 126 of
     201 opus passes ran on tickets that had declared no level, half the robot's Claude spend routed by
     an author's omission. An ungraded ticket now launches the default model, whose first act (the
-    lifecycle skill's stage 0) is to research and write the `**Complexity:**` line; the NEXT launch of
+    lifecycle skill's stage 0, and the request the runner appends to a Claude child's system prompt)
+    is to research and write the `**Complexity:**` line; the NEXT launch of
     the ticket obeys the level it wrote, because the line is re-read at every launch and never cached.
     The tier tests went with the fall-through for the reason the blank-tier floor below the tiered
     order had already stated: a tier is a roadmap label, and routing by an unstated complexity is
@@ -227,10 +228,11 @@ param(
     # promptTemplate: this instance's own, else runner.promptTemplate (HARNESS-PROFILE rule 9).
     [string] $PromptTemplate = '',
 
-    # S0140: the parallel axis of the pass, set by the dispatcher from the agent's route. 'ultracode' appends the
-    # workflow opt-in to a Claude child's system prompt (--append-system-prompt, proven headless 2026-11-18) and keeps
-    # Workflow out of the S0041 trial's disallowed tools; the prompt itself is untouched, so a slash argument stays
-    # a ticket id. Empty = no parallel axis, the pass is what it always was. A non-Claude child ignores it.
+    # S0140: the parallel axis of the pass, set by the dispatcher from the agent's route. 'ultracode' puts the
+    # workflow opt-in at the head of a Claude child's appended system prompt (--append-system-prompt, proven headless
+    # 2026-11-18; a template's own text stays after it) and keeps Workflow out of the S0041 trial's disallowed tools;
+    # the prompt itself is untouched, so a slash argument stays a ticket id. Empty = no parallel axis, the pass is
+    # what it always was. A non-Claude child ignores it.
     [ValidateSet('', 'ultracode')]
     [string] $Parallel = '',
 
@@ -427,6 +429,30 @@ function Get-ChildHelpText {
 function Get-ParallelOptIn([string]$Axis) {
     return "$Axis - the owner enabled multi-agent orchestration for this ticket (its spec carries the Parallel flag): " +
         'use the Workflow tool for the independent parts the plan names, keep it under 10 agents, pin an explicit light or mid model on every workflow agent for bounded slices (never leave an agent unpinned to inherit the session model), keep each slice narrow enough to finish without compaction, and do the dependent work yourself.'
+}
+
+function Add-ChildSystemPrompt {
+    <#
+        The child's arguments with -Lead before and -Tail after the system prompt they append. A template that already
+        carries --append-system-prompt keeps its own text between them: the flag is never given twice and nothing is
+        dropped. Joined by spaces, because a .cmd launcher cuts an argument at a newline.
+    #>
+    param([string[]] $ChildArgs, [string] $Lead = '', [string] $Tail = '')
+    if (-not $Lead -and -not $Tail) { return [string[]]$ChildArgs }
+    $flag = '--append-system-prompt'
+    $out = [System.Collections.Generic.List[string]]::new([string[]]$ChildArgs)
+    for ($i = 0; $i -lt $out.Count; $i++) {
+        if ($out[$i] -ceq $flag -and $i + 1 -lt $out.Count) {
+            $out[$i + 1] = @($Lead, $out[$i + 1], $Tail).Where({ $_ }) -join ' '
+            return [string[]]$out
+        }
+        if ($out[$i].StartsWith("$flag=", [StringComparison]::Ordinal)) {
+            $out[$i] = "$flag=" + (@($Lead, $out[$i].Substring($flag.Length + 1), $Tail).Where({ $_ }) -join ' ')
+            return [string[]]$out
+        }
+    }
+    $out.AddRange([string[]]@($flag, (@($Lead, $Tail).Where({ $_ }) -join ' ')))
+    return [string[]]$out
 }
 
 function Test-ChildHelpLists {
@@ -1600,9 +1626,6 @@ while ($true) {
     $prompt = $prompt.Replace('{specPath}', $specPath).Replace('{specpath}', $specPath).Replace('<spec path>', $specPath)
     $prompt = $prompt.Replace('{repoRoot}', $RepoRoot).Replace('{reporoot}', $RepoRoot).Replace('<repo root>', $RepoRoot)
     $prompt = $prompt.Replace('{updatePath}', $updateRel).Replace('{updatepath}', $updateRel).Replace('<update.ps1 path>', $updateRel)
-    if ($isClaudeChild -and $ModelPolicy -eq 'shape' -and -not $childComplexity) {
-        $prompt += ' Before other ticket work, research the ticket and write its **Complexity:** line as a grade 0-9 (0-3 light, 4-6 medium, 7-9 hard) with the reason for your assessment.'
-    }
     $childArgs = @(Expand-ChildArgs -Template $runnerArgsTemplate -Prompt $prompt `
             -Mode $PermissionMode -Model $childModel -Effort (Resolve-ChildEffort -RecordEffort $recordEffort -Model $childModel))
 
@@ -1648,14 +1671,23 @@ while ($true) {
         }
     }
 
-    # S0140: the opt-in of a parallel pass rides in the system prompt, never in the prompt - a keyword after
-    # `/spec-all <id>` reaches the command as part of its argument and the resolver reads it as an idea (proof run
-    # 2026-11-18, canon:S0140 section 3.5).
-    if ($Parallel -and $isClaudeChild -and [array]::IndexOf($childArgs, '--append-system-prompt') -lt 0) {
-        if (Test-ChildHelpLists '--append-system-prompt') {
-            $childArgs += @('--append-system-prompt', (Get-ParallelOptIn $Parallel))
+    # S0140: what the runner adds to a Claude child - the opt-in of a parallel pass, and the request to grade an
+    # ungraded ticket - rides in the system prompt, never in the prompt: words after `/spec-all <id>` reach the
+    # command as part of its argument and the resolver reads it as an idea (proof run 2026-11-18, canon:S0140
+    # section 3.5).
+    $optIn = if ($Parallel -and $isClaudeChild) { Get-ParallelOptIn $Parallel } else { '' }
+    $gradeAsk = if ($isClaudeChild -and $ModelPolicy -eq 'shape' -and -not $childComplexity) {
+        'Before other ticket work, research the ticket and write its **Complexity:** line as a grade 0-9 (0-3 light, 4-6 medium, 7-9 hard) with the reason for your assessment.'
+    } else { '' }
+    if ($optIn -or $gradeAsk) {
+        # A template that names the flag says the CLI takes it; otherwise the CLI's own --help does.
+        if (@($childArgs -cmatch '^--append-system-prompt(=|$)').Count -gt 0 -or (Test-ChildHelpLists '--append-system-prompt')) {
+            $childArgs = @(Add-ChildSystemPrompt -ChildArgs $childArgs -Lead $optIn -Tail $gradeAsk)
         }
-        else { Write-Host "  parallel       : $Parallel asked, but the CLI's --help does not list --append-system-prompt; the pass runs single" -ForegroundColor Yellow }
+        else {
+            if ($optIn) { Write-Host "  parallel       : $Parallel asked, but the CLI's --help does not list --append-system-prompt; the pass runs single" -ForegroundColor Yellow }
+            if ($gradeAsk) { Write-Host "  complexity     : no grade declared, and the CLI's --help does not list --append-system-prompt; the pass is not asked for one" -ForegroundColor Yellow }
+        }
     }
 
     # ProcessStartInfo.ArgumentList, never Start-Process -ArgumentList. Start-Process joins the array

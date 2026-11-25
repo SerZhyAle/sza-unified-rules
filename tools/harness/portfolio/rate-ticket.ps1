@@ -133,7 +133,7 @@ Write-Host ("{0}:{1} grade {2} ({3}, band {4}) by {5}: {6}" -f $Project, $res.in
 if ($Write) {
     $line = Format-SzaComplexityLine -Score $a.score -Reason ("rated by {0} ({1}): {2}" -f ([string](Get-PqValue $record 'model')), $a.confidence, $(if ($a.reason) { $a.reason } else { 'no reason given' }))
     $wrote = Set-PqSpecComplexity -SpecPath $res.info.spec -Line $line
-    if (-not $wrote) { Stop-Rate 1 'the line was not written (pinned, or already the same)' }
+    if (-not $wrote) { Stop-Rate 1 'the line was not written (pinned, already the same, or the file is not UTF-8)' }
     Write-Host "written: $line"
 }
 exit 0
