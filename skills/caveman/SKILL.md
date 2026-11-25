@@ -1,6 +1,6 @@
 ---
 name: caveman
-description: Switch this session into terse caveman mode - findings and facts only, no filler, no cheerleading, no preamble - and keep it there until told to stop. Covers the two places brevity is asked for most: a commit message and a code review. Use on "/caveman", "caveman mode", "be brief", "caveman commit", "caveman review", and on the Russian phrasings - "кратко", "короче", "по делу", "без воды", "не разводи", "лаконично". Also use when the owner has said the same thing twice because the first answer buried it.
+description: 'Switch this session into terse caveman mode - findings and facts only, no filler, no cheerleading, no preamble - and keep it there until told to stop. Covers the two places brevity is asked for most: a commit message and a code review. Use on "/caveman", "caveman mode", "be brief", "caveman commit", "caveman review", and on the Russian phrasings - "кратко", "короче", "по делу", "без воды", "не разводи", "лаконично". Also use when the owner has said the same thing twice because the first answer buried it.'
 ---
 
 # Caveman - terse mode

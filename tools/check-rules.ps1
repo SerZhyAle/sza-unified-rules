@@ -8,11 +8,107 @@ Checks (core docs = rules/*.md; contrib/ and contrib/history/ get link-check onl
   2. Numbered "## N." headings in each core doc are unique and gapless.
   3. Section references ("DOC.md §N", "DOC §N-M", bare "§N") point at existing headings.
   4. House text style: no em/en-dash, no "..." or ellipsis in prose (outside code spans/fences).
+  5. Every skills/<name>/SKILL.md carries a frontmatter block its host can read: closed, YAML-safe, with a
+     non-empty name and description, the description 1024 characters at most.
 
 Exit codes: 0 = clean; 1 = violations found; 2 = internal error.
 Usage: pwsh -File tools/check-rules.ps1
 #>
 $ErrorActionPreference = 'Stop'
+
+# One skill's frontmatter, judged as the host's YAML reader would judge it: a block that does not parse loads as
+# empty metadata and the skill is not listed, and a host drops a description over the limit. PowerShell ships no
+# YAML reader, so only a stated subset is read - 'key: value' on one line (plain, 'single' or "double" quoted) and
+# a block value ('>' or '|') - and every other form is reported, valid YAML included. A new form is taught here
+# before it ships. Emits one '<line>: <reason>' string per problem and nothing for a good file.
+function Test-SkillFrontmatter {
+    param([Parameter(Mandatory)][AllowEmptyString()][string]$Text)
+    $maxDescription = 1024
+
+    $lines = @($Text -split "\r?\n")
+    if ($lines[0] -notmatch '^--- *$') { return "1: no frontmatter - the first line is not '---'" }
+    $end = 0
+    for ($i = 1; $i -lt $lines.Count; $i++) {
+        if ($lines[$i] -match '^--- *$') { $end = $i; break }
+    }
+    if (-not $end) { return "1: the frontmatter is not closed - there is no second '---' line" }
+    for ($i = 1; $i -lt $end; $i++) {
+        # U+0085, U+2028 and U+2029 are line breaks to a YAML 1.1 reader, a byte order mark belongs to the file start
+        if ($lines[$i] -cmatch '[^\t\x20-\x7E -‧‪-﻾＀-�]') { "$($i + 1): a control character or a Unicode line break" }
+    }
+
+    $values = [System.Collections.Generic.Dictionary[string, string]]::new([System.StringComparer]::Ordinal)
+    $lineOf = @{}
+    $i = 1
+    while ($i -lt $end) {
+        $line = $lines[$i]
+        $no = $i + 1
+        $i++
+        if ($line -match '^ *(#.*)?$') { continue }
+        $pair = [regex]::Match($line, '^([A-Za-z0-9_][A-Za-z0-9_.-]*):(?: +(.*))?$')
+        if (-not $pair.Success) {
+            "$($no): not a 'key: value' line (a space follows the colon; continuation and nested lines are not read)"
+            continue
+        }
+        $key = $pair.Groups[1].Value
+        $raw = $pair.Groups[2].Value.TrimEnd(' ')
+        $value = $raw
+        if ($values.ContainsKey($key)) { "$($no): the key '$key' is repeated" }
+
+        if ($raw -cmatch '^[>|][+-]?$') {
+            $block = [System.Collections.Generic.List[string]]::new()
+            $indent = 0
+            while ($i -lt $end) {
+                $next = $lines[$i]
+                if ($next -match '^ *$') { $block.Add(''); $i++; continue }
+                $lead = $next.Length - $next.TrimStart(' ').Length
+                if ($lead -eq 0 -or $lead -lt $indent) { break }
+                if (-not $indent) { $indent = $lead }
+                $block.Add($next.Substring($indent))
+                $i++
+            }
+            $value = ($block -join ' ').Trim()
+        }
+        elseif ($raw.StartsWith("'")) {
+            $quoted = [regex]::Match($raw, "^'((?:[^']|'')*)'(?: +#.*)?$")
+            if ($quoted.Success) { $value = $quoted.Groups[1].Value.Replace("''", "'") }
+            else { "$($no): $key - the single-quoted value is not one closed string (write an apostrophe inside it twice)" }
+        }
+        elseif ($raw.StartsWith('"')) {
+            $escape = '\\(?:[0abtnvfre "/\\N_LP\t]|x[0-9A-Fa-f]{2}|u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8})'
+            $quoted = [regex]::Match($raw, ('^"((?:[^"\\]|' + $escape + ')*)"(?: +#.*)?$'))
+            # one character per escape: only emptiness and length are judged
+            if ($quoted.Success) { $value = [regex]::Replace($quoted.Groups[1].Value, $escape, '_') }
+            else { "$($no): $key - the double-quoted value is not one closed string with valid escapes" }
+        }
+        elseif (-not $raw) {
+            if ($key -cnotin 'name', 'description') { "$($no): $key - no value on its line (nested forms are not read)" }
+        }
+        elseif ($raw -match '^(?:[\[\]{},#&*!|>%@`]|[-?:](?: |$)|(?:=|<<)$)') {
+            "$($no): $key - a plain value starts with a character YAML reads as syntax; quote the value"
+        }
+        elseif ($raw.Contains("`t")) {
+            "$($no): $key - a tab inside a plain value; use spaces"
+        }
+        elseif ($raw -match ':(?:[ \t]|$)') {
+            "$($no): $key - a colon before a space or at the end of a plain value is read as a nested key; quote the value or use ' - '"
+        }
+        elseif ($raw -match '[ \t]#') {
+            "$($no): $key - YAML reads ' #' in a plain value as a comment and drops the rest; quote the value"
+        }
+        $values[$key] = $value
+        $lineOf[$key] = $no
+    }
+
+    foreach ($key in 'name', 'description') {
+        if (-not $values.ContainsKey($key)) { "1: '$key' is missing" }
+        elseif (-not $values[$key].Trim()) { "$($lineOf[$key]): '$key' is empty" }
+    }
+    if ($values.ContainsKey('description') -and $values['description'].Length -gt $maxDescription) {
+        "$($lineOf['description']): the description is $($values['description'].Length) characters, the limit is $maxDescription (a host drops a longer skill)"
+    }
+}
+
 try {
     $root = Join-Path (Split-Path $PSScriptRoot -Parent) 'rules'
     $coreDocs = @(Get-ChildItem -Path $root -Filter *.md -File)
@@ -113,12 +209,22 @@ try {
         }
     }
 
+    # Check 5: every shipped skill has frontmatter its host can read.
+    $skillGlob = Join-Path (Split-Path $PSScriptRoot -Parent) 'skills' '*' 'SKILL.md'
+    $skillDocs = @(Get-ChildItem -Path $skillGlob -File -ErrorAction SilentlyContinue)
+    foreach ($doc in $skillDocs) {
+        $text = [System.IO.File]::ReadAllText($doc.FullName)
+        foreach ($problem in @(Test-SkillFrontmatter -Text $text)) {
+            $violations.Add("skills/$($doc.Directory.Name)/SKILL.md:$problem")
+        }
+    }
+
     if ($violations.Count -gt 0) {
         $violations | ForEach-Object { Write-Host "FAIL $_" }
         Write-Error "check-rules: $($violations.Count) violation(s)" -ErrorAction Continue
         exit 1
     }
-    Write-Host "check-rules: OK ($($coreDocs.Count) core docs, $($contribDocs.Count) contrib docs, $($historyDocs.Count) history docs)"
+    Write-Host "check-rules: OK ($($coreDocs.Count) core docs, $($contribDocs.Count) contrib docs, $($historyDocs.Count) history docs, $($skillDocs.Count) skills)"
     exit 0
 }
 catch {

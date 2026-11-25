@@ -426,7 +426,7 @@ function Get-ChildHelpText {
 # tool names; the cap keeps the run inside the session's medium size guideline.
 function Get-ParallelOptIn([string]$Axis) {
     return "$Axis - the owner enabled multi-agent orchestration for this ticket (its spec carries the Parallel flag): " +
-        'use the Workflow tool for the independent parts the plan names, keep it under 10 agents, and do the dependent work yourself.'
+        'use the Workflow tool for the independent parts the plan names, keep it under 10 agents, pin an explicit light or mid model on every workflow agent for bounded slices (never leave an agent unpinned to inherit the session model), keep each slice narrow enough to finish without compaction, and do the dependent work yourself.'
 }
 
 function Test-ChildHelpLists {

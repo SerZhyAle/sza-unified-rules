@@ -54,6 +54,21 @@ foreach ($s in (Get-ChildItem -LiteralPath (Join-Path $PluginRoot 'skills') -Dir
     if ((Read-Text (Join-Path $s.FullName 'SKILL.md')) -match '(?m)^description:\s*(.+)$') { $listing += $s.Name.Length + $Matches[1].Trim().Length }
 }
 $skillText = Read-Text $skill
+$rulesDir = Join-Path $RepoRoot '.claude/rules'
+$unscopedRuleCount = 0; $unscopedRuleChars = 0
+$scopedRuleCount = 0; $scopedRuleChars = 0
+if (Test-Path -LiteralPath $rulesDir -PathType Container) {
+    foreach ($rf in (Get-ChildItem -LiteralPath $rulesDir -Recurse -File -Filter '*.md' | Sort-Object FullName)) {
+        $rt = Read-Text $rf.FullName
+        # The key counts only inside the first frontmatter block: no line starting with --- before it.
+        if ($rt -match '(?ms)\A\uFEFF?---\r?\n(?:(?!^---).)*?^paths\s*:.*?\r?\n---') {
+            $scopedRuleCount++; $scopedRuleChars += $rt.Length
+        }
+        else {
+            $unscopedRuleCount++; $unscopedRuleChars += $rt.Length
+        }
+    }
+}
 $claudeOnly = [ordered]@{
     'session-start injection (header + INVARIANTS.md)' = $inject
     'repository CLAUDE.md'                             = (Read-Text (Join-Path $RepoRoot 'CLAUDE.md')).Length
@@ -61,10 +76,16 @@ $claudeOnly = [ordered]@{
     'auto-memory index MEMORY.md'                      = (Read-Text (Join-Path $claudeHome ('projects/{0}/memory/MEMORY.md' -f ($RepoRoot -replace '[^A-Za-z0-9]', '-')))).Length
     'skill listing (names + descriptions)'             = $listing
 }
+if ($unscopedRuleCount -gt 0) {
+    $claudeOnly[".claude/rules ($unscopedRuleCount unscoped, always loaded)"] = $unscopedRuleChars
+}
 $agentsMd = (Read-Text (Join-Path $RepoRoot 'AGENTS.md')).Length
 Write-Row 'runner default prompt' 'all' $prompt.Length
 foreach ($k in $claudeOnly.Keys) { Write-Row $k 'claude' $claudeOnly[$k] }
 Write-Row 'repository AGENTS.md' 'codex' $agentsMd
+if ($scopedRuleCount -gt 0) {
+    Write-Row ".claude/rules ($scopedRuleCount path-scoped, on demand)" 'on demand' $scopedRuleChars
+}
 Write-Row 'lifecycle skill SKILL.md (whole)' 'all' $skillText.Length
 foreach ($part in [regex]::Split($skillText, '(?m)^(?=## )')) {
     $head = ($part -split "`n")[0].Trim()

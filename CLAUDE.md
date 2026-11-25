@@ -31,7 +31,7 @@ opens it by hand first.
 Nothing is built. Everything is PowerShell 7 plus one Python checker, run from the repo root:
 
 ```powershell
-pwsh -NoProfile -File tools/check-rules.ps1               # the canon's own text; the one gate that blocks a deploy
+pwsh -NoProfile -File tools/check-rules.ps1               # canon text + skill frontmatter; the one gate that blocks a deploy
 pwsh -NoProfile -File tools/check-contracts.ps1           # the contracts catalog (SZA_CONTRACTS_ROOT or the default)
 python tools/docs/check-documents.py                      # both documentation corpora; writes nothing
 pwsh -NoProfile -File tools/harness/assert-portable.ps1   # no project value inside a shipped harness script
@@ -49,8 +49,9 @@ pwsh -File deploy.ps1 -DryRun                             # the gates + what wou
 
 ## Working here
 
-- **Gate before committing anything under `rules/`:** `pwsh -File tools/check-rules.ps1` (exit 0 required).
-  It validates internal links, section numbering, `§` references and the house text style.
+- **Gate before committing anything under `rules/` or `skills/`:** `pwsh -File tools/check-rules.ps1` (exit 0
+  required). It validates internal links, section numbering, `§` references and the house text style of the rule
+  docs, and that every skill's frontmatter loads in its host.
 - **An ordinary edit gets checks of 5 seconds or less only** ([TESTING_AND_QA.md](rules/TESTING_AND_QA.md) §2). Do
   not run any test, suite or gate above 5 s after a normal modification - the owner switched them off on 2026-10-28
   and set the 5 s line for the whole portfolio on 2026-10-29. Which check is fast is recorded in

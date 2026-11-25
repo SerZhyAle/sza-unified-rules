@@ -146,8 +146,8 @@ Two design choices matter:
   rules file that is all module architecture is clean; a 130-line file that re-authors the language policy is
   not. Pointing at a rule is correct; re-authoring it is the drift.
 
-The canon's own text is checked separately by [`tools/check-rules.ps1`](tools/check-rules.ps1) - run it
-before committing anything under `rules/`.
+The canon's own text and the frontmatter of its skills are checked separately by
+[`tools/check-rules.ps1`](tools/check-rules.ps1) - run it before committing anything under `rules/` or `skills/`.
 
 ## Layout
 
@@ -164,7 +164,7 @@ CANON_VERSION       the monotonic version the stamp records
 ## Contributing to the canon
 
 - Rule fixes land **here first**, then spread to repos - never the other way round.
-- Run `pwsh -File tools/check-rules.ps1` (exit 0 required) before committing under `rules/`.
+- Run `pwsh -File tools/check-rules.ps1` (exit 0 required) before committing under `rules/` or `skills/`.
 - A project's own record lives in [`rules/contrib/`](rules/contrib/) - a facts file and, under `history/`, its
   dated history - and those two are the only files a project session may edit here. Anything else a project
   session needs changed here goes in as a ticket in the canon (`spec-draft.ps1 -Project canon`), for a canon

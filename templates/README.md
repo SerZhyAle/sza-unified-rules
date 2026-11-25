@@ -6,7 +6,7 @@ against the live tree - these are starting points, not render targets, so the co
 | File | Copy to | Filled by |
 | --- | --- | --- |
 | [.sza-canon.json](.sza-canon.json) | the target repo's root | the [adopt-canon](../skills/adopt-canon/SKILL.md) skill |
-| [agent-rules.md](agent-rules.md) | the authoritative agent-rules file, when the product has a command manifest | the [adopt-canon](../skills/adopt-canon/SKILL.md) skill; copy the snippet and name the executable |
+| [agent-rules.md](agent-rules.md) | `AGENTS.md` delegating stub, area-rules snippet, non-Claude global project-rules block, and product command line | the [adopt-canon](../skills/adopt-canon/SKILL.md) skill and `tools/install-agent-rules.ps1` |
 | [github-pages.yml](github-pages.yml) | `.github/workflows/pages.yml` of a repo whose `site/` Pages serves | the product session, from [SITE_CONFIGURATION.md](../rules/SITE_CONFIGURATION.md) section 4 and the [Google Play reference](../skills/store-publish/references/google-play.md) |
 
 ## The stamp

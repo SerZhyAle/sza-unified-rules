@@ -164,8 +164,8 @@ canon's own "batch the fast gates into one process"
 ## Testing them
 
 ```powershell
-pwsh -NoProfile -File hooks/tests/smoke-hooks.ps1        # 50 cases, exit 0 required
-pwsh -NoProfile -File hooks/tests/smoke-prefilters.ps1   # 25 cases, exit 0 required
+pwsh -NoProfile -File hooks/tests/smoke-hooks.ps1        # 63 cases, exit 0 required
+pwsh -NoProfile -File hooks/tests/smoke-prefilters.ps1   # 32 cases, exit 0 required
 ```
 
 Every refusal is smoked **from both sides** - payloads it must refuse and payloads it must allow -

@@ -143,6 +143,11 @@ Put four facts in the project's agent-rules file (`CLAUDE.md`, else `AGENTS.md`)
 - how to run R0 (`./r0.ps1`, the dry-run and the ceiling), and the permission mode the owner chose;
 - the statuses a ticket can be in (`Block*` needs a `statusNote`; `Verified` needs a `## Last Audit` block).
 
+Keep the core agent-rules file within the 20,000-character budget (hard limit 40,000,
+[AI_USAGE.md](../../rules/AI_USAGE.md) §5): if adding task-flow detail pushes the core over budget, place the
+detail in `.claude/rules/<area>.md` with a `paths:` list, leave one line or table row in the core, and keep
+the area-rules paragraph in `AGENTS.md` ([templates/agent-rules.md](../../templates/agent-rules.md)).
+
 ## Step 7 - Join the portfolio
 
 Register the repository, so the robots and the owner's queue see it from its first commit

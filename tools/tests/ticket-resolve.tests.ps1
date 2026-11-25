@@ -20,6 +20,9 @@
       7. The current project's id shape, a slug, an unknown hyphenated slug, free text and an empty argument.
       8. Next mode: no argument, a key, <key>:<id> refused, other text refused.
       9. A folder outside every project: local readings are refused, a <key>:<id> still resolves.
+     10. "<id>_<slug>" (bare, .md, a path, <key>:..) is that ticket; a wrong slug or id is refused, never an idea.
+     11. "-<number>" is the current project's ticket; the full id of a project with its own id shape (delta) works from
+         any folder; a ticket-shaped word nobody claims is refused.
 #>
 [CmdletBinding()]
 param([switch] $KeepScratch)
@@ -49,10 +52,10 @@ $env:SZA_PORTFOLIO_ROOT = $portfolio
 function Row([string] $Id, [string] $Name) {
     return (ConvertTo-Json -InputObject ([ordered]@{ id = $Id; name = $Name; status = 'Approved'; priority = 50; file = "PLAN/${Id}_$Name.md"; created = '2026-11-01'; updated = '2026-11-09 10:00' }) -Compress)
 }
-function New-Project([string] $Key, [string[]] $Rows) {
+function New-Project([string] $Key, [string[]] $Rows, [string] $ProfileJson = '{}') {
     $root = Join-Path $scratch $Key
     New-Item -ItemType Directory -Path (Join-Path $root 'PLAN') -Force | Out-Null
-    [IO.File]::WriteAllText((Join-Path $root '.sza-profile.json'), '{}')
+    [IO.File]::WriteAllText((Join-Path $root '.sza-profile.json'), $ProfileJson)
     [IO.File]::WriteAllText((Join-Path $root 'PLAN\spec-catalog.jsonl'), (($Rows -join "`n") + "`n"), [Text.UTF8Encoding]::new($false))
     return $root
 }
@@ -62,10 +65,11 @@ function New-Project([string] $Key, [string[]] $Rows) {
 $alpha = New-Project 'alpha' @((Row 'S0021' 'alpha-own-21'), (Row 'S0030' 'beta-notes'), (Row 'S0031' 'gamma'))
 $beta = New-Project 'beta' @((Row 'S0021' 'beta-own-21'), (Row 'S0077' 'beta-only-77'))
 $gamma = New-Project 'gamma' @((Row 'S0005' 'gamma-five'))
+$delta = New-Project 'delta' @((Row 'DELTA-0009' 'delta-nine')) '{"grammar":{"ticketIdPattern":"^DELTA-\\d{4}$"}}'
 $outside = Join-Path $scratch 'nowhere'
 New-Item -ItemType Directory -Path $outside | Out-Null
 
-$repos = foreach ($p in @(@('alpha', $alpha), @('beta', $beta), @('gamma', $gamma))) {
+$repos = foreach ($p in @(@('alpha', $alpha), @('beta', $beta), @('gamma', $gamma), @('delta', $delta))) {
     [ordered]@{ key = $p[0]; path = $p[1]; enabled = $true; maxWorkers = 1; concurrent = $false; role = 'product'; permissionMode = 'bypassPermissions'; rank = 10 }
 }
 [IO.File]::WriteAllText((Join-Path $portfolio 'repos.json'), (ConvertTo-Json -InputObject ([ordered]@{ schemaVersion = '1.0'; repos = @($repos) }) -Depth 5))
@@ -113,7 +117,7 @@ try {
         # An unregistered key with a ticket-shaped id, a key in another case, a space after the colon, words after the
         # token, a key with no id: all refused (exit 2), nothing falls through to a Draft in the current project.
         $r = Resolve-It 'zeta:S0021'
-        Assert-That ($r.code -eq 2 -and $r.kind -eq 'refused' -and $r.reason -like "unknown project 'zeta'*" -and $r.reason -like '*alpha, beta, gamma*') "zeta, got $($r | ConvertTo-Json -Compress)"
+        Assert-That ($r.code -eq 2 -and $r.kind -eq 'refused' -and $r.reason -like "unknown project 'zeta'*" -and $r.reason -like '*alpha, beta, gamma, delta*') "zeta, got $($r | ConvertTo-Json -Compress)"
         $r = Resolve-It 'betta:S0077'
         Assert-That ($r.code -eq 2 -and $r.kind -eq 'refused' -and $r.reason -like "unknown project 'betta'*") "betta, got $($r | ConvertTo-Json -Compress)"
         $r = Resolve-It 'Beta:S0077'          # a key is exact and case-sensitive
@@ -178,6 +182,39 @@ try {
         Assert-That ($r.code -eq 0 -and $r.kind -eq 'project-next') "key, got $($r | ConvertTo-Json -Compress)"
         $r = Resolve-It '' $outside 'next'
         Assert-That ($r.code -eq 2 -and $r.kind -eq 'refused') "next, got $($r | ConvertTo-Json -Compress)"
+    }
+
+    Run-Case '10. <id>_<slug> is that ticket; a wrong slug or id is refused, never an idea' {
+        foreach ($arg in 'S0030_beta-notes', 'S0030_beta-notes.md', 'PLAN/S0030_beta-notes.md', (Join-Path $alpha 'PLAN\S0030_beta-notes.md')) {
+            $r = Resolve-It $arg
+            Assert-That ($r.code -eq 0 -and $r.kind -eq 'local-id' -and $r.project -eq 'alpha' -and $r.id -eq 'S0030' -and $r.slug -eq 'beta-notes') "$arg, got $($r | ConvertTo-Json -Compress)"
+        }
+        $r = Resolve-It 'beta:S0077_beta-only-77'
+        Assert-That ($r.code -eq 0 -and $r.kind -eq 'ticket' -and $r.project -eq 'beta' -and $r.id -eq 'S0077') "key, got $($r | ConvertTo-Json -Compress)"
+        $r = Resolve-It 'DELTA-0009_delta-nine'
+        Assert-That ($r.code -eq 0 -and $r.kind -eq 'ticket' -and $r.project -eq 'delta' -and $r.id -eq 'DELTA-0009') "foreign, got $($r | ConvertTo-Json -Compress)"
+        foreach ($arg in 'S0030_other-words', 'S0099_beta-notes', 'beta:S0077_beta-own-21', 'DELTA-0009_other', 'ZZZ-0001_some-slug') {
+            $r = Resolve-It $arg
+            Assert-That ($r.code -eq 2 -and $r.kind -eq 'refused' -and $null -eq $r.id -and $r.reason -like 'no such ticket*') "$arg, got $($r | ConvertTo-Json -Compress)"
+        }
+    }
+    Run-Case '11. -<number>, a full id of another project, a ticket-shaped word nobody claims' {
+        $r = Resolve-It '-0030'
+        Assert-That ($r.code -eq 0 -and $r.kind -eq 'local-id' -and $r.id -eq 'S0030' -and $r.project -eq 'alpha') "short, got $($r | ConvertTo-Json -Compress)"
+        $r = Resolve-It '-0099'
+        Assert-That ($r.code -eq 2 -and $r.kind -eq 'refused' -and $r.reason -like 'no such ticket in alpha*') "absent, got $($r | ConvertTo-Json -Compress)"
+        $r = Resolve-It '-0030' $outside
+        Assert-That ($r.code -eq 2 -and $r.kind -eq 'refused' -and $r.reason -like 'no project here*') "outside, got $($r | ConvertTo-Json -Compress)"
+        foreach ($from in $alpha, $outside) {
+            $r = Resolve-It 'DELTA-0009' $from
+            Assert-That ($r.code -eq 0 -and $r.kind -eq 'ticket' -and $r.project -eq 'delta' -and $r.root -eq $delta) "full id, got $($r | ConvertTo-Json -Compress)"
+        }
+        $r = Resolve-It 'DELTA-0009' $delta
+        Assert-That ($r.kind -eq 'local-id' -and $r.project -eq 'delta') "own folder, got $($r | ConvertTo-Json -Compress)"
+        foreach ($arg in 'DELTA-0010', 'ZZZ-0001') {
+            $r = Resolve-It $arg
+            Assert-That ($r.code -eq 2 -and $r.kind -eq 'refused' -and $r.reason -like 'no such ticket*') "$arg, got $($r | ConvertTo-Json -Compress)"
+        }
     }
 
     $sw.Stop()

@@ -10,10 +10,10 @@ always loads, and nothing looked at it at the time of the write. The compliance 
 same budget for every agent, but only when somebody runs it.
 
 What it judges, from the size the file would have AFTER the call:
-  CLAUDE.md or AGENTS.md at the root of a canon-adopting repository (.sza-canon.json beside it)
+  CLAUDE.md, AGENTS.md or GEMINI.md at the root of a canon-adopting repository (.sza-canon.json beside it)
       above 40,000 characters and growing   -> refused
       above 20,000 characters and growing   -> allowed, with a notice
-  a Claude auto-memory index (MEMORY.md under .claude)
+  a Claude auto-memory index (MEMORY.md under .claude) or a repo memory index (memory/MEMORY.md beside .sza-canon.json)
       above 8,000 characters and growing    -> allowed, with a notice (a memory write is never refused)
 An edit that does not make the file longer is always allowed, so a file over the limit can be shrunk.
 
@@ -44,9 +44,15 @@ try {
     if ($tool -notin @('Edit', 'Write') -or -not $path) { Allow }
 
     $leaf = [IO.Path]::GetFileName($path)
-    $isIndex = $leaf -eq 'MEMORY.md' -and $path -match '[\\/]\.claude[\\/].*memory[\\/]'
-    $isCore = $leaf -in @('CLAUDE.md', 'AGENTS.md') -and
-        (Test-Path -LiteralPath (Join-Path ([IO.Path]::GetDirectoryName($path)) '.sza-canon.json'))
+    $dir = [IO.Path]::GetDirectoryName($path)
+    $parentDir = if ($dir) { [IO.Path]::GetDirectoryName($dir) } else { $null }
+    $isClaudeIndex = $leaf -eq 'MEMORY.md' -and $path -match '[\\/]\.claude[\\/].*memory[\\/]'
+    $isRepoIndex = $leaf -eq 'MEMORY.md' -and
+        $dir -and ([IO.Path]::GetFileName($dir) -eq 'memory') -and
+        $parentDir -and (Test-Path -LiteralPath (Join-Path $parentDir '.sza-canon.json'))
+    $isIndex = $isClaudeIndex -or $isRepoIndex
+    $isCore = $leaf -in @('CLAUDE.md', 'AGENTS.md', 'GEMINI.md') -and
+        $dir -and (Test-Path -LiteralPath (Join-Path $dir '.sza-canon.json'))
     if (-not ($isIndex -or $isCore)) { Allow }
 
     $current = if (Test-Path -LiteralPath $path) { [IO.File]::ReadAllText($path) } else { '' }

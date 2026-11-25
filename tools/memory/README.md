@@ -39,7 +39,7 @@ metadata:
 ## Commands
 
 ```powershell
-pwsh -NoProfile -File tools/memory/memory.ps1 audit                     # duplicates across folders, index drift, no-scope counts, old *-state memories
+pwsh -NoProfile -File tools/memory/memory.ps1 audit                     # duplicates across folders, index drift, indexes over 8,000 chars, no-scope counts, old *-state memories
 pwsh -NoProfile -File tools/memory/memory.ps1 types -Cwd P:\some\repo   # which types match that repository
 pwsh -NoProfile -File tools/memory/memory.ps1 index -All                # resync every MEMORY.md with its folder
 ```
@@ -56,8 +56,10 @@ pwsh -NoProfile -File tools/memory/memory.ps1 index -All                # resync
 - Each touched index is resynced and the target's `scope` line is set. Running it on a file already at its target
   only sets the scope line.
 
-`index` keeps every existing line of a present file as written, drops lines of missing files and duplicates, and
-appends a line built from the frontmatter for each unlisted file. `audit` writes nothing and exits 0.
+`index` keeps every existing line of a present file as written - including nested relative links such as
+`[State index](state/INDEX.md)` without auto-adding every file inside `state/` - drops lines of missing files
+and duplicates, and appends a line built from the frontmatter for each unlisted top-level file. `audit` checks
+nested links for existence, flags any `MEMORY.md` over 8,000 characters, writes nothing, and exits 0.
 
 ## Routing rule
 

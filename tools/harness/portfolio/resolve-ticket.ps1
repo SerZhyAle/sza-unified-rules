@@ -21,10 +21,18 @@
       2. a bare token equal to a registered key, no other words
                          -> kind project-next (the next eligible ticket of that project, then stop). When the same
                             token is also the id shape or a slug of the current project, it is ambiguous: refused.
+      2b. "<id>_<slug>" as the queue file prints it (also with ".md" or as a path to the spec file)
+                         -> kind local-id when the id has the current project's shape, else kind ticket in the one
+                            registered project whose own id shape it has. Id and slug must both be in that ledger,
+                            else refused. The full id of another project, no slug, is read the same way (the shared
+                            default shape ^S\d{4}$ and a legacy shape name no owner). "<key>:<id>_<slug>" is read
+                            in step 1.
       3. the current project's own id shape (grammar.ticketIdPattern, default ^S\d{4}$)  -> kind local-id
+         "-<number>"     -> kind local-id: the current project's ticket whose id ends in that number, else refused
       4. a slug of the current project's ledger (the whole name)                          -> kind local-slug
       5. anything else                                                                    -> kind idea
-         (a lower-case token with a hyphen or underscore that names no slug is refused as an unknown slug)
+         (a lower-case token with a hyphen or underscore that names no slug is refused as an unknown slug, and a
+         token shaped like a ticket reference that no project claims is refused too)
     Next mode (/spec-next, /sn): no argument -> project-next in the current project; a bare registered key ->
     project-next there; "<key>:<id>" -> refused (next takes no ticket); anything else -> refused.
 
@@ -94,31 +102,48 @@ if ($hereRoot) {
     $hereKey = if ($hit) { [string]$hit.key } else { Split-Path -Leaf $hereRoot }
 }
 
-function Get-IdPattern([string] $Root) {
-    $pattern = '^S\d{4}$'
-    $file = Join-Path $Root '.sza-profile.json'
-    if (Test-Path -LiteralPath $file -PathType Leaf) {
-        try {
-            $p = ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($file)) -DateKind String
-            $g = $p.PSObject.Properties['grammar']
-            if ($g -and $g.Value) {
-                $v = $g.Value.PSObject.Properties['ticketIdPattern']
-                if ($v -and [string]$v.Value) { $pattern = [string]$v.Value }
-                # TASK-FLOW 0.37: the id shapes of the repository before its prefix migration still name its tickets.
-                $l = $g.Value.PSObject.Properties['legacyTicketIdPatterns']
-                if ($l -and $l.Value) {
-                    $all = @($pattern) + @(@($l.Value) | Where-Object { $_ } | ForEach-Object { [string]$_ })
-                    $pattern = '(?:' + ($all -join ')|(?:') + ')'
-                }
-            }
-        }
-        catch { }
+$defaultIdPattern = '^S\d{4}$'
+
+# One key of a project's profile grammar, or $null when the profile, the object or the key is absent or unreadable.
+function Get-Grammar([string] $Root, [string] $Name) {
+    $file = [IO.Path]::Combine($Root, '.sza-profile.json')
+    if (-not [IO.File]::Exists($file)) { return $null }
+    try {
+        $p = ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($file)) -DateKind String
+        return $p.grammar.$Name
     }
+    catch { return $null }
+}
+
+function Get-IdPattern([string] $Root) {
+    $pattern = [string](Get-Grammar $Root 'ticketIdPattern')
+    if (-not $pattern) { $pattern = $defaultIdPattern }
+    # TASK-FLOW 0.37: the id shapes of the repository before its prefix migration still name its tickets.
+    $legacy = @(@(Get-Grammar $Root 'legacyTicketIdPatterns') | Where-Object { $_ } | ForEach-Object { [string]$_ })
+    if ($legacy.Count) { $pattern = '(?:' + ((@($pattern) + $legacy) -join ')|(?:') + ')' }
     return $pattern
 }
 
 function Test-IdShape([string] $Root, [string] $Token) {
     try { return [regex]::IsMatch($Token, (Get-IdPattern $Root), [Text.RegularExpressions.RegexOptions]::IgnoreCase) } catch { return $false }
+}
+
+# The registered projects whose OWN id shape a full id has, so that it names its ticket from any folder. The shared
+# default shape says nothing about the owner, and a legacy shape is shared the same way: neither is read here.
+function Get-OwningProjects([string] $Id) {
+    return @($registered | Where-Object {
+            $own = [string](Get-Grammar ([string]$_.path) 'ticketIdPattern')
+            if (-not $own -or $own -ceq $defaultIdPattern) { return $false }
+            try { return [regex]::IsMatch($Id, $own, [Text.RegularExpressions.RegexOptions]::IgnoreCase) } catch { return $false }
+        })
+}
+
+# A token written the way the queue file prints a ticket, "<id>_<slug>", also as the spec file's name or a path to it;
+# $null for any other shape. The caller decides whether the id part is a ticket id.
+function Split-Stem([string] $Token) {
+    $stem = ($Token -split '[\\/]')[-1] -replace '\.md$', ''
+    if ($stem -notmatch '^([^_:]+)_(.+)$') { return $null }
+    return [pscustomobject]@{ id = $Matches[1]; slug = $Matches[2]; stem = $stem }
 }
 
 function Read-Rows([string] $Root) {
@@ -128,6 +153,23 @@ function Read-Rows([string] $Root) {
 
 function Find-Slug($Rows, [string] $Token) {
     return (@($Rows | Where-Object { $_.Name -ieq $Token }) | Select-Object -First 1)
+}
+
+function Find-Number($Rows, [string] $Digits) {
+    return @($Rows | Where-Object { $m = [regex]::Match($_.Id, '(\d+)$'); $m.Success -and [int64]$m.Groups[1].Value -eq [int64]$Digits })
+}
+
+# One project's ticket for an id, with or without its slug. Both parts must be in the ledger: anything else is refused,
+# never captured as an idea and never reduced to the id alone, which could name another ticket.
+function Out-LedgerTicket([string] $Kind, [string] $Key, [string] $Root, [string] $Id, $Stem) {
+    $rows = Read-Rows $Root
+    if ($null -eq $rows) { Out-Reading 'refused' $Key $Root $null $null "project $Key is registered but its folder or ledger cannot be read ($Root)" }
+    $row = @($rows | Where-Object { $_.Id -ieq $Id }) | Select-Object -First 1
+    if (-not $row) { Out-Reading 'refused' $Key $Root $null $null "no such ticket in ${Key}: '$Id' is not in its ledger (a ticket in the archive journal is named by its bare id)" }
+    if ($Stem -and $row.Name -ine $Stem.slug -and (($row.File -split '[\\/]')[-1] -replace '\.md$', '') -ine $Stem.stem) {
+        Out-Reading 'refused' $Key $Root $null $null "no such ticket in ${Key}: $($row.Id) is '$($row.Name)', not '$($Stem.slug)'"
+    }
+    Out-Reading $Kind $Key $Root $row.Id $row.Name "ticket $($row.Id) of project $Key"
 }
 
 function Get-Keys { if ($registered.Count) { (@($registered | ForEach-Object { [string]$_.key }) -join ', ') } else { 'none registered' } }
@@ -159,12 +201,12 @@ if ($isToken -and $text -match '^([a-z][a-z0-9-]*):(\S+)$') {
     $proj = Get-RegisteredProject $key
     if ($proj) {
         $root = [string]$proj.path
+        $stem = Split-Stem $want
+        if ($stem -and (Test-IdShape $root $stem.id)) { Out-LedgerTicket 'ticket' $key $root $stem.id $stem }
         $rows = Read-Rows $root
         if ($null -eq $rows) { Out-Reading 'refused' $key $root $null $null "project $key is registered but its folder or ledger cannot be read ($root)" }
         $hits = @($rows | Where-Object { $_.Id -ieq $want })
-        if ($hits.Count -eq 0 -and $want -match '^\d+$') {
-            $hits = @($rows | Where-Object { $m = [regex]::Match($_.Id, '(\d+)$'); $m.Success -and [int64]$m.Groups[1].Value -eq [int64]$want })
-        }
+        if ($hits.Count -eq 0 -and $want -match '^\d+$') { $hits = @(Find-Number $rows $want) }
         if ($hits.Count -eq 0) { Out-Reading 'refused' $key $root $null $null "no such ticket in ${key}: '$want' is not in its ledger" }
         if ($hits.Count -gt 1) { Out-Reading 'ambiguous' $key $root $null $null "'$want' matches several tickets in ${key} ($(@($hits | ForEach-Object { $_.Id }) -join ', ')); use the full id" }
         Out-Reading 'ticket' $key $root $hits[0].Id $hits[0].Name "ticket $($hits[0].Id) of project $key"
@@ -209,8 +251,32 @@ if ($isToken) {
     }
 }
 
+# 2b. "<id>_<slug>" of this or another project, and the full id of another project: both work from any folder
+if ($isToken) {
+    $stem = Split-Stem $text
+    $id = if ($stem) { $stem.id } else { $text }
+    $isLocal = ($hereRoot -and (Test-IdShape $hereRoot $id))
+    if ($stem -and $isLocal) { Out-LedgerTicket 'local-id' $hereKey $hereRoot $id $stem }
+    if (-not $isLocal) {
+        $owners = @(Get-OwningProjects $id)
+        if ($owners.Count -gt 1) { Out-Reading 'ambiguous' $null $null $null $null "'$id' is an id shape of several projects ($(@($owners | ForEach-Object { $_.key }) -join ', ')); use <key>:<id>" }
+        if ($owners.Count -eq 1) { Out-LedgerTicket 'ticket' ([string]$owners[0].key) ([string]$owners[0].path) $id $stem }
+    }
+}
+
 # 3-5. local readings need the current project
 if (-not $hereRoot) { Out-Reading 'refused' $null $null $null $null $noHere }
+
+# 3a. "-<number>": the current project's ticket with that number
+if ($text -match '^-(\d{1,9})$') {
+    $digits = $Matches[1]
+    $rows = Read-Rows $hereRoot
+    if ($null -eq $rows) { Out-Reading 'refused' $hereKey $hereRoot $null $null "the ledger of $hereKey cannot be read ($hereRoot)" }
+    $hits = @(Find-Number $rows $digits)
+    if ($hits.Count -eq 0) { Out-Reading 'refused' $hereKey $hereRoot $null $null "no such ticket in ${hereKey}: no id in its ledger has the number '$digits'" }
+    if ($hits.Count -gt 1) { Out-Reading 'ambiguous' $hereKey $hereRoot $null $null "'$text' matches several tickets in ${hereKey} ($(@($hits | ForEach-Object { $_.Id }) -join ', ')); use the full id" }
+    Out-Reading 'local-id' $hereKey $hereRoot $hits[0].Id $hits[0].Name "ticket $($hits[0].Id) of the current project $hereKey"
+}
 
 if ($isToken -and (Test-IdShape $hereRoot $text)) {
     $rows = Read-Rows $hereRoot
@@ -228,6 +294,10 @@ if ($isToken) {
     }
     if ($text -cmatch '^[a-z0-9]+([-_][a-z0-9]+)+$') {
         Out-Reading 'refused' $hereKey $hereRoot $null $null "unknown slug '$text' in $hereKey (a partial word is not searched; free text is an idea - put it in words)"
+    }
+    # One word shaped like a ticket reference that no project claims is a mistyped ticket, never an idea.
+    if ($(if ($stem) { $stem.stem } else { $text }) -match '^[A-Za-z]{1,8}-?\d{4,}(_\S*)?$') {
+        Out-Reading 'refused' $hereKey $hereRoot $null $null "no such ticket: '$text' is shaped like a ticket reference and neither $hereKey nor a registered project claims it"
     }
 }
 

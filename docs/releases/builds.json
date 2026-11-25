@@ -5,9 +5,9 @@
       "package": "sza",
       "flavor": "default",
       "kind": "release",
-      "version": "2026.1125.5",
-      "builtAt": "2026-11-25T22:30:51+01:00",
-      "note": "Agent-rules budget and growth guard; area rules reach every agent"
+      "version": "2026.1125.6",
+      "builtAt": "2026-11-25T23:59:22+01:00",
+      "note": "rules: AI_USAGE, NEW_PROJECT_CHECKLIST, README; tools 17, docs 8, skills 7, hooks 5, contrib 2, root 2, templates 2, .claude 1"
     }
   ]
 }

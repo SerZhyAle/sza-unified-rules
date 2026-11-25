@@ -1,4 +1,4 @@
-<#
+﻿<#
 memory.ps1 - keep the agent's file memory in three scopes: one project, every project, or every project of one type.
 
 Claude Code gives each project its own memory folder (<claude home>/projects/<project key>/memory). A lesson learned
@@ -114,8 +114,30 @@ function Get-IndexLines([string]$dir) {
 }
 
 function Get-LineTarget([string]$line) {
-    $m = [regex]::Match($line, '\]\(([^)]+\.md)\)')
-    if ($m.Success) { return [IO.Path]::GetFileName($m.Groups[1].Value) }
+    $m = [regex]::Match($line, '\]\(([^)#?]+\.md)\)')
+    if (-not $m.Success) { return $null }
+    $raw = $m.Groups[1].Value.Trim().Replace('\', '/')
+    if ($raw -match '^[a-zA-Z]+://') { return $null }
+    return ($raw -replace '^\./', '')
+}
+
+function Test-NestedTarget([string]$dir, [string]$target) {
+    if ($target.StartsWith('/') -or $target -match '(^|/)\.\.(/|$)') { return $false }
+    $full = [IO.Path]::GetFullPath((Join-Path $dir $target))
+    $rootFull = [IO.Path]::GetFullPath($dir).TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
+    if (-not $full.StartsWith($rootFull, [StringComparison]::OrdinalIgnoreCase)) { return $false }
+    return [IO.File]::Exists($full)
+}
+
+# What an index line's target stands for in this folder: a file name or a nested path that exists, else $null. A link
+# that names a file of this folder through the folder itself ('../memory/x.md', 'memory/x.md', an absolute path)
+# stands for x.md, so a hand-written line is kept and the file is not listed twice.
+function Resolve-LineTarget([string]$dir, [string]$target, [hashtable]$present) {
+    if ($present.ContainsKey($target)) { return $target }
+    $parts = $target -split '/'
+    if ($parts.Count -lt 2) { return $null }
+    if (Test-NestedTarget $dir $target) { return $target }
+    if ($parts[-2] -eq (Split-Path $dir -Leaf) -and $present.ContainsKey($parts[-1])) { return $parts[-1] }
     return $null
 }
 
@@ -136,8 +158,9 @@ function Sync-Index([string]$dir) {
     foreach ($line in (Get-IndexLines $dir)) {
         $target = Get-LineTarget $line
         if ($target) {
-            if (-not $present.ContainsKey($target) -or $listed.ContainsKey($target)) { $dropped++; continue }
-            $listed[$target] = $true
+            $key = Resolve-LineTarget $dir $target $present
+            if (-not $key -or $listed.ContainsKey($key)) { $dropped++; continue }
+            $listed[$key] = $true
         }
         $out.Add($line)
     }
@@ -270,9 +293,17 @@ switch ($Command) {
             # The index is the part every session loads (AI_USAGE.md section 4): 8,000 characters.
             $idxFile = Join-Path $f.Dir 'MEMORY.md'
             if (Test-Path -LiteralPath $idxFile) { $len = [IO.File]::ReadAllText($idxFile).Length; if ($len -gt 8000) { $big.Add([pscustomobject]@{ Folder = $f.Label; Characters = $len }) } }
+            $present = @{}
+            foreach ($file in $files) { $present[$file.Name] = $file }
             $listed = @{}
-            foreach ($line in (Get-IndexLines $f.Dir)) { $t = Get-LineTarget $line; if ($t) { $listed[$t] = $true } }
-            foreach ($t in $listed.Keys) { if (-not ($files.Name -contains $t)) { $drift.Add([pscustomobject]@{ Folder = $f.Label; Issue = 'index line, no file'; File = $t }) } }
+            $missing = @{}
+            foreach ($line in (Get-IndexLines $f.Dir)) {
+                $t = Get-LineTarget $line
+                if (-not $t) { continue }
+                $key = Resolve-LineTarget $f.Dir $t $present
+                if ($key) { $listed[$key] = $true } else { $missing[$t] = $true }
+            }
+            foreach ($t in $missing.Keys) { $drift.Add([pscustomobject]@{ Folder = $f.Label; Issue = 'index line, no file'; File = $t }) }
             $old = 0
             foreach ($file in $files) {
                 if (-not $listed.ContainsKey($file.Name)) { $drift.Add([pscustomobject]@{ Folder = $f.Label; Issue = 'file not in index'; File = $file.Name }) }

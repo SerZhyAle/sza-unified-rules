@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Contract | `RULE-DELIVERY` |
-| Version | 0.12, draft; installed reader delivery verified on 2026-10-26 |
+| Version | 0.13, draft; source reader verified on 2026-11-25, installed reader delivery on 2026-10-26 at 0.12 |
 | Home | the shared contracts catalog, domain `rule-adoption/` (the path is in [CLAUDE.md](../../CLAUDE.md)) |
 | Role | **producer and consumer**: this repository ships the version pair and implements the stamp reader |
 
@@ -17,9 +17,9 @@
   (rule 3). Changing what it covers changes when every repository is told it is stale.
 - **The ladder is judged from the digest**, never from a commit id, and a stamp ahead of the published
   version is corruption rather than staleness (rules 5, 6).
-- Rule 5 uses a parseable reconciliation date, else adoption date; unknown age with a differing digest
-  is past the window. The skill now follows the same ladder. Local reader tests do not prove delivery
-  to another repository's installed plugin; deploy remains a separate owner request.
+- Rule 5 as amended by 0.13: a differing digest is a warning at any age; the age, from a parseable
+  reconciliation date else the adoption date, is reported and decides nothing. Local reader tests do not
+  prove delivery to another repository's installed plugin; deploy remains a separate owner request.
 - `pwsh -NoProfile -File tools/tests/verify-delivery.ps1` judges the installed plugin copy against the source
   and replays the reader tests with the installed tree as `-SourceRoot`. It reads, never writes. It says
   DELIVERED only for the same version, a pair that derives, equal reader files and a passing replay; a

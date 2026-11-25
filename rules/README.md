@@ -109,7 +109,8 @@ in this folder, is the live map of adoption - `tools/check-compliance.ps1` reads
 ## Maintaining these rules
 
 - **Gate before committing:** run `tools/check-rules.ps1` (exit 0 required) - it validates internal links,
-  section numbering, `§`-references, and the house text style across these docs.
+  section numbering, `§`-references, and the house text style across these docs, and the frontmatter of every
+  plugin skill.
 - **The version pair is written by `deploy.ps1`, never by hand.** The version is the delivery key
   ([RELEASE_AND_DISTRIBUTION.md](RELEASE_AND_DISTRIBUTION.md) §4): a rule-doc change reaches an adopter by
   the version and nothing else, so the deploy raises `CANON_VERSION` and the plugin version itself, before

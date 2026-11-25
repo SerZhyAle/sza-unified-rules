@@ -13,10 +13,9 @@ $cases = 0
 
 function Assert-Gate([string]$Name, [bool]$ExpectFinding, [switch]$Strict) {
     $script:cases++
-    $argsList = @('-NoProfile', '-File', (Join-Path $sourceRoot 'tools/check-compliance.ps1'),
-        '-RepoRoot', $scratch, '-Only', 'SZA-CTR04', '-Json')
-    if ($Strict) { $argsList += '-Strict' }
-    $output = & pwsh @argsList 2>&1 | Out-String
+    # In-process: one pwsh start per case would push this suite past the fast tier.
+    $gateArgs = @{ RepoRoot = $scratch; Only = 'SZA-CTR04'; Json = $true; Strict = [bool]$Strict }
+    $output = & (Join-Path $sourceRoot 'tools/check-compliance.ps1') @gateArgs 2>&1 | Out-String
     $code = $LASTEXITCODE
     try {
         $report = $output | ConvertFrom-Json -ErrorAction Stop
@@ -47,7 +46,26 @@ try {
     Set-Content -LiteralPath (Join-Path $scratch 'CLAUDE.md') -Value 'Read docs/CLI.md; run app commands --json.' -Encoding utf8
     Assert-Gate 'both discovery interfaces pass' $false
 
-    Remove-Item -LiteralPath (Join-Path $scratch 'docs/cli-commands.json')
+    $remoteOnly = '{"commands":[{"name":"status","remote":{"confirm":"grant"}},{"name":"quit","remote":{"confirm":"device"}}]}'
+    $companion = Join-Path $scratch 'docs/cli-commands.companion.json'
+    Set-Content -LiteralPath (Join-Path $scratch 'CLAUDE.md') -Value '# Agent rules' -Encoding utf8
+    Set-Content -LiteralPath (Join-Path $scratch 'docs/cli-commands.json') -Value $remoteOnly -Encoding utf8
+    Set-Content -LiteralPath $companion -Value $remoteOnly -Encoding utf8
+    Assert-Gate 'remote-only manifests need no command pointer' $false
+
+    Set-Content -LiteralPath $companion -Value '{"exe":"app.exe","commands":[{"name":"status","remote":{"confirm":"grant"}}]}' -Encoding utf8
+    Assert-Gate 'a manifest naming an executable warns beside a remote-only one' $true
+
+    Set-Content -LiteralPath $companion -Value '{"commands":[{"name":"status","exe":"app.exe","remote":{"confirm":"grant"}}]}' -Encoding utf8
+    Assert-Gate 'a verb naming an executable warns' $true
+
+    Set-Content -LiteralPath $companion -Value '{"commands":[{"name":"status","remote":{"confirm":"grant"}},{"name":"open"}]}' -Encoding utf8
+    Assert-Gate 'a verb that is not remote warns' $true
+
+    Set-Content -LiteralPath $companion -Value '{ "commands": [' -Encoding utf8
+    Assert-Gate 'an unreadable manifest warns' $true
+
+    Remove-Item -LiteralPath $companion, (Join-Path $scratch 'docs/cli-commands.json')
     Set-Content -LiteralPath (Join-Path $scratch 'docs/cli-commands.helper.json') -Value '{}' -Encoding utf8
     Set-Content -LiteralPath (Join-Path $scratch 'CLAUDE.md') -Value '# Agent rules' -Encoding utf8
     Assert-Gate 'companion-only manifest warns, strict upgrades it' $true -Strict

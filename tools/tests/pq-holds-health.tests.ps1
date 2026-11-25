@@ -9,7 +9,8 @@
       3. A stale hold line - reason "no ticket queue" while the queue exists - is reported; a hold whose queue is
          still missing, a hold with another reason, a ticket-only hold and an unregistered key are not.
       4. Stamp freshness: an equal digest is current, a different one is stale since the recorded version, a
-         missing stamp digest and an unavailable canon digest are unknown - never current.
+         missing stamp digest and an unavailable canon digest are unknown - never current; a canon-home stamp
+         with a different digest is current.
       5. The canon digest equals the canonDigest check-compliance.ps1 computes over the same rules/.
       6. Trust: the key is the upper-case-drive, forward-slash path; trusted, untrusted, lower-case-drive-only and
          missing entries; an unreadable file is not ok; the check applies only with .claude/settings.json or hooks.
@@ -92,6 +93,10 @@ try {
         Assert-That ($cur.state -ceq 'current') "equal: $($cur.state)"
         Assert-That ($old.state -ceq 'stale' -and $old.detail -match '^stale since 2026\.10\.17\.1 ') "differs: $($old.state) $($old.detail)"
         Assert-That ($none.state -ceq 'unknown' -and $gone.state -ceq 'unknown' -and $gone.detail -match 'no rules/') "unknown: $($none.state) $($gone.state) $($gone.detail)"
+        $home_ = & $mk 'sha256:bb'
+        $home_ | Add-Member -NotePropertyName role -NotePropertyValue 'canon-home'
+        $own = Get-PqStampFreshness -Stamp $home_ -Canon $canon
+        Assert-That ($own.state -ceq 'current' -and $own.detail -match '^canon-home ') "canon-home: $($own.state) $($own.detail)"
     }
 
     Test-Case 'the canon digest equals check-compliance canonDigest' {

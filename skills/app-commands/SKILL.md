@@ -39,6 +39,11 @@ unavailable, inspect these interfaces directly. Use the command's synopsis, argu
 cold-start and response, rather than guessing from its name. See APP-COMMANDS rules 13, 18 and 20
 and section 7 item R for the contract.
 
+A remote-only manifest - no `exe`, every verb `remote` - belongs to a product with no command line (an
+Android app): the lister shows its verbs, but there is no `docs/CLI.md` to read and nothing to run on this
+machine. Another device of the account asks those verbs through `REMOTE-CONTROL` (rules 6 to 11), under the
+grants the person set on the target.
+
 ## Execute
 
 - The running product wins when it disagrees with the repository manifest. `commands --json` reports

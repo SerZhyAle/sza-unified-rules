@@ -30,6 +30,10 @@ canon's business.
   is shown `INVALID`; a risk or cold start the manifest omits prints as `unknown`, which is never `safe`, so a caller
   that gates every class but `safe` (rule 13) errs the cautious way. A value outside the four classes passes through
   as written and is never read as `safe`.
+- `check-compliance.ps1` (`SZA-CTR04`) asks for the command-line pointer only for a manifest that describes a
+  command line. A manifest that names no `exe` (top level or on a verb) and whose every verb carries a `remote`
+  object is a remote-only one (`REMOTE-CONTROL` 0.9 rules 6 and 7) and asks for nothing; an empty or unreadable
+  manifest counts as a command line.
 - Not shown, by choice and not by rule: `audience: developer` verbs are listed with the others (item D says the
   manifest and `commands --json` carry them always), and `families[]` (item B) is not listed. No manifest of the
   portfolio carries either on 2026-11-15 (the six manifests of five repositories were read for this), so nothing is

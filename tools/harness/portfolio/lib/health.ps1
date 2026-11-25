@@ -19,6 +19,7 @@
 #       README.md and SPREAD_BACK_PROMPT.md, LF-normalised, name + LF + text, SHA-256) and CANON_VERSION.
 #   Get-PqStampFreshness -Stamp <parsed .sza-canon.json> -Canon <Get-PqCanonDigestInfo result>
 #       @{ state = current|stale|unknown; version; detail }. unknown when either digest is missing - never current.
+#       A stamp with role canon-home is current whatever its digest says.
 #   Read-PqClaudeTrust [-Path <file>]
 #       @{ ok; projects (key -> bool); error; path } from ~/.claude.json, or the given file (pq doctor passes
 #       SZA_CLAUDE_CONFIG, so a fixture never reads the real one).
@@ -102,6 +103,10 @@ function Get-PqStampFreshness($Stamp, $Canon) {
     if ($null -ne $c) {
         if ($null -ne $c.PSObject.Properties['version']) { $version = [string]$c.version }
         if ($null -ne $c.PSObject.Properties['coreDigest']) { $digest = [string]$c.coreDigest }
+    }
+    # The canon's own repository holds the rule set and owes no staleness finding (REPO-STAMP rule 5), as in check-compliance.ps1.
+    if ($null -ne $Stamp -and $null -ne $Stamp.PSObject.Properties['role'] -and [string]$Stamp.role -ceq 'canon-home') {
+        return @{ state = 'current'; version = $version; detail = 'canon-home - never stale against its own rule set' }
     }
     if ($null -eq $Canon -or -not $Canon.ok) {
         $why = if ($null -ne $Canon -and $Canon.error) { [string]$Canon.error } else { 'canon digest unavailable' }

@@ -1,4 +1,4 @@
-<#
+﻿<#
 smoke-hooks.ps1 - prove the shipped hooks still refuse what they must and wave through what they must not.
 
 A guard that over-blocks gets turned off, and then nothing is enforced - the same reasoning CLAUDE.md
@@ -24,7 +24,7 @@ $failures = 0
 $cases = 0
 
 foreach ($f in @('guard-bash.ps1', 'guard-fire-and-forget.ps1', 'guard-uncapped-read.ps1',
-                 'on-user-prompt.ps1', 'session-start.ps1')) {
+                 'guard-rules-budget.ps1', 'on-user-prompt.ps1', 'session-start.ps1')) {
     if (-not (Test-Path -LiteralPath (Join-Path $hooksDir $f))) {
         Write-Error "smoke-hooks: $f is missing - cannot verify" -ErrorAction Continue
         exit 2
@@ -222,6 +222,87 @@ try {
 }
 finally {
     foreach ($d in @($adopter, $stranger)) { Remove-Item -LiteralPath $d -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+Write-Host '--- guard-rules-budget (canon AI_USAGE.md sections 4 and 5) ---'
+function Write-Payload([string]$path, [string]$content) {
+    return (@{ tool_name = 'Write'; tool_input = @{ file_path = $path; content = $content } } | ConvertTo-Json -Compress)
+}
+function Edit-Payload([string]$path, [string]$old, [string]$new, [bool]$replaceAll = $false) {
+    $ti = @{ file_path = $path; old_string = $old; new_string = $new }
+    if ($replaceAll) { $ti['replace_all'] = $true }
+    return (@{ tool_name = 'Edit'; tool_input = $ti } | ConvertTo-Json -Compress)
+}
+
+$budgetAdopter = Join-Path ([System.IO.Path]::GetTempPath()) ('sza-budget-adopter-' + [guid]::NewGuid().ToString('N'))
+$budgetStranger = Join-Path ([System.IO.Path]::GetTempPath()) ('sza-budget-stranger-' + [guid]::NewGuid().ToString('N'))
+$budgetClaude = Join-Path ([System.IO.Path]::GetTempPath()) ('sza-budget-claude-' + [guid]::NewGuid().ToString('N'))
+try {
+    $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+    foreach ($d in @(
+        $budgetAdopter,
+        (Join-Path $budgetAdopter 'memory'),
+        $budgetStranger,
+        (Join-Path $budgetStranger '.git'),
+        (Join-Path $budgetClaude '.claude/projects/p--demo/memory')
+    )) { New-Item -ItemType Directory -Path $d -Force | Out-Null }
+
+    [System.IO.File]::WriteAllText((Join-Path $budgetAdopter '.sza-canon.json'),
+        '{"canon":{"model":"reference"}}', $utf8NoBom)
+
+    $claudeMd = Join-Path $budgetAdopter 'CLAUDE.md'
+    $agentsMd = Join-Path $budgetAdopter 'AGENTS.md'
+    $geminiMd = Join-Path $budgetAdopter 'GEMINI.md'
+    $repoMem = Join-Path $budgetAdopter 'memory/MEMORY.md'
+    $claudeMem = Join-Path $budgetClaude '.claude/projects/p--demo/memory/MEMORY.md'
+    $strangerClaude = Join-Path $budgetStranger 'CLAUDE.md'
+
+    $s5k = 'a' * 5000
+    $s9k = 'm' * 9000
+    $s25k = 'b' * 25000
+    $s41k = 'c' * 41000
+
+    [System.IO.File]::WriteAllText($claudeMd, ('x' * 1000), $utf8NoBom)
+    Invoke-Case 'CLAUDE.md > 40k in adopter - refused'    'guard-rules-budget.ps1' (Write-Payload $claudeMd $s41k) 2
+    Invoke-Case 'AGENTS.md > 40k in adopter - refused'    'guard-rules-budget.ps1' (Write-Payload $agentsMd $s41k) 2
+    Invoke-Case 'GEMINI.md > 40k in adopter - refused'    'guard-rules-budget.ps1' (Write-Payload $geminiMd $s41k) 2
+    Invoke-Case 'CLAUDE.md > 20k in adopter - warns'      'guard-rules-budget.ps1' (Write-Payload $claudeMd $s25k) 0 -MustContain 'over the 20000 budget'
+    Invoke-Case 'CLAUDE.md <= 20k in adopter - silent'    'guard-rules-budget.ps1' (Write-Payload $claudeMd $s5k)  0 -MustBeSilent
+
+    # A file already above the hard limit can still be shrunk.
+    [System.IO.File]::WriteAllText($claudeMd, ('y' * 45000), $utf8NoBom)
+    Invoke-Case 'CLAUDE.md shrink past 40k - allowed'     'guard-rules-budget.ps1' (Write-Payload $claudeMd $s41k) 0 -MustBeSilent
+
+    # Edit with replace_all counts every match when projecting final length.
+    [System.IO.File]::WriteAllText($claudeMd, (('TOK' * 100) + ('z' * 39600)), $utf8NoBom)
+    Invoke-Case 'Edit replace_all pushing > 40k - refused' 'guard-rules-budget.ps1' (Edit-Payload $claudeMd 'TOK' 'LONGTOKEN' $true) 2
+
+    # Non-adopter (no .sza-canon.json) is untouched.
+    Invoke-Case 'CLAUDE.md > 40k in non-adopter - silent' 'guard-rules-budget.ps1' (Write-Payload $strangerClaude $s41k) 0 -MustBeSilent
+
+    # Memory indexes warn over 8,000 characters and never refuse; shrinking stays silent.
+    Invoke-Case '.claude memory MEMORY.md > 8k - warns'   'guard-rules-budget.ps1' (Write-Payload $claudeMem $s9k) 0 -MustContain 'sza memory budget'
+    Invoke-Case 'repo memory/MEMORY.md > 8k - warns'      'guard-rules-budget.ps1' (Write-Payload $repoMem $s9k)   0 -MustContain 'sza memory budget'
+    [System.IO.File]::WriteAllText($repoMem, ('m' * 9500), $utf8NoBom)
+    Invoke-Case 'repo memory/MEMORY.md shrink - silent'   'guard-rules-budget.ps1' (Write-Payload $repoMem $s9k)   0 -MustBeSilent
+
+    # Escape hatch and malformed payload both fail open.
+    $prevHooksOff = $env:SZA_HOOKS_OFF
+    try {
+        $env:SZA_HOOKS_OFF = '1'
+        [System.IO.File]::WriteAllText($claudeMd, ('x' * 1000), $utf8NoBom)
+        Invoke-Case 'SZA_HOOKS_OFF=1 - allows > 40k'      'guard-rules-budget.ps1' (Write-Payload $claudeMd $s41k) 0 -MustBeSilent
+    }
+    finally {
+        if ($null -eq $prevHooksOff) { Remove-Item Env:SZA_HOOKS_OFF -ErrorAction SilentlyContinue }
+        else { $env:SZA_HOOKS_OFF = $prevHooksOff }
+    }
+    Invoke-Case 'budget guard malformed JSON - fails open' 'guard-rules-budget.ps1' '{not json' 0 -MustBeSilent
+}
+finally {
+    foreach ($d in @($budgetAdopter, $budgetStranger, $budgetClaude)) {
+        Remove-Item -LiteralPath $d -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 
 Write-Host ''

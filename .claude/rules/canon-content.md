@@ -19,9 +19,16 @@ Moved verbatim from [CLAUDE.md](../../CLAUDE.md) on 2026-11-25. The always-on ru
 - **Editing a skill**: the SKILL.md body is what loads on trigger; heavy payload goes in `references/`
   beside it. Keep the frontmatter `description` written in the words the owner actually uses to ask for the
   task, in both languages where that is how the request arrives - it is the trigger, not a summary.
+  `tools/check-rules.ps1` judges the frontmatter, and the deploy blocks on it: `key: value` on one line (plain or
+  quoted) or a block value, nothing nested, `name` and `description` present, the description 1024 characters at
+  most. Run it after a skill edit.
 
 - `.claude-plugin/` holds **both** `marketplace.json` and `plugin.json` - the repo is its own marketplace,
   with the plugin at `source: "./"`.
+- `.claude/rules/` in this repository applies only to sessions working inside this checkout: Claude Code's
+  plugin loader discovers `commands/`, `agents/`, `skills/`, `hooks/`, `.mcp.json`, and `.lsp.json` only, so
+  although `.claude/rules/` travels in the plugin clone and cache, consumer sessions ignore it (`claude plugin
+  validate .` confirms plugin-root project context files are not loaded into consumers).
 - Paths inside skills resolve through `${CLAUDE_PLUGIN_ROOT}` at run time and through relative links
   (`../../rules/...`) when read as files. Keep both working: a skill is read as a document *and* executed.
 - `rules/` was moved here from the `sza.od.ua` site repo with its history intact (`git subtree split`). The

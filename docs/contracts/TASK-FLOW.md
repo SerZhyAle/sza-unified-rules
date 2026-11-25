@@ -3,9 +3,9 @@
 | Field | Value |
 | --- | --- |
 | Contract | `TASK-FLOW` |
-| Version | 0.43, draft |
+| Version | 0.44, draft |
 | Home | the shared contracts catalog, domain `task-flow/` (the path is in [CLAUDE.md](../../CLAUDE.md)) |
-| Role | **shared implementation, partial**: `tools/harness/` supplies the ticket tools, repository runner and day-0 scaffold; `tools/harness/portfolio/` supplies the S0015 dispatcher, registry, queue, rank and event log. Remaining portfolio features belong to S0016. The owner is `shared`, so this repository edits the contract only through the canon session |
+| Role | **shared implementation, partial**: `tools/harness/` supplies the ticket tools, repository runner and day-0 scaffold; `tools/harness/portfolio/` supplies the dispatcher, registry, queue, rank and event log. The open differences are the dated exceptions of the registry. The owner is `shared`, so this repository edits the contract only through the canon session |
 
 ## What this repo must do to stay conformant
 
@@ -30,9 +30,18 @@
   gaps=0). REPO-LAYOUT rule 3, in-flight rule 28 and real agent past Approved are accepted conduct boundaries.
 - `batch/run-spec-queue.ps1` is the full-featured form of rules 21-29. Neither it nor the launcher may drift
   from rules 21-27 without the catalog moving first. It is also the runner every portfolio pass invokes and
-  whose dry run decides a joining repository's readiness (rules 42 and 49). Gap G10 (0.7) is open: the
-  rendered launcher and the contract's reference R0 exit 3 on a ledger with no open ticket before they reach
-  `-DryRun`, where rule 27 says a dry run exits 0.
+  whose dry run decides a joining repository's readiness (rules 42 and 49). Gap G10 (0.7) closed on
+  2026-11-23 (CANONR-0172): a dry run of the rendered launcher and of the contract's reference R0 prints the order
+  of an empty ledger and exits 0 (rule 27).
+- The registry row is `partial 0.44`. The amendments 0.29 to 0.43 and the one code item 0.28 left owed were read
+  clause by clause on 2026-11-25 (CANONR-0190, static, nothing above 5 seconds run): 36 differences. Those in code are
+  tickets CANONR-0194 (0.32, 0.33), CANONR-0195 (0.37, 0.39), CANONR-0196 (0.35, 0.38, 0.40, 0.41) and CANONR-0197
+  (0.29, 0.30, 0.31, 0.42), and each stands as a dated exception in the registry until its ticket closes it. Those in
+  the text, with the reference R0, were accepted the same day as 0.44 (CANONR-0198). The release-tier suites that cover
+  the amendments have not run. No rule asks the plan tool to re-lay a repository's own queue file in the portfolio
+  order (rule 15 forbids a script to reorder its rows), so that is no gap.
+- The rendered R0 launcher (`scaffold/templates/r0-runner.ps1.tpl`, filled by `init-task-flow.ps1`) and this
+  repository's `r0.ps1` still rank `Implemented` (gap G11, CANONR-0197); the catalog's reference does not from 0.44.
 - S0011 re-read section 5 and the partial adoption row without advancing its 2026-10-07 verification.
   S0012 (closed 2026-10-26) handed remaining harness/runtime evidence to S0013. Reader and completion tests
   certify no live-agent flow; S0013 recorded one real-agent step of one ticket and nothing more.
@@ -53,14 +62,14 @@
   stop, status and log. Registry, queue and event readers are covered by `portfolio-queue.tests.ps1` and
   `portfolio-events.tests.ps1`; `smoke-portfolio-runner.ps1` exercises the dispatcher with fake children.
   Its event names come from the contract's companion `EVENTS.md` and are forever (rule 57).
-  Account-wide limits, multiple agent providers, cross-repository blockers, occupancy and resource
-  tokens are deferred to S0016; no full adoption of rules 41-64 is claimed. The dispatcher never writes a ticket record or a status
+  Rules 41-64 were read on 2026-11-15 and the gaps of that read closed (S0080, S0082 to S0084); the amendments made
+  since are in the list below. The dispatcher never writes a ticket record or a status
   directly (rule 43; a status moves only through the repository's own tool, rule 4; a `Draft` its analysis
   files goes through the capture tool, rule 5) and never releases, tags or publishes anything (S0015 R20).
 - `spec_catalog/capture-draft.ps1` and the ticket template write `**Complexity:**`; `validate.ps1` warns
   on a missing or unassessed line (rule 51). The `adopt-canon` and `task-flow-init` skills end day 0 with
-  registering the repository (rule 50). The `**Verify:**` resource classification of rule 62 belongs to
-  S0016. The attended real-agent portfolio pass remains the S0015 phase-06 evidence gate.
+  registering the repository (rule 50). `portfolio/lib/resources.ps1` reads the `**Verify:**` line of rule 62.
+  The attended real-agent portfolio pass remains the S0015 phase-06 evidence gate.
 - A change to the registry file and its agent records (rules 41-42), the queue-file grammar (rule 44), the
   run row (rule 46), the stop files (rule 47), the hold file (rule 48) or the event envelope (rule 53) is a
   **contract change**: the catalog moves first.
@@ -124,7 +133,8 @@
   unmoved runs hold a ticket, `limit-hit`, `claim-lost-before-launch` and `launch-failed` are stepped over, and a spec
   file written more than 60 seconds after the newest counted run lifts the hold for one pass.
   `spec_catalog/block-links.ps1` keeps a blocker's spec file time when it writes a back-link. Covered by
-  `tools/tests/idle-hold.tests.ps1` (6 cases, fast); PQShell's own copy of the walk does not apply the lift yet.
+  `tools/tests/idle-hold.tests.ps1` (6 cases, fast); PQShell's own copy of the walk does not apply the lift
+  (CANONR-0197).
 - 0.30 (2026-11-18, S0108): a ledger row records how the ticket was born (README section 10, `EVENTS.md` section 6).
   `spec_catalog/insert.ps1` writes the optional field `source` (`owner`, `robot`, `import`, `inbox`, `campaign`), resolved
   by `spec_catalog/_ticket-source.ps1`: its `-Source`, else `import` for the queue sync's own child, else the variable
@@ -162,8 +172,8 @@
   portfolio library, and `spec-next-preflight.ps1` ranks them first unless it runs as the dispatcher's picker
   (`SZA_PQ_PICKER=1`), which walks the rows itself; the payload's `order_source` names the file. The repository's
   plan files keep package, status and time, and their line order ranks only the tickets the queue file does not
-  name. Covered by `tools/tests/portfolio-order.tests.ps1` (4 cases, fast). Not built: the plan tool does not
-  re-lay the rows of the repository's own file in that order.
+  name. Covered by `tools/tests/portfolio-order.tests.ps1` (4 cases, fast). The rows of the repository's own file
+  stay where they are (rule 15).
 - 0.36 (2026-11-18, S0135): the run row no longer carries `built` (rules 23 and 46). The runner no longer reads the
   disclosure sentence; `pq report` counts "closed without a build" from the ticket ledgers against each repository's
   release ledger (`Get-RlClosedSinceBuild`, `Get-PqClosedUnbuilt`; case 11 of `tools/tests/release-ledger.tests.ps1`).
@@ -176,8 +186,8 @@
 - 0.37 (2026-11-19, S0152): one prefix migration per repository (rule 2, section 15). `spec_catalog/rename-prefix.ps1
   -Prefix <SIX> [-DryRun] [-AllRepos]` renames the open tickets inside the ledger lock and lists each old id in
   `formerIds`; the status tool, `close.ps1`, `complete.ps1`, `bulk-update.ps1`, `block-links.ps1` and the dispatcher's
-  ledger reader resolve an old id. Covered by `tools/tests/rename-prefix.tests.ps1` (4 cases, fast). No repository has
-  migrated; each runs the tool in its own adoption ticket after the release that ships it.
+  ledger reader resolve an old id (the resolvers that do not are listed in CANONR-0195). Covered by
+  `tools/tests/rename-prefix.tests.ps1` (4 cases, fast). Each repository runs the tool in its own adoption ticket.
 - Rule 16 steps 2 and 3 have a caller from 2026-11-18 (canon ticket S0131): `spec_catalog/ship-package.ps1` runs
   `release-queue.ps1 -Ship` for every numbered ready block up to the marker, puts the marker on the next package
   and then runs `archive.ps1` for the `Verified` rows in neither plan file. The release skill calls it in Phase 8
@@ -187,9 +197,9 @@
 - 0.42 (2026-11-24, CANONR-0175): rule 18 fixes the eligible set of the ranking - the seven queued statuses, never
   `Implemented`, in every run mode. `spec_catalog/spec-next-preflight.ps1` no longer adds `Implemented` unless it runs as
   the dispatcher's picker, so `/spec-next`, a repository's own runner and `pq` rank one set and agree with the queue
-  file. An explicit id (`/spec-all <id>`, `pq start -Ticket`, an id list given to the runner) does not rank and still
-  works an `Implemented` ticket; the `Implemented` entry of `commands.statusCommands` is read by that path and by
-  `release-plan.ps1` only. The PQShell panel's list of runnable statuses drops `Implemented` too (source edit, not
+  file. An explicit id (`/spec-all <id>`, an id list given to the runner) does not rank and still works an
+  `Implemented` ticket, while `pq start -Ticket` keeps the picker's gates (rule 66) and refuses it; the `Implemented`
+  entry of `commands.statusCommands` is read by the explicit path and by `release-plan.ps1` only. The PQShell panel's list of runnable statuses drops `Implemented` too (source edit, not
   compiled). Covered by `tools/tests/picker-eligibility.tests.ps1` (5 cases, fast).
 - 0.43 (2026-11-24, CANONR-0176): rule 67, the hold of a ticket that waits for the release, is withdrawn and keeps its
   number - after 0.42 no ranking offers an `Implemented` ticket, so nothing was left to hold. `batch/_release-wait.ps1`
@@ -200,3 +210,6 @@
   `picker-eligibility.tests.ps1` and `idle-hold.tests.ps1` (fast), a dry run of the runner and a direct call of
   `Get-PqRank` (8 checks, 4 of them fail against the previous `rank.ps1`); `portfolio-queue.tests.ps1` was edited and
   not run (release tier).
+- 0.44 (2026-11-25, CANONR-0198): the canon's proposal accepted as filed - ten places of the text brought to the shipped
+  harness, a neutral end of a pass escalates nothing (the code gap is CANONR-0194), and the reference R0 drops
+  `Implemented`; no harness code moved. The catalog's day-0 rehearsal ran against this tree (exit 0, one GAP, G11).

@@ -107,29 +107,40 @@ live tree. This one file is what every other skill and the compliance gate read.
 - Add the canon pointer: the plugin, the overlay, the consumption model, the contrib record.
 - **Delete every restated universal rule.** Keep only deltas and repo specifics - architecture, frozen
   anchors, build commands, known-broken gates, owner decisions.
+- **Keep the always-loaded set within budget** ([AI_USAGE.md](../../rules/AI_USAGE.md) §5): **20,000
+  characters budget, 40,000 hard limit** (`SZA-RULES07`). Move area-specific detail verbatim into
+  `.claude/rules/<area>.md` files with `paths:` frontmatter (keeping each area file under 40,000 characters,
+  `SZA-RULES08`), or into tracked docs where `.claude/` is gitignored, and leave one line or table row per
+  area in the core file.
 - Verify every kept claim against the live tree. Fix statements that contradict it: stale paths,
   gitignored-versus-committed mismatches, a documented remap that the script does not actually perform.
 - If the repo has a `docs/cli-commands.json` or `docs/cli-commands.<program>.json` manifest, add the
   [product commands snippet](../../templates/agent-rules.md) to its authoritative agent-rules file,
-  naming each executable from its manifest.
+  naming each executable from its manifest. A remote-only manifest (no `exe`, every verb `remote` -
+  `REMOTE-CONTROL` rule 6) has no command line and takes no snippet.
 - A rule that genuinely is a repo-specific delta but reads like a restatement gets an inline
   `<!-- canon-ok: <reason> -->` so the gate stops flagging it.
 - **`AGENTS.md` is a delegating stub** - a Codex-style `/init` creates one with no canon pointer, which the
-  compliance gate reports as an error. Replace its body with exactly this, and nothing else (never a second
-  copy of commands or style):
+  compliance gate reports as an error. Replace its body with the delegating stub from
+  [templates/agent-rules.md](../../templates/agent-rules.md) (never a second copy of commands or style),
+  keeping the **Area rules** paragraph whenever `.claude/rules/` exists (`SZA-RULES09`):
 
   ```
   Read CLAUDE.md in full; it is the authoritative agent contract and carries the canon pointer; the
   stricter file wins. If you are not Claude Code, the canon plugin is not loaded: read
   rules/INVARIANTS.md at https://github.com/SerZhyAle/sza-unified-rules first.
+
+  **Area rules.** The detail behind `CLAUDE.md` lives in `.claude/rules/*.md`. Only Claude Code loads those files by itself. Every other agent opens them by hand: each file starts with a `paths:` list, and before the first edit, review or command in a matching area you read the whole file. The table in `CLAUDE.md` names them.
   ```
 
-**What "restated" means in practice**: size is not the signal. A 500-line rules file that is all module
-architecture is clean; a 130-line file that re-authors the language policy, the house style and the
-find-safety rule is not. The rules with exactly one home in the canon are: working-tree-is-truth, when to
-commit and push, the co-author trailer, English artifacts, chat language, the find-safety rule, the secrets
-rule, build-is-not-a-release, mechanical versioning, the changelog shape, the house text style, the evidence
-rule, and the no-trailing-summary rule.
+**Restatement versus budget (`SZA-RULES03` vs `SZA-RULES07`)**: restatement is judged by content, not size -
+a 130-line file that re-authors the language policy, house style and find-safety rule fails `SZA-RULES03`.
+Size is judged separately by the always-loaded budget (`SZA-RULES07`): a 500-line module-architecture block
+is not a restatement, so do not delete it, but split it into `.claude/rules/<area>.md` (or a tracked doc) to
+keep the always-loaded core within 20,000 characters (hard limit 40,000). The rules with exactly one home in
+the canon are: working-tree-is-truth, when to commit and push, the co-author trailer, English artifacts, chat
+language, the find-safety rule, the secrets rule, build-is-not-a-release, mechanical versioning, the changelog
+shape, the house text style, the evidence rule, and the no-trailing-summary rule.
 
 ## Step 5 - Close the open questions and reconcile drift
 
@@ -306,6 +317,9 @@ For a bootstrap run, use the gate command from step 1.
 
 - [ ] `.sza-canon.json` exists at the repo root, complete, with a freshly computed digest.
 - [ ] The agent-rules file points at the canon and restates nothing that has a canon home.
+- [ ] The always-loaded agent-rules set is within the 20,000-character budget (hard limit 40,000, `SZA-RULES07`),
+      area files stay below 40,000 characters (`SZA-RULES08`), and `AGENTS.md` carries the area-rules paragraph
+      whenever `.claude/rules/` exists (`SZA-RULES09`).
 - [ ] Every divergence is either fixed or recorded as a DIVERGE delta with its reason.
 - [ ] Every open question from the contrib record is closed or explicitly carried forward with an owner.
 - [ ] Shared contracts: `contract-sync` ran on this repo, or the record says in one line that it holds none.

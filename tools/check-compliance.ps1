@@ -37,7 +37,9 @@ Usage:
 
 The git-scoped checks judge tracked files. A repo with no commit yet (adoption runs before the first one)
 is judged on its tracked and untracked, non-ignored files instead - what the first commit would hold - and
-the run says so; -IncludeUntracked asks for that set on any repo.
+the run says so; -IncludeUntracked asks for that set on any repo. One exception: the area-rule checks
+(SZA-RULES07/08/09) take .claude/rules/*.md, tracked and untracked, non-ignored, on every run, so a new
+rule file is judged before its first commit; `fileSet` does not describe that set.
 
 -Json prints repo, canonVersion, canonDigest, fileSet, only, skip, errors, warnings and findings. `only` and
 `skip` are the -Only and -Skip lists as split and trimmed (empty arrays on a full run), so a consumer can tell
@@ -576,27 +578,41 @@ try {
     # SZA-RULES07 - the always-loaded set has a budget, because every request pays for it (AI_USAGE.md
     # section 5). A set is a head file, what it imports with an @ line, a second root file it tells every
     # session to read, and, for Claude, each rule file that has no `paths:` list. Characters, not bytes.
-    $ruleFiles = @($tracked | Where-Object { $_ -match '^\.claude/rules/.+\.md$' -and (Test-RepoPath $_) })
+    # Include both tracked and untracked non-ignored .claude/rules/**/*.md files so newly created area rules
+    # are judged immediately while gitignored .claude/ trees stay skipped.
+    $ruleFiles = @()
+    if ($isGit) {
+        $rawRuleFiles = @(& git -C $RepoRoot -c core.quotepath=false ls-files --cached --others --exclude-standard -- .claude/rules 2>$null | Sort-Object -Unique)
+        $ruleFiles = @($rawRuleFiles | Where-Object { $_ -match '^\.claude/rules/.+\.md$' -and (Test-RepoPath $_) })
+    }
+    elseif (Test-RepoPath '.claude/rules') {
+        $rulesRoot = Join-RepoPath '.claude/rules'
+        $ruleFiles = @(Get-ChildItem -LiteralPath $rulesRoot -Recurse -File -Filter '*.md' | ForEach-Object {
+            [IO.Path]::GetRelativePath($RepoRoot, $_.FullName).Replace('\', '/')
+        } | Sort-Object -Unique)
+    }
     $ruleTexts = @{}
     foreach ($rf in $ruleFiles) { $ruleTexts[$rf] = [IO.File]::ReadAllText((Join-RepoPath $rf)) }
     $largest = $null
-    foreach ($head in @('CLAUDE.md', 'AGENTS.md')) {
+    foreach ($head in @('CLAUDE.md', 'AGENTS.md', 'GEMINI.md')) {
         if ($agentFiles -notcontains $head) { continue }
-        $other = if ($head -eq 'CLAUDE.md') { 'AGENTS.md' } else { 'CLAUDE.md' }
         $parts = [ordered]@{ $head = [IO.File]::ReadAllText((Join-RepoPath $head)) }
         foreach ($m in [regex]::Matches($parts[$head], '(?m)^@([^\s]+\.md)\s*$')) {
             $imp = $m.Groups[1].Value -replace '^\./', ''
             if (Test-RepoPath $imp) { $parts[$imp] = [IO.File]::ReadAllText((Join-RepoPath $imp)) }
         }
-        $otherName = [regex]::Escape($other)
-        if ($agentFiles -contains $other -and
-            ($parts[$head] -match "(?i)\b(read|see)\s+\[?``?$otherName[^\n]{0,80}(in full|first|it is the)" -or
-             $parts[$head] -match "(?i)$otherName[^\n]{0,60}read it (first|in full)")) {
-            $parts[$other] = [IO.File]::ReadAllText((Join-RepoPath $other))
+        foreach ($other in @('CLAUDE.md', 'AGENTS.md', 'GEMINI.md')) {
+            if ($other -eq $head -or $agentFiles -notcontains $other -or $parts.Contains($other)) { continue }
+            $otherName = [regex]::Escape($other)
+            if ($parts[$head] -match "(?i)\b(read|see)\s+\[?``?$otherName[^\n]{0,80}(in full|first|it is the)" -or
+                $parts[$head] -match "(?i)$otherName[^\n]{0,60}read it (first|in full)") {
+                $parts[$other] = [IO.File]::ReadAllText((Join-RepoPath $other))
+            }
         }
         if ($head -eq 'CLAUDE.md') {
             foreach ($rf in $ruleFiles) {
-                if ($ruleTexts[$rf] -notmatch '(?s)\A\uFEFF?---\r?\n.*?\bpaths\s*:.*?\r?\n---') { $parts[$rf] = $ruleTexts[$rf] }
+                # The key counts only inside the first frontmatter block: no line starting with --- before it.
+                if ($ruleTexts[$rf] -notmatch '(?ms)\A\uFEFF?---\r?\n(?:(?!^---).)*?^paths\s*:.*?\r?\n---') { $parts[$rf] = $ruleTexts[$rf] }
             }
         }
         $size = 0
@@ -644,10 +660,14 @@ try {
             $p = Join-RepoPath $f
             if (-not (Test-Path -LiteralPath $p)) { continue }
             $memLines = @(Get-Content -LiteralPath $p).Count
-            if ($memLines -gt 200) {
+            $memChars = [IO.File]::ReadAllText($p).Length
+            if ($memLines -gt 200 -or $memChars -gt 8000) {
+                $reasons = @()
+                if ($memLines -gt 200) { $reasons += "$memLines lines (limit 200 - the rest is silently dropped)" }
+                if ($memChars -gt 8000) { $reasons += "$memChars characters (budget 8000)" }
                 Add-Finding -Id 'SZA-MEM01' -Severity 'warn' -Path $f `
-                    -Message "committed memory index is $memLines lines - only the first 200 are loaded, the rest never reaches the agent" `
-                    -Fix 'Keep the index to one line per topic file under about 150 lines: move the bodies into per-topic files and prune stale entries (AI_USAGE.md section 4).'
+                    -Message ("committed memory index exceeds budget: " + ($reasons -join '; ')) `
+                    -Fix 'Keep the index to one line per topic file under about 150 lines and 8,000 characters: move bodies into per-topic files or state/ and prune stale entries (AI_USAGE.md section 4).'
             }
         }
     }
@@ -991,12 +1011,28 @@ try {
 
     # The command manifest is a repository fact; require the pointer only when that fact is in the
     # selected file set. A second program can have a manifest even when the main one is absent.
+    # A product with no command line keeps the same file for its remote verbs alone (REMOTE-CONTROL
+    # rule 6): it names no executable and marks every verb remote, so there is nothing local to point
+    # at. Anything unreadable or doubtful stays a command-line manifest - the check errs towards warning.
+    function Test-RemoteOnlyManifest {
+        param([string]$Path)
+        try { $manifest = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json }
+        catch { return $false }
+        if ($manifest.exe -or $null -eq $manifest.commands) { return $false }
+        $verbs = @($manifest.commands)
+        if ($verbs.Count -eq 0) { return $false }
+        foreach ($verb in $verbs) {
+            if ($verb.exe -or $verb.remote -isnot [System.Management.Automation.PSCustomObject]) { return $false }
+        }
+        return $true
+    }
     $commandDocs = Join-RepoPath 'docs'
     $commandManifests = @()
     if (Test-Path -LiteralPath $commandDocs -PathType Container) {
         $commandManifests = @(Get-ChildItem -LiteralPath $commandDocs -File | Where-Object {
             $_.Name -cmatch '^cli-commands(\.[a-z][a-z0-9-]*)?\.json$' -and
-                (-not $isGit -or $tracked -contains "docs/$($_.Name)")
+                (-not $isGit -or $tracked -contains "docs/$($_.Name)") -and
+                -not (Test-RemoteOnlyManifest $_.FullName)
         })
     }
     if ($commandManifests.Count -gt 0 -and $agentFiles.Count -gt 0) {
@@ -1006,7 +1042,7 @@ try {
         })
         if ($namesCommands.Count -eq 0) {
             Add-Finding -Id 'SZA-CTR04' -Severity 'warn' -Path ($agentFiles | Select-Object -First 1) `
-                -Message 'a product command manifest exists but no agent-rules file names both docs/CLI.md and commands --json' `
+                -Message 'a command-line manifest exists but no agent-rules file names both docs/CLI.md and commands --json' `
                 -Fix 'Add the product commands snippet from templates/agent-rules.md to the authoritative agent-rules file.'
         }
     }

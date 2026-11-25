@@ -90,6 +90,39 @@ function Get-PqTicketLevel {
     return (Get-PqTicketLevelInfo -RepoPath $RepoPath -TicketId $TicketId).level
 }
 
+function Get-PqRulesReminder {
+    param([Parameter(Mandatory)]$Agent, [Parameter(Mandatory)][string]$RepoPath)
+    $contractFile = [string](Get-PqValue $Agent 'contractFile' '')
+    $hasClaude = [IO.File]::Exists((Join-Path $RepoPath 'CLAUDE.md'))
+    $hasContract = [bool]($contractFile -and [IO.File]::Exists((Join-Path $RepoPath $contractFile)))
+    $rulesDir = Join-Path $RepoPath '.claude/rules'
+    $hasAreaRules = $false
+    # An unreadable or vanishing folder costs this sentence at most: it must never abort the agent pick.
+    try {
+        if ([IO.Directory]::Exists($rulesDir)) {
+            $walk = [IO.EnumerationOptions]@{ RecurseSubdirectories = $true; IgnoreInaccessible = $true; AttributesToSkip = 0 }
+            foreach ($f in [IO.Directory]::EnumerateFiles($rulesDir, '*.md', $walk)) { $hasAreaRules = $true; break }
+        }
+    }
+    catch { $hasAreaRules = $false }
+    $head = ''
+    if ($hasClaude -and $contractFile -cne 'CLAUDE.md') {
+        $head = if ($hasContract) { "Before your first edit or command, read CLAUDE.md (and $contractFile) in full" }
+                else { 'Before your first edit or command, read CLAUDE.md in full' }
+    }
+    elseif ($hasContract -and $hasAreaRules) {
+        $head = "Before your first edit or command, read $contractFile in full"
+    }
+    elseif ($hasAreaRules) {
+        $head = 'Before your first edit or command'
+    }
+    if (-not $head) { return '' }
+    if ($hasAreaRules) {
+        return " $head; open every .claude/rules/*.md file whose paths: frontmatter matches the area you touch."
+    }
+    return " $head."
+}
+
 function Get-PqAgentPrompt {
     param([Parameter(Mandatory)]$Agent, [Parameter(Mandatory)][string]$RepoPath)
     if ((Get-PqValue $Agent 'promptForm' 'slash') -cne 'file') { return @{ ok = $true; template = $null; why = $null } }
@@ -105,7 +138,8 @@ function Get-PqAgentPrompt {
     catch { return @{ ok = $false; template = $null; why = 'noPipelineForm' } }
     $default = [string]$script:PqRepoDefaults.runner.promptTemplate
     if (-not $template) { $template = $default }
-    if ($template -notmatch '^/') { return @{ ok = $true; template = $template.Replace('{Id}', '{id}'); why = $null } }
+    $reminder = Get-PqRulesReminder -Agent $Agent -RepoPath $RepoPath
+    if ($template -notmatch '^/') { return @{ ok = $true; template = ($template.Replace('{Id}', '{id}') + $reminder); why = $null } }
     $paths = Get-PqRepoPaths -RepoPath $RepoPath
     $commandFile = Find-PqCommandFile -Template $template -Paths $paths
     # A command the repository does not have falls back to the shared default, as run-spec-queue.ps1 does for Claude.
@@ -122,7 +156,8 @@ function Get-PqAgentPrompt {
     if ([IO.Path]::IsPathRooted($rel) -or $rel.StartsWith('..')) { $rel = $commandFile }
     $rel = $rel.Replace('\', '/')
     # AGENTS.md section 9 of the origin: an agent without slash commands opens the command file and follows it.
-    $text = "You have no slash commands. Open the file $rel and follow its instructions exactly, as the command /$name would, with this argument string: $rest"
+    # The argument string ends the prompt: a sentence after it reaches the command as part of its argument (S0140).
+    $text = "You have no slash commands.$reminder Open the file $rel and follow its instructions exactly, as the command /$name would, with this argument string: $rest"
     return @{ ok = $true; template = $text; why = $null }
 }
 
@@ -873,7 +908,7 @@ function New-PqProviderRecord([string]$Id, [string]$Agent = '') {
                 # The model slug carries the effort (agy models). Each pool has its own quota.
                 argsTemplate = @($cli.prefix) + @('--model', '{model}', '--dangerously-skip-permissions', '--print', '{prompt}')
                 headlessMatch = '(?i)agy(\.exe)?"?\s.*(-p|--print|--prompt)\b'; promptForm = 'file'
-                model = $model; effort = 'default'; maxParallel = 2; contractFile = 'GEMINI.md'
+                model = $model; effort = 'default'; maxParallel = 2; contractFile = 'AGENTS.md'
                 # Seen on 2026-10-29: "Individual quota reached. .. Resets in 57h10m24s." (RESOURCE_EXHAUSTED, exit 3).
                 limitDetector = [ordered]@{ kind = 'exitText'; pattern = '(?i)quota reached|resource_exhausted|usage limit|rate limit|credits? (are )?(exhausted|exceeded)'; status = 'unproven' }
             }

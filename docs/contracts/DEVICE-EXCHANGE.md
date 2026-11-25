@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Contract | `DEVICE-EXCHANGE` |
-| Version | 1.17, active |
+| Version | 1.23, active |
 | Home | the shared contracts catalog, domain `device-exchange/` (the path is in [CLAUDE.md](../../CLAUDE.md)) |
 | Role | **receiver of one packet kind, partial**: the phone-ticket transport reads the `TICKET` kind of the Drive packet queue (section 24, items CN, FC and FD) and writes what the phone reads back (`projects.json`, `result.json`, `reason.json`). The owner is FastMediaSorter Android; this repository holds no record, server wire, sealed content or any other part of the contract |
 
@@ -26,6 +26,22 @@
 - The vector `tools/tests/data/inbox-ticket-vector/` is the catalog's `vectors/ticket-packet-v1/` byte for byte
   (manifest SHA-256 `d24baab4..`, the four payload files and `vector.json` equal; compared on 2026-11-15). It is
   replayed, never filed, and a product never writes it into a real inbox.
+
+## Read on 2026-11-25 (CANONR-0187)
+
+1.18 to 1.22 (sections 42 to 45) move nothing in the packet, items FC and FD or the spool, so no code moved. The
+ticket channel of 1.20 and 1.21 is a third way into `new/`: its receiver, a device of the account, opens the sealed
+packet and deposits it as the folder writer does. The exception about manifest-less packet folders is closed:
+CANONR-0085 built their removal. `inbox-packet.tests.ps1` 50 of 50 and `inbox-incomplete-packets.tests.ps1` 11 of 11,
+both exit 0.
+
+## A repeated packet (2026-11-25, CANONR-0190)
+
+A packet whose `packetId` already stands in `done/` or `failed/` files nothing: the ingest answers `already`, the
+watcher and the CLI remove the repeated copy, and the first `result.json` or `reason.json` stays. A repeat that arrives
+while the first is in `processing/` waits in `new/`. The bytes of a repeat are not compared. 1.23 (section 47, items
+GT and GU, accepted from the canon's proposal on 2026-11-25) states exactly this, so no code moved and the registry
+exception is closed; `fms-a:S4918` records the decision.
 
 ## Read on 2026-11-15 (S0081)
 

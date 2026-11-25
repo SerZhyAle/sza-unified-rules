@@ -149,6 +149,12 @@ shares. Reconciled against the portfolio; per-project records in `contrib/`.
   message's authoring model separately and never correlates the two. The earliest honest re-measurement
   is a fresh mining pass after this rule has been live; the telemetry itself is a local, repeatable mining
   run against a transcript store outside any repository, not committed history.
+- **A Workflow fan-out is a multiplier on model cost - pin every workflow agent and cap its slice.** Measured on
+  the reference machine (2026-11-25): 127 workflow-spawned agents accounted for 77% of a day's spend, with
+  every unpinned agent inheriting the session's expensive model and 102 of 127 compacting from a ~70k start
+  context, tripping the weekly limit. Give every workflow agent an explicit light/mid model pin for bounded
+  extraction or editing slices, keep each slice narrow enough to finish without compaction, and apply the same
+  fan-out cap as subagents below.
 - **Fanning out writers over a shared file set: put each agent's exact file names in its own prompt.**
   Never point agents at "line N of the batch file" - in the reference project 2 of 10 translator agents
   read a 0-indexed line as 1-indexed, took a sibling's batch, overwrote each other while two batches went
@@ -219,10 +225,14 @@ shares. Reconciled against the portfolio; per-project records in `contrib/`.
   move the bodies to topic files. When the index outgrows its cap, **split it, never truncate it**:
   second-level `INDEX_<topic>.md` files, each new pointer routed to the index that owns its topic, only
   preconditions at the top level, and no hook cut off mid-phrase.
-  - **The budget of a per-user index is 8,000 characters** (`memory.ps1 audit` reports a larger one). Owner
+  - **The budget of a per-user index is 8,000 characters** (`memory.ps1 audit` reports a larger one, and
+    `check-compliance.ps1` `SZA-MEM01` flags committed indexes over 200 lines or 8,000 characters). Owner
     preferences, standing orders and traps stay in the index; a note that records the state of a ticket or a
-    campaign goes to `state/` beside it, with its line in `state/INDEX.md`. The index names that file as plain
-    text, not as a markdown link, so that the index resync keeps the line.
+    campaign goes to `state/` beside it, with its line in `state/INDEX.md` (linked from `MEMORY.md` via a
+    relative markdown link to `state/INDEX.md` - `memory.ps1 index` and `audit` preserve nested relative
+    `.md` links without listing every file inside `state/`). Claude Code auto-memory discovers topic files in
+    subdirectories recursively via their YAML frontmatter, so keep valid frontmatter on files moved into
+    `state/`.
 - **A memory that records a moment writes its own expiry condition, and pruning reads that condition -
   not age, and not the liveness of the ticket it came from.** A trap found on a ticket outlives the ticket:
   measured on the reference project, a dead-ticket-anchor rule flagged 269 of 342 memory files, and 3 of
@@ -234,16 +244,17 @@ shares. Reconciled against the portfolio; per-project records in `contrib/`.
 
 ## 5. Rules file & skill routing
 
-- Each repo carries an agent rules file at root (reference: `CLAUDE.md`, with a parallel `AGENTS.md`
-  for non-Claude agents; import order defined, stricter wins). It is the authoritative operating
-  manual - these Unified Rules are its cross-project backbone.
+- Each repo carries an agent rules file at root (reference: `CLAUDE.md` with a delegating `AGENTS.md` for
+  non-Claude agents, or `AGENTS.md` as the sole core where the repo chooses that layout per
+  [REPOSITORY_LAYOUT.md](REPOSITORY_LAYOUT.md); where both exist, import order is defined and stricter wins).
+  It is the authoritative operating manual - these Unified Rules are its cross-project backbone.
 - **The always-loaded set has a budget: 20,000 characters, hard limit 40,000.** The set is the rules file a
-  session starts with, every file it imports, a second file it tells every session to read, and every
-  `.claude/rules` file without a `paths:` list. Every request pays for all of it. Measured on this portfolio
-  (2026-11-25): one repository's rules file had grown to 304,000 characters, about 80,000 tokens per request,
-  and twelve repositories shrank to 10,000-23,000 characters with the text moved, not deleted. The gate is
-  `check-compliance.ps1` `SZA-RULES07`; at the write itself the plugin's
-  [`guard-rules-budget`](../hooks/README.md) hook refuses growth past the hard limit.
+  session starts with (`CLAUDE.md`, `AGENTS.md`, or `GEMINI.md`), every file it imports, a second file it
+  tells every session to read, and every `.claude/rules` file without a `paths:` list. Every request pays for
+  all of it. Measured on this portfolio (2026-11-25): one repository's rules file had grown to 304,000
+  characters, about 80,000 tokens per request, and twelve repositories shrank to 10,000-23,000 characters with
+  the text moved, not deleted. The gate is `check-compliance.ps1` `SZA-RULES07`; at the write itself the
+  plugin's [`guard-rules-budget`](../hooks/README.md) hook refuses growth past the hard limit.
   - **New knowledge goes to its area, never to the core by default.** Detail belongs in
     `.claude/rules/<area>.md` with a `paths:` list that matches only the files it is about, or in a tracked
     document; the core gets at most one line or one row of its "read before touching" table. A ticket never
@@ -254,15 +265,19 @@ shares. Reconciled against the portfolio; per-project records in `contrib/`.
     only moves the cost.
   - **Every agent has to reach the area files.** Only Claude Code loads `.claude/rules` by itself, so
     `AGENTS.md` says that every other agent opens, before the first edit or command in an area, each file whose
-    `paths:` match, and the core's table names every file (`SZA-RULES09`). Where `.claude/` is ignored by git,
+    `paths:` match, and the core's table names every file (`SZA-RULES09`). For non-Claude agents' user-level
+    instruction files (`~/.codex/AGENTS.md`, `~/.gemini/GEMINI.md`, `~/.zcode/AGENTS.md`, `~/.vibe/AGENTS.md`),
+    `tools/install-agent-rules.ps1` installs the shared `## Project rules (every repository)` section from
+    [templates/agent-rules.md](../templates/agent-rules.md) idempotently. Where `.claude/` is ignored by git,
     the moved text lives in a tracked document instead.
 - Repetitive workflows are **named skills / slash-commands** (build, release, spec lifecycle, doc sync,
   log analysis..) so a routine has one canonical procedure instead of ad-hoc reinvention. Author a new
   rule/gate/skill only after observing the failure it prevents; keep it minimal and trigger-focused.
 - **Product commands before window driving.** Before driving a product's window or writing a one-off
   script around it, use the [app-commands](../skills/app-commands/SKILL.md) skill to discover its existing
-  commands. A repository with a command manifest points agents to `docs/CLI.md` and `commands --json` in
-  its authoritative agent-rules file. The actual product response wins over a repository manifest; an
+  commands. A repository whose command manifest describes a command line points agents to `docs/CLI.md`
+  and `commands --json` in its authoritative agent-rules file; a remote-only manifest (no `exe`, every
+  verb `remote`) takes no such pointer. The actual product response wins over a repository manifest; an
   agent uses a command outside risk `safe` only with the person's setting on, and never enables it. This
   agent policy also covers commands APP-COMMANDS section 7 item C.4 does not require a product to gate
   (rules 13, 18 and 20).

@@ -83,6 +83,11 @@ repository rewrites all of its rows together with its own checks that read the n
 (or `partial <version>`, or `-`) per cell, one contract id per row, `pending` or a date in `Verified`, and
 everything else in the note. `tools/contract-lag.ps1` reports a row it cannot read as `unparsed`; fix your own.
 
+**The note is at most 300 characters, and a new one replaces the old one.** Never put the new account in front of the
+previous one (`Earlier: ..`): the catalog's history keeps every earlier state. Say what was verified and name where the
+evidence is - a ticket, an audit, a progress record of this repository, which is where the long account is written.
+`check-contracts.ps1` reports a longer note as `CTR-NOTE`.
+
 **Edit this product's rows only.** Another product's row, and another product's contract, are amended by
 written proposal, never by edit. Every contract is sealed (since 2026-10-07), drafts included: only its owner
 edits it, so a draft this product merely consumes is not this product's to supplement. A row you cannot verify honestly stays `pending` with a note naming what

@@ -1,6 +1,6 @@
 ---
 name: spec-to-audit
-description: Run a task through the full SZA lifecycle - triage, spec, plan, implement, evidence, self-audit, documentation, commit - with a named gate at every boundary that refuses to advance when its preconditions are missing. Use when asked to implement a specification, "do this properly", "сделай по спецификации", to check whether something is actually implemented, to audit your own work before committing, to proceed to the next phase, to sweep the tickets waiting on a manual check, or to unstick the tickets waiting on the owner's answers - "this spec is stuck", "decide the open questions", "задай мне вопросы по тикетам", "разблокируй задачи". Free and reversible: it never tags, publishes, or releases.
+description: 'Run a task through the full SZA lifecycle - triage, spec, plan, implement, evidence, self-audit, documentation, commit - with a named gate at every boundary that refuses to advance when its preconditions are missing. Use when asked to implement a specification, "do this properly", "сделай по спецификации", to check whether something is actually implemented, to audit your own work before committing, to proceed to the next phase, to sweep the tickets waiting on a manual check, or to unstick the tickets waiting on the owner''s answers - "this spec is stuck", "decide the open questions", "задай мне вопросы по тикетам", "разблокируй задачи". Free and reversible: it never tags, publishes, or releases.'
 ---
 
 # Spec to audit - the lifecycle and its gates
@@ -93,6 +93,9 @@ is the contract the audit later checks the build against.
 - The ticket's `**Complexity:**` line exists and was **rewritten at this spec pass**, confirmation included:
   it no longer reads `not assessed at capture` (see [DEVELOPMENT.md](../../rules/DEVELOPMENT.md) section
   8). A primitive-spec rung skips this item - it has three sections and no pipeline.
+- A `**Complexity:**` line written on any rung, the primitive one included, starts with the grade digit 0-9.
+  The Stage 0 rung name (`primitive`, `complex`) and words such as `low`, `high` or `moderate` are not
+  grades: the harness reads such a line as ungraded.
 
 **Title.** The spec pass - on every rung, the primitive one included - also gives the ticket a short English
 `title`: 3 to 8 words that say what the ticket is about, one line, 80 characters at most, with no id and no

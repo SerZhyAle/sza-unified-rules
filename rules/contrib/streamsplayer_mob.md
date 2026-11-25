@@ -1,7 +1,7 @@
 ---
 # Contribution: streamsplayer_mob (overlay B, flavor shape, three packages, LIVE-BROADCAST producer) -> Unified_Rules
-Source repo: P:\ANDROID\StreamsPlayer_mob | Date: 2026-10-02, refreshed 2026-11-13 (S0059), re-synced 2026-11-20 (STRMOB-0176)
-Read: AI_USAGE, AUTHOR, CHANNEL_MATRIX, CONTRACTS, DEVELOPMENT, DOCUMENTATION_CONCEPT, GITHUB_INTERACTION, INVARIANTS, LOCALIZATION, NEW_PROJECT_CHECKLIST, PLATFORM_OVERLAYS, PROMOTION, RELEASE_AND_DISTRIBUTION, REPOSITORY_LAYOUT, SECURITY_AND_PRIVACY, SITE_CONFIGURATION, SUPPORT_AND_FEEDBACK, TESTING_AND_QA, UI_UX, WINDOWS_PACKAGING (full 20-doc re-sync against canon 2026.11.20.4); harness README and spec_catalog SCHEMA; the store-publish skill's Google Play reference; the repository's own stamp, profile, `.git/config`, `.github/workflows/pages.yml`, `docs/play/`, `docs/releases/` and `docs/contracts/`; deduped against: contrib/fastmediasorter_mob_v2.md, contrib/streams_player.md
+Source repo: P:\ANDROID\StreamsPlayer_mob | Date: 2026-10-02, refreshed 2026-11-13 (S0059), re-synced 2026-11-25 (STRMOB-0209)
+Read: AI_USAGE, CHANNEL_MATRIX, NEW_PROJECT_CHECKLIST, PLATFORM_OVERLAYS, RELEASE_AND_DISTRIBUTION, TESTING_AND_QA (delta re-sync against canon 2026.11.25.5; prior full 20-doc re-sync 2026-11-20 against 2026.11.20.4); harness README and spec_catalog SCHEMA; the store-publish skill's Google Play reference; the repository's own stamp, profile, `.git/config`, `.github/workflows/pages.yml`, `docs/play/`, `docs/releases/` and `docs/contracts/`; deduped against: contrib/fastmediasorter_mob_v2.md, contrib/streams_player.md
 ---
 
 > **Owner decision, 2026-11-16:** `PLAN/` and its archive are local and ignored (`CLAUDE.md` section 4 item 6, `.gitignore` `/PLAN/`, `git ls-files PLAN` is 0). Earlier statements below that the workspace was tracked or public describe the former 2026-11-13 snapshot.
@@ -57,14 +57,14 @@ privacy site and two Google Play Console apps, all created on the owner's order;
 
 Format: Channel | Trigger | Cost | Auth | Signer | Listing source | Frozen anchor | Verify live
 
-- **Google Play (Android), app "StreamsPlayer: Internet Radio", phone and Wear OS in one listing** | AAB upload to a track:
-  the phone bundle, then the Wear OS bundle to the same app; nothing uploaded yet (`STRMOB-0047`, `STRMOB-0072`) | [PUBLIC] | Play Console, personal
-  developer account `8446656778368889827`, owner's login; the review account's sign-in details are the owner's to type | Play App Signing with
+- **Google Play (Android), app "StreamsPlayer: Internet Radio", phone and Wear OS in one listing** | signed AAB to a track through the Play Developer API:
+  the phone bundle, then the Wear OS bundle to the same app; nothing published yet (`STRMOB-0047`, `STRMOB-0072`) | [PUBLIC] | Play Console, personal
+  developer account `8446656778368889827`, owner's login (`SZA_PLAY_SERVICE_ACCOUNT_JSON` for API/probe); the review account's sign-in details are the owner's to type | Play App Signing with
   imported app signing key `61:CF:..:F4:97` and separate upload key `A8:68:..:FB:D0` (valid 2026-11-19) | `docs/play/PLAY_LISTING*.md` (en-US,
   ru-RU, uk) + `docs/play/PLAY_DATA_SAFETY.md` + `docs/play/PLAY_RELEASE_RECORD.md`; graphics `docs/play/icon-512.png` and `docs/play/feature-graphic-1024x500.png`
-  | `com.sza.streamsplayer` (bound 2026-11-13, app `4972961129584993008`) | track shows the build, staged rollout, update over a prior install on a
-  phone and on a watch - **not run**, nothing is published. (evidence: `docs/play/PLAY_RELEASE_RECORD.md`, `docs/play/PLAY_DATA_SAFETY.md`)
-- **Google Play (Android), app "StreamsPlayer Watch Face"** | AAB upload to a track; nothing uploaded yet (`STRMOB-0072`, gated on captured watch-face icons `STRMOB-0099`) | [PUBLIC] | same console account `8446656778368889827` | same app signing key `61:CF:..:F4:97` and upload key `A8:68:..:FB:D0` | `docs/play/PLAY_LISTING_WATCHFACE*.md` (en-US, ru-RU, uk) + `docs/play/PLAY_RELEASE_RECORD.md` | `com.sza.streamsplayer.watchface` (bound 2026-11-13, app `4976077107533670611`) | track shows the build - **not run**.
+  | `com.sza.streamsplayer` (bound 2026-11-13, app `4972961129584993008`) | track read-back, review and public serving (`probe` prints readings only; `live` confirmed by hand); update over a prior install on a
+  phone and on a watch - **not run**, nothing is live. (evidence: `docs/play/PLAY_RELEASE_RECORD.md`, `docs/play/PLAY_DATA_SAFETY.md`)
+- **Google Play (Android), app "StreamsPlayer Watch Face"** | signed AAB to a track through the Play Developer API; nothing published yet (`STRMOB-0072`, gated on captured watch-face icons `STRMOB-0099`) | [PUBLIC] | same console account `8446656778368889827` | same app signing key `61:CF:..:F4:97` and upload key `A8:68:..:FB:D0` | `docs/play/PLAY_LISTING_WATCHFACE*.md` (en-US, ru-RU, uk) + `docs/play/PLAY_RELEASE_RECORD.md` | `com.sza.streamsplayer.watchface` (bound 2026-11-13, app `4976077107533670611`) | track read-back, review and public serving (`probe` prints readings only; `live` confirmed by hand) - **not run**.
 
 The generic Google Play row of CHANNEL_MATRIX is unchanged: a project's own rows live in its record (`TEMPLATE.md`), and the
 generic row already says a secondary form-factor artifact has its own store guidelines.
@@ -129,6 +129,10 @@ Recorded as the owner's session reported it; what the canon session measured its
 
 ## Deltas by document
 
+### AI_USAGE.md
+- CONFIRM: section 5 always-loaded rules budget (20,000 budget, 40,000 hard limit) and area-rule split hold (`CLAUDE.md` delegates area detail to 7 `.claude/rules/*.md` files with `paths:` frontmatter; `AGENTS.md` carries the area-rules paragraph).
+- DIVERGE / EXEMPT (`SZA-CTR04`): `docs/cli-commands.json` and `docs/cli-commands-wear.json` are `REMOTE-CONTROL` rule 6 remote-verb manifests (`STRMOB-0168`, `STRMOB-0200`) for an Android product with no local CLI executable, no `docs/CLI.md` and no `commands --json`; `.sza-canon.json` records a dated `SZA-CTR04` exemption on `CLAUDE.md` (`STRMOB-0209`).
+
 ### CONTRACTS.md
 - CONFIRM: the repo names the catalog in one file (`CLAUDE.md` line 3); 24 pointers in `docs/contracts/` covering 37
   contract ids (`RULE-ADOPTION`, `PORT-LEDGER`, `FUNCTION-PARITY`, `CAPTURE-OUTPUT`, `STREAM-BANK`, `USER-PLAYLIST`,
@@ -152,11 +156,14 @@ Recorded as the owner's session reported it; what the canon session measured its
   record "no compile command" and defer full builds, Gradle unit suites and slow tool self-tests to
   `tools/release/pre-release-sweep.ps1`.
 
+### SECURITY_AND_PRIVACY.md
+- EXEMPT (`SZA-SEC01`, `SZA-SEC04`): `.sza-canon.json` records dated exemptions for `exchange-core/src/test/resources/device-exchange/tunnel-test.p12` (self-signed `BroadcastTunnelTlsTest` fixture) and `wear/src/test/resources/golden/wear-payload/payload_sync_v1.json` (ported golden v1 fixture from FastMediaSorter whose `sshPrivateKey` stub `b3BlbnNzaA==` decodes to `openssh`, `STRMOB-0209`).
+
 ## No delta
 
-AI_USAGE, AUTHOR, CHANNEL_MATRIX, DEVELOPMENT, DOCUMENTATION_CONCEPT, GITHUB_INTERACTION, INVARIANTS, LOCALIZATION,
-NEW_PROJECT_CHECKLIST, PLATFORM_OVERLAYS, PROMOTION, REPOSITORY_LAYOUT, SECURITY_AND_PRIVACY, SITE_CONFIGURATION,
-SUPPORT_AND_FEEDBACK, UI_UX; WINDOWS_PACKAGING is not applicable to overlay B.
+AUTHOR, CHANNEL_MATRIX, DEVELOPMENT, DOCUMENTATION_CONCEPT, GITHUB_INTERACTION, INVARIANTS, LOCALIZATION,
+NEW_PROJECT_CHECKLIST, PLATFORM_OVERLAYS, PROMOTION, REPOSITORY_LAYOUT, SITE_CONFIGURATION,
+SUPPORT_AND_FEEDBACK, TESTING_AND_QA, UI_UX; WINDOWS_PACKAGING is not applicable to overlay B.
 
 ## Open questions for the owner
 

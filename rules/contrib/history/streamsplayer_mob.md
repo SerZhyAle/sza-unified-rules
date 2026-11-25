@@ -130,3 +130,15 @@ The ticket header keeps a note when the status helper receives no replacement. A
 ### Candidate NEW docs (not in any shared doc yet)
 
 - None required.
+
+## Canon adoption 26-11-25 23:16 (STRMOB-0209)
+
+Delta re-sync from canon **2026.11.20.4** (`sha256:202d3d9a..`, reconciled 2026-11-20) to canon **2026.11.25.5** (`sha256:74fe96b0..`, reconciled 2026-11-25), reference model, overlay B.
+
+- **Reconciled rule documents (6 changed):** `AI_USAGE.md`, `CHANNEL_MATRIX.md`, `NEW_PROJECT_CHECKLIST.md`, `PLATFORM_OVERLAYS.md`, `RELEASE_AND_DISTRIBUTION.md`, `TESTING_AND_QA.md`.
+- **What changed in the repo:**
+  - `.sza-canon.json`: updated `canon.version` to `"2026.11.25.5"`, `canon.coreDigest` to `"sha256:74fe96b0bd0440a7d7e078b9a41cd2bc0e18169c3137b1325607400987835a8e"`, all 20 `canon.docDigests`, and `canon.reconciledOn` to `"2026-11-25"` (`adoptedOn` unchanged at `"2026-10-02"`). Added two dated exemptions (no `until` field):
+    - `SZA-SEC04` on `wear/src/test/resources/golden/wear-payload/payload_sync_v1.json` (ported golden v1 fixture in `docs/port-ledger.jsonl`, byte-identical to `FastMediaSorter_mob_v2`, whose `sshPrivateKey` stub `b3BlbnNzaA==` decodes to `openssh`).
+    - `SZA-CTR04` on `CLAUDE.md` (`docs/cli-commands.json` and `docs/cli-commands-wear.json` are `REMOTE-CONTROL` rule 6 remote-verb manifests for Android with no local CLI executable, `docs/CLI.md`, or `commands --json`).
+- **Canon defect filed:** `canon:CANONR-0189` (`PLAN/CANONR-0189_ctr04-remote-control-manifest.md`) proposing that `check-compliance.ps1` `SZA-CTR04` distinguish `REMOTE-CONTROL` remote-verb-only manifests from desktop CLI products.
+- **Verification:** `check-compliance.ps1 -IncludeUntracked` 1 error (`SZA-SEC04`), 2 warnings (`SZA-CANON03`, `SZA-CTR04`) before -> `0 error(s), 0 warning(s)` after, exit 0; `check-compliance.ps1` `0 error(s), 0 warning(s)` after, exit 0.

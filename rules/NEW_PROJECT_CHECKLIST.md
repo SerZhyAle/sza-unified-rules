@@ -30,14 +30,16 @@ apply (a CLI tool has no site, a single-locale app skips localization).
 
 ## 2. Agent operating setup
 
-- Author the repo's agent-rules file ([AI_USAGE.md](AI_USAGE.md)): reference `CLAUDE.md` (+ `AGENTS.md`),
-  the skill/command routing, and a memory folder.
-- **`AGENTS.md` is a delegating stub, never a second rules file.** Its body is: "Read CLAUDE.md in full; it
-  is the authoritative agent contract and carries the canon pointer; the stricter file wins." plus, for
-  non-Claude agents, where the plugin is not loaded, the GitHub URL of the always-in-context page
-  (`https://github.com/SerZhyAle/sza-unified-rules`, `rules/INVARIANTS.md`). No second copy of commands or
-  style. A Codex-style `/init` writes an `AGENTS.md` with no pointer, which trips the compliance check - replace
-  it with the stub.
+- Author the repo's agent-rules file ([AI_USAGE.md](AI_USAGE.md) §5): reference `CLAUDE.md` (+ `AGENTS.md`),
+  the skill/command routing, and a memory folder. Keep the always-loaded set under the **20,000-character
+  budget** (hard limit 40,000); move area detail into `.claude/rules/<area>.md` files with `paths:`
+  frontmatter (or tracked docs where `.claude/` is ignored) and list them in `CLAUDE.md`.
+- **`AGENTS.md` is a delegating stub, never a second rules file.** Copy the delegating stub from
+  [templates/agent-rules.md](../templates/agent-rules.md): it sends the agent to `CLAUDE.md` in full, names
+  `rules/INVARIANTS.md` at `https://github.com/SerZhyAle/sza-unified-rules` for agents without the plugin,
+  and carries the **Area rules** paragraph whenever `.claude/rules/` exists (`SZA-RULES09`). No second copy
+  of commands or style. A Codex-style `/init` writes an `AGENTS.md` with no pointer, which trips the
+  compliance check - replace it with the stub.
 - Load the owner profile ([AUTHOR.md](AUTHOR.md)) so tone, language, and the product compass are set
   from commit one.
 

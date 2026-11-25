@@ -169,6 +169,29 @@ Assert-Case 'explicit limit - hook skipped'   $readPat $withLimit  'match'
 Assert-Case 'explicit offset - hook skipped'  $readPat $withOffset 'match'
 Assert-Case 'uncapped - hook must run'        $readPat $uncapped   'nomatch'
 
+# ------------------------------------------------------- the rules-budget guard: match => the hook runs
+
+$budgetCmd = Get-RegisteredCommand 'guard-rules-budget.ps1'
+if (-not $budgetCmd) { Cannot-Verify 'no PreToolUse registration invokes guard-rules-budget.ps1' }
+$budgetPat = Get-CasePattern $budgetCmd
+if (-not $budgetPat) { Cannot-Verify 'could not recover the case pattern from the guard-rules-budget registration' }
+
+function EditJson([string]$path) {
+    return (@{ tool_name = 'Write'; tool_input = @{ file_path = $path; content = 'x' } } | ConvertTo-Json -Compress)
+}
+
+Write-Host '--- guard-rules-budget pre-filter (must REACH: rules files and memory indexes) ---'
+Write-Host "    pattern: $budgetPat"
+Assert-Case 'CLAUDE.md write'                 $budgetPat (EditJson 'P:/repo/CLAUDE.md') 'match'
+Assert-Case 'AGENTS.md write'                 $budgetPat (EditJson 'P:/repo/AGENTS.md') 'match'
+Assert-Case 'GEMINI.md write'                 $budgetPat (EditJson 'P:/repo/GEMINI.md') 'match'
+Assert-Case '.claude memory MEMORY.md write'  $budgetPat (EditJson 'C:/Users/me/.claude/projects/p/memory/MEMORY.md') 'match'
+Assert-Case 'repo memory/MEMORY.md write'     $budgetPat (EditJson 'P:/repo/memory/MEMORY.md') 'match'
+
+Write-Host '--- guard-rules-budget pre-filter (must SKIP: ordinary files) ---'
+Assert-Case 'README.md write'                 $budgetPat (EditJson 'P:/repo/README.md') 'nomatch'
+Assert-Case 'source file write'               $budgetPat (EditJson 'P:/repo/src/app.cs') 'nomatch'
+
 Write-Host ''
 if ($failures -gt 0) {
     Write-Error "smoke-prefilters: $failures case(s) failed" -ErrorAction Continue
