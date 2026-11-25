@@ -156,6 +156,9 @@ One name per concept, so every project and every agent means the same thing:
 - **Edition** - one product shipped from more than one independent codebase, kept behaviourally in
   sync (in-repo: parity doc; cross-repo: wire contract). Distinct from a *flavor* (one codebase,
   build-time variants). See PLATFORM_OVERLAYS "Editions".
+- **Shared-core multiplatform clients** - independently released native clients in one repository with
+  one compiled core and shared reference cases. Each client uses its platform overlay. See
+  [PLATFORM_OVERLAYS](PLATFORM_OVERLAYS.md#shared-core-multiplatform-clients).
 - **Co-shipping shapes** - several artifacts of *one* product in *one* release on *one* trigger: a
   *flavor*, a *dual-runtime build variant* (one source tree, two toolchains, parity by compile-time
   seams), or a *co-shipped companion binary*. See PLATFORM_OVERLAYS "Co-shipping shapes".

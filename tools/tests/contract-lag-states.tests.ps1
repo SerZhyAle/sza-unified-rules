@@ -2,7 +2,7 @@
 .SYNOPSIS
     Fast tests for the lag states of tools/contract-lag.ps1 (S0137): a row below its contract's version is
     `behind` only when the change in between can bind the product, `unread` when only clarifications lie between.
-      1. -Json: state and lag of seven fixture rows, and the counts.
+      1. -Json: state, lag and counts, including a legacy exclusive entry in a shared log.
       2. -EmitSpec: `behind (breaking)` in the owed table; the unread row is listed and has no section of its own.
       3. -FailOnLag: exit 0 when the only lagging row is unread, exit 1 when a row is behind.
     Touches a throwaway catalog under the system temp folder only; the real catalog is never read. Four child
@@ -36,6 +36,7 @@ try {
         '| `FIXA` | [`fixa/`](../fixa/README.md) | 0.4 | draft |'
         '| `FIXB` | [`fixb/`](../fixb/README.md) | 2.0 | active |'
         '| `FIXC` | [`fixc/`](../fixc/README.md) | 0.2 | draft |'
+        '| `FIXD` | [`fixa/`](../fixa/README.md) | 0.4 | draft |'
         '## 2. Adoption'
         '| Contract | Product | Role | Implements | Reads | Verified |'
         '| --- | --- | --- | --- | --- | --- |'
@@ -44,15 +45,18 @@ try {
         '| `FIXA` | lag unread | C | - | 0.3 | 2026-10-01 |'
         '| `FIXA` | lag current | C | - | 0.4 | 2026-10-01 |'
         '| `FIXA` | lag partial | P | partial 0.3 | - | 2026-10-01 |'
+        '| `FIXA` | lag partial read | C | - | partial 0.3 | 2026-10-01 |'
         '| `FIXB` | lag major | C | - | 1.4 | 2026-10-01 |'
         '| `FIXC` | lag unlogged | C | - | 0.1 | 2026-10-01 |'
+        '| `FIXD` | lag exclusive | C | - | 0.3 | 2026-10-01 |'
     ) | Set-Content (Join-Path $catalog '_meta/REGISTRY.md')
     @(
         '| Date | Version | Kind | What changed |'
         '| --- | --- | --- | --- |'
         '| 2026-10-01 | 0.2 | breaking | Reader changed. |'
         '| 2026-10-02 | 0.3 | additive | Optional field. |'
-        '| 2026-10-03, owner order | 0.4 | minor (clarification) | Wording. |'
+        '| 2026-10-03, owner order | FIXA 0.4 | minor (clarification) | Wording. |'
+        '| 2026-10-03, owner order | 0.4 | additive | `FIXD` only. Extra optional field. |'
     ) | Set-Content (Join-Path $catalog 'fixa/README.md')
     @(
         '| Date | Version | Kind | What changed |'
@@ -70,10 +74,11 @@ try {
         $want = [ordered]@{
             'lag breaking' = 'behind/breaking'; 'lag additive' = 'behind/additive'; 'lag unread' = 'unread/clarification'
             'lag current' = 'current/'; 'lag partial' = 'partial/clarification'; 'lag major' = 'behind/breaking'
-            'lag unlogged' = 'behind/additive'
+            'lag partial read' = 'partial/clarification'
+            'lag unlogged' = 'behind/additive'; 'lag exclusive' = 'behind/additive'
         }
         foreach ($name in $want.Keys) { Assert-That ($got[$name] -eq $want[$name]) "$name is '$($got[$name])', expected '$($want[$name])'" }
-        Assert-That ($report.counts.behind -eq 4 -and $report.counts.unread -eq 1) "counts: $($report.counts | ConvertTo-Json -Compress)"
+        Assert-That ($report.counts.behind -eq 5 -and $report.counts.unread -eq 1) "counts: $($report.counts | ConvertTo-Json -Compress)"
     }
     Test-Case 'spec: the unread row is listed and gets no section' {
         $r = Invoke-Lag @('-Product', 'lag', '-EmitSpec')
@@ -83,6 +88,7 @@ try {
         Assert-That ($r.output.Contains('- `FIXA` (lag unread), 0.3 to 0.4')) 'the unread row is not listed'
         Assert-That (-not $r.output.Contains('to 0.4  (lag unread)')) 'the unread row got a section of its own'
         Assert-That ($r.output.Contains('to 0.4  (lag additive)')) 'the additive row lost its section'
+        Assert-That ($r.output.Contains('to 0.4  (lag exclusive)') -and $r.output.Contains('`FIXD` only. Extra optional field.')) 'the exclusive entry was lost from its own contract'
     }
     Test-Case 'FailOnLag: unread alone exits 0, behind exits 1' {
         Assert-That ((Invoke-Lag @('-Product', 'lag unread', '-FailOnLag')).code -eq 0) 'an unread row failed -FailOnLag'

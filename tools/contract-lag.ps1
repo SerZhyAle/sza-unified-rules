@@ -141,16 +141,15 @@ try {
     $result = foreach ($r in $rows) {
         $c = $contracts[$r.contract]
         $curVer = if ($c) { ConvertTo-Ver $c.version } else { $null }
-        $isPartial = $r.implCell -match '^partial\s+(.+)$'
-        $implVer = if ($isPartial) { ConvertTo-Ver $Matches[1] } else { ConvertTo-Ver $r.implCell }
-        $readsVer = ConvertTo-Ver $r.readsCell
         $implNone = $r.implCell -in @('', '-')
         $readsNone = $r.readsCell -in @('', '-')
-        $synced = if ($implVer) { $implVer } elseif ($implNone) { $readsVer } else { $null }
+        $versionCell = if ($implNone) { $r.readsCell } else { $r.implCell }
+        $isPartial = $versionCell -match '^partial\s+(.+)$'
+        $synced = if ($isPartial) { ConvertTo-Ver $Matches[1] } else { ConvertTo-Ver $versionCell }
 
         $state = if (-not $c -or -not $curVer) { 'unparsed' }
                  elseif ($r.verified -eq 'pending') { 'pending' }
-                 elseif ($isPartial -and $implVer) { 'partial' }
+                 elseif ($isPartial -and $synced) { 'partial' }
                  elseif ($implNone -and $readsNone) { 'n/a' }
                  elseif (-not $synced) { 'unparsed' }
                  elseif ($synced -lt $curVer) { 'behind' }
@@ -162,7 +161,7 @@ try {
             synced = if ($synced) { $synced.ToString() } else { '' }
             current = if ($curVer) { $curVer.ToString() } else { '' }
             state = $state; lag = ''; verified = $r.verified; multiId = $r.multiId; line = $r.line
-            raw = if ($implNone) { $r.readsCell } else { $r.implCell }
+            raw = $versionCell
         }
     }
     $result = @($result)
@@ -219,6 +218,11 @@ try {
         if ($tokens.Count -eq 0) { return $false }
         $named = @([regex]::Matches($Entry.version, '\b[A-Z][A-Z0-9-]{2,}\b') |
                    ForEach-Object Value | Where-Object { $contracts.ContainsKey($_) })
+        # Older shared logs can declare an exclusive contract in the description of a bare version.
+        if ($named.Count -eq 0 -and $Entry.what -cmatch '^`(?<scope>[A-Z][A-Z0-9-]{2,})` only(?:[.:](?:\s|$)|$)' -and
+            $contracts.ContainsKey($Matches['scope'])) {
+            $named = @($Matches['scope'])
+        }
         if ($named.Count -gt 0 -and $named -notcontains $Id) { return $false }
         foreach ($t in $tokens) { if ($t -gt $From -and $t -le $To) { return $true } }
         return $false

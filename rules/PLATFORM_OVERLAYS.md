@@ -284,6 +284,27 @@ tree that must stay behaviourally in sync with its sibling.
 
 ---
 
+## Shared-core multiplatform clients
+
+One repository can hold a compiled core and separate native clients that release independently. Put
+shared behaviour in the core and keep each target's UI, packaging and platform integration in its
+client. Choose the applicable overlays for the clients and apply each overlay's layout, distribution
+and identity rules to that client.
+
+In the repository stamp, list the distinct overlays in `overlay` and the independently released
+siblings in `editions`. Several clients can use one overlay. The repository records its base client
+and client-to-overlay mapping in its project record. Each client keeps the version shape, release
+trigger and frozen anchors of its channels.
+
+Keep the shared behaviour in one implementation. Replay the same reference cases on every target
+that compiles the core, and record intentional platform differences with the cases or in the client's
+project documentation. Plan cross-client changes in one ticket and release each client on its cadence.
+
+KnC declares B for Android and Wear OS, A for Windows and E for its web client. Its architecture places
+the common game rules in one Kotlin core and uses the same reference cases across targets.
+
+---
+
 ## Co-shipping shapes - several artifacts, one product, one release
 
 Distinct from *editions* (independent codebases, independent release triggers, kept in sync by a parity

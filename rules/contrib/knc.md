@@ -16,8 +16,9 @@ the content, and one native client per platform: KNC_A (Android) and KNC_A_WEAR 
 Android and Wear clients inside the one repository, with a Windows desktop client and a web client beside them.
 The logic is taken from FMS_A (the S4859 baseline); the history, and possibly mods and graphics, from the earlier web
 game `KnC_26`. Genuinely new here: the first repository whose clients share compiled code across Android, JVM desktop
-and JavaScript while releasing independently - no overlay of [PLATFORM_OVERLAYS.md](../PLATFORM_OVERLAYS.md) names
-that shape. A new repository, created on 2026-11-24; nothing ships yet.
+and JavaScript while releasing independently. The canon describes the
+[shared-core multiplatform shape](../PLATFORM_OVERLAYS.md#shared-core-multiplatform-clients).
+A new repository, created on 2026-11-24; nothing ships yet.
 
 ## Overlay facts (verified against this repo)
 
@@ -49,19 +50,6 @@ None yet - the repository has not met a rule that needs a delta.
 
 Not assessed: nothing is built, so no rule document has been exercised.
 
-## Candidate core edits (PROPOSED - apply only on owner instruction)
-
-- **PLATFORM_OVERLAYS, Editions / Co-shipping shapes**: name the shared-core multiplatform shape - one repository,
-  one compiled core shared by clients on several platforms, independent releases per client, parity held by shared
-  code and reference cases instead of a PARITY.md and not by compile-time seams of a single exe. Until then a repository
-  of this shape declares a combination of overlays plus editions, as this one does. The failure it prevents: each such
-  repository inventing its own reading of `overlay` and `editions`. Evidence: the stamp of this repository and
-  `check-compliance.ps1` SZA-CANON04, which accepts several overlays only with an `editions` or `shapes` entry.
-
-## Candidate NEW docs (not in any shared doc yet)
-
-None required.
-
 ## Shared contracts
 
 This repository holds none today: it writes and reads no format that another product also reads. When the leaderboard
@@ -75,6 +63,6 @@ shared shape and move into the catalog first; the reference cases captured from 
 - The GitHub remote and the public name. Nothing is created or pushed until the owner asks.
 - What "history" means for the transfer from `KnC_26`: its git history, the story in its README and `OLD/`, or both, and
   the form of the transfer (imported git history or a copy).
-- The first implementation tickets: the order of the modules, the frozen anchors of each app, and whether the release
-  ledger of the canon is hooked by the first build ticket (nothing builds yet, so it is not set up).
-- Whether the canon adopts a dedicated overlay for this shape (the candidate core edit above).
+- The order of the sixteen tickets KNCGAM-0001 to KNCGAM-0016 (filed in dependency order; the owner moves rows in
+  PORTFOLIO_QUEUE.md), the public name of each app and the frozen anchors of each channel. The release ledger is hooked
+  by KNCGAM-0010 and the registry rows by KNCGAM-0002; nothing builds yet, so neither is set up.

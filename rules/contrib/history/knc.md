@@ -26,3 +26,41 @@ for a shared-core multiplatform repository, recorded as a candidate core edit in
 - **Remains:** the licence (stamp exemption of SZA-LAY01), the GitHub remote and public name, what "history" means for
   the transfer from `KnC_26`, the first implementation tickets and the frozen anchors, and the release ledger hook
   (nothing builds yet).
+
+## Tickets filed 26-11-24 19:20
+
+The owner asked for tickets and for the repository to be put under every rule, canon and contract. Sixteen Draft
+tickets were filed in dependency order with the owner's words kept verbatim in section 0 of each: KNCGAM-0001 build
+skeleton, 0002 contract catch-up (the registry rows are written there, after the contracts are read), 0003 game core
+port from FastMediaSorter Android, 0004 content module, 0005 to 0008 the four clients (KNC_A, KNC_A_WEAR, Windows,
+web), 0009 verification and test lab, 0010 release ledger and versioning, 0011 interface family, help and identity,
+0012 localization and documents, 0013 privacy, security and store presence, 0014 site, indexing and promotion, 0015
+history and asset transfer from KnC_26 (BlockQuestions, a Q: token), 0016 leaderboard server specification (priority 10,
+last). The contract set named in 0002 comes from the registry rows of Filler Android (38), DeviceInfo (23) and
+FastMediaSorter Android (48) on this date plus the Windows and web contracts. No registry row was written from this
+session: a row says "verified", and nobody had read the contracts at their versions for this repository. The project
+stays disabled in the portfolio registry, so no robot takes a ticket until the owner enables it.
+
+## Recommendation decision 2026-11-25 (CANONR-0179)
+
+Accepted by the portfolio owner. PLATFORM_OVERLAYS defines shared-core multiplatform clients, and
+NEW_PROJECT_CHECKLIST points to that shape. The existing B, A and E overlays and the edition
+declarations cover KnC. Each client follows its own platform and release rules. The shared core
+and reference cases cover common behaviour. The original proposal and resolved question follow.
+
+### Candidate core edits (PROPOSED - apply only on owner instruction)
+
+- **PLATFORM_OVERLAYS, Editions / Co-shipping shapes**: name the shared-core multiplatform shape - one repository,
+  one compiled core shared by clients on several platforms, independent releases per client, parity held by shared
+  code and reference cases instead of a PARITY.md and not by compile-time seams of a single exe. Until then a repository
+  of this shape declares a combination of overlays plus editions, as this one does. The failure it prevents: each such
+  repository inventing its own reading of `overlay` and `editions`. Evidence: the stamp of this repository and
+  `check-compliance.ps1` SZA-CANON04, which accepts several overlays only with an `editions` or `shapes` entry.
+
+### Candidate NEW docs (not in any shared doc yet)
+
+None required.
+
+### Question as filed
+
+- Whether the canon adopts a dedicated overlay for this shape (the candidate core edit above).

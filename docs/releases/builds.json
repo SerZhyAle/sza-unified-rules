@@ -5,9 +5,9 @@
       "package": "sza",
       "flavor": "default",
       "kind": "release",
-      "version": "2026.1124.4",
-      "builtAt": "2026-11-24T19:14:43+01:00",
-      "note": "tools 5, contrib 2"
+      "version": "2026.1125.1",
+      "builtAt": "2026-11-25T02:10:42+01:00",
+      "note": "CANONR-0179: Consolidate contract and canon recommendations"
     }
   ]
 }

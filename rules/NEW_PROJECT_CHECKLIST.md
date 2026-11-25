@@ -13,7 +13,8 @@ apply (a CLI tool has no site, a single-locale app skips localization).
   root, release-mechanics folder, version shape, and channels. A product may also combine one overlay's
   distribution with another's source shape, ship as several **editions**, co-ship several artifacts in
   one release, or carry a **companion editor extension** - the shapes and their parity mechanisms are
-  all named in PLATFORM_OVERLAYS ("Editions", "Co-shipping shapes", "Companion editor / IDE extension")
+  all named in PLATFORM_OVERLAYS ("Editions", "Shared-core multiplatform clients", "Co-shipping shapes",
+  "Companion editor / IDE extension")
   and DEVELOPMENT §12-14.
 - **Windows product?** Choose the delivery shape (portable zip / Inno setup.exe / WiX MSI, + MSIX) via
   [WINDOWS_PACKAGING.md](WINDOWS_PACKAGING.md) before reserving anchors.

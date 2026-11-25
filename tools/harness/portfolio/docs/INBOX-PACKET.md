@@ -37,6 +37,10 @@ C:\GD\SZA\ticket-inbox\
 The spool sub-folders are created by the PC side (S0046's install step); the phone writes only
 `new\<packetId>\`. The layout freezes here so both sides name the same places.
 
+The sealed ticket channel of `DEVICE-EXCHANGE` 1.20 (items GI to GO) is a second way a packet
+reaches `new/`, beside the Drive channel and the folder route of items CN, CM, FC and FD; the
+packet, its manifest and the listener do not change.
+
 ## 2. The packet
 
 One packet is one folder named by its `packetId`, under `new/` on arrival. The phone writes the
