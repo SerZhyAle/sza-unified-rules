@@ -15,6 +15,10 @@
       5. -Skip: nothing runs and the manual commands are printed.
       6. No `claude` on PATH, or no cache folder: nothing runs, no throw.
       7. The update does not move the cache, or throws: reported as stale, the function still returns.
+      8. The ZCode arguments: paths under the app and the home folder, the runtime switch, the manual command,
+         and the call site after the Claude one.
+      9. A ZCode run: the script goes before the verbs, the environment variable holds during both calls and is
+         restored, also after a throw; the messages name ZCode.
 #>
 [CmdletBinding()]
 param([switch] $KeepScratch)
@@ -37,6 +41,8 @@ $parseErrors = $null
 $ast = [Management.Automation.Language.Parser]::ParseFile($deploy, [ref]$null, [ref]$parseErrors)
 $fn = @($ast.FindAll({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Update-PluginCache' }, $true))
 if ($fn.Count -eq 1) { . ([scriptblock]::Create($fn[0].Extent.Text)) }
+$fnZcode = @($ast.FindAll({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Get-ZCodeUpdateArgs' }, $true))
+if ($fnZcode.Count -eq 1) { . ([scriptblock]::Create($fnZcode[0].Extent.Text)) }
 
 $scratch = Join-Path ([IO.Path]::GetTempPath()) ('deploy-update-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
 New-Item -ItemType Directory -Path $scratch | Out-Null
@@ -109,7 +115,50 @@ try {
         Assert-That ($s.result -eq 'stale' -and $s.calls.Count -eq 2) "stale: $($s.result), calls: $($s.calls -join ' | ')"
         Assert-That ($s.text.Contains("still at $old")) "text: $($s.text)"
         $t = Invoke-Update -Cached $old -Mode 'throws'
-        Assert-That ($t.result -eq 'stale' -and $t.text.Contains('the plugin update failed')) "throws: $($t.result) / $($t.text)"
+        Assert-That ($t.result -eq 'stale' -and $t.text.Contains('the Claude plugin update failed')) "throws: $($t.result) / $($t.text)"
+    }
+    Run-Case '8 ZCode arguments and call site' {
+        Assert-That ($fnZcode.Count -eq 1) 'Get-ZCodeUpdateArgs is not defined exactly once'
+        $z = Get-ZCodeUpdateArgs -AppRoot (Join-Path $scratch 'app') -HomeRoot (Join-Path $scratch 'home')
+        Assert-That ($z.Cli -eq (Join-Path $scratch 'app\ZCode.exe')) "cli: $($z.Cli)"
+        Assert-That ((@($z.CliPrefix) -join '|') -eq (Join-Path $scratch 'app\resources\glm\zcode.cjs')) "prefix: $($z.CliPrefix)"
+        Assert-That ($z.CacheRoot -eq (Join-Path $scratch 'home\.zcode\cli\plugins\cache\sza-unified-rules\sza')) "cache: $($z.CacheRoot)"
+        Assert-That ($z.CliEnv['ELECTRON_RUN_AS_NODE'] -eq '1' -and $z.Product -eq 'ZCode') 'runtime switch or product name'
+        Assert-That ($z.Manual.Contains('marketplace update sza-unified-rules') -and $z.Manual.Contains('update sza@sza-unified-rules') -and $z.Manual.Contains('$env:ELECTRON_RUN_AS_NODE=')) "manual: $($z.Manual)"
+        $parse = $null
+        $null = [Management.Automation.Language.Parser]::ParseInput($z.Manual, [ref]$null, [ref]$parse)
+        Assert-That (@($parse).Count -eq 0) "the manual command does not parse: $($z.Manual)"
+        $text = $ast.Extent.Text
+        $claudeAt = $text.IndexOf('$cacheState = Update-PluginCache')
+        $zcodeAt = $text.IndexOf('$null = Update-PluginCache -Root $root -Branch $branch -Skip:$NoPluginUpdate @zcode')
+        Assert-That ($claudeAt -ge 0 -and $zcodeAt -gt $claudeAt) 'the ZCode update is not called after the Claude one'
+    }
+    Run-Case '9 ZCode run: prefix, environment, messages' {
+        $root = Join-Path $scratch 'zroot'
+        New-Item -ItemType Directory -Path (Join-Path $root '.claude-plugin') -Force | Out-Null
+        [IO.File]::WriteAllText((Join-Path $root '.claude-plugin\plugin.json'), "{ `"name`": `"sza`", `"version`": `"$pushed`" }")
+        $cache = Join-Path $root 'cache'
+        New-Item -ItemType Directory -Path (Join-Path $cache $old) -Force | Out-Null
+        $script:seen = @()
+        $script:boom = $false
+        function fake-zcode {
+            $script:seen += "$($env:SZA_TEST_RUNTIME):$($args -join ' ')"
+            if ($script:boom) { throw 'boom' }
+        }
+        $env:SZA_TEST_RUNTIME = $null
+        $run1 = @(Update-PluginCache -Root $root -Branch 'main' -CacheRoot $cache -Cli 'fake-zcode' -CliPrefix @('z.cjs') -CliEnv @{ SZA_TEST_RUNTIME = '1' } -Product 'ZCode' -Manual 'run-by-hand' 6>&1)
+        Assert-That (($script:seen -join ' | ') -eq '1:z.cjs plugin marketplace update sza-unified-rules | 1:z.cjs plugin update sza@sza-unified-rules') "calls: $($script:seen -join ' | ')"
+        Assert-That (-not $env:SZA_TEST_RUNTIME) 'the environment variable stayed set'
+        $text = (@($run1 | Where-Object { $_ -is [Management.Automation.InformationRecord] } | ForEach-Object { [string]$_.MessageData }) -join "`n")
+        Assert-That ($text.Contains('ZCode cache is still at') -and $text.Contains('run-by-hand') -and -not $text.Contains('Claude')) "text: $text"
+
+        $env:SZA_TEST_RUNTIME = 'before'
+        $script:boom = $true
+        try {
+            $null = Update-PluginCache -Root $root -Branch 'main' -CacheRoot $cache -Cli 'fake-zcode' -CliEnv @{ SZA_TEST_RUNTIME = '1' } -Product 'ZCode' 6>&1
+            Assert-That ($env:SZA_TEST_RUNTIME -eq 'before') "not restored after a throw: $($env:SZA_TEST_RUNTIME)"
+        }
+        finally { $env:SZA_TEST_RUNTIME = $null }
     }
 }
 finally {

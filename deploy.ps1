@@ -48,6 +48,9 @@ and checks that the cache reached the version. A failure there only warns and pr
 run by hand; it never changes the exit code, because the commit is already on the remote. Open Claude
 sessions keep what they loaded - restart them.
 
+The same step then runs for ZCode when the plugin is installed there (its own cache under .zcode), with
+ZCode's own CLI under ZCode's runtime; the same rules apply, and -NoPluginUpdate skips both.
+
 When the version was raised and this machine's plugin reached it, the deploy also ships the canon's own release
 package: tools/harness/spec_catalog/ship-package.ps1 moves the ready rows of the plan into the done file and
 archives the Verified tickets that shipped (TASK-FLOW rule 16). Best effort, like the release-ledger steps.
@@ -412,9 +415,12 @@ function Update-PluginCache {
         [Parameter(Mandatory)][string]$Branch,
         [string]$CacheRoot = (Join-Path ([Environment]::GetFolderPath('UserProfile')) '.claude\plugins\cache\sza-unified-rules\sza'),
         [string]$Cli = 'claude',
+        [string[]]$CliPrefix = @(),
+        [hashtable]$CliEnv = @{},
+        [string]$Product = 'Claude',
+        [string]$Manual = 'claude plugin marketplace update sza-unified-rules; claude plugin update sza@sza-unified-rules',
         [switch]$Skip
     )
-    $manual = 'claude plugin marketplace update sza-unified-rules; claude plugin update sza@sza-unified-rules'
     if (-not (Test-Path -LiteralPath $CacheRoot)) { return 'no-cache' }
     $pluginText = Get-Content -LiteralPath (Join-Path $Root '.claude-plugin/plugin.json') -Raw
     if ($pluginText -match '"version"\s*:\s*"([^"]+)"') { $pushed = $Matches[1] } else { return 'no-version' }
@@ -429,34 +435,64 @@ function Update-PluginCache {
     if (-not $cached -or $cached -eq $pushed) { return 'current' }
 
     Write-Host ''
-    Write-Host "deploy: the plugin cache on this machine is at $cached, the canon is now at $pushed" -ForegroundColor Yellow
+    Write-Host "deploy: the $Product plugin cache on this machine is at $cached, the canon is now at $pushed" -ForegroundColor Yellow
     if ($Skip) {
-        Write-Host "deploy: -NoPluginUpdate - run: $manual" -ForegroundColor Yellow
+        Write-Host "deploy: -NoPluginUpdate - run: $Manual" -ForegroundColor Yellow
         return 'skipped'
     }
     if ($Branch -ne 'main') {
-        Write-Host "deploy: this was pushed from '$Branch' and the marketplace follows main - fast-forward main and push it, then run: $manual" -ForegroundColor Yellow
+        Write-Host "deploy: this was pushed from '$Branch' and the marketplace follows main - fast-forward main and push it, then run: $Manual" -ForegroundColor Yellow
         return 'not-main'
     }
     if (-not (Get-Command $Cli -ErrorAction SilentlyContinue)) {
-        Write-Host "deploy: '$Cli' is not on PATH - run: $manual" -ForegroundColor Yellow
+        Write-Host "deploy: '$Cli' is not on PATH - run: $Manual" -ForegroundColor Yellow
         return 'no-cli'
     }
 
-    Write-Host 'deploy: updating the plugin on this machine' -ForegroundColor Cyan
+    Write-Host "deploy: updating the $Product plugin on this machine" -ForegroundColor Cyan
+    $before = @{}
     try {
-        & $Cli plugin marketplace update sza-unified-rules | Out-Host
-        & $Cli plugin update 'sza@sza-unified-rules' | Out-Host
+        foreach ($name in $CliEnv.Keys) {
+            $before[$name] = [Environment]::GetEnvironmentVariable($name)
+            [Environment]::SetEnvironmentVariable($name, [string]$CliEnv[$name])
+        }
+        # The pipe also makes PowerShell wait for a GUI-subsystem executable (ZCode.exe).
+        & $Cli @CliPrefix plugin marketplace update sza-unified-rules | Out-Host
+        & $Cli @CliPrefix plugin update 'sza@sza-unified-rules' | Out-Host
     }
-    catch { Write-Host "deploy: the plugin update failed - $($_.Exception.Message)" -ForegroundColor Yellow }
+    catch { Write-Host "deploy: the $Product plugin update failed - $($_.Exception.Message)" -ForegroundColor Yellow }
+    finally {
+        foreach ($name in @($before.Keys)) { [Environment]::SetEnvironmentVariable($name, $before[$name]) }
+    }
 
     $cached = & $newest
     if ($cached -eq $pushed) {
-        Write-Host "deploy: this machine now has plugin $pushed - restart open Claude sessions to load it" -ForegroundColor Green
+        Write-Host "deploy: this machine now has plugin $pushed in $Product - restart open $Product sessions to load it" -ForegroundColor Green
         return 'updated'
     }
-    Write-Host "deploy: the cache is still at $cached, the canon is at $pushed - run: $manual" -ForegroundColor Yellow
+    Write-Host "deploy: the $Product cache is still at $cached, the canon is at $pushed - run: $Manual" -ForegroundColor Yellow
     return 'stale'
+}
+
+# ZCode (z.ai) keeps its own copy of the plugin. Its CLI is a script inside the app and runs only under the app's
+# own runtime: under a system Node it exits 0 and does nothing (2026-11-25). A machine where the plugin was never
+# installed into ZCode has no cache folder, and the step is silent there.
+function Get-ZCodeUpdateArgs {
+    param(
+        [string]$AppRoot = (Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'Programs\ZCode'),
+        [string]$HomeRoot = [Environment]::GetFolderPath('UserProfile')
+    )
+    $exe = Join-Path $AppRoot 'ZCode.exe'
+    $script = Join-Path $AppRoot 'resources\glm\zcode.cjs'
+    $run = "& '$exe' '$script' plugin"
+    return @{
+        Product   = 'ZCode'
+        CacheRoot = Join-Path $HomeRoot '.zcode\cli\plugins\cache\sza-unified-rules\sza'
+        Cli       = $exe
+        CliPrefix = @($script)
+        CliEnv    = @{ ELECTRON_RUN_AS_NODE = '1' }
+        Manual    = "`$env:ELECTRON_RUN_AS_NODE='1'; $run marketplace update sza-unified-rules | Out-Host; $run update sza@sza-unified-rules | Out-Host; Remove-Item Env:ELECTRON_RUN_AS_NODE"
+    }
 }
 
 $cacheState = Update-PluginCache -Root $root -Branch $branch -Skip:$NoPluginUpdate
@@ -476,4 +512,6 @@ if ($bumpedVersion -and $cacheState -in @('updated', 'current')) {
     }
     finally { $env:SZA_PROJECT_ROOT = $prevProjectRoot }
 }
+$zcode = Get-ZCodeUpdateArgs
+$null = Update-PluginCache -Root $root -Branch $branch -Skip:$NoPluginUpdate @zcode
 exit 0

@@ -138,8 +138,11 @@ pwsh -File deploy.ps1 -DryRun                             # the gates + what wou
   when the cache is behind, it runs `claude plugin marketplace update sza-unified-rules` and `claude plugin update
   sza@sza-unified-rules` and checks that the cache reached the version. A failure only warns and prints the commands;
   off `main` it does nothing (the marketplace follows `main`); `-NoPluginUpdate` skips it. Open sessions keep what
-  they loaded - restart them. [tools/tests/deploy-plugin-update.tests.ps1](tools/tests/deploy-plugin-update.tests.ps1)
-  covers it with a stub `claude`.
+  they loaded - restart them. The same step then runs for **ZCode** (from 2026-11-25) when the plugin is installed
+  there: its own cache under `~/.zcode`, its CLI inside the app run under `ZCode.exe` as Node (a system Node exits 0
+  and does nothing). Only the Claude result gates the release-ledger `publish` step.
+  [tools/tests/deploy-plugin-update.tests.ps1](tools/tests/deploy-plugin-update.tests.ps1)
+  covers both with stubs.
 - **This was a manual step until 2026-09-07 and it was missed twice.** The portfolio first ran five canon
   updates against a plugin cache frozen at `2026.07.27`, and no session anywhere loaded them; then, four
   days after that was written down here, `ec00587` shipped three `tools/harness/spec_catalog/` files under
