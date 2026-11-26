@@ -6,9 +6,9 @@
     Ticket id.
 
 .NOTES
-    Assert-ClosingGates runs it on a transition from another status into Implemented, Verified or BlockNeedUserTest. A
-    write that keeps the status does not reach it, and Archived is not gated. What counts as an evidence link:
-    Find-SpecEvidenceLink in _spec-size.ps1.
+    Assert-ClosingGates runs it on a transition from another status into Implemented, Verified or BlockNeedUserTest of
+    a spec file above the limit. A write that keeps the status does not reach it, and Archived is not gated. What
+    counts as an evidence link: Find-SpecEvidenceLink in _spec-size.ps1.
 
     Exit codes:
       0 - the spec file is 40960 bytes or smaller, or it holds an evidence link.
@@ -42,10 +42,11 @@ if (-not (Test-Path -LiteralPath $specPath -PathType Leaf)) {
     exit 2
 }
 
+$limit = Get-SpecSizeLimit
 $bytes = (Get-Item -LiteralPath $specPath).Length
-if ($bytes -le $script:SpecSizeLimit) {
+if ($bytes -le $limit) {
     Write-Output "PASS $Id"
-    Write-Output "Spec file: $bytes bytes, limit $($script:SpecSizeLimit)."
+    Write-Output "Spec file: $bytes bytes, limit $limit."
     exit 0
 }
 
@@ -58,7 +59,7 @@ if ($link) {
 
 $name = [IO.Path]::GetFileNameWithoutExtension($specPath)
 Write-Output "FAIL $Id"
-Write-Output ("- {0}: {1} bytes, above the limit of {2}, and no evidence link." -f $record.file, $bytes, $script:SpecSizeLimit)
+Write-Output ("- {0}: {1} bytes, above the limit of {2}, and no evidence link." -f $record.file, $bytes, $limit)
 Write-Output ""
 Write-Output "A spec stays a short working document (TASK-FLOW 0.53). To pass:"
 Write-Output ("  1. move logs, per-pass records and earlier audit blocks into {0}/evidence/log.md, beside the spec;" -f $name)

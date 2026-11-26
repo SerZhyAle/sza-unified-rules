@@ -1956,7 +1956,15 @@ function Assert-TransitionChecks {
 
     # CANONR-0210, TASK-FLOW 0.53 - a spec file above 40 KB is handed on only with a link to its evidence log. Both
     # halves of the split need it: every later pass reads the file whole, whether it waits for a human or is finished.
-    $checkers.Add('check-spec-size.ps1')
+    # The size is read here so that the checker, which loads this library again, is started only for a file it can
+    # refuse; a spec that cannot be sized goes to it too, and it answers "could not look".
+    . (Join-Path $PSScriptRoot '_spec-size.ps1')
+    $sized = Find-Record -Id $Id
+    $sizedPath = if ($sized) { Resolve-SpecPath -PathRef $sized.file }
+    if (-not $sizedPath -or -not (Test-Path -LiteralPath $sizedPath -PathType Leaf) -or
+        (Get-Item -LiteralPath $sizedPath).Length -gt (Get-SpecSizeLimit)) {
+        $checkers.Add('check-spec-size.ps1')
+    }
 
     if ($NewStatus -eq 'BlockNeedUserTest') {
         # S2324 - a ticket parked for a human to watch must carry the probe that lets the

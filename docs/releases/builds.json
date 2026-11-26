@@ -5,9 +5,9 @@
       "package": "sza",
       "flavor": "default",
       "kind": "release",
-      "version": "2026.1126.7",
-      "builtAt": "2026-11-26T10:37:14+01:00",
-      "note": "CANONR-0206, CANONR-0208, CANONR-0209, CANONR-0211, CANONR-0213, CANONR-0217, CANONR-0218, CANONR-0219, CANONR-0220, CANONR-0221, CANONR-0222, CANONR-0223, CANONR-0224, CANONR-0225, CANONR-0227, CANONR-0228, CANONR-0229, CANONR-0230, CANONR-0231, CANONR-0232, CANONR-0234, CANONR-0235, CANONR-0236: Detect provider limits at process exit"
+      "version": "2026.1126.8",
+      "builtAt": "2026-11-26T10:46:18+01:00",
+      "note": "CANONR-0210, CANONR-0233: Spec Size Cap and Lean Template"
     }
   ]
 }

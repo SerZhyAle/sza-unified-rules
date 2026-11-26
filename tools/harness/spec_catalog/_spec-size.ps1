@@ -2,7 +2,8 @@
 # read.
 
 # TASK-FLOW 0.53: above this size a spec enters Implemented, Verified or BlockNeedUserTest only with an evidence link.
-$script:SpecSizeLimit = 40960
+# A function, not a variable: the file is dot-sourced inside a function too.
+function Get-SpecSizeLimit { return 40960 }
 
 function Find-SpecEvidenceLink {
     # -> the target of the first evidence link of the spec file, or '' (TASK-FLOW 0.53). A line that starts, after an
