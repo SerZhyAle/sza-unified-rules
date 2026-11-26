@@ -215,8 +215,9 @@ tree's own path.
 
 A ticket that needs the owner's call leaves the queue as `BlockQuestions`, and `pq` never takes it back by itself.
 The `spec-quiz` skill (`/spec-quiz` or `/sq`, with `quiz-list.ps1` in this folder) is the exit: it lists the waiting
-tickets of the current project, of a named project (`<key>`), of a named ticket (`<key>:<id>`) or of all (`--all`), asks only the decisions the code and
-the records do not settle, writes the answers into each ticket and restores it one level - after which `pq` offers it
+tickets of the current project, of a named project (`<key>`), of a named ticket (`<key>:<id>`) or of all (`--all`), settles what the code and
+the records answer, applies the recommended answers and reports them as applied by recommendation, asks the rest (a
+question or owner action shared by several tickets once - the `shared:` lines), writes the results into each ticket and restores it one level - after which `pq` offers it
 again, unless its project is on hold. `quiz-list.ps1 -Id S0021` is the lookup for an id that exists in several
 projects: it prints the id's status in the current project and every project where it waits. The script reads only.
 A pass that parks a ticket also writes its questions into the spec file as a `### Questions (v1, <date>)` block

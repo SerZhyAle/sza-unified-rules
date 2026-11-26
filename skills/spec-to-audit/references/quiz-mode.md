@@ -15,7 +15,8 @@ any project and carries the mechanics; the procedure below is its authority.
 2. **Extract the decision points**: the questions (`Q: ..?`) and pre-implementation owner actions
    (`DO: <action>`) in the block's reason note, plus every open research item and unfilled owner input
    (including `- **DO:** <action>` lines in `### 3.3 Owner inputs (Approval gate)`) that note points at. On request (`--assumed`) the sitting also lists the
-   ticket's `### Assumed (unattended, <date>)` and `### Assumed (attended, <date>)` entries - each with what was taken, the alternative it was
+   ticket's `### Assumed (unattended, <date>)` and `### Assumed (attended, <date>)` entries and its earlier
+   `applied by recommendation` lines - each with what was taken, the alternative it was
    weighed against and the date - so the owner can review and overrule them in the same sitting. An
    overrule is an answer of step 5's kind: the entry is marked `overruled <date>` with the owner's answer,
    the owner's value is written into the owner input or research item the assumption settled, and where a
@@ -26,33 +27,30 @@ any project and carries the mechanics; the procedure below is its authority.
    (Stage 3, TASK-FLOW rule 7): the newest block that is not stamped `- answered <date>` on its heading is
    current while its date is not earlier than the day the ticket entered `BlockQuestions` and every `Q:` text
    of the note appears in it. **A current block replaces the research of this step**: its questions, options,
-   consequences and recommendations are what gets asked, as they stand - the sitting does not re-research the
+   consequences and recommendations are what step 4 settles, as they stand - the sitting does not re-research the
    ticket. A block that is missing, stale, of another version, malformed or already answered is not read:
    research exactly as below and leave the old block where it stands. Whatever the architecture, the code, a contract or a decision
    already recorded settles is **not asked**: fill it in and list it in the report as *resolved without
-   asking*, with what settled it ([AI_USAGE.md](../../../rules/AI_USAGE.md) §1). Only a genuine owner call -
+   asking*, with what settled it ([AI_USAGE.md](../../../rules/AI_USAGE.md) §1). Only a genuine decision -
    scope, product intent, priority, wording, platform reach, build versus buy - or a pre-implementation
-   owner `DO:` action (device, desk, or outside console account step) goes to the owner. In the
+   owner `DO:` action (device, desk, or outside console account step) goes on to step 4. In the
    reference sitting this settled 5 of 20 decision points without a word to the owner. Nothing left to
-   ask -> write the fills and go to step 6.
-4. **Ask multiple choice (and present `DO:` actions).** Each question specific, 2-4 options, each with its one-line consequence, the
-   researched recommendation **listed first** and marked recommended. For a `- **DO:** <action>` item,
+   decide -> write the fills and go to step 6.
+4. **Apply the recommendation; ask the rest (and present `DO:` actions).** A question with a recommended answer
+   is applied, not asked, and listed as **applied by recommendation** with the alternative, which the owner may
+   overrule at any time. [AI_USAGE.md](../../../rules/AI_USAGE.md) §1 names what stays a question although a
+   recommendation exists; a recommendation that collides with the owner's own standing rules is one of them. What
+   is asked is multiple choice: each question specific, 2-4 options, each with its one-line consequence, a
+   recommendation, where there is one, **listed first** and marked recommended. For a `- **DO:** <action>` item,
    show the exact action line to the owner and take the result (completed with the observed output/value,
-   or an alternative/skip decision) as the owner input (S0042). Most-blocking first, in rounds where
-   the runtime caps a round, never more than unblocking needs. A ticket with several questions may first be
-   shown as one table - question, recommended answer, consequence - with one owner choice over it: accept all,
-   pick the exceptions, or one by one (S0026). Accepting the table is the owner's answer to every row, given
-   by the owner's click; nothing is accepted without it. The questions that arrive here are the
-   owner-owned ones only: since S0039 (S0153 for attended passes) every pass takes a researched,
-   ticket-reversible recommendation itself and records it under `### Assumed (...)`, so a reversible default
-   no longer reaches this sitting as a question. What does arrive is still answered by the owner - in the
-   reference sitting the owner chose something other than the default in 3 of 15 answers - and the
-   recommendation never replaces a question that earned its place here. **After each round, re-apply the
+   or an alternative/skip decision) as the owner input (S0042); no recommendation closes it. Most-blocking first,
+   in rounds where the runtime caps a round, never more than unblocking needs. **After each round, re-apply the
    owner's own standing rules to the chosen option.** Where one of them contradicts the choice, show the
    collision once, with both outcomes, and let the owner pick - the menu was at fault, not the answer.
 5. **Write back before any status move.** Each answer goes into the ticket's own record - the input
    filled, the research item resolved - plus a dated decisions block: question, chosen answer, one-line
-   reason. A block that was asked from is stamped by appending ` - answered <yyyy-MM-dd>` to its heading,
+   reason. An applied recommendation says `applied by recommendation` there and is never written as the owner's
+   answer. A block that was settled from is stamped by appending ` - answered <yyyy-MM-dd>` to its heading,
    never deleted, once its items are settled. If the sitting had no current block, write and stamp a new
    block for the settled questions. Mark each settled owner-input action ` - done <yyyy-MM-dd>` or
    ` - dropped <yyyy-MM-dd>`, optionally followed by `: <result or reason>` (TASK-FLOW rule 7).
@@ -67,15 +65,16 @@ any project and carries the mechanics; the procedure below is its authority.
 7. **A skipped answer is never invented.** The input stays unfilled, the gate that needs it stays closed,
    the ticket stays in `BlockQuestions` with its reason note narrowed to what is still open. The answers
    that did arrive are still written back.
-8. **Report per ticket**: start -> end status; asked (question -> answer); resolved without asking
-   (decision -> value -> what settled it); assumed listed and any overrule (entry -> the owner's answer);
-   outstanding.
+8. **Report per ticket**: start -> end status; asked (question -> answer); applied by recommendation
+   (question -> answer, alternative); resolved without asking (decision -> value -> what settled it); assumed
+   listed and any overrule (entry -> the owner's answer); outstanding.
 
 **Several tickets in one sitting are allowed - with one write-back and one status move per ticket.** What
 the block defers is the owner's attention, and that is paid per sitting, not per ticket: the reference
 sitting cleared three tickets with 15 questions in 5 rounds, where three single-ticket sittings would have
 cost three context loads and three interruptions for the same answers. What stays per ticket is what makes
 a ticket auditable on its own - its decisions live in its own record, its move is judged on its own
-evidence, and a question two tickets share is asked once and written into both. Rounds may mix tickets;
+evidence, and a question or owner action two tickets share - in one project or in several - is settled once and
+written into both; a ticket whose own part it does not cover stays open. Rounds may mix tickets;
 each question names the ticket it settles. "One ticket at a time" confuses the unit of conversation with
 the unit of record.

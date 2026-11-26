@@ -36,12 +36,16 @@
         block: answered <date>                        an answered block is never current (researches again)
         block: none - <why>                           no block, another version, or one that does not parse
     It is printed for every BlockQuestions ticket; for another listed status only when a block exists.
+    then one line per open question or owner action that two or more listed BlockQuestions tickets carry in the
+    same words once ticket ids are normalized (Get-QuizShareKey) - the quiz settles it once:
+        shared: <Q|DO>  <text>  [<key>:<id>, <key>:<id>]
     then the result line:
         quiz-list: <n> in <statuses> across <m> project(s)
     With -Id the result line is instead:
         quiz-list: id <X> here=<key>:<id>=<status|absent> blockquestions=<key:id,..|none>
         (waiting=... instead of blockquestions= when -Status lists more than BlockQuestions)
-    -Json prints the same records as one JSON array (full notes, the block's state) and no result line.
+    -Json prints the same records as one JSON array (full notes, the block's state, each record's shared items as
+    {kind, text, tickets}) and no result line.
 
     Exit codes: 0 listed (an empty list is still 0 - a report, not a gate); 2 bad invocation, an unknown project, or
     no project at or above the current folder without -All.
@@ -191,9 +195,13 @@ $found = [Collections.Generic.List[object]]::new()
 $hereState = 'absent'
 $hereTicket = $null
 $projectsWith = [Collections.Generic.HashSet[string]]::new()
+$idPrefixes = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
 foreach ($s in $scope) {
     if (-not (Test-Path -LiteralPath $s.root -PathType Container)) { continue }
     try { $rows = Read-PqLedgerRows $s.root } catch { [Console]::Error.WriteLine("quiz-list: $($s.key) skipped - $($_.Exception.Message)"); continue }
+    foreach ($row in $rows) {
+        if ([string]$row.Id -match '^(.*?[^\d])\d+$') { $null = $idPrefixes.Add($Matches[1]) }
+    }
     $isHere = $hereRoot -and ((ConvertTo-PqPathKey $s.root) -ceq (ConvertTo-PqPathKey $hereRoot))
     if ($Id -and $isHere) {
         $mine = @($rows | Where-Object { Test-IdMatch $_.Id $Id }) | Select-Object -First 1
@@ -207,6 +215,7 @@ foreach ($s in $scope) {
             repo = $s.key; rank = $(if ($rankOf.ContainsKey($s.key)) { $rankOf[$s.key] } else { $rankOf.Count }); id = $row.Id; status = $row.Status; priority = $row.Priority; updated = $row.Updated
             name = $row.Name; file = $specFile; note = $row.Note; here = [bool]$isHere
             block = (Get-QuizQuestionBlock $specFile $row.Note $row.Updated)
+            shared = @()
         })
         $null = $projectsWith.Add($s.key)
     }
@@ -217,6 +226,31 @@ foreach ($s in $scope) {
 $sortKeys = if ($All -and -not $Id) { @('rank', 'repo', @{ Expression = 'priority'; Descending = $true }, 'id') }
 else { @(@{ Expression = { -not $_.here } }, @{ Expression = 'priority'; Descending = $true }, 'repo', 'id') }
 $sorted = @($found | Sort-Object -Property $sortKeys)
+
+# ---- shared items: an open question or owner action that several waiting tickets carry in the same words ----
+# The open items are the status writer's own (Get-OpenQuizItems: the note's unanswered Q:, the unmarked DO: owner
+# inputs, the note's DO:) plus the questions of a current block.
+$groups = [ordered]@{}
+foreach ($t in $sorted) {
+    if ($t.status -cne 'BlockQuestions') { continue }
+    $lines = @()
+    if (Test-Path -LiteralPath $t.file -PathType Leaf) { try { $lines = [IO.File]::ReadAllLines($t.file) } catch { $lines = @() } }
+    $items = @(Get-OpenQuizItems -Note $t.note -Updated $t.updated -Lines $lines)
+    if ($t.block.state -ceq 'current') { $items += @($t.block.questions | ForEach-Object { "Q: $_" }) }
+    foreach ($item in $items) {
+        if ($item -cnotmatch '^(Q|DO): (.+?)(?: \(requires a current done or dropped mark in Owner inputs\))?$') { continue }
+        $kind = $Matches[1]; $text = ConvertTo-QuizFlatText $Matches[2]
+        $key = '{0}|{1}' -f $kind, (Get-QuizShareKey $text @($idPrefixes))
+        if (-not $groups.Contains($key)) { $groups[$key] = @{ kind = $kind; text = $text; rows = [ordered]@{} } }
+        $groups[$key].rows['{0}:{1}' -f $t.repo, $t.id] = $t
+    }
+}
+$shared = @(foreach ($g in $groups.Values) {
+        if ($g.rows.Count -lt 2) { continue }
+        $item = [pscustomobject][ordered]@{ kind = $g.kind; text = $g.text; tickets = @($g.rows.Keys) }
+        foreach ($t in $g.rows.Values) { $t.shared = @($t.shared) + $item }
+        $item
+    })
 
 if ($Json) {
     # Depth 6: the records hold the block object with its questions array inside.
@@ -240,6 +274,7 @@ foreach ($t in $sorted) {
         Write-Host ("    block: {0}" -f $line)
     }
 }
+foreach ($item in $shared) { Write-Host ("shared: {0}  {1}  [{2}]" -f $item.kind, $item.text, ($item.tickets -join ', ')) }
 if ($Id) {
     $hereText = if ($hereKey) { '{0}:{1}={2}' -f $hereKey, $(if ($hereTicket) { $hereTicket.Id } else { $Id }), $hereState } else { 'no-current-project' }
     $waiting = if ($sorted.Count) { (@($sorted | ForEach-Object { '{0}:{1}' -f $_.repo, $_.id }) -join ',') } else { 'none' }

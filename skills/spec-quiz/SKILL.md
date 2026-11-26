@@ -1,6 +1,6 @@
 ---
 name: spec-quiz
-description: 'Research unresolved BlockQuestions decisions, ask the owner, record answers and restore status. /spec-quiz, /sq, quiz S0021, unblock the tickets, answer the open questions, what is waiting for my answers, «разблокируй тикеты», «задай мне вопросы по тикету», «вопросы по спеке», «что ждёт моих ответов», «квиз», «сними блок вопросов».'
+description: 'Clear BlockQuestions: apply researched recommendations, ask the owner the rest, record and restore status. /spec-quiz, /sq, quiz S0021, unblock the tickets, answer the open questions, what is waiting for my answers, «разблокируй тикеты», «задай мне вопросы по тикету», «вопросы по спеке», «что ждёт моих ответов», «квиз», «сними блок вопросов».'
 ---
 
 # Spec quiz - drain the owner's questions in any project
@@ -22,8 +22,9 @@ in every project: finding the tickets, naming the right project, and the mechani
 /spec-quiz S0023, 24, 25      one sitting over several tickets (a bare number is the id's trailing digits)
 /spec-quiz fms-web            every waiting ticket of that project
 /spec-quiz --all              every waiting ticket of every registered project, held or not, in registry rank order - one sitting
-/spec-quiz S0021 --dry        the questions that would be asked; nothing asked, nothing written, nothing moved
-/spec-quiz S0021 --assumed    the sitting plus the ticket's `### Assumed (unattended|attended, <date>)` entries, listed for review and overrule
+/spec-quiz S0021 --dry        what would be applied and what asked; nothing asked, nothing written, nothing moved
+/spec-quiz S0021 --assumed    the sitting plus the ticket's `### Assumed (unattended|attended, <date>)` entries and earlier
+                              `applied by recommendation` decisions, listed for review and overrule
 ```
 
 `--all` is the portfolio sitting, started from any folder - the `PQ Answer questions` shortcut and the PQShell button
@@ -64,9 +65,11 @@ pwsh -NoProfile -File "<root>/tools/harness/portfolio/quiz-list.ps1" [-Id <id>] 
 
 Each waiting ticket prints as `BQ <key>:<id> p<priority> <updated> <name>`, its spec file, the ledger's reason
 note and the state of its question block (`block: current ... | stale - ... | answered ... | none - ...`,
-TASK-FLOW rule 7); the last line is the count (or, with `-Id`, `here=<key>:<id>=<status>` and `blockquestions=<list>`). `-Json`
-gives the same records with the full note and the block's questions. `-All` lists the projects in registry rank order (the dispatcher's order,
-the panel's #), then priority; every other scope puts the current folder's project first.
+TASK-FLOW rule 7). A `shared: <Q|DO> <text> [<key>:<id>, ..]` line names an open question or owner action that two
+or more listed tickets carry in the same words, ticket ids aside; the last line is the count (or, with `-Id`,
+`here=<key>:<id>=<status>` and `blockquestions=<list>`). `-Json` gives the same records with the full note, the
+block's questions and each record's `shared` items. `-All` lists the projects in registry rank order (the
+dispatcher's order, the panel's #), then priority; every other scope puts the current folder's project first.
 
 | Outcome | Do |
 | --- | --- |
@@ -81,12 +84,16 @@ There is no ticket cap: the sitting takes every listed ticket in the list's orde
 leaves the rest waiting, untouched (Quiz mode step 7). Tickets that name each other as prerequisites in their notes
 (`S0024` after `S0023`) go in that order.
 
-**A decision shared by several tickets is asked once.** Before the first round, compare the decision points of all
-tickets in scope; where two or more tickets - in one project or in several - need the same decision (the same
-subject, the same options, as cyrflip's GitHub topics in S0024 and S0058), ask it once, name every ticket it
-settles in the question (`cyrflip:S0024, cyrflip:S0058`), and write the one answer into each of them before any of
-them moves. Decisions that only look alike - different subjects, different option sets, or recommendations that
-point different ways - are asked separately; never merge them silently.
+**A shared decision or owner action is settled once.** Every `shared:` line is one item. Before the first round,
+compare the rest of the decision points too: two or more tickets - in one project or in several - hold one item
+when they need the same decision (the same subject, the same options, as cyrflip's GitHub topics in S0024 and
+S0058) or ask the owner for the same act in the same place (one console sign-in, one device walk), although each
+words it with its own names. Apply or ask it once, name every ticket it settles (`cyrflip:S0024, cyrflip:S0058`)
+and what is each one's own part, and write the result into each of them before any of them moves; a ticket whose
+own part the result does not cover stays open. A sitting narrower than `--all` also runs the list with `-All`: a
+waiting ticket outside the scope that carries one of the sitting's items gets that result written into it, and
+nothing else of it is settled. Decisions that only look alike - different subjects, different option sets, or
+recommendations that point different ways - are kept apart; never merge them silently.
 
 ## Step 2 - Work inside the ticket's project
 
@@ -118,31 +125,31 @@ Follow Quiz mode steps 2-8. The parts a project-independent skill must pin down:
   version**: research (next bullet) exactly as before 0.23 and leave the old block where it stands - neither it
   nor any other part of the ticket is edited on the way in.
 - **Research first.** The decision points are the reason note (`Q: ..?` questions and `DO: <action>` pre-implementation owner actions), every open research item and every unfilled owner input (including `- **DO:** <action>` lines under `### 3.3 Owner inputs (Approval gate)`) the note points at. What the ticket's own spec, the code, a contract in the catalog or a recorded decision settles is **not asked**: fill it in and list it as *resolved without asking*, with what settled it.
-- **`--assumed` lists the pass assumptions.** With the flag, each ticket in scope has its
-  `### Assumed (unattended, <date>)` and `### Assumed (attended, <date>)` blocks read out of the spec file and printed: date, decision, what was taken,
-  the alternative (Quiz mode step 2). The owner may overrule any entry in the sitting: the entry is marked
-  `overruled <date>: <the owner's answer in quotes>` in place, the owner's value is written into the owner input or
-  research item the assumption settled, and where a pass already built on the assumption - the ticket at
-  `Implemented` or beyond - the rework is captured with the project's capture tool and reported as `parked: <id>`.
-  Unoverruled entries stay as they are. Without the flag the assumptions are not raised.
-- **One screen per ticket first.** With the research done, print the ticket's remaining questions as one table -
-  `<key>:<id>`, then a row per question: the question, the recommended answer, its one-line consequence - and ask
-  one `AskUserQuestion` about the whole table: `Принять все рекомендации (Рекомендуется)` / `Выбрать исключения` /
-  `По одному`. *Accept all* writes every recommendation as the owner's answer - the click is the owner's choice,
-  recorded in the decisions block as `accepted with the table`. *Pick the exceptions* asks one `multiSelect` question
-  listing the rows; the rows picked are asked one by one below, every other row takes its recommendation. *One by
-  one* asks every row below. A ticket with a single question skips the screen and asks it directly; a `DO:` action
-  is never part of the table - it always gets its own question. Skipping the screen question skips the ticket: its
-  answers stay unfilled.
-- **Ask with `AskUserQuestion`, in Russian** (chat language). A `header` of at most 12 characters, a specific
-  question ending in `?`, 2-4 options, the researched recommendation **first** with `(Рекомендуется)` appended, and
-  one line of consequence in each option's description. For a pre-implementation `- **DO:** <action>` line (device,
-  desk, or outside console account action that precedes implementation, S0042), show the `DO:` line to the owner and
-  take the result (done + observed value/output, or fallback/skip) as the owner input. At most four questions per call, the most blocking first.
-  In a sitting over several tickets or projects (`--all` always), start every question and every table with
-  `<key>:<id>` - every ticket it settles, for a shared decision. `multiSelect` only when the choices
-  combine. A name, a number or an address that only the owner can supply: offer the researched candidates as options -
-  the built-in *Other* takes the owner's own text. A recommendation is never applied in the owner's place.
+- **`--assumed` lists what was taken without a question.** With the flag, each ticket in scope has its
+  `### Assumed (unattended, <date>)` and `### Assumed (attended, <date>)` blocks and its earlier
+  `applied by recommendation` decision lines read out of the spec file and printed: date, decision, what was taken,
+  the alternative (Quiz mode step 2). Without the flag they are not raised.
+- **Apply the recommendation first.** Every question that has a recommended answer is applied, not asked, unless
+  [AI_USAGE.md](../../rules/AI_USAGE.md) section 1 keeps it a question: a one-way or outward step, money, a fact
+  only the owner has, a break of a hard invariant or of a recorded owner decision (the project's `CLAUDE.md`
+  "Owner decisions" included), or a shared-contract amendment outside a consolidation round. Print one table before
+  the first status move, headed **applied by recommendation**: `<key>:<id>`, question, applied answer, alternative,
+  consequence. No confirmation is asked about it.
+- **Overrule.** The owner may overrule an applied or assumed entry at any time - in the sitting, in chat later, or
+  through `--assumed`: the entry is marked `overruled <date>: <the owner's answer in quotes>` in place, the owner's
+  value is written into the owner input or research item it settled, and where a pass already built on it - the
+  ticket at `Implemented` or beyond - the rework is captured with the project's capture tool and reported as
+  `parked: <id>`. Unoverruled entries stay as they are.
+- **Ask what is left with `AskUserQuestion`, in Russian** (chat language): a question with no recommendation, one
+  that section 1 keeps a question, and every `DO:` action. A `header` of at most 12 characters, a specific question
+  ending in `?`, 2-4 options, one line of consequence in each option's description, and a recommendation, where
+  there is one, **first** with `(Рекомендуется)` appended. For a pre-implementation `- **DO:** <action>` line
+  (device, desk, or outside console account action that precedes implementation, S0042), show the `DO:` line to the
+  owner and take the result (done + observed value/output, or fallback/skip) as the owner input. At most four
+  questions per call, the most blocking first. In a sitting over several tickets or projects (`--all` always),
+  start every question and every table row with `<key>:<id>` - every ticket it settles, for a shared item.
+  `multiSelect` only when the choices combine. A name, a number or an address that only the owner can supply: offer
+  the researched candidates as options - the built-in *Other* takes the owner's own text.
 - **After each round**, check the chosen options against the owner's standing rules (the project's `CLAUDE.md`
   "Owner decisions", the canon's hard invariants). Where one contradicts the choice, show the collision once with
   both outcomes and let the owner pick.
@@ -151,11 +158,13 @@ Follow Quiz mode steps 2-8. The parts a project-independent skill must pin down:
   ```markdown
   ### Quiz decisions (YYYY-MM-DD)
   - <question> -> <chosen answer> (<one-line reason>)
+  - <question> -> <recommended answer> (applied by recommendation: <reason>; alternative: <other>; owner may overrule)
   ```
-  The owner's own typed text goes in verbatim, in its language, inside quotes. A question block the sitting
-  asked from is stamped by appending ` - answered <date>` to its heading once all its items are settled. If
-  the sitting had no current question block, write a new block for the questions settled and stamp it
-  the same way. Keep earlier blocks and their lines. Mark each settled owner-input action with
+  The owner's own typed text goes in verbatim, in its language, inside quotes; an applied line is never written as
+  the owner's answer and quotes nobody. A question block the sitting settled from is stamped by appending
+  ` - answered <date>` to its heading once all its items are settled, whoever settled each. If the sitting had no
+  current question block, write a new block for the questions settled and stamp it the same way. Keep earlier
+  blocks and their lines. Mark each settled owner-input action with
   ` - done <yyyy-MM-dd>` or ` - dropped <yyyy-MM-dd>`, optionally followed by `: <result or reason>`
   (TASK-FLOW rule 7). Section 0 (the owner's capture) and
   every unrelated section stay untouched. Do not edit the ledger or the `**Status:**` line by hand.
@@ -171,7 +180,7 @@ Follow Quiz mode steps 2-8. The parts a project-independent skill must pin down:
   question.
 - **A skipped answer is never invented.** The input stays unfilled, the ticket stays in `BlockQuestions`, and the
   answers that did arrive are still written back.
-- **`--dry`** composes the questions and prints them with their options and recommendations, then stops.
+- **`--dry`** prints what would be applied and what would be asked, with options and recommendations, then stops.
 - **Read specs with a limit** (`Read` with `limit`); a long spec read whole is blocked by the plugin's read guard.
 
 ## Step 4 - Report, in Russian, one block per ticket
@@ -180,20 +189,23 @@ Follow Quiz mode steps 2-8. The parts a project-independent skill must pin down:
 <key>:<id> <slug>
   Было: BlockQuestions   Стало: <status>
   Спросил (<N>): <header> -> <ответ>
+  Applied by recommendation (<A>): <вопрос> -> <ответ> (альтернатива: <другой вариант>; можно отменить)
   Решил без вопроса (<M>): <решение> -> <значение> (<что решило>)
   Допущения (<K>): <решение> -> <принято | отменено владельцем> (<дата>)   [только с --assumed]
   Осталось: <ничего | что именно и почему блок остался>
 ```
 
-Then run `quiz-list.ps1` once more for the same scope and give the count that is still waiting. Say plainly what the
+Keep the label `applied by recommendation` as written, so it can be searched for. Then run `quiz-list.ps1` once more for the same scope and give the count that is still waiting. Say plainly what the
 move did to the queue: a restored ticket is eligible for `pq` again if its project is enabled and not on hold - and
 that lifting a hold is the owner's call.
 
 ## What this skill never does
 
-- Answer for the owner, or invent an answer to a skipped question. An unattended pass records its reversible
-  recommendations under `### Assumed` (S0039); this skill lists them on request and changes one only on the owner's word.
+- Write an applied recommendation as the owner's answer, apply one that AI_USAGE section 1 keeps a question, or
+  invent an answer to a skipped question. A pass records its reversible recommendations under `### Assumed`
+  (S0039); this skill lists them on request and changes one only on the owner's word.
 - Move a ticket that is not in `BlockQuestions`, or move one more than a single level.
 - Write code, run a build or a test, commit, push, start `pq`, lift a hold, or register a project.
-- Edit `spec-catalog.jsonl`, the queue files, or another project's files outside the tickets it was asked about.
+- Edit `spec-catalog.jsonl`, the queue files, or another project's files outside the tickets it was asked about and
+  the tickets a shared item names.
 - Continue into the restored ticket's pipeline: that is a separate, explicit request.

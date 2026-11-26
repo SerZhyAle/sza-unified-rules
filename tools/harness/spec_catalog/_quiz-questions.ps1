@@ -42,6 +42,19 @@ function Get-QuizEntryDay([string] $Updated, [string[]] $Lines) {
     return [regex]::Match($Updated, '\d{4}-\d{2}-\d{2}').Value
 }
 
+# The comparison key of one question or owner action across tickets: ticket ids (bare, <key>:<id> or <id>_<slug>)
+# become one word, so two tickets that name only themselves differently read the same. The prefixes come from the
+# ledgers read, never from this file. Markdown emphasis, letter case, run-on white space and a final full stop do
+# not count.
+function Get-QuizShareKey([string] $Text, [string[]] $IdPrefixes) {
+    $flat = $Text -replace '[`*]', ''
+    if ($IdPrefixes) {
+        $any = @($IdPrefixes | Sort-Object -Property Length -Descending | ForEach-Object { [regex]::Escape($_) }) -join '|'
+        $flat = $flat -replace "(?<![A-Za-z0-9])(?:[a-z][a-z0-9_-]*:)?(?:$any)\d{3,}(?:_[a-z0-9-]+)?(?![A-Za-z0-9])", '<id>'
+    }
+    return (ConvertTo-QuizFlatText $flat).TrimEnd('.', ' ').ToLowerInvariant()
+}
+
 function Get-OpenQuizItems {
     param([string] $Note, [string] $Updated, [string[]] $Lines)
 

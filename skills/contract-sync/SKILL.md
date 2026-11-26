@@ -1,12 +1,13 @@
 ---
 name: contract-sync
-description: 'Sync shared contracts with the catalog. Inventory or migrate copies, write pointers and registry rows, and audit compatibility. Use for a shared format, algorithm, schema, protocol or contract version, or before a boundary release. «контракты», «приведи контракты в порядок», «синхронизируй контракты», «перенеси контракты в каталог», «общий формат с другим проектом», «версия контракта».'
+description: 'Sync shared contracts with the catalog: copies, pointers, registry rows, compatibility, and the canon consolidation round on proposals. For a shared format, schema or protocol, or before a boundary release. «контракты», «приведи контракты в порядок», «синхронизируй контракты», «контракты ждут правок», «всё принять по рекомендации», «общий формат с другим проектом», «версия контракта».'
 ---
 
 # Contract sync - align this repo with the shared catalog
 
 One repo per run. The catalog at `P:\Contracts` is the source of truth; this repository holds
-implementations and pointers, never copies.
+implementations and pointers, never copies. An order to decide the proposals waiting in the catalog is the other
+run - a [consolidation round](#consolidation-round---deciding-the-open-proposals), in the canon only.
 
 Canon: [CONTRACTS.md](../../rules/CONTRACTS.md) (the law),
 [INVARIANTS.md](../../rules/INVARIANTS.md) item 10,
@@ -179,6 +180,29 @@ contract's boundary; then move the rows that were read. An `unread` row opens no
 contract gate reads the result; do not wait for release time when a breaking change has landed - a product that
 sees one opens the catch-up as its own ticket.
 
+## Consolidation round - deciding the open proposals
+
+Only a session of the canon (`sza-unified-rules`), and only on the owner's order. Asked from any other
+repository, say that the round runs in the canon and stop. The authority is [CONTRACTS.md](../../rules/CONTRACTS.md)
+§4 and the catalog's `_meta\RULES.md` section 7.
+
+1. **Open it.** Take the catalog snapshot (the canon's agent-rules file gives the commands), then run
+   `pwsh -NoProfile -File tools/check-contracts.ps1`: check `CTR-PROP` names every open proposal, so none is looked
+   for by hand. Add the contract tickets that wait in the canon.
+2. **Decide each by recommendation.** Read the proposal and its evidence, then apply what you recommend - accept,
+   partly accept, answer or reject - without asking: amend the contract as its owner would (dated section,
+   version, document-log row, artifacts), set the proposal's status line, update the registry. The decision text
+   says **applied by recommendation** and never speaks as the owner.
+3. **Ask what is left, once.** Only a proposal with no recommendation, or one that
+   [AI_USAGE.md](../../rules/AI_USAGE.md) section 1 keeps a question. Group the same question across proposals,
+   ask them together, and write the answer into every proposal it settles. A skipped one stays `proposed`.
+4. **Close it.** Write `_meta\CONSOLIDATION-<date>.md` with each decision, its reason and what each product owes;
+   file the owed work as one Draft ticket per owing project ([spec-draft](../spec-draft/SKILL.md)) and free the
+   tickets whose stated condition the round resolved; `check-contracts.ps1` exits 0; take the second snapshot.
+5. **Report and end.** List the decisions under **applied by recommendation**, each with its alternative, then
+   what was asked and what stays open. The owner may overrule any of them; an overrule is a new amendment. The
+   session ends with the round: do not start another in it - say that the next round starts in a fresh session.
+
 ## Answering a request from a sibling product
 
 When another product asks about a shared contract, answer in a dated `RESPONSE` document ([CONTRACTS.md](../../rules/CONTRACTS.md) §4): contract facts cite id and section; implementation facts cite code with the tree's date and say what was **not run**; every deviation found while answering becomes a ticket in this repo and a registry row; the answer amends nothing; and it corrects the requester's wrong premises rather than answering around them.
@@ -196,4 +220,5 @@ When another product asks about a shared contract, answer in a dated `RESPONSE` 
 - **Never run a git command in the catalog from a product session.** Its history is written by the canon
   session alone (`_meta\RULES.md` section 6); a change there that you did not make is a sibling's work.
 - **Never edit a contract this product does not own** - sealed, draft or not. Write
-  `PROPOSAL-<date>-<topic>.md` beside it in its domain folder and leave the contract untouched.
+  `PROPOSAL-<date>-<topic>.md` beside it in its domain folder and leave the contract untouched. The one exception
+  is the canon's consolidation round above.

@@ -250,7 +250,9 @@ nothing from each other, the plan pass writes `**Parallel:** <those phases>` bel
 finished before starting the next, at the cheapest evidence rung matching the risk, tagging findings by
 severity: **P0** crash or data loss, **P1** race / main-thread I/O / unbounded cache / unreleased resource,
 **P2** hot-path waste, **P3** style. P0 and P1 are fixed now, with evidence at the matching rung - not with
-an opinion.
+an opinion. Any review finding the pass rates a real bug inside the ticket's scope - from this audit,
+`/code-review` or a review agent - is fixed in the pass and reported, never put to the owner as a question
+([AI_USAGE.md](../../rules/AI_USAGE.md) §1).
 
 *Why it must be at the boundary*: catching a defect at the next phase boundary costs one phase of rework;
 catching it at the end costs every intervening phase.

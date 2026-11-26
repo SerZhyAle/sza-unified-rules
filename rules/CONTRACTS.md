@@ -98,8 +98,9 @@ a remediation ticket and no end date; a permanent supported variant belongs in a
 linked from the registry, with an explicit review condition. An exception does not waive a separate legal,
 store, security or data-safety release blocker. A synchronization spec must offer these routes rather than
 require an unconditional compliance claim. For another owner's contract, recommendations are dated
-proposals; the owner accepts, partly accepts or rejects them with reasons in writing. Until acceptance,
-the current text applies and an exception records any justified local difference.
+proposals; the owner - or a consolidation round in the owner's place (below) - accepts, partly accepts or
+rejects them with reasons in writing. Until acceptance, the current text applies and an exception records any
+justified local difference.
 
 Finding a defect creates an obligation, not a licence: whoever finds it writes the amendment, even when the
 defect belongs to another product's contract. Silence about a known defect is itself a violation.
@@ -121,15 +122,23 @@ above is met without one product rewriting another's decision.
 
 **Every contract is sealed (since 2026-10-07).** The rule above holds for drafts too: there is no longer an
 allowance for a product to supplement a contract it does not own. Only the owner supplements, spells out the
-implementation of, or corrects a contract; every other product files a proposal and leaves the text alone,
-and until the owner accepts it the sealed text binds. Where the owner is `shared`, the owner is the catalog
-owner, working through the canon session. Sealed is not final - a draft may still change shape - and the
-registry is not sealed: a product still writes its own rows and its own exceptions.
+implementation of, or corrects a contract, a consolidation round (below) excepted; every other product files a
+proposal and leaves the text alone, and until the owner or a consolidation round accepts it the sealed text
+binds. Where the owner is `shared`, the owner is the catalog owner, working through the canon session. Sealed is
+not final - a draft may still change shape - and the registry is not sealed: a product still writes its own rows
+and its own exceptions.
 
-**Consolidation round.** Track a portfolio-wide decision once in the canon with a checklist row for each affected
-repository. Use the [spec-draft tracking campaign](../skills/spec-draft/SKILL.md) (`-Tracking`) and file child
-tickets only where code changes are needed. Re-run repository checks to close rows mechanically. The round's
-catalog record holds the decisions, reasons, and obligations.
+**Consolidation round.** A canon session the owner orders to decide the catalog's open proposals. For its
+length it decides every proposal in the owner's place, whatever product owns the contract: where it has a
+recommendation - accept, partly accept, answer or reject - it applies it under §5 and the catalog's governance
+and versioning rules, and records and reports each as **applied by recommendation**, which the owner may
+overrule with a new amendment. It asks only what [AI_USAGE.md](AI_USAGE.md) §1 keeps a question, once each. This
+is the one place a session edits a contract another product owns (the catalog's `_meta/RULES.md` section 7).
+
+Track a portfolio-wide decision once in the canon with a checklist row for each affected repository. Use the
+[spec-draft tracking campaign](../skills/spec-draft/SKILL.md) (`-Tracking`) and file child tickets only where
+code changes are needed. Re-run repository checks to close rows mechanically. The round's catalog record holds
+the decisions, reasons, and obligations. A round ends its session: the next round starts in a fresh one.
 
 **Answering a sibling's question.** A question from another product about a shared contract is answered in
 a dated `RESPONSE` document. Contract facts cite the id and section; implementation facts cite code with

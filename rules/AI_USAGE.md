@@ -36,11 +36,33 @@ shares. Reconciled against the portfolio; per-project records in `contrib/`.
   it was weighed against and "owner may overrule", and named in one line of the final report, so the owner
   comes back for the rare exception instead of answering the common case (measured in S0039: 21% of
   unattended passes ended in `BlockQuestions`, and in 38 quiz sittings the owner took the first option in
-  89% of the answers). Only these stay questions: one-way and outward steps (publish, release, store
+  89% of the answers). In a pass only these stay questions: one-way and outward steps (publish, release, store
   submit), contract changes, scope, money, facts only the owner knows, and owner actions that must happen
   before implementation; which Block status fits a wait and what its note carries is
   [DEVELOPMENT.md](DEVELOPMENT.md) §8. A slow run is never asked about either: it is a release item, not a
   question.
+- **Where there is a recommendation, apply it and say so** (owner order of 2026-11-26). This covers the
+  sittings that collect decisions - a quiz of waiting tickets, a contract consolidation round
+  ([CONTRACTS.md](CONTRACTS.md) §4). A question or proposal with a recommended answer is not asked: the answer
+  is applied, written into its record and listed in the report as **applied by recommendation**, with the
+  alternative and "owner may overrule". Asked are the questions with no recommendation, and those whose
+  recommended answer would:
+  - take a one-way or outward step (publish, release, tag, store submit, sending or deleting something outside
+    the repository's own work);
+  - spend money;
+  - rest on a fact only the owner has;
+  - break a hard invariant ([INVARIANTS.md](INVARIANTS.md)) or reverse a recorded owner decision, weakening a
+    safety, security, privacy or data-preservation rule included;
+  - amend a shared contract anywhere but in a consolidation round.
+
+  An owner action is not a recommendation: it is shown to the owner, once for every ticket that waits on it.
+  An applied recommendation is never written as the owner's answer or words. An overrule is applied as a new
+  decision, and work already built on the old one is captured as a new ticket.
+- **A real review finding is fixed, not asked about** (owner order of 2026-11-26). A finding of a code review,
+  a review agent or an audit that the agent rates a real bug inside the work's scope is fixed in the same pass
+  and reported with its evidence. A finding outside that scope is still parked as a ticket
+  ([DEVELOPMENT.md](DEVELOPMENT.md) §8), a fix that falls under one of the five cases above is asked, and a review
+  whose procedure is report-only, or that the owner asked for as a report, changes nothing.
 - **Never ask the owner about bookkeeping** - a ticket's status, a carrier token, archival, a queue
   position. Decide, report it in one line, and show that the work is scheduled (package number, row
   position). Questions are for decisions that change code or product behaviour.

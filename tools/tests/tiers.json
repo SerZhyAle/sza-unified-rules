@@ -54,6 +54,7 @@
     {"path":"tools/tests/robot-bookkeeping.tests.ps1","tier":"fast","seconds":2.29,"measured":"2026-11-26","covers":"CANONR-0205: managed robot prompt, prepared context, status-aware logging and hooks, malformed result, and owner-checked lease release"},
     {"path":"tools/tests/verified-evidence.tests.ps1","tier":"fast","seconds":4.29,"measured":"2026-11-26","covers":"CANONR-0202, TASK-FLOW 0.48: the entry into Verified needs an executed-check line and no open RELEASE item; BlockNeedUserTest and a reaffirmation stay as before; list-thin-verified writes nothing, 7 cases"},
     {"path":"tools/tests/pass-ceiling.tests.ps1","tier":"fast","seconds":0.49,"measured":"2026-11-26","covers":"per-launch thresholds, profile defaults and validation, and handoff outcome precedence"},
-    {"path":"tools/tests/campaign-tracking.tests.ps1","tier":"fast","seconds":0.33,"measured":"2026-11-26","covers":"Campaign checklist rendering, verdict updates, and stale-write refusal"}
+    {"path":"tools/tests/campaign-tracking.tests.ps1","tier":"fast","seconds":0.33,"measured":"2026-11-26","covers":"Campaign checklist rendering, verdict updates, and stale-write refusal"},
+    {"path":"tools/tests/quiz-shared.tests.ps1","tier":"fast","seconds":1.58,"measured":"2026-11-26","covers":"CANONR-0214: quiz-list.ps1 prints one shared line for a question or owner action several waiting tickets carry in the same words, ids aside; different and done actions stay apart; -Json carries the items; writes nothing, 4 cases"}
   ]
 }

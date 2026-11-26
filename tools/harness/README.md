@@ -163,7 +163,8 @@ two seconds.
 `portfolio/quiz-list.ps1` is the mechanical half of the `spec-quiz` skill (`/spec-quiz`, `/sq`): it reads the ledgers
 of the current project, a named one or every registered one and lists the tickets in `BlockQuestions` with their
 reason notes, and for an id says what that id is in the current project and where else it waits (ids repeat across
-projects). It writes nothing. `pwsh -NoProfile -File tools/tests/quiz-list.tests.ps1` checks it over throwaway
+projects). A `shared:` line names a question or owner action that several of them carry in the same words
+(`tools/tests/quiz-shared.tests.ps1`). It writes nothing. `pwsh -NoProfile -File tools/tests/quiz-list.tests.ps1` checks it over throwaway
 repositories in a few seconds.
 
 `aliases/register-spec-commands.ps1` makes the spec commands answer to their bare and short names in a project: it

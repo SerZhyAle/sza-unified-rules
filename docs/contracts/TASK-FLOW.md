@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Contract | `TASK-FLOW` |
-| Version | 0.48, draft |
+| Version | 0.49, draft |
 | Home | the shared contracts catalog, domain `task-flow/` (the path is in [CLAUDE.md](../../CLAUDE.md)) |
 | Role | **shared implementation, partial**: `tools/harness/` supplies the ticket tools, repository runner and day-0 scaffold; `tools/harness/portfolio/` supplies the dispatcher, registry, queue, rank and event log. The open differences are the dated exceptions of the registry. The owner is `shared`, so this repository edits the contract only through the canon session |
 
@@ -52,6 +52,10 @@
   in the `## Last Audit` block and no open `RELEASE` item. `check-audit-recorded.ps1 -NewStatus Verified` applies it
   from `Assert-ClosingGates` (patterns in `_audit-evidence.ps1`), and `list-thin-verified.ps1` reports the rows that
   predate it. Covered by `verified-evidence`.
+- 0.49 (2026-11-26, CANONR-0214, section 25, rule 7): a quiz may close a `Q:` by the recommendation, recorded as
+  applied by recommendation, never a `DO:`. The `spec-quiz` skill and the spec-to-audit quiz reference carry it; the
+  exceptions have one home, `rules/AI_USAGE.md` section 1. `quiz-list.ps1` prints the lines several tickets share
+  (`quiz-shared`).
 - The CANONR-0197 exception and gap G11 are closed (2026-11-26): the rendered R0 launcher
   (`scaffold/templates/r0-runner.ps1.tpl`, filled by `init-task-flow.ps1`) and this repository's `r0.ps1` no longer
   rank `Implemented`; the campaign form of `portfolio/spec-draft.ps1` records `campaign` or the inherited `robot`
