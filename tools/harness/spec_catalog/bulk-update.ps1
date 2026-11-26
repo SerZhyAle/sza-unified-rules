@@ -200,13 +200,19 @@ Write-Catalog -Records ([object[]]$activeNow)
 # in-file header never drifts from the journal (shared fail-soft helper; only on
 # status changes - a priority-only batch leaves headers untouched).
 if ($PSBoundParameters.ContainsKey('Status')) {
+    $quizEntries = @{}
+    foreach ($move in $hookMoves) {
+        if ($move.Old -ne 'BlockQuestions' -and $move.New -eq 'BlockQuestions') {
+            $quizEntries[$move.Id] = Get-QuizEntryDay $now
+        }
+    }
     foreach ($ticketId in $Id) {
         $rec = $allRecords[$indexMap[$ticketId]]
         # S2581: the note reaches the header too, so `**Status note:**` cannot say one thing in
         # the spec while the journal says another. $null when omitted, which the helper reads as
         # "leave the header's note alone".
         $headerNote = if ($noteSupplied) { $StatusNote } else { $null }
-        [void](Sync-SpecHeaderStatus -PathRef $rec.file -Status $rec.status -StatusNote $headerNote)
+        [void](Sync-SpecHeaderStatus -PathRef $rec.file -Status $rec.status -StatusNote $headerNote -QuizEntryDay $quizEntries[$ticketId])
     }
 }
 

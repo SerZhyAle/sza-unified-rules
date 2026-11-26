@@ -91,8 +91,8 @@ function Test-IdMatch([string] $RowId, [string] $Wanted) {
 # A pass entering BlockQuestions writes '### Questions (v1, <date>)' into the ticket's spec file; the quiz asks
 # from a current block instead of researching the ticket again. This reader decides current-ness exactly as
 # rule 7 states it: the newest block that does not carry ' - answered <date>' on its heading is current while
-# (a) its date is not earlier than the ticket's latest entry into BlockQuestions - compared against the ledger
-# row's `updated` day, the day the row last moved - and (b) every 'Q:' text of the statusNote appears in it as a
+# (a) its date is not earlier than the ticket's latest entry into BlockQuestions (the ledger's `updated`
+# day is the fallback for older specs) and (b) every 'Q:' text of the statusNote appears in it as a
 # question line, compared after trimming and collapsing runs of white space. Everything else (no block, no spec
 # file, another version, a block that does not parse, only answered blocks) reads as "ask the pre-0.23 way":
 # research, then ask. The comparison never rewrites a line; the block is the writer's record to keep.
@@ -114,7 +114,7 @@ function Get-QuizQuestionBlock([string] $SpecPath, [string] $Note, [string] $Upd
     if ($freshest.version -cne 'v1') {
         $res.reason = ("version {0} is not v1" -f $freshest.version); return [pscustomobject]$res
     }
-    $day = Get-QuizEntryDay $Updated
+    $day = Get-QuizEntryDay $Updated $lines
     if ($day -and $freshest.date -lt $day) {
         $res.state = 'stale'; $res.version = $freshest.version; $res.date = $freshest.date
         $res.reason = ("dated {0}, older than the block entry {1}" -f $freshest.date, $day)

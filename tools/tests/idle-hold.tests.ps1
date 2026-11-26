@@ -9,7 +9,8 @@
     3 a spec file written more than 60 s after the newest counted run lifts the hold; 4 every doubt keeps the hold;
     5 one edit earns one pass; 6 the picker, the plan-file marker and the back-link writer are wired (read as text);
     7 the panel's walk applies the same lift (read as text); 8 this repository's R0 and the scaffold leave Implemented
-    out (read as text).
+    out (read as text); 9 repeat parks count and a forward move resets; 10 the three-row window
+    accepts a prior statusBefore and ignores the fourth preceding row.
 #>
 [CmdletBinding()]
 param()
@@ -122,6 +123,21 @@ try {
             [IO.File]::AppendAllLines($journal, [string[]]@(Row $status '2026-11-12T16:00:00' 'ok' $true 'In Progress' 'Implemented'), $utf8)
             Assert-That ((Get-IdleRunSeries -Id $status -Refresh).Count -eq 0) 'a forward move must reset'
         }
+        Assert-That ((Get-IdleRunSeries -Id 'Old').Count -eq 0) 'an old moved row without status fields still resets'
+    }
+    Run-Case '10. the repeat-park window reads statusBefore on the third preceding row and excludes the fourth' {
+        foreach ($id in 'Within', 'Outside') {
+            $rows = @(
+                (Row $id '2026-11-12T09:00:00' 'limit-hit' $false 'BlockQuestions' 'In Progress'),
+                (Row $id '2026-11-12T10:00:00' 'limit-hit'),
+                (Row $id '2026-11-12T11:00:00' 'limit-hit')
+            )
+            if ($id -eq 'Outside') { $rows += Row $id '2026-11-12T12:00:00' 'limit-hit' }
+            $rows += Row $id '2026-11-12T13:00:00' 'ok' $true 'In Progress' 'BlockQuestions'
+            [IO.File]::AppendAllLines($journal, [string[]]$rows, $utf8)
+        }
+        Assert-That ((Get-IdleRunSeries -Id 'Within' -Refresh).Count -eq 1) 'the third preceding row counts'
+        Assert-That ((Get-IdleRunSeries -Id 'Outside').Count -eq 0) 'the fourth preceding row is outside the window'
     }
 }
 finally {

@@ -1,4 +1,6 @@
 # TASK-FLOW rule 7 question blocks are shared by quiz discovery and the status writer.
+$script:QuizEntryPattern = '<!-- BlockQuestions entered: (\d{4}-\d{2}-\d{2}) -->'
+
 function ConvertTo-QuizFlatText([string] $Text) {
     return [regex]::Replace([string]$Text, '\s+', ' ').Trim()
 }
@@ -31,14 +33,19 @@ function Get-QuizNoteQuestions([string] $Note) {
     }
 }
 
-function Get-QuizEntryDay([string] $Updated) {
+function Get-QuizEntryDay([string] $Updated, [string[]] $Lines) {
+    foreach ($line in $Lines) {
+        if ($line -match "^$script:QuizEntryPattern$") { return $Matches[1] }
+        if ($line -match '^##\s') { break }
+    }
+    # Legacy specs have no entry marker. Their ledger's last update is the existing quiz fallback.
     return [regex]::Match($Updated, '\d{4}-\d{2}-\d{2}').Value
 }
 
 function Get-OpenQuizItems {
     param([string] $Note, [string] $Updated, [string[]] $Lines)
 
-    $day = Get-QuizEntryDay $Updated
+    $day = Get-QuizEntryDay $Updated $Lines
     $answered = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
     foreach ($block in (Get-QuizQuestionBlocks -Lines $Lines)) {
         if ($block.version -cne 'v1' -or -not $block.answered -or $block.date -lt $day -or $block.answered -lt $day) { continue }

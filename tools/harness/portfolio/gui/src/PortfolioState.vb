@@ -558,6 +558,7 @@ Public Class PortfolioState
     ' nothing about the ticket, so the walk steps over them (TASK-FLOW rule 24).
     Private Shared ReadOnly IdleDefaultOutcomes As String() = {"ok", "timeout", "claim-lost", "no-progress-or-claim-lost"}
     Private Shared ReadOnly IdleNeutralOutcomes As String() = {"limit-hit", "claim-lost-before-launch", "launch-failed"}
+    Private Shared ReadOnly IdleParkedStatuses As String() = {"BlockQuestions", "BlockExternal", "BlockByOtherTask"}
     ' The lift (_idle-runs.ps1 Test-IdleRunLifted): a spec file written more than this long after the newest counted run
     ' ended was edited since, and its ticket is not held.
     Private Const IdleLiftGraceSeconds As Double = 60
@@ -566,6 +567,8 @@ Public Class PortfolioState
         Public At As DateTime
         Public Moved As Boolean
         Public Outcome As String
+        Public StatusBefore As String
+        Public StatusAfter As String
     End Class
 
     ' What the journals alone say: every ticket at or past the threshold, with the finishedAt of its newest counted run.
@@ -579,9 +582,10 @@ Public Class PortfolioState
     Private Shared ReadOnly LedgerFileCache As New Dictionary(Of String, KeyValuePair(Of String, Dictionary(Of String, String)))(StringComparer.OrdinalIgnoreCase)
 
     ' The tickets of one repository the pickers pass over automatically (spec-next-preflight 'idle-hold'): the last
-    ' runner.idleRunThreshold runs of the ticket (2 unless the profile says) all ended without moving its status, and its
-    ' spec file was not edited since. The series is derived, never stored: from the end of the repository's own
-    ' runs-*.jsonl, oldest first by finishedAt, back to the first run that moved the status; it is cached until a journal
+    ' runner.idleRunThreshold counted runs (2 unless the profile says) left the ticket idle, and its spec file was not
+    ' edited since. Walk the journal's finishedAt order backwards to the first move that is not a repeat park.
+    ' TASK-FLOW rule 24 counts a park whose destination occurs in either status of the previous three rows. The
+    ' result is cached until a journal
     ' or the profile changes. The lift is asked on every call, because an edit of a spec file changes neither. Empty for
     ' a repository without journals.
     Public Shared Function GetIdleHeldIds(repoPath As String) As HashSet(Of String)
@@ -660,7 +664,10 @@ Public Class PortfolioState
                                     runs = New List(Of IdleRun)()
                                     byId(id) = runs
                                 End If
-                                runs.Add(New IdleRun With {.At = at, .Moved = Bool(doc.RootElement, "moved", False), .Outcome = Str(doc.RootElement, "outcome")})
+                                runs.Add(New IdleRun With {
+                                    .At = at, .Moved = Bool(doc.RootElement, "moved", False), .Outcome = Str(doc.RootElement, "outcome"),
+                                    .StatusBefore = Str(doc.RootElement, "statusBefore"), .StatusAfter = Str(doc.RootElement, "statusAfter")
+                                })
                             End Using
                         Catch
                         End Try
@@ -673,9 +680,22 @@ Public Class PortfolioState
                     Dim newest = DateTime.MinValue
                     For i = ordered.Count - 1 To 0 Step -1
                         Dim run = ordered(i)
-                        If run.Moved Then Exit For
-                        If IdleNeutralOutcomes.Contains(run.Outcome, StringComparer.OrdinalIgnoreCase) Then Continue For
-                        If Not outcomes.Contains(run.Outcome, StringComparer.OrdinalIgnoreCase) Then Exit For
+                        If run.Moved Then
+                            If Not IdleParkedStatuses.Contains(run.StatusAfter, StringComparer.OrdinalIgnoreCase) Then Exit For
+                            Dim repeatPark = False
+                            For j = i - 1 To Math.Max(0, i - 3) Step -1
+                                Dim prior = ordered(j)
+                                If String.Equals(prior.StatusBefore, run.StatusAfter, StringComparison.OrdinalIgnoreCase) OrElse
+                                    String.Equals(prior.StatusAfter, run.StatusAfter, StringComparison.OrdinalIgnoreCase) Then
+                                    repeatPark = True
+                                    Exit For
+                                End If
+                            Next
+                            If Not repeatPark Then Exit For
+                        Else
+                            If IdleNeutralOutcomes.Contains(run.Outcome, StringComparer.OrdinalIgnoreCase) Then Continue For
+                            If Not outcomes.Contains(run.Outcome, StringComparer.OrdinalIgnoreCase) Then Exit For
+                        End If
                         If count = 0 Then newest = run.At
                         count += 1
                     Next

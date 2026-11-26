@@ -253,6 +253,25 @@ function Write-BlFile([string] $Path, $Doc, [string] $Text) {
     if ($null -ne $stamp) { try { [IO.File]::SetLastWriteTimeUtc($Path, $stamp) } catch { } }
 }
 
+function Invoke-BlFileEdit([string] $File, [scriptblock] $Edit) {
+    # Local and qualified dependents can write the same blocker from different catalog processes.
+    # Hold the file's mutex across read and replace; never hold it across a status command.
+    $bytes = [Text.Encoding]::UTF8.GetBytes((ConvertTo-BlPathKey $File))
+    $key = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes))
+    $mutex = [Threading.Mutex]::new($false, "Sza-BlockLinks-$key")
+    $acquired = $false
+    try {
+        try { $acquired = $mutex.WaitOne([TimeSpan]::FromSeconds(3)) }
+        catch [Threading.AbandonedMutexException] { $acquired = $true }
+        if (-not $acquired) { throw "The back-links in $File are being updated." }
+        & $Edit
+    }
+    finally {
+        if ($acquired) { $mutex.ReleaseMutex() }
+        $mutex.Dispose()
+    }
+}
+
 # The section's line range in a list of lines: @{ start (heading index); end (exclusive) } or $null.
 function Get-BlSectionRange([string[]] $Lines) {
     for ($i = 0; $i -lt $Lines.Count; $i++) {
@@ -390,6 +409,7 @@ function Clear-BlParkStatuses([string] $File) {
 function Invoke-BlLink([string] $TicketId, [string] $WasStatus) {
     $rec = Read-BlLocalRecord $TicketId
     if (-not $rec) { Write-BlLine "$TicketId is not in this repository's ledger." 'Red'; return 2 }
+    if ($rec.status -ne 'BlockByOtherTask') { return 0 }
     if ($WasStatus -and $script:ActiveStatuses -notcontains $WasStatus) { $WasStatus = '' }
     $blockers = @(Get-BlBlockersOf $rec)
     if ($blockers.Count -eq 0) { Write-BlLine "$TicketId names no blocker; nothing to link."; return 0 }
@@ -402,7 +422,7 @@ function Invoke-BlLink([string] $TicketId, [string] $WasStatus) {
         else { Write-BlLine "$TicketId -> $($b.ref): this repository is not in the portfolio registry, so the other repository cannot name it; no back-link." 'Yellow'; continue }
         try {
             $blockerStatus = if ($RecordStatusAt -and $local -and -not $b.ref.Contains(':')) { $b.record.status }
-            $r = Set-BlBackLink $b.record.file $ref $WasStatus $blockerStatus
+            $r = Invoke-BlFileEdit $b.record.file { Set-BlBackLink $b.record.file $ref $WasStatus $blockerStatus }
             Write-BlLine "$($b.ref) <- Blocks: $ref ($r)"
         } catch {
             Write-BlLine "$($b.ref): cannot write the back-link into $($b.record.file): $($_.Exception.Message)" 'Yellow'
@@ -450,7 +470,7 @@ function Invoke-BlCheck([string] $TicketId, [string] $WasStatus, [switch] $Ignor
     foreach ($try in @($target, 'Draft' | Select-Object -Unique)) {
         try {
             $env:SZA_PROJECT_ROOT = $script:SelfRoot
-            $out = & $script:PwshExe -NoProfile -File $update -Id $TicketId -Status $try -StatusNote $note 2>&1 | Out-String
+            $out = & $script:PwshExe -NoProfile -File $update -Id $TicketId -Status $try -ExpectedStatus BlockByOtherTask -StatusNote $note 2>&1 | Out-String
             $code = $LASTEXITCODE
         } finally { $env:SZA_PROJECT_ROOT = $saved }
         if ($code -eq 0) {
@@ -468,7 +488,7 @@ function Invoke-BlRelease([string] $TicketId) {
     if (-not $rec) { Write-BlLine "$TicketId is not in this repository's ledger." 'Red'; return 2 }
     $open = @(Get-BlOpenLines $rec.file)
     if ($open.Count -eq 0) { return 0 }
-    if ($StatusMoved) { Clear-BlParkStatuses $rec.file }
+    if ($StatusMoved) { Invoke-BlFileEdit $rec.file { Clear-BlParkStatuses $rec.file } }
     $rc = 0
     foreach ($l in $open) {
         $k = $null; $i = $l.ref
@@ -495,11 +515,11 @@ function Invoke-BlRelease([string] $TicketId) {
         switch ($res.state) {
             'released' {
                 Write-BlLine "$($l.ref) released: $($res.message)" 'Green'
-                if (Close-BlBackLink $rec.file $l.ref $res.status) { }
+                [void](Invoke-BlFileEdit $rec.file { Close-BlBackLink $rec.file $l.ref $res.status })
             }
             'not-blocked' {
                 Write-BlLine "$($l.ref) is no longer blocked ($($res.status)); line closed."
-                [void](Close-BlBackLink $rec.file $l.ref $res.status)
+                [void](Invoke-BlFileEdit $rec.file { Close-BlBackLink $rec.file $l.ref $res.status })
             }
             'held' { Write-BlLine "$($l.ref) stays blocked: $($res.message)" }
             'refused' { Write-BlLine "$($l.ref) NOT released: $($res.message)" 'Yellow'; $rc = 1 }
@@ -527,7 +547,7 @@ function Invoke-BlSweep {
                 foreach ($b in @(Get-BlBlockersOf (Read-BlLocalRecord $id))) {
                     if (-not $b.record -or -not $b.record.file) { continue }
                     $ref = if ($b.root -and (ConvertTo-BlPathKey $b.root) -eq (ConvertTo-BlPathKey $script:SelfRoot)) { $id } else { $self }
-                    try { [void](Close-BlBackLink $b.record.file $ref $res.status) } catch { }
+                    try { [void](Invoke-BlFileEdit $b.record.file { Close-BlBackLink $b.record.file $ref $res.status }) } catch { }
                 }
             }
             'held' { Write-BlLine "$id stays blocked: $($res.message)" }

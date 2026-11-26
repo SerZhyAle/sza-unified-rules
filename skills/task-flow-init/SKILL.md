@@ -141,7 +141,8 @@ Put four facts in the project's agent-rules file (`CLAUDE.md`, else `AGENTS.md`)
 - tasks come from the ledger (`validate.ps1`, `select.ps1`, `search.ps1`) and are created only with `capture-draft.ps1`;
 - the owner's order is the queue file; finished work leaves it through the plan tool, not by hand;
 - how to run R0 (`./r0.ps1`, the dry-run and the ceiling), and the permission mode the owner chose;
-- the statuses a ticket can be in (`Block*` needs a `statusNote`; `Verified` needs a `## Last Audit` block).
+- the statuses a ticket can be in (`Block*` needs a `statusNote`; `Verified` needs a `## Last Audit` block that
+  records an executed command with `exit 0` and no open `RELEASE` item).
 
 Keep the core agent-rules file within the 20,000-character budget (hard limit 40,000,
 [AI_USAGE.md](../../rules/AI_USAGE.md) §5): if adding task-flow detail pushes the core over budget, place the

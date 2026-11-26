@@ -15,6 +15,8 @@
       4. Archiving the cross-repository blocker releases the last waiting ticket in the other repository.
       5. -Check releases a ticket whose Blocker: token was removed by hand.
       6. The fixed `**Depends on:**` reader stops at the end of its line and does not read a following bullet list.
+      7. An unchanged local blocker keeps its dependent parked through a sweep; an explicit check
+         honors Implemented opt-in, and a later blocker move clears the park status and releases the dependent.
 
     Spawns about ten pwsh processes.
     -KeepScratch leaves the repositories for inspection.
@@ -88,8 +90,8 @@ try {
         $r = Invoke-In $repoA $update @('-Id', 'S0002', '-Status', 'BlockByOtherTask', '-StatusNote', 'Blocker: S0001 Blocker: rb:S0001 - waits for both')
         Assert-That ($r.code -eq 0) "update exited $($r.code): $($r.output)"
         Assert-That ((Get-Spec $repoA 'S0001') -match '(?m)^## Blocked tickets\r?$') 'no section in the local blocker'
-        Assert-That ((Get-Spec $repoA 'S0001') -match '(?m)^- Blocks: S0002 \| was: Approved \| since: \d{4}-\d{2}-\d{2}\r?$') "local line missing: $(Get-Spec $repoA 'S0001')"
-        Assert-That ((Get-Spec $repoB 'S0001') -match '(?m)^- Blocks: ra:S0002 \| was: Approved \| since: ') "cross line missing: $(Get-Spec $repoB 'S0001')"
+        Assert-That ((Get-Spec $repoA 'S0001') -match '(?m)^- Blocks: S0002 \| was: Approved \| since: \d{4}-\d{2}-\d{2} \| at: Draft\r?$') "local line missing: $(Get-Spec $repoA 'S0001')"
+        Assert-That ((Get-Spec $repoB 'S0001') -match '(?m)^- Blocks: ra:S0002 \| was: Approved \| since: \d{4}-\d{2}-\d{2}\r?$') "cross line missing: $(Get-Spec $repoB 'S0001')"
     }
 
     Run-Case 'a second entry refreshes the open line instead of adding one' {
@@ -99,7 +101,7 @@ try {
         Assert-That ($r.code -eq 0) "update exited $($r.code): $($r.output)"
         $n = ([regex]::Matches((Get-Spec $repoA 'S0001'), '(?m)^- Blocks: S0003 ')).Count
         Assert-That ($n -eq 1) "S0003 has $n lines"
-        Assert-That ((Get-Spec $repoA 'S0001') -match '(?m)^- Blocks: S0003 \| was: Tactical ') 'the refresh lost was'
+        Assert-That ((Get-Spec $repoA 'S0001') -match '(?m)^- Blocks: S0003 \| was: Tactical \| since: [\d-]+ \| at: Draft\r?$') 'the refresh lost was or the entry status'
     }
 
     Run-Case 'archiving the local blocker frees the ticket it alone held and keeps the other blocked' {
@@ -144,6 +146,26 @@ $l = "**Depends on:**`n`n- S0291 one`n- S0292 two`n`n**Blocks:** S0240`n"
         $env:H = $harness; $env:SZA_PROJECT_ROOT = $repoA
         $o = (& pwsh -NoProfile -Command $probe 2>&1 | Out-String).Trim()
         Assert-That ($o -ceq 'S0026,S0029|S0291,S0292') "read: $o"
+    }
+
+    Run-Case 'a sweep respects the park marker and a blocker move clears it before release' {
+        $root = Join-Path $scratch 'local-park'
+        New-Repo $root @(
+            @{ id = 'S0001'; status = 'Implemented'; extra = "`n## Last Audit`n`nThe blocker is ready.`n`n- ``fixture check`` - exit 0`n" },
+            @{ id = 'S0002'; status = 'Draft'; extra = "**Accepts Implemented:** S0001`n" }
+        )
+        $park = Invoke-In $root $update @('-Id', 'S0002', '-Status', 'BlockByOtherTask', '-StatusNote', 'Blocker: S0001')
+        Assert-That ($park.code -eq 0 -and (Get-Spec $root 'S0001') -match '\| at: Implemented') $park.output
+        $sweep = Invoke-In $root $links @('-Sweep')
+        Assert-That ($sweep.code -eq 0 -and (Get-Status $root 'S0002') -eq 'BlockByOtherTask') $sweep.output
+        $check = Invoke-In $root $links @('-Check', '-Id', 'S0002', '-DryRun')
+        Assert-That ($check.code -eq 0 -and $check.output -match 'would move S0002') $check.output
+        Add-Content -LiteralPath (Join-Path $root 'PLAN/S0001_t.md') '- `block-links.ps1 -Sweep` - exit 0. The dependent was held.'
+        $move = Invoke-In $root $update @('-Id', 'S0001', '-Status', 'Verified')
+        Assert-That ($move.code -eq 0 -and (Get-Status $root 'S0002') -eq 'Draft') $move.output
+        $file = Get-ChildItem -LiteralPath $root -Recurse -Filter 'S0001_t.md' | Select-Object -First 1
+        $spec = [IO.File]::ReadAllText($file.FullName)
+        Assert-That ($spec -notmatch '\| at:' -and $spec -match '\| released: [\d-]+ -> Draft') $spec
     }
 }
 finally {

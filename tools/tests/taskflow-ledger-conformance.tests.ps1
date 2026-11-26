@@ -149,12 +149,16 @@ try {
             Assert-Equal ([IO.File]::ReadAllText($ledger).Trim()) $before 'the ledger and its note stay blocked'
             Assert-That ([IO.File]::ReadAllText($file).StartsWith($header)) 'the mirrored status and note stay blocked'
             $answered = $current.Replace('2026-11-15)', '2026-11-15) - answered 2026-11-15')
-            Write-Utf8 $file ($header + $owner + " - done 2026-11-15: observed the expected value`n" + $stale + $answered)
+            $row.updated = '2026-11-16 00:00'
+            Write-Utf8 $ledger (($row | ConvertTo-Json -Compress) + "`n")
+            Write-Utf8 $file ($header + "<!-- BlockQuestions entered: 2026-11-15 -->`n" +
+                $owner + " - done 2026-11-15: observed the expected value`n" + $stale + $answered)
             $accepted = Invoke-Tool $root $updater @('-Id', 'S0001', '-Status', 'In Progress')
             Assert-Equal $accepted.code 0 "recorded quiz answers: $($accepted.out)"
             $row = Get-Content -Raw -LiteralPath $ledger | ConvertFrom-Json
             Assert-Equal $row.status 'In Progress' 'the ticket is restored'
             Assert-That (-not $row.PSObject.Properties['statusNote']) 'the block reason is cleared'
+            Assert-That ([IO.File]::ReadAllText($file) -notmatch '<!-- BlockQuestions entered:') 'the entry marker is cleared'
         } finally {
             $env:SZA_PQ_IN_SYNC = $savedInSync
         }

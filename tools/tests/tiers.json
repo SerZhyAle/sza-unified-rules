@@ -51,6 +51,7 @@
     {"path":"hooks/tests/smoke-prefilters.ps1","tier":"fast","seconds":1.22,"measured":"2026-11-25","covers":"hooks.json PreToolUse bash pre-filters under Git Bash (guard-bash, guard-fire-and-forget, guard-uncapped-read, guard-rules-budget), 32 cases"},
     {"path":"hooks/tests/smoke-hooks.ps1","tier":"release","seconds":18.84,"measured":"2026-11-25","covers":"shipped hooks both-sided refusal/allow/rewrite/warn/inject smoke suite (guard-bash, guard-fire-and-forget, guard-uncapped-read, guard-rules-budget, on-user-prompt, session-start), 63 cases"},
     {"path":"tools/tests/skill-frontmatter.tests.ps1","tier":"fast","seconds":1.77,"measured":"2026-11-25","covers":"CANONR-0192: check 5 of check-rules.ps1 over scratch trees - refused frontmatter shapes named by file, line and reason, accepted shapes and the 1024-character limit, 31 cases"},
-    {"path":"tools/tests/robot-bookkeeping.tests.ps1","tier":"fast","seconds":2.29,"measured":"2026-11-26","covers":"CANONR-0205: managed robot prompt, prepared context, status-aware logging and hooks, malformed result, and owner-checked lease release"}
+    {"path":"tools/tests/robot-bookkeeping.tests.ps1","tier":"fast","seconds":2.29,"measured":"2026-11-26","covers":"CANONR-0205: managed robot prompt, prepared context, status-aware logging and hooks, malformed result, and owner-checked lease release"},
+    {"path":"tools/tests/verified-evidence.tests.ps1","tier":"fast","seconds":4.29,"measured":"2026-11-26","covers":"CANONR-0202, TASK-FLOW 0.48: the entry into Verified needs an executed-check line and no open RELEASE item; BlockNeedUserTest and a reaffirmation stay as before; list-thin-verified writes nothing, 7 cases"}
   ]
 }

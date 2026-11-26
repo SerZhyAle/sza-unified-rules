@@ -317,7 +317,12 @@ table, the grep rules, and the `## Last Audit` block format. Complete the
 The self-audit is a **separate, static pass** against the spec's own contract - not a re-run of the build.
 That is what keeps it cheap enough to actually run.
 
-Two rules give "Verified" its meaning, and both are **refusals**, not advice:
+Three rules give "Verified" its meaning, and all are **refusals**, not advice:
+
+- **`Verified` rests on an executed check (TASK-FLOW 0.48).** The `## Last Audit` block records at least one
+  command with `exit 0` under `### Checks run` and has no open `RELEASE` item, or the status tool refuses the move.
+  A static-only audit, or one with a check left for the release, sets `Implemented`, and the report writes it as
+  `Implemented (unrun checks: <n>)`.
 
 - **An open MANUAL item can never sit beneath a Verified.** An unresolved manual or on-target signal keeps
   the ticket at `BlockNeedUserTest` or `Partial` until a human closes it and a **re-audit** turns it green.

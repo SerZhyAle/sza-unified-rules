@@ -2026,7 +2026,11 @@ function Assert-ClosingGates {
         # has run, so demanding the block there would require a verdict ahead of the run that
         # produces it. Kept a separate list rather than a flag inside the loop so "which statuses
         # this checker guards" stays a property of the list a checker is in.
-        if ($NewStatus -eq 'Verified') { $checkers.Add('check-audit-recorded.ps1') }
+        # TASK-FLOW 0.48: and the block records an executed check with no release item open.
+        if ($NewStatus -eq 'Verified') {
+            $checkers.Add('check-audit-recorded.ps1')
+            $checkerArgs['check-audit-recorded.ps1'] = @{ NewStatus = $NewStatus }
+        }
     }
 
     Invoke-SpecCheckers -Id $Id -NewStatus $NewStatus -Checkers $checkers -CheckerArgs $checkerArgs
@@ -2080,7 +2084,8 @@ function Sync-SpecHeaderStatus {
         # have thrown on every caller that omits this, which is archive.ps1 and bulk-update.ps1,
         # i.e. the release archive sweep. Left undefaulted the parameter is simply $null when
         # omitted, and the guards below already test for that.
-        [ref] $Wrote
+        [ref] $Wrote,
+        [string] $QuizEntryDay
     )
     if ($null -ne $Wrote) { $Wrote.Value = $false }
     try {
@@ -2089,8 +2094,8 @@ function Sync-SpecHeaderStatus {
         $raw = Get-Content -LiteralPath $abs -Raw
 
         # Capture: (1) **Status:** line body  (2) its line ending
-        #          (3) optional immediately-following **Status note:** line with its ending
-        $rx = [regex]'(?m)(^\*\*Status:\*\*[^\r\n]*)(\r?\n)(\*\*Status note:\*\*[^\r\n]*\r?\n?)?'
+        #          (3) optional **Status note:** line, (4) optional quiz entry marker
+        $rx = [regex]("(?m)(^\*\*Status:\*\*[^\r\n]*)(\r?\n)(\*\*Status note:\*\*[^\r\n]*\r?\n?)?(?<quiz>$script:QuizEntryPattern(?:\r?\n|$))?")
         $m  = $rx.Match($raw)
         if (-not $m.Success) { return $false }
 
@@ -2110,6 +2115,10 @@ function Sync-SpecHeaderStatus {
             if ($m.Groups[3].Success -and $m.Groups[3].Value -ne '') {
                 $newBlock += $m.Groups[3].Value
             }
+        }
+        if ($Status -eq 'BlockQuestions') {
+            if ($QuizEntryDay) { $newBlock += "<!-- BlockQuestions entered: $QuizEntryDay -->" + $lineEnd }
+            else { $newBlock += $m.Groups['quiz'].Value }
         }
 
         # Splice: everything before the header block + the new block + everything after,

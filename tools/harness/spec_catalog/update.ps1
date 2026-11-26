@@ -170,6 +170,18 @@ if ($Tier -ge 0) {
     else { $updated | Add-Member -NotePropertyName 'tier' -NotePropertyValue $Tier }
 }
 
+# Closing gates: any transition INTO a closed status runs the durable-evidence contract
+# (S1606) and the carried-open-item contract (S1607). Both live in Assert-ClosingGates so
+# this path and close.ps1 enforce the same set - a second copy here is what let close.ps1
+# drift into enforcing nothing at all.
+if ($PSBoundParameters.ContainsKey('Status')) {
+    # S2581 - the note travels with the transition. The gate judges what is being WRITTEN, and
+    # the journal below still holds the previous note, so a checker reading the record would
+    # validate the text being replaced rather than the text replacing it.
+    Assert-ClosingGates -Id $Id -OldStatus $oldStatus -NewStatus $Status `
+        -StatusNote ([string]$StatusNote) -NoteSupplied ($PSBoundParameters.ContainsKey('StatusNote'))
+}
+
 # Owner-Inputs gate: any transition INTO Approved requires the spec file's
 # "Owner inputs (Approval gate)" subsection (found by heading text) to be present and every bullet
 # inside it to carry a concrete value. The set of bullets is decided by /spec
@@ -188,18 +200,6 @@ if ($PSBoundParameters.ContainsKey('Status') -and $Status -eq 'Approved' -and $o
             throw ("Cannot promote '{0}' to Approved: the Owner inputs section is incomplete. Fill every bullet present in it with a concrete value (placeholders in square brackets are rejected), ensure 'Related tickets' is present, then re-run update.ps1." -f $Id)
         }
     }
-}
-
-# Closing gates: any transition INTO a closed status runs the durable-evidence contract
-# (S1606) and the carried-open-item contract (S1607). Both live in Assert-ClosingGates so
-# this path and close.ps1 enforce the same set - a second copy here is what let close.ps1
-# drift into enforcing nothing at all.
-if ($PSBoundParameters.ContainsKey('Status')) {
-    # S2581 - the note travels with the transition. The gate judges what is being WRITTEN, and
-    # the journal below still holds the previous note, so a checker reading the record would
-    # validate the text being replaced rather than the text replacing it.
-    Assert-ClosingGates -Id $Id -OldStatus $oldStatus -NewStatus $Status `
-        -StatusNote ([string]$StatusNote) -NoteSupplied ($PSBoundParameters.ContainsKey('StatusNote'))
 }
 
 $updated.updated = Get-Now
@@ -253,8 +253,9 @@ $noteExplicit  = $PSBoundParameters.ContainsKey('StatusNote')
 # repair a drifted header on the way past.
 $headerWrote = $false
 if ($PSBoundParameters.ContainsKey('Status') -or $noteExplicit) {
+    $quizEntryDay = if ($statusChanged -and $updated.status -eq 'BlockQuestions') { Get-QuizEntryDay $updated.updated }
     $headerOk = Sync-SpecHeaderStatus -PathRef $updated.file -Status $updated.status `
-        -StatusNote $resolvedNote -Wrote ([ref]$headerWrote)
+        -StatusNote $resolvedNote -QuizEntryDay $quizEntryDay -Wrote ([ref]$headerWrote)
     if ($headerOk -and $headerWrote) {
         $noteHint = if ($null -ne $resolvedNote -and $resolvedNote -ne '') { ' + note' } elseif ($resolvedNote -eq '') { ' (note cleared)' } else { '' }
         Write-Host ("  header synced -> {0}{1}" -f $updated.status, $noteHint) -ForegroundColor DarkGray

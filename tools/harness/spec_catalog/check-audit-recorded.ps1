@@ -1,19 +1,32 @@
 <#
 .SYNOPSIS
-    Gate: a spec handed on as Verified or BlockNeedUserTest carries a written verdict (S2298, S2367).
+    Gate: a spec handed on as Verified or BlockNeedUserTest carries a written verdict (S2298, S2367), and one handed
+    on as Verified also records an executed check and no open release item (TASK-FLOW 0.48).
 
 .PARAMETER Id
     Ticket id, Sxxxx.
 
+.PARAMETER NewStatus
+    The status being entered. With `Verified` the block is also judged for its evidence; without it, or with any
+    other value, only its presence is.
+
 .NOTES
+    The evidence of a Verified entry (patterns in _audit-evidence.ps1):
+      executed check - at least one line matching
+          (?i)^(?!\s*(?:(?:\d+\.|[-*+])\s+)?\[ \]).*`[^`]+`.*?\bexit(?:\s+code)?\s*[:=]?\s*0\b
+        that is, a command between backticks followed on the same line by `exit 0`, not an unticked list item;
+      no open release item - the `**Counts:**` line reads `RELEASE 0` where it names RELEASE, and no line of the
+        block starts with the word RELEASE (a line that reads `RELEASE: none` excepted).
+
     Exit codes:
-      0 - the spec carries a non-empty `## Last Audit` block.
-      1 - the block is absent, or present with nothing under it.
+      0 - the spec carries a non-empty `## Last Audit` block, and for Verified the evidence above.
+      1 - the block is absent or empty, or a Verified entry lacks the evidence.
       2 - bad invocation (malformed id, or an id no record carries), or catalog / spec unreadable.
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)][string] $Id
+    [Parameter(Mandatory)][string] $Id,
+    [string] $NewStatus
 )
 
 . (Join-Path $PSScriptRoot '..\_profile.ps1')
@@ -48,10 +61,11 @@ param(
 #     evidence as no block, only with a table of contents.
 #   - Archived is not reached: Assert-ClosingGates gates only Implemented and Verified.
 #
-# Exit codes: 0 = the spec carries a non-empty audit block. 1 = block absent or empty.
-#             2 = bad invocation, or catalog / spec unreadable.
+# Exit codes: 0 = the spec carries a non-empty audit block (for Verified, with its evidence). 1 = block absent or
+#             empty, or the evidence missing. 2 = bad invocation, or catalog / spec unreadable.
 
 . (Join-Path $PSScriptRoot '_lib.ps1')
+. (Join-Path $PSScriptRoot '_audit-evidence.ps1')
 
 if (-not (Test-SzaTicketId $Id)) {
     # -ErrorAction Continue, not a bare Write-Error: _lib.ps1 sets $ErrorActionPreference = 'Stop',
@@ -113,6 +127,21 @@ if ($section.Count -eq 0 -or $content.Count -eq 0) {
     Write-Output "  carried none either. That was instruction, not forgetfulness: /spec-check may"
     Write-Output "  not run before parking, so the parking command writes the block itself."
     exit 1
+}
+
+if ($NewStatus -eq 'Verified') {
+    $evidence = Get-AuditEvidence -Lines @($section | ForEach-Object { $_.Text })
+    if ($evidence.Missing.Count -gt 0) {
+        Write-Output "FAIL $Id"
+        foreach ($m in $evidence.Missing) { Write-Output ("- {0}: {1}." -f $rel, $m) }
+        Write-Output ""
+        Write-Output "Verified says a check ran and none is left to run (TASK-FLOW 0.48)."
+        Write-Output ("Set the ticket to Implemented and report it as 'Implemented (unrun checks: {0})'." -f $evidence.Unrun)
+        Write-Output "Verified is entered after the audit block records each executed check on its own line,"
+        Write-Output "for example:  - ``<command>`` - exit 0"
+        Write-Output "and its Counts line reads RELEASE 0. Never write a line for a command that did not run."
+        exit 1
+    }
 }
 
 Write-Output "PASS $Id"

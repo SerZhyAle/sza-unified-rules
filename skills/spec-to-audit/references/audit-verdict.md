@@ -9,6 +9,10 @@ It re-derives its verdict from the spec's own contract using greps and file chec
 build.** That is what keeps it cheap enough to actually run every time, and it is how the strongest existing
 implementation in the portfolio works.
 
+Static does not mean nothing ran. **`Verified` rests on a check this ticket executed** - the evidence Stage 4
+produced, recorded in the block with its command and exit code. An audit that only read files ends at
+`Implemented`.
+
 Extract the verification contract from two places:
 
 - **the spec** - goals, constraints, research items, acceptance criteria;
@@ -32,11 +36,13 @@ Then run each check and record exactly one outcome.
 
 | Verdict | Condition |
 | --- | --- |
-| **Verified** | every check is PASS, MANUAL, EXEMPT or RELEASE, with **zero WARN and zero FAIL** |
+| **Verified** | every check is PASS, EXEMPT or a closed MANUAL, with **zero WARN, zero FAIL and zero RELEASE**, and at least one executed check recorded under `### Checks run` |
+| **Implemented** | zero WARN and zero FAIL, but a RELEASE item is open or no check was executed |
 | **Partial** | zero FAIL, at least one WARN |
 | **Broken** | at least one FAIL |
 
-Auto-chain: `Partial` or `Broken` -> the fix pass -> re-audit. `Verified` -> stop.
+Auto-chain: `Partial` or `Broken` -> the fix pass -> re-audit. `Verified` -> stop. `Implemented` -> stop, and the
+report names the ticket as `Implemented (unrun checks: <the RELEASE count>)`.
 
 ## Grep rules
 
@@ -70,8 +76,11 @@ audit file per run, which accumulates noise nobody reads.
 ```markdown
 ## Last Audit
 
-**Date:** <YY-MM-DD HH:mm> | **Mode:** <static|re-audit|sweep> | **Outcome:** <Verified|Partial|Broken>
+**Date:** <YY-MM-DD HH:mm> | **Mode:** <static|re-audit|sweep> | **Outcome:** <Verified|Implemented|Partial|Broken>
 **Counts:** PASS <n> | WARN <n> | FAIL <n> | MANUAL <n> | UNCHECKABLE <n> | EXEMPT <n> | RELEASE <n>
+
+### Checks run
+- `<command>` - exit <code> - expected: <..> | actual: <..>
 
 ### Action items
 1. <finding> - <file:line> - <what must change>
@@ -81,11 +90,18 @@ audit file per run, which accumulates noise nobody reads.
 - [ ] <the check a human must run, and what would count as passing>
 ```
 
+**Every executed check is one line under `### Checks run`**: the command between backticks, then `exit <code>`. The
+status tool refuses `Verified` unless the block holds at least one such line with `exit 0`, its `RELEASE` count is 0
+and no line of it starts with the word `RELEASE` (TASK-FLOW 0.48; the patterns are in
+`tools/harness/spec_catalog/_audit-evidence.ps1`). Never write the line for a command that did not run in this
+ticket, and with nothing executed write no line at all.
+
 **Write the `**Counts:**` line in exactly that shape** - all seven words and a number after each, on one line, as the
-first such line of the block - so that a script can read the tally. The canon's harness no longer acts on it: a ticket
-that stays `Implemented` is not offered by the automatic ranking whatever its counts say (TASK-FLOW rule 18), and the
-hold that once stamped the code tree after a release-only audit is withdrawn (rule 67, 0.43). What stops a pass that
-works a ticket without moving it is the idle hold of rule 24.
+first such line of the block - so that a script can read the tally. The canon's harness reads its `RELEASE` figure at
+the entry into `Verified` and acts on no other: a ticket that stays `Implemented` is not offered by the automatic
+ranking whatever its counts say (TASK-FLOW rule 18), and the hold that once stamped the code tree after a
+release-only audit is withdrawn (rule 67, 0.43). What stops a pass that works a ticket without moving it is the idle
+hold of rule 24.
 
 ## The probe-invariant sweep
 

@@ -275,7 +275,7 @@ try {
         Move-Ticket $p 'S0008' 'BlockQuestions' 'Q: which owner decision is this waiting for?'
         Move-Ticket $p 'S0009' 'BlockExternal' 'waiting for a vendor'
         $spec = Join-Path $p (Get-Row $p 'S0010').file
-        Add-Content $spec "`n## Last Audit`n`nChecked by hand for the fixture: the result covers the task.`n"
+        Add-Content $spec "`n## Last Audit`n`nChecked by hand for the fixture: the result covers the task.`n`n- ``fixture check`` - exit 0`n"
         Move-Ticket $p 'S0010' 'Verified'
         $reached = @()
         foreach ($row in (Get-Ledger $p)) {
@@ -530,7 +530,7 @@ try {
         $p = New-Project 'b-shippkg' @('one', 'two', 'three')
         $queue = Join-Path $p 'PLAN/RELEASE_QUEUE.md'
         $done = Join-Path $p 'PLAN/RELEASE_QUEUE_DONE.md'
-        Add-Content (Join-Path $p (Get-Row $p 'S0001').file) "`n## Last Audit`n`nChecked by hand for the fixture: the result covers the task.`n"
+        Add-Content (Join-Path $p (Get-Row $p 'S0001').file) "`n## Last Audit`n`nChecked by hand for the fixture: the result covers the task.`n`n- ``fixture check`` - exit 0`n"
         Move-Ticket $p 'S0001' 'Verified'
         Move-Ticket $p 'S0002' 'Implemented'
         $dry = Assert-Tool $p 'spec_catalog/ship-package.ps1' @('-Version', '1.0.0', '-DryRun')

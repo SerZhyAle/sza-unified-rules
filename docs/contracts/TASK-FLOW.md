@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Contract | `TASK-FLOW` |
-| Version | 0.46, draft |
+| Version | 0.48, draft |
 | Home | the shared contracts catalog, domain `task-flow/` (the path is in [CLAUDE.md](../../CLAUDE.md)) |
 | Role | **shared implementation, partial**: `tools/harness/` supplies the ticket tools, repository runner and day-0 scaffold; `tools/harness/portfolio/` supplies the dispatcher, registry, queue, rank and event log. The open differences are the dated exceptions of the registry. The owner is `shared`, so this repository edits the contract only through the canon session |
 
@@ -40,9 +40,18 @@
   the text, with the reference R0, were accepted the same day as 0.44 (CANONR-0198). The release-tier suites that cover
   the amendments have not run. No rule asks the plan tool to re-lay a repository's own queue file in the portfolio
   order (rule 15 forbids a script to reorder its rows), so that is no gap.
-- 0.46 (2026-11-26, CANONR-0203, section 22: a repeat park, an `Implemented` blocker, an unchanged blocker and the
-  return from `BlockQuestions`) is ahead of the harness; the dated exception stands in the registry until that ticket
-  closes it.
+- 0.46 (2026-11-26, CANONR-0203, section 22): repeat parks count toward the idle hold. A finished
+  `Implemented` blocker releases a dependent that names it in `**Accepts Implemented:**`, and a local blocker
+  unchanged since the park holds the dependent until a status move or an explicit dependency check. The
+  status writer checks current question and action marks when leaving `BlockQuestions`. Covered by
+  `idle-hold`, `picker-eligibility` and `taskflow-ledger-conformance`. The PQShell build and the full
+  back-link suite are release checks.
+- 0.47 (2026-11-26, CANONR-0204, section 23: a per-launch ceiling of the repository runner and its context handoff,
+  rules 25 and 46) is ahead of the harness; the dated exception stands in the registry until that ticket closes it.
+- 0.48 (2026-11-26, CANONR-0202, section 24, rules 6 and 8): a new entry into `Verified` needs an executed-check line
+  in the `## Last Audit` block and no open `RELEASE` item. `check-audit-recorded.ps1 -NewStatus Verified` applies it
+  from `Assert-ClosingGates` (patterns in `_audit-evidence.ps1`), and `list-thin-verified.ps1` reports the rows that
+  predate it. Covered by `verified-evidence`.
 - The CANONR-0197 exception and gap G11 are closed (2026-11-26): the rendered R0 launcher
   (`scaffold/templates/r0-runner.ps1.tpl`, filled by `init-task-flow.ps1`) and this repository's `r0.ps1` no longer
   rank `Implemented`; the campaign form of `portfolio/spec-draft.ps1` records `campaign` or the inherited `robot`

@@ -153,7 +153,8 @@ pwsh -NoProfile -WorkingDirectory "<project root>" -File "<root>/tools/harness/l
 
 Release on every exit - finished, blocked, or stopped by an error - so the queue never waits on a dead lease. Then
 one block: the ticket, `Было` and `Стало` (status), what was done in each stage reached, what is still open and who
-owns it, and the next step if there is one. When the next step is a release, say so and stop
+owns it, and the next step if there is one. A ticket left at `Implemented` with release items open is written
+`Implemented (unrun checks: <n>)`. When the next step is a release, say so and stop
 ([release](../release/SKILL.md)).
 
 ## What this skill never does
