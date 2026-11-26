@@ -16,6 +16,10 @@ Moved verbatim from [CLAUDE.md](../../CLAUDE.md) on 2026-11-25. The always-on ru
   written (`canon.docDigests`), so a reconciliation re-reads those and nothing else - neither the version number
   nor the stamp's age decides anything (`RULE-DELIVERY` rule 5). This repo, role `canon-home`, is never stale
   against itself.
+- **A rule doc does not grow for free.** `tools/rules-size-budget.json` holds one size line per `rules/*.md`
+  (bytes without CR), and `check-rules.ps1` refuses a doc above it: delete as much in the same edit, or raise the
+  line with the date and the reason. A new doc gets its line in the same edit. The task-flow contract has the same
+  budget in the catalog, `_meta/SIZE_BUDGET.md`, judged by `check-contracts.ps1`.
 - **Editing a skill**: the SKILL.md body is what loads on trigger; heavy payload goes in `references/`
   beside it. Keep the frontmatter `description` written in the words the owner actually uses to ask for the
   task, in both languages where that is how the request arrives - it is the trigger, not a summary.

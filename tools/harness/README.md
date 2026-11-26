@@ -42,7 +42,7 @@ harness or a migration.
 ## Day 0 of a new project
 
 A project with nothing yet runs `scaffold/init-task-flow.ps1 -Root .` once: it creates the stores the ticket
-tools write into, the three plan files, `TICKET_TEMPLATE.md`, an **R0 launcher** (`r0.ps1`) rendered from the
+tools write into, the queue file, `TICKET_TEMPLATE.md`, an **R0 launcher** (`r0.ps1`) rendered from the
 project's profile, and the **forwarder** `tools/harness.ps1` - the project's one entry point here, resolved against
 the newest installed plugin on every call (`pwsh -NoProfile -File tools/harness.ps1 spec_catalog/validate`; skip it
 with `-NoForwarder` when the profile maps entry points of its own). Tickets are then created with `spec_catalog/capture-draft.ps1`, which writes the ledger row and
@@ -147,8 +147,12 @@ them off).
 registered project and reports, read only, whether `pq` will work the ticket and at which position in the
 project's own queue (a hold, a disabled project or a missing registration is reported, never undone).
 `-Attach "<path;path>"` copies screenshots and logs into `<ticket>/attachments/` beside the spec and links them in
-section 0, in every project; `spec_catalog/attachment-capture.ps1` holds the copy and the links for every capture path.
+section 0, in every project; `spec_catalog/attachment-capture.ps1` holds the copy and the links for every capture path,
+and writes the request text once even when a template carries a second `{{TEXT}}` token.
 `pwsh -NoProfile -File tools/tests/spec-draft.tests.ps1` checks it over throwaway repositories.
+`spec_catalog/list-fat-specs.ps1 -Root <repo> [-OverKB 40]` is the read-only list of spec files above a size, each with
+its three biggest sections. `spec_catalog/check-spec-size.ps1`, a closing gate, refuses a new entry into
+`Implemented`, `Verified` or `BlockNeedUserTest` of a spec above 40 KB that links no evidence log (TASK-FLOW 0.53).
 
 `portfolio/app-commands-list.ps1` is the discovery half of the APP-COMMANDS contract (rule 20): it walks the registered
 repositories and prints the commands of each one's manifests - `docs/cli-commands.json` for the main program and

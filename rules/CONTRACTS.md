@@ -16,6 +16,10 @@ starts a catalog change and one after it, a commit flow of its own that needs no
 the catalog: it edits the files it may edit, and reports what it changed. Nobody runs a command there that
 discards work. The detail is the catalog's `_meta/RULES.md` section 6.
 
+**Any canon-repo session is a canon session, an unattended pass included; one writes at a time** - an approved
+amendment is made by the pass itself, under `tools/contracts-writer-lock.ps1` from the first snapshot to the last,
+and the version to bump is read after the grant (CANONR-0225).
+
 ---
 
 ## 1. What a contract is

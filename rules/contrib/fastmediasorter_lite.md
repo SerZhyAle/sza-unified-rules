@@ -15,11 +15,10 @@ winget + Store, MSIX `YY.(M*100+D).HHmm.0` remap, build-vs-release wall, committ
 co-ships a **separate companion program** in every channel, and it is where the concrete **winget
 failure-mode list** and the **frozen-anchor-vs-visible-name decoupling** were learned.
 
-> **Keep this note in the record.** Current facts, edited in place. Never append a dated section to this file:
-> what happened and when goes to the file of the same name under `history/`
-> ([the rules of that folder](history/README.md)), which is not reading for a task. A delta the core absorbed,
-> a candidate that was applied or refused and a question that was answered are deleted here; the history
-> section of that day says what became of them.
+> **Keep this note in the record.** Current facts, edited in place. Never append a dated section to this file,
+> and append nothing under `history/` either: those files are frozen ([the rules of that folder](history/README.md))
+> and are not reading for a task. A delta the core absorbed, a candidate that was applied or refused and a
+> question that was answered are deleted here.
 
 ## Overlay facts (verified against this repo; corrected in place 2026-10-26, ticket 273)
 
@@ -187,8 +186,7 @@ Format: Channel | Trigger | Cost | Auth | Signer | Listing source | Frozen ancho
   fresh clone lacks it. This repo instead **commits** the worker via a narrow `.gitignore` negation
   (`!payload/companion/fms-share-worker.exe` + `.sha256`), so a fresh clone **has** the Share feature - at
   the cost of tracking a ~binary from another repo. Both are valid; the choice is "fresh-clone-works" vs
-  "no binary in history". (Note: `CLAUDE.md` still says the worker is gitignored and a clone lacks it - that
-  text is stale vs the live `.gitignore`.) Reinforces FileDO's "a repo may deliberately track build output"
+  "no binary in history". Reinforces FileDO's "a repo may deliberately track build output"
   candidate (evidence: `.gitignore:8-14`, `git ls-files payload/` -> worker tracked).
 
 ### PLATFORM_OVERLAYS.md (Cross-project contracts)
@@ -209,9 +207,32 @@ owner these rules describe), LOCALIZATION (EN/RU/UK READMEs + site, already core
 (Pages from root - the Overlay A default), SUPPORT_AND_FEEDBACK (`AppFileLogger` current.log intake -
 standard).
 
-## Open questions for the owner (project-specific, not folded into the core)
-- **Stale CLAUDE.md vs live `.gitignore`**: the FMS rules file says the worker is gitignored / absent on a
-  fresh clone, but the live `.gitignore` negation commits it. The **universal** rule ("`.gitignore` and the
-  rules file must agree; a claim of gitignored-while-committed is drift to fix") landed in
-  REPOSITORY_LAYOUT.md, but the concrete CLAUDE.md fix is a project edit outside this collection phase - fix
-  the rules file to say "committed", or revert to gitignored? (Owner's call; not a core-doc change.)
+## Process facts (current)
+- **Release package plan (`RELEASE_AND_DISTRIBUTION` §8): in use**, as a Git-ignored working artifact. The
+  ticket ledger `docs/specifications/spec-catalog.jsonl` (`FMSWIN-####`) is written through the harness; its
+  plan tool renders `RELEASE_QUEUE.md`, `RELEASE_READY.md` and `RELEASE_QUEUE_DONE.md` beside it, in the
+  owner's line order; `Implemented`, `Verified` and `BlockNeedUserTest` count as ready (evidence: `CLAUDE.md`
+  rule table, `.claude/rules/canon-overlay.md`).
+- **Rebuilt release artifacts (`BUILD-EVIDENCE` rule 8, binding 1).** The last step of `release.yml` before
+  publication runs `tools/Test-ArtifactVersion.ps1` over the staged programs and both setups, then `-Run`
+  (`version --json`) over the .NET 10 programs. No test suite runs in that job. Not yet executed by a tag run.
+- **Two document corpora.** The tracked docs are judged by `tools/Test-DocRegistry.ps1`; the Git-ignored
+  `docs/specifications/` carries its own `DOCUMENT_REGISTRY.jsonl`, judged by the hand-run
+  `tools/Test-LocalDocRegistry.ps1` (`done/` frozen). `temp/` belongs to neither.
+
+## Divergences kept
+- **AI_USAGE, an unclear request:** a target screen, runtime or expected outcome that is not clearly named is
+  asked, not researched and assumed (owner decision, "Clarify ambiguity first"); an unattended pass records its
+  assumptions in the ticket.
+- **LOCALIZATION §3, `og:locale`:** the Italian pages carry `it_IT`; the canon map lists `id_ID` and omits
+  Italian (canon ticket CANONR-0230).
+- **`SZA-VER04` on root `index.html`:** the warned version-bearing link is rendered from the release manifest,
+  as `DOCUMENTATION_CONCEPT` §4 asks (canon ticket CANONR-0229). It is the gate's one remaining warning.
+
+## Open items
+- **Old invariant numbers** (12, 16, 17) are still cited in code and tool comments and in data strings
+  (`src/Modern` project file, `src/OptionalRuntimeManager.vb`, an `exchange-server` test,
+  `publishing/store/screenshot-copy.json` and `screenshots/README.md`, `tests/Integration/SitePositioning.ps1`,
+  `tools/Build-SitePages.ps1`, `tools/Test-SitePositioning.ps1`, `tools/site-copy.json`, the `ground` strings of
+  `tools/site-facts.json`, `tools/trust-copy.json`). The rules live in `DOCUMENTATION_CONCEPT` §1 and §5 and in
+  `SECURITY_AND_PRIVACY` §6; repoint a citation when its file is next edited.

@@ -17,11 +17,10 @@ than shared code, and the first adopter of the shipped harness that never had a 
 Public presence since 2026-11-13 (section "Public presence 2026-11-13"): a public GitHub repository, a GitHub Pages
 privacy site and two Google Play Console apps, all created on the owner's order; nothing is published on Google Play yet.
 
-> **Keep this note in the record.** Current facts, edited in place. Never append a dated section to this file:
-> what happened and when goes to the file of the same name under `history/`
-> ([the rules of that folder](history/README.md)), which is not reading for a task. A delta the core absorbed,
-> a candidate that was applied or refused and a question that was answered are deleted here; the history
-> section of that day says what became of them.
+> **Keep this note in the record.** Current facts, edited in place. Never append a dated section to this file,
+> and append nothing under `history/` either: those files are frozen ([the rules of that folder](history/README.md))
+> and are not reading for a task. A delta the core absorbed, a candidate that was applied or refused and a
+> question that was answered are deleted here.
 
 ## Overlay facts (verified against this repo, 2026-10-02; refreshed 2026-11-13 and 2026-11-20)
 

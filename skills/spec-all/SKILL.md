@@ -58,6 +58,10 @@ project that has the `tools/harness.ps1` forwarder and in one that has not:
 pwsh -NoProfile -WorkingDirectory "<project root>" -File "<root>/tools/harness/spec_catalog/<script>.ps1" <arguments>
 ```
 
+A harness script prints its header and parameters on `-Help`; ask it instead of guessing a parameter. An exploratory
+chain ends `; "x=$LASTEXITCODE"; exit 0` in PowerShell, `; true` in Bash; a call whose exit code you read stays bare
+([AI_USAGE.md](../../rules/AI_USAGE.md) section 2).
+
 A project with its own `scripts/spec_catalog/` names its entry points in its `CLAUDE.md`; use those, same arguments.
 Read the agent-rules file of the project the ticket belongs to (Step 1's `root`) first - the slots spec-to-audit lists (build, test, closure) are filled from it.
 

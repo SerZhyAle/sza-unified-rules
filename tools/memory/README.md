@@ -39,7 +39,8 @@ metadata:
 ## Commands
 
 ```powershell
-pwsh -NoProfile -File tools/memory/memory.ps1 audit                     # duplicates across folders, index drift, indexes over 8,000 chars, no-scope counts, old *-state memories
+pwsh -NoProfile -File tools/memory/memory.ps1 audit                     # duplicates across folders, index drift, indexes over 8,000 chars, no-scope counts, old *-state memories, adopters with empty memory
+pwsh -NoProfile -File tools/memory/memory.ps1 check -Path <note>        # exit 1 when a project note repeats a global or type note
 pwsh -NoProfile -File tools/memory/memory.ps1 types -Cwd P:\some\repo   # which types match that repository
 pwsh -NoProfile -File tools/memory/memory.ps1 index -All                # resync every MEMORY.md with its folder
 ```
@@ -61,8 +62,21 @@ pwsh -NoProfile -File tools/memory/memory.ps1 index -All                # resync
 and duplicates, and appends a line built from the frontmatter for each unlisted top-level file. `audit` checks
 nested links for existence, flags any `MEMORY.md` over 8,000 characters, writes nothing, and exits 0.
 
+## One lesson, one note
+
+A project note repeats a wider one when it has the same slug (file name or `name`, punctuation ignored) or the same
+first body line of 20 characters or more as a note of the global folder or of any type folder. `check` names that note
+and exits 1. `index` gives such a new note no line, syncs the others and exits 1; a line already in the index stays.
+The remedy is to extend the wider note and delete the new one, or to retire it with `promote`.
+
+`audit` also lists every adopter repository (`.sza-canon.json`) with more than 5 session transcripts changed in the
+last 7 days (`-ActiveSessions`, `-ActiveDays`) and no note in any of its project memory folders - lessons learned
+there have nowhere to be found again. The repository is read from the `cwd` a transcript records.
+
 ## Routing rule
 
 The rule an agent follows when it saves a memory is in the user's global `CLAUDE.md`, not here: decide the scope first,
 read the global or type index for a memory that already covers the lesson and extend it, and file a canon ticket when
-the lesson is a rule of process the canon should carry - the memory is retired once the canon ships it.
+the lesson is a rule of process the canon should carry - the memory is retired once the canon ships it. The parts the
+canon holds for every agent are in [AI_USAGE.md](../../rules/AI_USAGE.md) section 4: an owner's standing order is
+global by default, and no note records deploy state.

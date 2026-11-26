@@ -19,6 +19,9 @@
          per-folder counts; an explicit message replaces it; the deploy's own bookkeeping yields an empty line.
       8. Test-ShipsToConsumers ships a facts record under rules/contrib/ and exempts rules/contrib/history/.
       9. The ship-package call follows publish, carries its own label and pins the project root for the child.
+     10. Get-DeployTickets over a fixture ledger finds the finished rows since the last deploy and the ids of the
+         unpushed subjects, falls back to the added diff lines, and Get-DeployChangeNote turns the result into the
+         subject, with the folder counts only when no id is found.
 #>
 [CmdletBinding()]
 param()
@@ -46,6 +49,8 @@ if ($fnStep.Count -eq 1) { . ([scriptblock]::Create($fnStep[0].Extent.Text)) }
 if ($fnShips.Count -eq 1) { . ([scriptblock]::Create($fnShips[0].Extent.Text)) }
 $fnNote = @($ast.FindAll({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Get-DeployChangeNote' }, $true))
 if ($fnNote.Count -eq 1) { . ([scriptblock]::Create($fnNote[0].Extent.Text)) }
+$fnTickets = @($ast.FindAll({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Get-DeployTickets' }, $true))
+if ($fnTickets.Count -eq 1) { . ([scriptblock]::Create($fnTickets[0].Extent.Text)) }
 
 $scratch = Join-Path ([IO.Path]::GetTempPath()) ('deploy-ledger-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
 $root = Join-Path $scratch 'repo'
@@ -180,6 +185,39 @@ try {
         $text = (@($all | Where-Object { $_ -is [Management.Automation.InformationRecord] } | ForEach-Object { [string]$_.MessageData }) -join "`n")
         Assert-That ((@($all | Where-Object { $_ -is [string] }) | Select-Object -Last 1) -eq 'missing') 'a missing ship-package.ps1 must return missing'
         Assert-That ($text.Contains('deploy: ship-package skipped') -and -not $text.Contains('release-ledger')) "the label is not used: $text"
+    }
+
+    Run-Case '10 the subject names the tickets, folder counts only without an id' {
+        Assert-That ($fnTickets.Count -eq 1) 'Get-DeployTickets is not defined exactly once'
+        # Local times on both sides, so the case does not depend on the machine's zone.
+        $since = [datetimeoffset]::new([datetime]::new(2026, 11, 26, 3, 2, 13, [DateTimeKind]::Local)).ToString('o')
+        $rows = @(
+            [pscustomobject]@{ id = 'CANONR-0203'; status = 'Verified'; updated = '2026-11-26 04:42'; title = 'Second change' }
+            [pscustomobject]@{ id = 'CANONR-0201'; status = 'Implemented'; updated = '2026-11-26 03:02'; title = 'First change' }
+            [pscustomobject]@{ id = 'CANONR-0200'; status = 'Implemented'; updated = '2026-11-26 03:01'; title = 'Shipped before' }
+            [pscustomobject]@{ id = 'CANONR-0204'; status = 'Draft'; updated = '2026-11-26 05:00'; title = 'Only captured' }
+            [pscustomobject]@{ id = 'CANONR-0205'; status = 'Partial'; updated = '2026-11-26 05:00' }
+        )
+        $moved = @(Get-DeployTickets -Rows $rows -Since $since -AddedLines @('+ cites CANONR-0200'))
+        Assert-That (($moved.id -join ' ') -ceq 'CANONR-0201 CANONR-0203 CANONR-0205') "moved: $($moved.id -join ' ')"
+        Assert-That ($moved[2].title -ceq '') "a row without a title: $($moved[2].title)"
+
+        $subjects = @(Get-DeployTickets -Rows $rows -Subjects @('Fix the gate (CANONR-0199)') -AddedLines @('+ CANONR-0200'))
+        Assert-That (($subjects.id -join ' ') -ceq 'CANONR-0199') "subject ids: $($subjects.id -join ' ')"
+
+        $diff = @(Get-DeployTickets -Rows $rows -AddedLines @('+ CANONR-0200 and CANONR-9999'))
+        Assert-That (($diff.id -join ' ') -ceq 'CANONR-0200') "diff ids: $($diff.id -join ' ')"
+
+        $note = Get-DeployChangeNote -Paths @('tools/a.ps1', 'rules/AUTHOR.md') -Subjects @('ignored') -Tickets $moved
+        Assert-That ($note -ceq 'CANONR-0201, CANONR-0203, CANONR-0205: First change') "note: $note"
+
+        $none = @(Get-DeployTickets -Rows @() -Since $since)
+        Assert-That ($none.Count -eq 0) "no id expected: $($none.Count)"
+        $counts = Get-DeployChangeNote -Paths @('tools/a.ps1') -Tickets $none
+        Assert-That ($counts -ceq 'tools 1') "fallback: $counts"
+
+        $pubSite = $deployText.Substring($deployText.IndexOf('$cacheState = Update-PluginCache'))
+        Assert-That ($pubSite.Contains("`$publishArgs += @('-Note'")) 'the publish row does not get the ids'
     }
 }
 finally {

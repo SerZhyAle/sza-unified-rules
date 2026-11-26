@@ -15,14 +15,8 @@ shares. Reconciled against the portfolio; per-project records in `contrib/`.
   Below it, backgrounding is **forbidden** - it costs an extra turn plus the hand-polling that follows,
   and a fast check's verdict is worth having in the same turn that asked for it. A one-sided
   "background long jobs" rule reliably decays into backgrounding everything and then polling it by hand.
-- **Never fire-and-forget a verdict.** This is the shape the rule above actually fails in: dispatching a
-  gate, a closure facade or a catalog mutator asynchronously and moving straight on, on the intuition
-  that not waiting is free. It is not. It saves no turn - the completion notification re-invokes the
-  agent, so the call costs one *more* - and it quietly demotes a gate into an ungated rule, because a
-  check whose exit code nobody reads is not a check. A backgrounded task also tends to report its
-  wrapper's exit code rather than the command's, so the failure mode is a false PASS, the worst shape a
-  defect can take. Shipped as the `guard-fire-and-forget` hook rather than left as this paragraph, for
-  the reason section 5 gives.
+- **Never fire-and-forget a verdict** (a gate, a closure facade, a catalog mutator) - enforced by hook
+  `guard-fire-and-forget`, see [hooks/README.md](../hooks/README.md).
 - **Don't ask what the architecture already answers.** If a convention, flavor hierarchy, or contract
   decides the question, research it and recommend - don't kick it back to the owner. Reserve questions
   for the owner-owned decisions listed in the next bullet.
@@ -114,6 +108,12 @@ shares. Reconciled against the portfolio; per-project records in `contrib/`.
   **fallback to a weaker mode** (a snapshot taken from `HEAD` when the real one failed, the full scope cut
   to changed files) prints a different line than the full path and records the degradation where the later
   judge reads it - a fallback that looks like success is a lie about what was measured.
+- **An exploratory command chain ends on exit 0.** A tool call is reported failed when its last command
+  returned non-zero, and a search with no match (`rg`, `grep`, `Select-String`) or a script whose non-zero
+  code is its answer reads as a failure although the work succeeded. Print each inner code first, then end
+  the chain: PowerShell `<command>; "x=$LASTEXITCODE"; exit 0`, Bash `<command>; echo "x=$?"; true`.
+  Printing the code alone does not reset it. A gate, a test or a mutator whose exit code is the verdict is
+  never ended this way.
 
 ## 3. Cost & parallelism discipline
 
@@ -182,27 +182,13 @@ shares. Reconciled against the portfolio; per-project records in `contrib/`.
   read a 0-indexed line as 1-indexed, took a sibling's batch, overwrote each other while two batches went
   untouched, and each reported "clean". After each agent returns, re-run the shared checker over that
   agent's intended set, not over what it says it did.
-- **Read a large file with an explicit range, first time.** The blind whole-file read of a file you
-  have not located anything in yet is the single largest avoidable context cost. Locate with one
-  search, then take one window wide enough to cover it - iterative probing costs more turns than it
-  saves context. This one is worth **enforcing as a hook rather than stating as a rule** (§5), and any
-  such hook needs an unconditional escape hatch: an explicit re-issue carrying a range must always
-  pass, because auditing an implementation end to end is legitimate work.
-- **Put the context warning where the human can act on it - at prompt submit, not only in the
-  statusline.** A statusline band is an advisory, and an ungated advisory performs the way every other
-  ungated rule does: measured on the reference machine, the median request carried 215k tokens against
-  a 28.7k floor, so roughly 186k of a typical turn was replayed conversation, and 29% of requests were
-  past 300k - all of it while the statusline was already printing the number and marking the band. A
-  prompt-submit hook that reads the tail of the session transcript, recovers the last request's token
-  total and injects a threshold warning costs ~40 tokens on the turns where it fires and nothing on the
-  rest. Set the thresholds **above** the median: a warning on every second prompt trains the reader to
-  ignore it.
-- **A hook that spawns a shell on every tool call must pre-filter in the harness's own shell first.**
-  Starting PowerShell costs 170-250 ms on Windows, and a guard wired to a frequent tool pays it on every
-  call including the large majority it will wave through. Test the payload cheaply for the condition
-  that could possibly trip the guard, and spawn the interpreter only on a match - in the reference case
-  that skipped ~89% of the spawns and changed no verdict. The rule generalises: the pre-filter may only
-  skip calls the real check would have allowed.
+- **Read a large file with an explicit range, first time** - locate with one search, then take one wide
+  window; enforced by hook `guard-uncapped-read`, see [hooks/README.md](../hooks/README.md).
+- **Put the context warning where the human can act on it** - enforced by hook `on-user-prompt`, see
+  [hooks/README.md](../hooks/README.md).
+- **A hook that spawns a shell on every tool call must pre-filter in the harness's own shell first**, and
+  the pre-filter may only skip calls the real check would have allowed - see
+  [hooks/README.md](../hooks/README.md) "Cost".
 - **Audit installed plugins, MCP servers and connectors by measured usage, not by intent.** They are
   paid for on every session - process memory, startup, and their descriptions in the system prompt of
   every request. Count actual invocations over a few weeks before keeping one: in the reference audit
@@ -237,10 +223,21 @@ shares. Reconciled against the portfolio; per-project records in `contrib/`.
   one-off fix recipes, or anything already written in the project's rules file.
 - Memory is point-in-time. On any conflict between memory and the live tree, **trust the observation**
   and update/remove the stale memory.
+- **One lesson, one note, at the widest scope it holds.** Where a store has a global and a project-type
+  scope beside the project one, read those indexes before saving and extend the note that already covers the
+  lesson. `memory.ps1 check -Path <note>` refuses a project note whose slug or first body line matches a
+  global or type note and names that note; `memory.ps1 index` leaves such a new note out of the project
+  index and exits 1.
+- **An owner's standing order goes to the global scope by default.** A narrower scope is for an order that
+  names one product or platform.
+- **A memory note records no deploy state** ("not deployed", "waits for the next deploy"): it changes within
+  hours and the note does not. The project's deploy or release ledger is the source - read it when the answer
+  matters.
 - **Budget the always-loaded index, and enforce the budget mechanically.** Only the index is billed on
   every turn; the topic files cost nothing until opened, so the index is the only part that needs a
   ceiling - and a hand-run cleanup does not hold, it regrows within the week. Give the index a target
-  and a ratchet that refuses growth. The restatement ban above is part of this: a memory that repeats
+  and a ratchet that refuses growth (the warning at the write: hook `guard-rules-budget`, see
+  [hooks/README.md](../hooks/README.md)). The restatement ban above is part of this: a memory that repeats
   the rules file bills the same instruction twice per turn, forever. Measured across the portfolio,
   committed memory indexes run 11-90 lines; the one that reached 1274 lines (115 KB, roughly 25-30k
   tokens) held its entry bodies inline and is billed to every session that opens it. Cap the index and
@@ -275,8 +272,8 @@ shares. Reconciled against the portfolio; per-project records in `contrib/`.
   tells every session to read, and every `.claude/rules` file without a `paths:` list. Every request pays for
   all of it. Measured on this portfolio (2026-11-25): one repository's rules file had grown to 304,000
   characters, about 80,000 tokens per request, and twelve repositories shrank to 10,000-23,000 characters with
-  the text moved, not deleted. The gate is `check-compliance.ps1` `SZA-RULES07`; at the write itself the
-  plugin's [`guard-rules-budget`](../hooks/README.md) hook refuses growth past the hard limit.
+  the text moved, not deleted. The gate is `check-compliance.ps1` `SZA-RULES07`; the write is enforced by
+  hook `guard-rules-budget`, see [hooks/README.md](../hooks/README.md).
   - **New knowledge goes to its area, never to the core by default.** Detail belongs in
     `.claude/rules/<area>.md` with a `paths:` list that matches only the files it is about, or in a tracked
     document; the core gets at most one line or one row of its "read before touching" table. A ticket never
@@ -313,32 +310,13 @@ shares. Reconciled against the portfolio; per-project records in `contrib/`.
   range ships in the built-in tool description on literally every turn, and compliance measured **22%**.
   Advice the model is already reading, and still mostly not following, is the ceiling for what more
   prose can buy you. If a behaviour is worth having, block it at the tool call.
-- **A hook has more verdicts than block and allow - and refusing is rarely the best of them.** The
-  preference order: **correct the input where the correct input is knowable; refuse only where no correct
-  input exists.** A block cannot fix and retry - it can only cost the caller a round trip and hope they
-  choose better the second time. Measured on the reference machine: a blocking uncapped-read guard fired
-  **381 times in one week**, and **31.8% of those blocks were answered by re-issuing the same read with an
-  explicit limit of 1500+** - the whole file anyway. No context saved, a turn spent. That generalises to
-  every guard whose objection is "your parameters are wrong" rather than "this call must not happen". Two
-  mechanics, both established by probe rather than guess: a rewrite must carry the **full** input object
-  and not just the changed field, and `additionalContext` reaches the model while a permission-decision
-  reason does not. And a rewriting hook must **fail open harder** than a blocking one - when it errs it
-  corrupts what the model reads, rather than merely gating a call. The full verdict vocabulary, the
-  post-call observe shape whose correctness is structural rather than heuristic, and the turn-refusing
-  `Stop` shape live in [`hooks/`](../hooks/README.md).
+- **A hook has more verdicts than block and allow:** correct the input where the correct input is
+  knowable, refuse only where no correct input exists - verdict vocabulary and contracts in
+  [hooks/README.md](../hooks/README.md).
 - **A size-tier ordering written as prose does not route anything - put the nudge on the prompt-submit
-  event.** A project documented a smallest-first command ladder in its always-on rules file: a
-  micro-task command, then a fast-fix command, then the full pipeline. Measured across its whole
-  transcript corpus: **434 slash-command invocations, of which the micro-task tier 0 and the fast-fix
-  tier 2, against 91 + 44 + 15 for the pipeline commands.** The cheapest tier had not been chosen once
-  in a month - the same 1-8% ungated figure as above, observed on a rule that was brand new. The
-  remedy is an event, not a paragraph, and the event is `UserPromptSubmit`, **because routing is
-  decided the moment the owner types**: match the prompt against a short, high-precision micro-task
-  pattern list, veto on a real-work list, drop anything past a length ceiling, and emit
-  `additionalContext` naming the cheap tiers. Keep it advisory and **always exit 0** - a false fire
-  that refuses a prompt costs more than the miss it prevents.
+  event** - done by hook `on-user-prompt`, see [hooks/README.md](../hooks/README.md).
 - **That hook's own post-change window closed, and its reach was zero - count the population an event
-  sees before wiring anything to it.** The bullet above shipped with "no saving is claimed"; the
+  sees before wiring anything to it.** The nudge shipped with "no saving is claimed"; the
   measurement is now in, and it is the correction, not the confirmation. Over one window in the
   reference project, **not one of the owner's 17 free-text prompts** matched the hook's own pattern
   lists, because the owner enters a pipeline by typing `/`, and the hook skips slash prompts by
@@ -357,28 +335,10 @@ shares. Reconciled against the portfolio; per-project records in `contrib/`.
   exactly the case that costs. Routing is the inverse - the decision genuinely happens at prompt
   submit, so the event is the right one. Record the boundary wherever a hook is refused; otherwise the
   refutation gets reused to kill the hook it does not apply to.
-- **The canon now ships the hooks it asks for - do not rebuild them per project.** Every "enforce this at
-  the tool call" clause in these docs has a working implementation in the plugin's
-  [`hooks/`](../hooks/README.md): the impossible-in-Bash family, batched into one guard
-  ([GITHUB_INTERACTION.md](GITHUB_INTERACTION.md) section 6), the uncapped-large-read rewriter and the
-  context-size warning (section 3 above), and the micro-task rung nudge (the bullet above). They arrive
-  with the plugin, so a new machine or a fresh checkout is covered without setup. A project that already
-  wired one by hand should drop its own registration rather than run it twice - **and verify the installed
-  plugin cache, not the marketplace clone**, because until the cache carries the script the hand-wired
-  registration is the only thing making it live, and removing it "because the plugin has it now" silently
-  disarms the guard. A project that needs a behaviour the canon does not ship should propose it here rather
-  than keep a private copy - a hook living in one repo protects one repo.
-- **Registering, removing or re-registering a hook requires editing the hook inventory in the same
-  change**, and a gate fails when something registered is missing from it. A hook is invisible by
-  construction - it fires inside a tool call nobody is reading - so an undocumented one is
-  indistinguishable from a bug in the tool. The inventory is a table with a fixed verdict vocabulary,
-  parsed from the table alone and never from the surrounding prose, since script names appear in prose
-  too and a loose parse turns every mention into a phantom entry. Two limits keep such a gate honest:
-  find the table by its **heading**, not by a filename, and compare in **one direction only** - a row the
-  gate cannot match is not a failure, because a hook registered per-machine is real and live and the gate
-  cannot read that registration. Judge each home by what is readable, and degrade rather than guess.
-  **Test the registered pre-filter, not only the hook**: a pre-filter that matches nothing leaves a
-  correct hook that simply never runs, and it looks exactly like a hook that was never needed.
+- **The canon ships the hooks it asks for - do not rebuild or double-register them per project**, and
+  propose a missing one to the canon: see [hooks/README.md](../hooks/README.md).
+- **Registering, removing or re-registering a hook edits the hook inventory in the same change** - gated
+  by `check-compliance.ps1` `SZA-HOOK01`, see [hooks/README.md](../hooks/README.md).
 - **A project's agent-facing files are dry.** The rules file, an agent definition and a hook's refusal
   text state the condition, the remedy and the escape hatch; incident narrative, dates and ticket ids live
   in the ticket or the script header. An always-loaded file carries no ticket tags, and new rule prose goes

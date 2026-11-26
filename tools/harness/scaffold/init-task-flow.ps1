@@ -1,12 +1,12 @@
 #requires -Version 7.0
 <#
 .SYNOPSIS
-    Day 0 of a project's task flow in one call: the stores, the plan files, the ticket template, the
+    Day 0 of a project's task flow in one call: the stores, the queue file, the ticket template, the
     profile and an R0 launcher rendered from that profile.
 
 .DESCRIPTION
     A project that starts from nothing needs, before its first ticket, the directories the ticket tool
-    writes into, the three plan files, a ticket template the gates can read, and a runner. This creates
+    writes into, the queue file, a ticket template the gates can read, and a runner. This creates
     exactly those and nothing else, every path read from the project profile so a project that renamed a
     directory gets the renamed one. It never overwrites: a file that already exists is reported as
     `exists` and left alone, and `-Force` is the explicit way to replace the generated ones. It is safe
@@ -22,8 +22,9 @@
       the specs directory        and its archive directory, and the temp directory
       the ledger, its archive    empty files, so the first read finds a store and not a path error
       and the burned-ids list
-      the three plan files       queue (owner order), ready (finished), done (shipped), each a stub the
-                                 plan tool accepts
+      the queue file             the plan of unfinished work, a stub the plan tool accepts; the finished
+                                 content and the shipment history are views of the ledger
+                                 (release-queue.ps1 -Show Ready | Done), so no file holds them
       <specs>/TICKET_TEMPLATE.md the template capture-draft.ps1 fills; carries the approval-gate section
       the R0 launcher            -RunnerPath, default r0.ps1 in the project root; standalone, it needs
                                  neither the harness nor the profile at run time
@@ -74,7 +75,7 @@
     other names (FastMediaSorter's a.ps1 targets). r0.ps1 is still written.
 
 .PARAMETER Force
-    Replace the generated files that already exist (the plan files, the template, the launchers, the
+    Replace the generated files that already exist (the queue file, the template, the launchers, the
     forwarder). The profile and the ledger files are never replaced.
 
 .PARAMETER Help
@@ -190,7 +191,7 @@ Use-Directory (Get-SzaPath 'specArchiveDir')
 Use-Directory (Get-SzaPath 'tempDir')
 foreach ($f in @($ledger, $ledgerArch, $burned)) { Use-File $f '' }
 
-# --- the plan files: the shape the plan tool reads (a marker, a column header, a package heading)
+# --- the queue file: the shape the plan tool reads (a marker, a column header, a package heading)
 $queuePath = Get-SzaPath 'releaseQueue'
 $queueRel  = Get-SzaPath 'releaseQueue' -Relative
 $queueText = @"
@@ -208,26 +209,7 @@ ticket                                                         changed         s
 1
 
 "@
-$readyText = @"
-# Release Content (ready)
-
-Finished as far as its package is concerned. Written by the plan tool, sorted by nobody.
-
-ticket                                                         changed         status
-
-1
-
-"@
-$doneText = @"
-# Shipped Release Packages
-
-What actually went out, newest first. Each block is one release package, moved here verbatim from the
-queue file by the ship step. This file is written by that step - do not hand-edit it.
-
-"@
 Use-File $queuePath $queueText -Replaceable
-Use-File (Get-SzaPath 'releaseReady') $readyText -Replaceable
-Use-File (Get-SzaPath 'releaseQueueDone') $doneText -Replaceable
 
 # --- the ticket template
 $templatesDir = Join-Path $PSScriptRoot 'templates'

@@ -29,14 +29,15 @@
     1 - the changelog lock could not be taken within the timeout, so nothing was written. A row
         that was silently dropped reads exactly like a closure that never ran, so this fails loud.
 #>
+[CmdletBinding(DefaultParameterSetName = 'Run')]
 param(
-    [Parameter(Mandatory = $true, Position = 0)]
+    [Parameter(Mandatory = $true, Position = 0, ParameterSetName = 'Run')][Parameter(ParameterSetName = 'Help')]
     [string]$FilePath,
 
-    [Parameter(Mandatory = $true, Position = 1)]
+    [Parameter(Mandatory = $true, Position = 1, ParameterSetName = 'Run')][Parameter(ParameterSetName = 'Help')]
     [string]$Target,
 
-    [Parameter(Mandatory = $true, Position = 2)]
+    [Parameter(Mandatory = $true, Position = 2, ParameterSetName = 'Run')][Parameter(ParameterSetName = 'Help')]
     [string]$Description,
 
     [Parameter(Mandatory = $false)]
@@ -44,8 +45,11 @@ param(
 
     # Bypass the recent-duplicate guard (e.g. a genuine second identical-desc change).
     [Parameter(Mandatory = $false)]
-    [switch]$AllowDuplicate
+    [switch]$AllowDuplicate,
+    [Parameter(Mandatory, ParameterSetName = 'Help')][switch]$Help
 )
+
+if ($Help) { . (Join-Path $PSScriptRoot '../_help.ps1'); Show-SzaHelp $PSCommandPath; exit 0 }
 
 . (Join-Path $PSScriptRoot '..\_profile.ps1')
 

@@ -59,17 +59,20 @@
     2 invalid invocation: unknown project, no MSIX build script, no resolvable identity (fail closed, never guessed)
     3 a step failed: the MSIX build, or the frozen-anchor read-back assert
 #>
-[CmdletBinding(PositionalBinding = $false)]
+[CmdletBinding(PositionalBinding = $false, DefaultParameterSetName = 'Run')]
 param(
-    [Parameter(Mandatory)][string]$Project,
+    [Parameter(Mandatory, ParameterSetName = 'Run')][Parameter(ParameterSetName = 'Help')][string]$Project,
     [string]$Version = '',
     [string]$OutDir = '',
     [string]$IdentityName = '',
     [string]$Ticket = '',
     [switch]$SetStatus,
     [int]$TimeoutSeconds = 1800,
-    [switch]$Json
+    [switch]$Json,
+    [Parameter(Mandatory, ParameterSetName = 'Help')][switch]$Help
 )
+
+if ($Help) { . (Join-Path $PSScriptRoot '../_help.ps1'); Show-SzaHelp $PSCommandPath; exit 0 }
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'

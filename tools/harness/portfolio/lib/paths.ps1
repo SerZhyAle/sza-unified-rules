@@ -23,8 +23,8 @@
 #   run            run
 #   runState       run\current.json
 #   beat           run\beat
-#   log / live     log / log\live
-#   livePass       log\live\<Pass>.log
+#   log            log
+#   logArchive     log\archive (the zipped day files older than 14 days)
 #   events         log\events-<Date>.<Token>.jsonl (Date yyyy-MM-dd, UTC; Token is the writer's file token)
 #   resources      resources (the token directory of rule 62)
 #   resourceToken  resources\<Token>\<Repo>__<Id>.json (Token build|emulator)
@@ -90,7 +90,6 @@ function Get-PqPath {
         [string]$Agent,
         [string]$StopKind,
         [string]$Target,
-        [string]$Pass,
         [string]$Date,
         [string]$Token,
         [string]$Repo,
@@ -122,8 +121,7 @@ function Get-PqPath {
         'runState' { Join-Path 'run' 'current.json' }
         'beat' { Join-Path 'run' 'beat' }
         'log' { 'log' }
-        'live' { Join-Path 'log' 'live' }
-        'livePass' { Assert-PqSegment 'Pass' $Pass; Join-Path (Join-Path 'log' 'live') "$Pass.log" }
+        'logArchive' { Join-Path 'log' 'archive' }
         'events' {
             $parsed = [datetime]::MinValue
             if (-not $Date -or -not [datetime]::TryParseExact($Date, 'yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture,

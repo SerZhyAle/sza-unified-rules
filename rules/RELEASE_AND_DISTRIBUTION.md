@@ -317,7 +317,9 @@ a decision. Treat it as shipped. If it later proves broken it is reopened, and i
 
 Recommended default names: `PLAN/RELEASE_QUEUE.md` (work remaining) and `PLAN/RELEASE_READY.md` (ready),
 with `PLAN/RELEASE_QUEUE_DONE.md` as the shipped history. Any names work - pick them once and write them
-into the repo's rules file.
+into the repo's rules file. A ticket store that can hold the ready side and the history keeps them on the
+ticket and renders them as views, so each fact has one home: the shared harness does that (`TASK-FLOW`
+rules 14-16), writes only the queue file, and reads the other two once to import what an older tool left.
 
 ### Line shape - fixed width, because a human reorders it by hand
 

@@ -144,3 +144,125 @@ function Get-PassUsage {
         priceAsOf = $(if ($priced -and $complete) { [string]$Snapshot.priceAsOf } else { $null })
     }
 }
+
+function Get-CodexPassUsage {
+    <#
+        Token usage of one `codex exec` child. The log prints one bare total ("tokens used"), which does not
+        split input from output, so the header's session id is read from the captured output and the split comes
+        from the last token_count record of that session's rollout file. The rollout carries no request id, so
+        the figure is complete=false (rule 23), and there is no price. $null when the output is not codex's or
+        the rollout cannot be read: unknown, never zero. Subagent sessions have their own rollouts and are not
+        counted.
+    #>
+    param(
+        [string] $LogBody,
+        [string] $SessionsRoot = $(Join-Path $(if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME '.codex' }) 'sessions')
+    )
+    # Anchored on the banner: the child's own answer and tool output may quote a "session id:" line.
+    $header = [regex]::Match([string]$LogBody, '(?m)^OpenAI Codex v[^\n]*\n(?:(?!session id:)[^\n]*\n){0,15}?session id: ([0-9a-fA-F-]{36})\s*$')
+    if (-not $header.Success -or -not (Test-Path -LiteralPath $SessionsRoot -PathType Container)) { return $null }
+    $id = $header.Groups[1].Value
+    $file = @(Get-ChildItem -LiteralPath $SessionsRoot -Filter "rollout-*-$id.jsonl" -File -Recurse -ErrorAction SilentlyContinue) | Select-Object -First 1
+    if ($null -eq $file) { return $null }
+    $total = $null
+    $model = ''
+    $seen = [Collections.Generic.HashSet[int64]]::new()
+    $stream = [IO.File]::Open($file.FullName, 'Open', 'Read', 'ReadWrite')
+    try {
+        $reader = [IO.StreamReader]::new($stream, [Text.Encoding]::UTF8)
+        while ($null -ne ($line = $reader.ReadLine())) {
+            if ($line -notmatch '"type"\s*:\s*"(token_count|turn_context)"') { continue }
+            try { $rec = $line | ConvertFrom-Json -ErrorAction Stop } catch { continue }
+            $payload = Get-PassJsonProperty $rec 'payload'
+            if ([string](Get-PassJsonProperty $rec 'type') -eq 'turn_context') {
+                $m = [string](Get-PassJsonProperty $payload 'model')
+                if ($m) { $model = $m }
+                continue
+            }
+            $t = Get-PassJsonProperty (Get-PassJsonProperty $payload 'info') 'total_token_usage'
+            if ($null -eq $t) { continue }
+            $total = $t
+            $null = $seen.Add([int64](Get-PassJsonProperty $t 'total_tokens'))
+        }
+    } finally { $stream.Dispose() }
+    if ($null -eq $total) { return $null }
+    # Codex counts cached tokens inside input_tokens; this object keeps them apart, as for claude.
+    $cacheRead = [int64](Get-PassJsonProperty $total 'cached_input_tokens')
+    $cacheWrite = [int64](Get-PassJsonProperty $total 'cache_write_input_tokens')
+    $usage = [ordered]@{
+        model      = $model
+        input      = [Math]::Max([int64]0, [int64](Get-PassJsonProperty $total 'input_tokens') - $cacheRead - $cacheWrite)
+        output     = [int64](Get-PassJsonProperty $total 'output_tokens')
+        cacheRead  = $cacheRead
+        cacheWrite = $cacheWrite
+        requests   = $seen.Count
+        complete   = $false
+        session    = $id
+    }
+    return [ordered]@{ usage = $usage; costUsd = $null; priceAsOf = $null }
+}
+
+function Get-GeminiPassUsage {
+    <#
+        Token usage of one `agy --print` child. Its output carries the answer only; the counts are on the model
+        records of the session transcript, brain/<conversation>/.system_generated/logs/transcript_full.jsonl.
+        The runner does not know the conversation id, so the session is the one whose first record is a user
+        input made after the launch and naming this ticket and this repository; none, or more than one, is
+        unknown. complete=false: helper calls and subagent sessions leave no record there. There is no price.
+    #>
+    param(
+        [string] $TicketId,
+        [string] $RepoRoot,
+        [datetime] $Since,
+        [string] $BrainRoot = $(Join-Path $HOME '.gemini/antigravity-cli/brain')
+    )
+    if (-not $TicketId -or -not $RepoRoot -or -not (Test-Path -LiteralPath $BrainRoot -PathType Container)) { return $null }
+    $from = $Since.ToUniversalTime().AddSeconds(-5)
+    $idPattern = '(?<![\w-])' + [regex]::Escape($TicketId) + '(?![\w-])'
+    $rootPattern = [regex]::Escape($RepoRoot.Replace('\', '/').TrimEnd('/')) + '(?![\w-])'
+    $found = @()
+    foreach ($dir in [IO.Directory]::EnumerateDirectories($BrainRoot)) {
+        $file = Join-Path $dir '.system_generated/logs/transcript_full.jsonl'
+        if (-not [IO.File]::Exists($file) -or [IO.File]::GetLastWriteTimeUtc($file) -lt $from) { continue }
+        try {
+            $stream = [IO.File]::Open($file, 'Open', 'Read', 'ReadWrite')
+            try {
+                $reader = [IO.StreamReader]::new($stream, [Text.Encoding]::UTF8)
+                $first = $reader.ReadLine() | ConvertFrom-Json -ErrorAction Stop
+                if ([string](Get-PassJsonProperty $first 'type') -ne 'USER_INPUT') { continue }
+                $created = Get-PassJsonProperty $first 'created_at'
+                if ($null -eq $created -or ([datetime]$created).ToUniversalTime() -lt $from) { continue }
+                $asked = ([string](Get-PassJsonProperty $first 'content')).Replace('\', '/')
+                if ($asked -notmatch $idPattern -or $asked -notmatch $rootPattern) { continue }
+                $records = [Collections.Generic.List[object]]::new()
+                while ($null -ne ($line = $reader.ReadLine())) {
+                    if ($line -notmatch '"input_tokens"') { continue }
+                    try { $rec = $line | ConvertFrom-Json -ErrorAction Stop } catch { continue }
+                    if ($null -ne (Get-PassJsonProperty $rec 'input_tokens')) { $records.Add($rec) }
+                }
+                $found += @{ id = Split-Path -Leaf $dir; records = $records }
+            } finally { $stream.Dispose() }
+        } catch { continue }
+    }
+    if ($found.Count -ne 1 -or $found[0].records.Count -eq 0) { return $null }
+    $sum = [ordered]@{ input = [int64]0; output = [int64]0; cacheRead = [int64]0 }
+    $models = [Collections.Generic.List[string]]::new()
+    foreach ($rec in $found[0].records) {
+        # input_tokens already leaves the cached tokens out, as this object does.
+        $sum.input += [int64](Get-PassJsonProperty $rec 'input_tokens')
+        $sum.output += [int64](Get-PassJsonProperty $rec 'output_tokens')
+        $sum.cacheRead += [int64](Get-PassJsonProperty $rec 'cache_read_tokens')
+        $m = [string](Get-PassJsonProperty $rec 'model')
+        if ($m -and -not $models.Contains($m)) { $models.Add($m) }
+    }
+    $usage = [ordered]@{
+        model     = ($models -join '+')
+        input     = $sum.input
+        output    = $sum.output
+        cacheRead = $sum.cacheRead
+        requests  = $found[0].records.Count
+        complete  = $false
+        session   = $found[0].id
+    }
+    return [ordered]@{ usage = $usage; costUsd = $null; priceAsOf = $null }
+}

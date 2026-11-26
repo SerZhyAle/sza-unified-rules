@@ -115,6 +115,7 @@ Assert-Case 'cmdlet after a separator'      $bashPat (Json 'cd x; Measure-Object
 Assert-Case 'ps batching idiom, spaced'     $bashPat (Json '& { cmd1; cmd2 }') 'match'
 Assert-Case 'ps batching idiom, tight'      $bashPat (Json '&{ cmd1; cmd2 }') 'match'
 Assert-Case 'fragile interpreter'           $bashPat (Json 'node -e 1') 'match'
+Assert-Case 'heredoc'                       $bashPat (Json "cat <<'EOF' > x.md`na`nEOF") 'match'
 Assert-Case 'slash arg, double-quoted'      $bashPat (Json 'pwsh -File a.ps1 -Reason "/spec-dev now"') 'match'
 Assert-Case 'slash arg, single-quoted'      $bashPat (Json "pwsh -File a.ps1 -Reason '/spec-dev now'") 'match'
 

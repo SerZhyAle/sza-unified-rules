@@ -1371,7 +1371,7 @@ $o | ConvertTo-Json -Compress
     Test-Case 'picker: Get-PqTicketRecord finds a ticket in the archive through select.ps1 -IncludeArchived -Format json' {
         . (Get-LibPath 'picker.ps1')
         $repo = New-FixtureRepo -Name 'pk' -Priorities @(40, 80, 60)
-        $null = Invoke-Tool $repo 'spec_catalog/archive.ps1' @('-Id', 'S0001')
+        $null = Invoke-Tool $repo 'spec_catalog/archive.ps1' @('-Id', 'S0001', '-Reason', 'not needed: fixture')
         $rec = Get-PqTicketRecord -RepoPath $repo -Id 'S0001' -HarnessRoot $harness
         Assert-That ($null -ne $rec -and $rec.id -ceq 'S0001' -and $rec.status -ceq 'Archived') "the archived record: $(ConvertTo-Json $rec -Compress)"
         $live = Get-PqTicketRecord -RepoPath $repo -Id 'S0002' -HarnessRoot $harness
@@ -1382,7 +1382,7 @@ $o | ConvertTo-Json -Compress
     Test-Case 'picker: Get-PqLedgerStatuses reads the whole ledger, archive included, in one call and gives $null when it cannot' {
         . (Get-LibPath 'picker.ps1')
         $repo = New-FixtureRepo -Name 'pk' -Priorities @(40, 80, 60)
-        $null = Invoke-Tool $repo 'spec_catalog/archive.ps1' @('-Id', 'S0001')
+        $null = Invoke-Tool $repo 'spec_catalog/archive.ps1' @('-Id', 'S0001', '-Reason', 'not needed: fixture')
         $map = Get-PqLedgerStatuses -RepoPath $repo -HarnessRoot $harness
         Assert-That ($null -ne $map) 'the bulk read returned $null on a healthy repository'
         Assert-That ($map.Count -eq 3) "the ledger holds $($map.Count) ids, expected 3: $(@($map.Keys) -join ',')"
@@ -1852,7 +1852,7 @@ Start-Sleep -Seconds 120
                 @{ key = 'tourist-mob'; path = 'C:\pq-fixture\Tourist_mob'; enabled = $true; role = 'internal' }
             ))
     }
-    $initExpected = @("# PORTFOLIO_QUEUE.md - the owner's file.", '# The order of the projects is their rank in the registry (pq rank); the order of the lines is the order of work inside a project.',
+    $initExpected = @('# PORTFOLIO_QUEUE.md - the owner orders the work here.', '# The order of the projects is their rank in the registry (pq rank); the order of the lines is the order of work inside a project.',
         "# Written once by 'pq queue -Init'. Edit it by hand; the sync adds new tickets to their project, pq arrange (and pq queue) lines it up in the order of work.", '', '1',
         'fms-a  # role: product', 'fms-win  # role: product', 'epub-2-html  # role: product', 'tourist-mob  # role: internal', 'fms-web  # role: product')
 

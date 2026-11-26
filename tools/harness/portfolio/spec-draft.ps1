@@ -167,7 +167,8 @@ param(
 )
 
 if ($Help) {
-    Get-Help -Name $PSCommandPath -Detailed | Out-String -Width 120 | Write-Host
+    . (Join-Path $PSScriptRoot '../_help.ps1')
+    Show-SzaHelp $PSCommandPath
     exit 0
 }
 
@@ -682,7 +683,7 @@ if (-not (Test-Path -LiteralPath $profileFile -PathType Leaf)) {
         if (-not (Test-Path -LiteralPath $planDir -PathType Container)) { New-Item -ItemType Directory -Path $planDir -Force | Out-Null }
         try {
             $attachmentBlock = Copy-DraftAttachments -Paths $attachmentPaths -SpecPath $fileFull -Newline $eol
-            $body = $body.Replace('{{TEXT}}', ([IO.File]::ReadAllText($textFull, [Text.Encoding]::UTF8) + $attachmentBlock))
+            $body = Add-DraftOwnerText -Body $body -Value ([IO.File]::ReadAllText($textFull, [Text.Encoding]::UTF8) + $attachmentBlock)
             [IO.File]::WriteAllText($fileFull, $body, [Text.UTF8Encoding]::new($false))
         }
         catch { Stop-Draft 1 "could not complete $fileRel or its attachments: $($_.Exception.Message); inspect the ticket folder before retrying" }

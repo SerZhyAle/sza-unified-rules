@@ -23,18 +23,24 @@ nothing to a consumer.
 
   pwsh -File deploy.ps1                      # gate, bump, stage, confirm, commit, push
   pwsh -File deploy.ps1 "Fix the digest"     # same, with an explicit commit message
-  pwsh -File deploy.ps1 -DryRun              # gate + show what would be committed and bumped, change nothing
+  pwsh -File deploy.ps1 -DryRun              # gate + show what would be committed and bumped, change nothing; also
+                                             # lists the release suites changed since their last recorded pass
   pwsh -File deploy.ps1 -Yes                 # no prompt (for a scheduled or piped run)
   pwsh -File deploy.ps1 -NoVersionBump       # commit without raising the version
   pwsh -File deploy.ps1 -NoPluginUpdate      # push, but leave this machine's plugin where it is
   pwsh -File deploy.ps1 -AllowNew            # accept a new file or folder at the repo root (see below)
 
-With no message the commit subject is generated, not a date: the subjects of the local commits not yet on
-the remote, then the changed rule documents by name, then a count of the other changed paths per top-level
-folder ('Add the inbox listener (S0046); rules: AUTHOR, TESTING_AND_QA; tools 2, skills 1'). The same line
-is the note of the release-ledger build row, and the commit body names the plugin version the commit
-raised. 'Canon update <date>' remains only for a change set that is nothing but the deploy's own
-bookkeeping (the version pair, docs/releases/).
+With no message the commit subject is generated, not a date: the ids of the tickets the deploy carries and
+the first title ('CANONR-0201, CANONR-0203: <title>'). A ticket is one whose PLAN ledger row reached
+Implemented, Verified, BlockNeedUserTest or Partial since the last deploy commit, or one named in an
+unpushed commit subject; when neither names any, the ids with a ledger row in the added diff lines. The
+commit body holds one 'id: title' line per ticket, and the publish row of the release ledger (RELEASES.md
+History, Note) holds the ids. Only when no id is found is the subject built from the subjects of the local
+commits not yet on the remote, the changed rule documents by name, and a count of the other changed paths
+per top-level folder ('rules: AUTHOR, TESTING_AND_QA; tools 2, skills 1'). The subject line is also the
+note of the release-ledger build row, and the body names the plugin version the commit raised.
+'Canon update <date>' remains only for a change set that is nothing but the deploy's own bookkeeping (the
+version pair, docs/releases/).
 
 A NEW untracked path ships only when it lies inside a top-level folder that already holds tracked files
 (rules, skills, hooks, tools, templates, docs ..). A new file or folder at the repo root stops the deploy
@@ -52,8 +58,9 @@ The same step then runs for ZCode when the plugin is installed there (its own ca
 ZCode's own CLI under ZCode's runtime; the same rules apply, and -NoPluginUpdate skips both.
 
 When the version was raised and this machine's plugin reached it, the deploy also ships the canon's own release
-package: tools/harness/spec_catalog/ship-package.ps1 moves the ready rows of the plan into the done file and
-archives the Verified tickets that shipped (TASK-FLOW rule 16). Best effort, like the release-ledger steps.
+package: tools/harness/spec_catalog/ship-package.ps1 records the finished rows of the plan as a shipment on their
+ledger rows and archives the Verified tickets a recorded shipment proves (TASK-FLOW rule 16). Best effort, like the
+release-ledger steps.
 
 Exit codes: 0 = pushed, or nothing to push; 1 = gate failed, the version bump failed, a git step
 failed, or a new path at the repo root (without -AllowNew); 2 = cannot verify (not a repo, gate script
@@ -183,6 +190,15 @@ if ($notGreen.Count -gt 0) {
     Write-Host "deploy: $($notGreen.Count) of $($fastGates.Count) fast gates are red or unavailable ($(($notGreen | ForEach-Object { $_.name }) -join ', ')) - not a blocker here, but fix them" -ForegroundColor Yellow
 }
 
+# A dry run also names the release suites that are behind the code (information only, no suite is run).
+if ($DryRun) {
+    $tierScript = Join-Path $root 'tools\tests\run-tier.ps1'
+    if (Test-Path -LiteralPath $tierScript) {
+        Write-Host 'deploy: DRY RUN - release suites behind their last recorded pass (information, not a block)' -ForegroundColor Cyan
+        & pwsh -NoProfile -File $tierScript -Stale
+    }
+}
+
 # --- 2. Look at what would go in, without touching the index yet. ---------------------------------
 # `git status --porcelain` already honours .gitignore and lists untracked files, so the preview and
 # the -DryRun path never have to stage anything to find out what they would stage.
@@ -259,11 +275,52 @@ function Invoke-ReleaseLedgerStep {
     return 'ok'
 }
 
+function Get-DeployTickets {
+    # The tickets this deploy carries, sorted by id, each with the title of its ledger row (empty when it has
+    # none - never the slug, which may hold the owner's own words). Two direct sources are joined: the ledger
+    # rows that stand at a finished status and were written in or after the minute of -Since (the last deploy
+    # commit), and the ids in the unpushed commit subjects. Only when both are silent are the added diff lines
+    # read, and then only for ids that have a row: new text also cites old tickets.
+    param(
+        [object[]]$Rows = @(),
+        [string]$Since = '',
+        [string[]]$Subjects = @(),
+        [string[]]$AddedLines = @()
+    )
+    $idPattern = '\bCANONR-\d{4}\b'
+    $field = { param($row, $name) $p = $row.PSObject.Properties[$name]; if ($p) { "$($p.Value)" } else { '' } }
+    $titles = @{}
+    foreach ($row in $Rows) { $titles[(& $field $row 'id')] = (& $field $row 'title') }
+    $found = [System.Collections.Generic.SortedSet[string]]::new([System.StringComparer]::Ordinal)
+
+    if ($Since) {
+        $at = [datetimeoffset]::Parse($Since, [cultureinfo]::InvariantCulture).LocalDateTime
+        $floor = $at.AddTicks(-($at.Ticks % [TimeSpan]::TicksPerMinute))   # the ledger keeps minutes only
+        foreach ($row in $Rows) {
+            if (@('Implemented', 'Verified', 'BlockNeedUserTest', 'Partial') -cnotcontains (& $field $row 'status')) { continue }
+            $updated = [datetime]::MinValue
+            if (-not [datetime]::TryParseExact((& $field $row 'updated'), 'yyyy-MM-dd HH:mm', [cultureinfo]::InvariantCulture, 'None', [ref]$updated)) { continue }
+            $id = & $field $row 'id'
+            if ($updated -ge $floor -and $id -cmatch "^$idPattern$") { $null = $found.Add($id) }
+        }
+    }
+    foreach ($match in [regex]::Matches(($Subjects -join "`n"), $idPattern)) { $null = $found.Add($match.Value) }
+    if ($found.Count -eq 0) {
+        foreach ($match in [regex]::Matches(($AddedLines -join "`n"), $idPattern)) {
+            if ($titles.ContainsKey($match.Value)) { $null = $found.Add($match.Value) }
+        }
+    }
+    foreach ($id in $found) {
+        [pscustomobject]@{ id = $id; title = ("$($titles[$id])" -replace '[\x00-\x1F\x7F]+', ' ').Trim() }
+    }
+}
+
 function Get-DeployChangeNote {
-    # One line that says what this deploy carries, built from what the script already holds: the subjects of
-    # the local commits not yet on the remote (the ticket-bearing ones a session made), the rule documents
-    # that changed, and a count of the other changed paths per top-level folder. An explicit message replaces
-    # all of it. The line becomes the commit subject and the note of the release-ledger build row. The
+    # One line that says what this deploy carries. With tickets it is their ids and the first title
+    # ('CANONR-0201, CANONR-0203: <title>'). Without any it is built from what the script already holds: the
+    # subjects of the local commits not yet on the remote, the rule documents that changed, and a count of the
+    # other changed paths per top-level folder. An explicit message replaces all of it. The line becomes the
+    # commit subject and the note of the release-ledger build row. The
     # deploy's own bookkeeping (the version pair, docs/releases/) is not counted. Double quotes and a leading
     # hyphen are removed because the line travels as one argument of `pwsh -File`, where a value that starts
     # with a hyphen binds as a parameter name.
@@ -271,11 +328,16 @@ function Get-DeployChangeNote {
         [string]$Message = '',
         [string[]]$Paths = @(),
         [string[]]$Subjects = @(),
+        [object[]]$Tickets = @(),
         [int]$MaxSubjects = 4
     )
     $parts = [System.Collections.Generic.List[string]]::new()
     if ($Message -and $Message.Trim()) {
         $parts.Add((($Message.Trim() -split '\r?\n')[0]))
+    }
+    elseif ($Tickets.Count -gt 0) {
+        $ids = @($Tickets | ForEach-Object { $_.id }) -join ', '
+        $parts.Add($(if ($Tickets[0].title) { "${ids}: $($Tickets[0].title)" } else { $ids }))
     }
     else {
         $kept = @($Subjects | ForEach-Object { "$_".Trim() } | Where-Object { $_ -and $_ -notmatch '^Canon update \d{4}-\d{2}-\d{2}$' } | Select-Object -Unique)
@@ -306,7 +368,22 @@ function Get-DeployChangeNote {
 
 $unpushed = @(git -C $root log --reverse --format=%s "${remote}/${branch}..HEAD" 2>$null)
 if ($LASTEXITCODE -ne 0) { $unpushed = @() }   # a branch never pushed has no remote ref: git answers 128
-$changeNote = Get-DeployChangeNote -Message $Message -Paths @($pending | ForEach-Object { Get-PendingPath $_ }) -Subjects $unpushed
+$changedPaths = @($pending | ForEach-Object { Get-PendingPath $_ })
+$tickets = @()
+# A change set that is only the deploy's own bookkeeping carries no ticket. Read here, before the ledger step.
+if (Get-DeployChangeNote -Paths $changedPaths -Subjects $unpushed) {
+    try {
+        $journal = Join-Path $root 'PLAN\spec-catalog.jsonl'
+        $rows = @(if (Test-Path -LiteralPath $journal -PathType Leaf) {
+                Get-Content -LiteralPath $journal -Encoding utf8 | Where-Object { $_.Trim() } | ForEach-Object { $_ | ConvertFrom-Json }
+            })
+        $lastDeploy = "$(git -C $root log -1 '--grep=^Plugin version ' --format=%cI 2>$null)"
+        $added = @(git -C $root diff HEAD --unified=0 -- . ':(exclude)docs/releases' 2>$null | Where-Object { $_ -match '^\+(?!\+\+)' })
+        $tickets = @(Get-DeployTickets -Rows $rows -Since $lastDeploy -Subjects $unpushed -AddedLines $added)
+    }
+    catch { Write-Host "deploy: the ticket ids were not collected - $($_.Exception.Message)" -ForegroundColor Yellow }
+}
+$changeNote = Get-DeployChangeNote -Message $Message -Paths $changedPaths -Subjects $unpushed -Tickets $tickets
 
 # --- 2a. Raise the version pair, before staging, so both files ride in this commit. ----------------
 $bumpedVersion = $null
@@ -357,10 +434,14 @@ if (-not $Message) {
         $Message = "Canon update $(Get-Date -Format 'yyyy-MM-dd')"
     }
 }
+if ($tickets.Count -gt 0) {
+    $commitBody += @($tickets | ForEach-Object { if ($_.title) { "$($_.id): $($_.title)" } else { $_.id } }) -join "`n"
+}
 if ($bumpedVersion) { $commitBody += "Plugin version $bumpedVersion" }   # `git log --grep <version>` then finds the commit
 
 if ($DryRun) {
     Write-Host "deploy: DRY RUN - would commit with message: $Message" -ForegroundColor Yellow
+    foreach ($paragraph in $commitBody) { Write-Host $paragraph }
     Write-Host "deploy: DRY RUN - would push to $remote/$branch. Nothing was staged." -ForegroundColor Yellow
     exit 0
 }
@@ -497,10 +578,13 @@ function Get-ZCodeUpdateArgs {
 
 $cacheState = Update-PluginCache -Root $root -Branch $branch -Skip:$NoPluginUpdate
 if ($bumpedVersion -and $cacheState -in @('updated', 'current')) {
-    $null = Invoke-ReleaseLedgerStep -Root $root -Arguments @(
+    $publishArgs = @(
         'publish', '-Key', 'marketplace', '-Version', $bumpedVersion, '-State', 'live',
         '-Ref', $sha, '-Url', 'https://github.com/SerZhyAle/sza-unified-rules/blob/main/.claude-plugin/plugin.json'
     )
+    # The history row of RELEASES.md says which tickets the version carries.
+    if ($tickets.Count -gt 0) { $publishArgs += @('-Note', (@($tickets | ForEach-Object { $_.id }) -join ', ')) }
+    $null = Invoke-ReleaseLedgerStep -Root $root -Arguments $publishArgs
     # TASK-FLOW rule 16, steps 2 and 3: this deploy released everything finished in the tree, so the ready rows
     # leave the plan and the verified tickets leave the ledger. Best effort like the ledger steps: a problem warns
     # and never changes the exit code. The project root is pinned for the child, because the harness would

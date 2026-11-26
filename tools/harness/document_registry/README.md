@@ -31,6 +31,21 @@ Four sentences, and they are the whole contract:
   error is worse than a page nobody announced.
 - Every `sitemap_exclude` entry names a file that exists and carries a reason of at least four words.
 
+## The local registry and generated records
+
+- **A local, ignored corpus has its own registry** (`DOC-INTERNAL-QUALITY` item K). Declare its path in
+  `.sza-profile.json` as `paths.localDocumentRegistry` (HARNESS-PROFILE rule 18; empty by default, which means
+  none). `validate.ps1` and `query.ps1` read it beside the tracked registry when the file exists and say nothing
+  when it does not, because a clone does not carry it; `generate.ps1` never reads it, so no published map or
+  sitemap names a file a reader cannot open. A local record is never `published` or `indexable`, an id is
+  unique across both registries, and `query.ps1` prints a local record as `local:<id>`.
+- **A generated record names its generator and its drift check** (`DOC-INTERNAL-QUALITY` item W) in two fields,
+  `generator` and `check`, each a command line; a `check` of `none` (optionally `none` and a reason) says no
+  drift check exists yet and is printed as an advisory. A field that is present is always judged: a non-empty
+  string whose first script exists, both or neither on a generated record, and no `generator` on a source
+  record (a source may carry the `check` that validates it). A generated record with neither field is an
+  advisory, and an error under `validate.ps1 -Strict`.
+
 ## Adding a page
 
 Drop it under an existing group's globs with a `permalink:` and you are done - the sitemap picks it up

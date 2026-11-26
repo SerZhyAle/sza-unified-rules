@@ -56,8 +56,11 @@ param(
     [switch]$Json,
     [switch]$PrintDigest,
     [switch]$IncludeUntracked,
-    [switch]$CheckTaskFlow
+    [switch]$CheckTaskFlow,
+    [switch]$Help
 )
+
+if ($Help) { . (Join-Path $PSScriptRoot 'harness/_help.ps1'); Show-SzaHelp $PSCommandPath; exit 0 }
 
 $ErrorActionPreference = 'Stop'
 
@@ -1281,6 +1284,15 @@ try {
             }
         }
 
+        # The versions the release flow recorded as published (PAGE-STYLE 3.10): what SZA-VER04 compares a link with.
+        $releaseVersions = @(
+            foreach ($m in @($tracked | Where-Object { $_ -match '(^|/)release-manifest\.json$' })) {
+                if (-not (Test-RepoPath $m)) { continue }
+                try { $manifest = Get-Content -LiteralPath (Join-RepoPath $m) -Raw | ConvertFrom-Json } catch { continue }
+                foreach ($v in @($manifest.version, $manifest.tag)) { if ($v) { "$v" -replace '^v', '' } }
+            }
+        )
+
         foreach ($page in @($stamp.site.pages | Where-Object { $_ })) {
             $rel = if ($stamp.site.root -and $stamp.site.root -ne '.') { "$($stamp.site.root)/$page" } else { $page }
             if (-not (Test-RepoPath $rel)) {
@@ -1324,11 +1336,27 @@ try {
                     -Message 'meta keywords present' `
                     -Fix 'Google ignores it; spend the words on the title, description and h1.'
             }
-            # SZA-VER04 - a hard-coded version in a CTA goes stale on the next release.
-            if ($html -match '/download/v?\d+[\d.]*\d/') {
+            # SZA-VER04 - a hard-coded version in a CTA goes stale on the next release. A versioned link passes
+            # only as a rendered release fact (DOCUMENTATION_CONCEPT section 4): its version is the release
+            # manifest's, and the durable address of the same releases page stands on the page.
+            $problems = @(
+                foreach ($link in [regex]::Matches($html, '(?<base>[^\s"''<>=(]*)/download/(?<tag>v?\d+[\d.]*\d)/')) {
+                    $base = $link.Groups['base'].Value
+                    $tag = $link.Groups['tag'].Value
+                    if (($tag -replace '^v', '') -notin $releaseVersions) {
+                        if ($releaseVersions.Count) { "version $tag is not the release manifest's" }
+                        else { "version $tag with no tracked release-manifest.json to render it from" }
+                    }
+                    elseif ($base -notmatch '/releases$' -or
+                            $html -notmatch ('(?<=["''=])' + [regex]::Escape($base) + '(/latest)?/?(?=["''<>\s?#])')) {
+                        "no durable fallback beside the $tag link"
+                    }
+                }
+            )
+            if ($problems.Count) {
                 Add-Finding -Id 'SZA-VER04' -Severity 'warn' -Path $rel `
-                    -Message 'hard-coded version in a link' `
-                    -Fix 'Point at /releases/latest, the package id, or the store page.'
+                    -Message "hard-coded version in a link: $(($problems | Select-Object -Unique) -join '; ')" `
+                    -Fix 'Render the link from release-manifest.json at every release with /releases/latest beside it, or point at /releases/latest, the package id, or the store page.'
             }
         }
 

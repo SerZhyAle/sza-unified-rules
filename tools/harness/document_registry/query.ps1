@@ -13,6 +13,10 @@
     of both facets is printed, so the caller can re-query in the same turn. The vocabulary is
     derived from the registry itself, never from a list held in this script.
 
+    The registry is paths.documentRegistry plus, where the profile declares paths.localDocumentRegistry
+    and the file exists, the local corpus's registry (HARNESS-PROFILE rule 18); a local record prints
+    as `local:<id>`.
+
     Exit codes: 0 = query answered (matches printed, or the no-match message plus vocabulary),
                 2 = invalid invocation / registry unreadable.
     A rejected parameter value (ValidateSet) is refused by the PowerShell host before the body
@@ -103,6 +107,20 @@ try {
     }
     $records = @(Get-Content -LiteralPath $registryPath -Encoding utf8 | Where-Object { $_.Trim() } |
         ForEach-Object { $_ | ConvertFrom-Json })
+    # HARNESS-PROFILE rule 18: the local corpus's registry joins the facets when it is declared and
+    # present, and is passed over in silence when a clone does not carry it. Its records print with
+    # a `local:` prefix so a reader knows the file behind the id is not in every checkout.
+    $localValue = [string](Get-SzaProfileValue 'paths.localDocumentRegistry')
+    if (-not [string]::IsNullOrWhiteSpace($localValue)) {
+        $localPath = if ([IO.Path]::IsPathRooted($localValue)) { $localValue } else {
+            Join-Path $RepoRoot ($localValue -replace '/', [IO.Path]::DirectorySeparatorChar)
+        }
+        if (Test-Path -LiteralPath $localPath -PathType Leaf) {
+            $records += @(Get-Content -LiteralPath $localPath -Encoding utf8 | Where-Object { $_.Trim() } |
+                ForEach-Object { $_ | ConvertFrom-Json } |
+                ForEach-Object { $_ | Add-Member -NotePropertyName '__local' -NotePropertyValue $true -PassThru })
+        }
+    }
 
     $areaVocabulary = Get-Vocabulary -Records $records -Field 'product_areas'
     $triggerVocabulary = Get-Vocabulary -Records $records -Field 'update_triggers'
@@ -183,7 +201,8 @@ try {
     $hits | Sort-Object id | ForEach-Object {
         $areas = $_.product_areas -join ','
         $triggers = $_.update_triggers -join ','
-        Write-Output ("{0} | {1} | areas={2} | triggers={3}" -f $_.id, $_.title, $areas, $triggers)
+        $shownId = if ($_.PSObject.Properties.Name -contains '__local') { "local:$($_.id)" } else { $_.id }
+        Write-Output ("{0} | {1} | areas={2} | triggers={3}" -f $shownId, $_.title, $areas, $triggers)
     }
     exit 0
 } catch {

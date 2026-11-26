@@ -73,19 +73,23 @@
 .EXAMPLE
     pwsh -NoProfile -File scripts/utils/enter-code-lock.ps1 -Reason "S0900" -Wait -WaitTimeoutSeconds 600
 #>
+[CmdletBinding(DefaultParameterSetName = 'Run')]
 param(
-    [Parameter(Mandatory)][string]$Reason,
+    [Parameter(Position = 0, Mandatory, ParameterSetName = 'Run')][Parameter(ParameterSetName = 'Help')][string]$Reason,
     # S2109: the changed file set. The domains are DERIVED from it, so a wear edit, a phone edit
     # and a scripts edit no longer wait for each other. Naming no files keeps the pre-split
     # behaviour - the full code set - which is the safe default, not an oversight.
-    [string[]]$Files,
+    [Parameter(Position = 1)][string[]]$Files,
     # Escape hatch for a caller that knows its domain but not its paths yet. A declared domain is
     # deliberately second-class (ADR-1): getting it wrong removes protection quietly.
-    [string]$Domain,
+    [Parameter(Position = 2)][string]$Domain,
     [switch]$Wait,
-    [int]$WaitTimeoutSeconds = 1200,
-    [string]$Handoff = ''
+    [Parameter(Position = 3)][int]$WaitTimeoutSeconds = 1200,
+    [Parameter(Position = 4)][string]$Handoff = '',
+    [Parameter(Mandatory, ParameterSetName = 'Help')][switch]$Help
 )
+
+if ($Help) { . (Join-Path $PSScriptRoot '../_help.ps1'); Show-SzaHelp $PSCommandPath; exit 0 }
 
 . (Join-Path $PSScriptRoot '..\_profile.ps1')
 

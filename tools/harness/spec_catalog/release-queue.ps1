@@ -1,58 +1,64 @@
-# release-queue.ps1 - operator CLI for PLAN/RELEASE_QUEUE.md, the owner's release plan.
+# release-queue.ps1 - operator CLI for the release plan: the queue file and the two views the ledger renders.
 #
-# The queue answers "what ships in which release package, in what order" - a question the
-# catalog cannot answer, because the catalog knows status but not intent. Division of labour:
+# The plan answers "what ships in which release package, in what order" - a question status alone cannot answer.
+# One home per fact (TASK-FLOW rules 14-16, amended 0.52):
 #
-#   catalog (PLAN/spec-catalog.jsonl)  owns  status, priority, dates - written by the skills
-#   queue   (PLAN/RELEASE_QUEUE.md)    owns  release assignment + order - written by the OWNER
+#   catalog (PLAN/spec-catalog.jsonl)  owns  status, priority, dates - and, for finished work, its package, its place
+#                                            and the history of what shipped
+#   queue   (PLAN/RELEASE_QUEUE.md)    owns  release assignment + order of unfinished work
 #
-# Every catalog mutation reconciles the queue automatically (Sync-ReleaseQueue, called from
-# Write-Catalog in _lib.ps1), so no skill needs to know this file exists. That sync never
-# reorders lines: a script may add, update a status/date, or drop an archived ticket, but the
-# sequence itself is the owner's plan and stays untouched.
+# The finished content and the shipment history are views rendered from the ledger (-Show Ready | Done). The files an
+# older tool kept them in are read once into the ledger and never written again.
+#
+# Every catalog mutation reconciles the plan automatically (Write-Catalog in _lib.ps1), so no skill needs to know
+# these files exist. That sync never reorders rows: a script may add, update a status/date, move a row between the
+# queue file and the finished side, or drop an archived ticket, but the sequence itself stays untouched.
 #
 # Actions:
 #   -Reconcile            Force a sync against the catalog now (the automatic path, on demand). It holds the
-#                         catalog lock for the read and the rewrite of both plan files, like every mutator;
-#                         the portfolio projection is refreshed after the lock is released.
-#   -Validate             Report drift: unknown tickets, duplicates, status mismatches. It compares
-#                         the file with the catalog, and the catalog does not know packages, so a
-#                         clean -Validate says nothing about package membership: a row moved to the
-#                         wrong package validates clean. Before a queue mutator, copy the file; after
-#                         it, diff membership against the copy (PLAN/ is often outside git).
-#                         It ends with a `note` line when ready ledger rows are listed in neither file - not
-#                         drift, and no exit code: they shipped earlier, or the ledger was never seeded (-Seed).
+#                         catalog lock for the read and the rewrite of the ledger and the queue file, like every
+#                         mutator; the portfolio projection is refreshed after the lock is released.
+#   -Validate             Report drift: unknown tickets, duplicates, status mismatches. It compares the plan with
+#                         the catalog, and the catalog does not know the queue file's packages, so a clean -Validate
+#                         says nothing about package membership: a row moved to the wrong package validates clean.
+#                         Before a queue mutator, copy the file; after it, diff membership against the copy (PLAN/ is
+#                         often outside git). It ends with a `note` line when ready ledger rows are on neither side and
+#                         record no shipment - not drift, and no exit code: they shipped before the plan recorded it,
+#                         or the ledger was never seeded (-Seed).
+#   -Show Ready | Done    Print a view rendered from the ledger: the finished content by package, or what shipped,
+#                         newest block first. Writes nothing.
 #   -Seed -Release N [-Since "<yyyy-MM-dd HH:mm>"] [-Apply]
-#                         The one-off that moves an existing ledger onto the plan files (S0151). The sync never
-#                         adds a READY ticket that stands in neither file (it shipped in an earlier package, is the
-#                         premise); for a project that adopts the plan files with built, unshipped work already in its
-#                         ledger that is false. The seed, over the active ledger:
-#                           - adds every ready ticket in neither file whose ledger `updated` is at or after -Since
-#                             (every one of them when -Since is absent) to package N of the ready file, in id order;
+#                         The one-off that moves an existing ledger onto the plan (S0151). The sync never adds a READY
+#                         ticket that stands on neither side (it shipped earlier, is the premise); for a project that
+#                         adopts the plan with built, unshipped work already in its ledger that is false. The seed,
+#                         over the active ledger:
+#                           - puts every ready ticket on neither side whose ledger `updated` is at or after -Since
+#                             (every one of them when -Since is absent) into package N of the finished side, in id
+#                             order; a ticket that records a shipment is left out;
 #                           - splits a hand-kept queue file by status the way the sync does, and brings the owner's
-#                             `#` group comment lines along: a ready row goes to the ready file, in its own package,
+#                             `#` group comment lines along: a ready row goes to the finished side, in its own package,
 #                             under the same comment (the queue file keeps its comments);
 #                           - adds the unfinished tickets that are listed nowhere to the queue at the open package;
-#                           - creates the ready and the shipped file when they are absent (with -Apply);
 #                           - prints what it added, moved and left out, and why.
 #                         A dry run unless -Apply is given: without it nothing is written, and the output is exactly
-#                         what -Apply would do. With -Apply it holds the catalog lock for the read and the rewrite
-#                         of the plan files, like -Reconcile. Nothing existing is reordered and no row changes its
-#                         package. -Since reads the same stamp the ledger keeps (`yyyy-MM-dd HH:mm`, or a bare
-#                         `yyyy-MM-dd` for midnight); name the time of the last release.
-#   -List [-Release N] [-WithLeases]
-#                         Print the queue, optionally one release block. -WithLeases marks each
-#                         taken row inline and appends the holder detail block.
+#                         what -Apply would do. With -Apply it holds the catalog lock for the read and the rewrite,
+#                         like -Reconcile. Nothing existing is reordered and no row changes its package. -Since reads
+#                         the same stamp the ledger keeps (`yyyy-MM-dd HH:mm`, or a bare `yyyy-MM-dd` for midnight);
+#                         name the time of the last release.
+#   -List [-Release N] [-Ready] [-WithLeases]
+#                         Print the queue (-Ready: the finished side), optionally one release block. -WithLeases marks
+#                         each taken row inline and appends the holder detail block.
 #   -SetCurrent N         Point the "current-next-release:" marker at package N. A label only: the queue
 #                         ranking reads package headings and line order, never this marker. Holds the
 #                         catalog lock for the read and the rewrite, like -Reconcile (S0144).
-#   -Ship -Release N      Move block N into PLAN/RELEASE_QUEUE_DONE.md and advance the marker. Holds the
-#                         catalog lock from the first read to the last write (S0144).
-#         [-Version X]    Stamp the shipped block with the released version name.
-#         [-DryRun]       Show what -Ship would move, change nothing.
+#   -Ship -Release N      Record the finished rows of package N as one shipment on their ledger rows and advance the
+#                         marker. Holds the catalog lock from the first read to the last write (S0144).
+#         [-Version X]    Stamp the shipment with the released version name.
+#         [-DryRun]       Show what -Ship would record, change nothing.
 #
 # Usage:
 #   pwsh -NoProfile -File scripts/spec_catalog/release-queue.ps1 -Reconcile
+#   pwsh -NoProfile -File scripts/spec_catalog/release-queue.ps1 -Show Done
 #   pwsh -NoProfile -File scripts/spec_catalog/release-queue.ps1 -Seed -Release 14 -Since "2026-11-13 01:30"
 #   pwsh -NoProfile -File scripts/spec_catalog/release-queue.ps1 -Seed -Release 14 -Since "2026-11-13 01:30" -Apply
 #   pwsh -NoProfile -File scripts/spec_catalog/release-queue.ps1 -List -Release 30
@@ -62,14 +68,14 @@
 # Exit codes:
 #   0  success (for -Validate: no drift).
 #   1  error, or -Validate found drift.
-#   2  cannot verify - PLAN/RELEASE_QUEUE.md is missing (seed it before using the queue). -List is
-#      the exception: a missing plan file lists as empty and exits 0.
+#   2  cannot verify - PLAN/RELEASE_QUEUE.md is missing (seed it before using the queue). -List and -Show are
+#      the exceptions: a missing plan file lists as empty and exits 0.
 [CmdletBinding(DefaultParameterSetName = 'List')]
 param(
     [Parameter(ParameterSetName = 'Reconcile')][switch] $Reconcile,
     [Parameter(ParameterSetName = 'Validate')][switch] $Validate,
     [Parameter(ParameterSetName = 'List')][switch] $List,
-    # List the finished side (PLAN/RELEASE_READY.md) instead of the work-remaining queue.
+    # List the finished side (rendered from the ledger) instead of the work-remaining queue.
     [Parameter(ParameterSetName = 'List')][switch] $Ready,
     # Mark each taken row inline, and append a read-only projection of active ticket leases.
     [Parameter(ParameterSetName = 'List')][switch] $WithLeases,
@@ -81,11 +87,16 @@ param(
     [Parameter(ParameterSetName = 'Ship')][string] $Version = '',
     [Parameter(ParameterSetName = 'Ship')][switch] $DryRun,
     [Parameter(ParameterSetName = 'Seed', Mandatory = $true)][switch] $Seed,
+    # Print one view the ledger renders: the finished content (Ready) or the shipment history (Done).
+    [Parameter(ParameterSetName = 'Show', Mandatory = $true)][ValidateSet('Ready', 'Done')][string] $Show,
     # The time of the last release, in the ledger's own stamp shape; ready tickets last updated before it are left out.
     [Parameter(ParameterSetName = 'Seed')][string] $Since = '',
     # Write the seed. Without it the action is a dry run.
-    [Parameter(ParameterSetName = 'Seed')][switch] $Apply
+    [Parameter(ParameterSetName = 'Seed')][switch] $Apply,
+    [Parameter(Mandatory, ParameterSetName = 'Help')][switch]$Help
 )
+
+if ($Help) { . (Join-Path $PSScriptRoot '../_help.ps1'); Show-SzaHelp $PSCommandPath; exit 0 }
 
 . (Join-Path $PSScriptRoot '..\_profile.ps1')
 
@@ -102,7 +113,7 @@ $queuePath = Get-ReleaseQueuePath
 # A listing of a plan file that does not exist yet is an empty listing (TASK-FLOW rules 15 and 35), the
 # way every write path already treats it. The other actions need the file to act on or to compare with,
 # so they keep saying "cannot verify".
-if (-not (Test-Path $queuePath) -and $PSCmdlet.ParameterSetName -ne 'List') {
+if (-not (Test-Path $queuePath) -and @('List', 'Show') -notcontains $PSCmdlet.ParameterSetName) {
     Write-Error "Release queue not found: $queuePath" -ErrorAction Continue
     exit 2
 }
@@ -139,8 +150,8 @@ function Get-ActiveTicketLeases {
 switch ($PSCmdlet.ParameterSetName) {
 
     'Reconcile' {
-        # Under the catalog lock every mutator holds (S1437): the catalog read and the read-modify-write of both
-        # plan files are one critical section. Without it, a mutator that wrote the catalog and re-rendered the
+        # Under the catalog lock every mutator holds (S1437): the catalog read and the rewrite of the ledger and
+        # the queue file are one critical section. Without it, a mutator that wrote the catalog and re-rendered the
         # plan files between this read and this write would be overwritten by this older snapshot - the lost
         # update the lock exists to stop. run-spec-queue.ps1 calls this branch after a forced lease release,
         # while sibling instances keep writing the same catalog, so the race is real there.
@@ -156,14 +167,14 @@ switch ($PSCmdlet.ParameterSetName) {
         try {
             $records = Read-Catalog
             $before = @(Get-QueueTickets -Lines (Read-ReleaseQueue)).Count
-            Sync-ReleaseQueue -Records $records -SkipProjection
+            Write-Catalog -Records $records -SkipProjection
             $after = @(Get-QueueTickets -Lines (Read-ReleaseQueue)).Count
             $dropped = Get-ReleaseQueueDuplicatesDropped
         }
         finally { Exit-CatalogLock }
         Sync-PortfolioProjection
         Write-Output ("release-queue: reconciled - {0} ticket(s) before, {1} after" -f $before, $after)
-        # The counts above cover the QUEUE file only, so a duplicate collapsed in the READY file
+        # The counts above cover the QUEUE file only, so a duplicate collapsed on the finished side
         # moves neither number - reporting it separately is the only proof the repair happened.
         if ($dropped -gt 0) {
             Write-Output ("release-queue: removed {0} duplicate line(s)" -f $dropped)
@@ -172,13 +183,15 @@ switch ($PSCmdlet.ParameterSetName) {
     }
 
     'Validate' {
-        $records = Read-Catalog
+        # With the old files' facts imported in memory, so a shipment not yet written to its row still counts.
+        $records = (Read-PlanRecords).Active
         $byId = @{}
         foreach ($r in $records) { $byId[$r.id] = $r }
 
         $tickets = @()
         $tickets += Get-QueueTickets -Lines (Read-ReleaseQueue)
-        $tickets += Get-QueueTickets -Lines (Read-ReleaseReady)
+        $readyIds = @{}
+        foreach ($t in @(Get-QueueTickets -Lines (Read-ReleaseReady))) { $tickets += $t; $readyIds[$t.Id] = $true }
         $problems = New-Object System.Collections.Generic.List[string]
         $seen = @{}
 
@@ -196,6 +209,9 @@ switch ($PSCmdlet.ParameterSetName) {
             if ($rec.status -ne $t.Status) {
                 $problems.Add("status drift: $($t.Ticket) queue='$($t.Status)' catalog='$($rec.status)'")
             }
+            elseif ($readyIds.ContainsKey($t.Id) -and -not (Test-ReleaseReadyStatus -Status $rec.status)) {
+                $problems.Add("reopened ticket still on the finished side: $($t.Ticket) [$($rec.status)]")
+            }
             $expected = Get-TicketBaseName -File $rec.file
             if ($expected -ne $t.Ticket) {
                 $problems.Add("renamed spec file: queue='$($t.Ticket)' catalog='$expected'")
@@ -208,7 +224,7 @@ switch ($PSCmdlet.ParameterSetName) {
             # (S0151): in a project that adopted the plan files with built, unshipped work already in its ledger
             # the same state is a release content that is incomplete, and the line above would hide it.
             if (Test-ReleaseReadyStatus -Status $r.status) {
-                if (-not $seen.ContainsKey($r.id)) { $unlisted++ }
+                if (-not $seen.ContainsKey($r.id) -and @(Get-RecordShipments -Record $r).Count -eq 0) { $unlisted++ }
                 continue
             }
             if (-not $seen.ContainsKey($r.id)) {
@@ -218,7 +234,7 @@ switch ($PSCmdlet.ParameterSetName) {
 
         $unlistedNote = ''
         if ($unlisted -gt 0) {
-            $unlistedNote = ("release-queue: note - {0} ready ledger row(s) are listed in neither plan file: shipped in an earlier package, or never seeded. -Seed -Release <N> [-Since ""<yyyy-MM-dd HH:mm>""] lists them and writes nothing without -Apply." -f $unlisted)
+            $unlistedNote = ("release-queue: note - {0} ready ledger row(s) are on neither side of the plan and record no shipment: shipped before the plan recorded it, or never seeded. -Seed -Release <N> [-Since ""<yyyy-MM-dd HH:mm>""] lists them and writes nothing without -Apply." -f $unlisted)
         }
         if ($problems.Count -eq 0) {
             Write-Output ("release-queue: OK - {0} ticket(s), no drift" -f $tickets.Count)
@@ -249,7 +265,7 @@ switch ($PSCmdlet.ParameterSetName) {
             }
         }
         $report = $null
-        # The read and, with -Apply, the rewrite of the plan files are one critical section, as in -Reconcile. A dry
+        # The read and, with -Apply, the rewrite of the plan are one critical section, as in -Reconcile. A dry
         # run takes the lock as well: a preview read between another writer's two files shows a state that never was.
         Enter-CatalogLock
         try {
@@ -259,7 +275,6 @@ switch ($PSCmdlet.ParameterSetName) {
         finally { Exit-CatalogLock }
         if ($Apply) { Sync-PortfolioProjection }
 
-        $readyRel = Get-SzaPath 'releaseReady' -Relative
         $queueRel = Get-SzaPath 'releaseQueue' -Relative
         $sinceText = if ($null -ne $sinceMoment) { $sinceMoment.ToString('yyyy-MM-dd HH:mm') } else { 'none' }
         if ($Apply) {
@@ -270,19 +285,16 @@ switch ($PSCmdlet.ParameterSetName) {
         if ($null -eq $sinceMoment) {
             Write-Output "  no -Since: every ready ticket listed nowhere is taken, shipped in an earlier package or not - name the time of the last release to leave those out"
         }
-        foreach ($f in $report.Created) {
-            Write-Output ("  create    {0}" -f (Get-SzaPath $f -Relative))
-        }
         foreach ($t in $report.Added) {
-            Write-Output ("  add       {0,-48} {1,-17} updated {2}  -> {3}, package {4}" -f $t.Ticket, $t.Status, $t.Updated, $readyRel, $Release)
+            Write-Output ("  add       {0,-48} {1,-17} updated {2}  -> ready, package {3}" -f $t.Ticket, $t.Status, $t.Updated, $Release)
         }
         foreach ($t in $report.Moved) {
             $groupText = ''
             if ($null -ne $t.Group) { $groupText = ('  under "{0}"' -f (([string] @($t.Group.Lines)[-1]).Trim())) }
-            Write-Output ("  move      {0,-48} {1,-17} {2} -> {3}, package {4}{5}" -f $t.Ticket, $t.Status, $queueRel, $readyRel, $t.Release, $groupText)
+            Write-Output ("  move      {0,-48} {1,-17} {2} -> ready, package {3}{4}" -f $t.Ticket, $t.Status, $queueRel, $t.Release, $groupText)
         }
         foreach ($t in $report.Returned) {
-            Write-Output ("  back      {0,-48} {1,-17} {2} -> {3}, package {4}" -f $t.Ticket, $t.Status, $readyRel, $queueRel, $t.Release)
+            Write-Output ("  back      {0,-48} {1,-17} ready -> {2}, package {3}" -f $t.Ticket, $t.Status, $queueRel, $t.Release)
         }
         foreach ($t in $report.QueueAdded) {
             Write-Output ("  new       {0,-48} {1,-17} -> {2}, package {3}" -f $t.Ticket, $t.Status, $queueRel, $t.Release)
@@ -300,7 +312,7 @@ switch ($PSCmdlet.ParameterSetName) {
     }
 
     'SetCurrent' {
-        # S0144: under the catalog lock like every other writer of the plan files. A mutator's Sync-ReleaseQueue
+        # S0144: under the catalog lock like every other writer of the plan. A mutator's Write-Catalog
         # re-renders this file from its own read, and an older snapshot written back here would undo that.
         Enter-CatalogLock
         $lines = Read-ReleaseQueue
@@ -326,17 +338,30 @@ switch ($PSCmdlet.ParameterSetName) {
         exit 0
     }
 
+    'Show' {
+        # The two views the ledger renders (TASK-FLOW 0.52). They write nothing.
+        if ($Show -eq 'Ready') { Get-ReleaseReadyViewLines | ForEach-Object { Write-Output $_ } }
+        else { Get-ReleaseDoneViewLines | ForEach-Object { Write-Output $_ } }
+        exit 0
+    }
+
     'Ship' {
-        # S0144: the read of both plan files and their rewrite are one critical section under the catalog lock, as in
+        # S0144: the read of the plan and its rewrite are one critical section under the catalog lock, as in
         # -Reconcile. No child is started in between, so the lock cannot starve one.
         Enter-CatalogLock
-        # The shipped content is the READY file - the queue holds what did NOT make it.
-        $readyPath = Get-ReleaseReadyPath
-        $lines = Read-ReleaseFile -Path $readyPath
-        $shipping = @(Get-QueueTickets -Lines $lines | Where-Object { $_.Release -eq $Release })
+        if (-not $DryRun) { Save-LegacyPlanImport }
+        $plan = Read-PlanRecords
+        $records = $plan.Active
+        # The shipped content is the finished side - the queue holds what did NOT make it.
+        $readyLines = Get-ReadyLinesFromRecords -Records $records
+        if ($null -ne $plan.Import) { Add-ReadyRows -Target $readyLines -Additions $plan.Import.ReadyRows }
+        $byId = @{}
+        foreach ($r in $records) { $byId[[string]$r.id] = $r }
+        $shipping = @(Get-QueueTickets -Lines $readyLines |
+                Where-Object { $_.Release -eq $Release -and (Test-ReleaseReadyStatus -Status $byId[[string]$_.Id].status) })
         if ($shipping.Count -eq 0) {
             Exit-CatalogLock
-            Write-Error "Nothing ready for release $Release ($(Get-SzaPath 'releaseReady' -Relative))" -ErrorAction Continue
+            Write-Error "Nothing ready for release $Release" -ErrorAction Continue
             exit 1
         }
 
@@ -350,48 +375,23 @@ switch ($PSCmdlet.ParameterSetName) {
 
         if ($DryRun) {
             Exit-CatalogLock
-            Write-Output ("release-queue: DRY RUN - would move {0} ready ticket(s) out of release {1}" -f $shipping.Count, $Release)
+            Write-Output ("release-queue: DRY RUN - would ship {0} ready ticket(s) of release {1}" -f $shipping.Count, $Release)
             exit 0
         }
 
-        $stamp = Get-Today
-        $title = if ($Version) { "## release $Release - v$Version - $stamp" } else { "## release $Release - $stamp" }
-        $block = New-Object System.Collections.Generic.List[string]
-        $block.Add($title)
-        $block.Add('')
-        foreach ($t in $shipping) {
-            # No package column on the row: the block title above it already names the package
-            # (S2852), and this file is one block per package by construction.
-            $block.Add((Format-ReleaseQueueLine -Ticket $t.Ticket -Changed $t.Changed -Status $t.Status))
+        # One shipment block of the whole project, so a package shipped twice stays two blocks.
+        $block = Get-NextShipBlock -Records (@($records) + @($plan.Archived))
+        $title = Format-ShipTitle -Release $Release -Version $Version -Date (Get-Today)
+        $order = 0
+        foreach ($row in $shipping) {
+            $order++
+            $record = $byId[[string]$row.Id]
+            $entry = New-ShipmentEntry -Release $Release -Block $block -Order $order -Title $title `
+                -Changed ([string]$row.Changed) -Status ([string]$record.status)
+            Add-RecordShipment -Record $record -Shipment $entry
+            Remove-PackageFields -Record $record
         }
-        $block.Add('')
-
-        $donePath = Get-ReleaseQueueDonePath
-        # S0145: never `$x = if (..) { .. } else { .. }` - the if unrolls the array, so a missing
-        # file leaves $null and a one-line file leaves a [string], and `.Count` below throws under
-        # StrictMode. Each branch assigns its own array-wrapped value instead.
-        if (Test-Path $donePath) { $existing = @(Get-Content -LiteralPath $donePath -Encoding UTF8) }
-        else { $existing = @() }
-        # Newest release on top: the head of the file is always the last thing shipped.
-        $headerLen = 0
-        while ($headerLen -lt $existing.Count -and $existing[$headerLen] -notmatch '^## release ') { $headerLen++ }
-        $merged = New-Object System.Collections.Generic.List[string]
-        for ($i = 0; $i -lt $headerLen; $i++) { $merged.Add($existing[$i]) }
-        foreach ($b in $block) { $merged.Add($b) }
-        for ($i = $headerLen; $i -lt $existing.Count; $i++) { $merged.Add($existing[$i]) }
-
-        $payload = [string]::Join("`r`n", $merged.ToArray()) + "`r`n"
-        $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-        [System.IO.File]::WriteAllText("$donePath.tmp", $payload, $utf8NoBom)
-        Move-Item -LiteralPath "$donePath.tmp" -Destination $donePath -Force
-
-        # Drop the shipped block from the ready file.
-        $remaining = New-Object System.Collections.Generic.List[object]
-        foreach ($line in $lines) {
-            if ($line.Kind -eq 'ticket' -and $line.Release -eq $Release) { continue }
-            $remaining.Add($line)
-        }
-        Write-ReleaseFile -Path $readyPath -Lines $remaining
+        Write-Catalog -Records $records
 
         # Advance the marker, which lives in the queue - the file the owner plans in.
         $queueLines = Read-ReleaseQueue
@@ -403,7 +403,7 @@ switch ($PSCmdlet.ParameterSetName) {
         Write-ReleaseQueue -Lines $queueLines
         Exit-CatalogLock
 
-        Write-Output ("release-queue: shipped release {0} - {1} ticket(s) moved to {2}" -f $Release, $shipping.Count, (Split-Path $donePath -Leaf))
+        Write-Output ("release-queue: shipped release {0} - {1} ticket(s) recorded as shipped in the ledger (view: -Show Done)" -f $Release, $shipping.Count)
         Write-Output ("release-queue: current release -> {0}" -f ([int]$Release + 1))
         exit 0
     }

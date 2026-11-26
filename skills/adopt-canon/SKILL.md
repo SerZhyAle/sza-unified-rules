@@ -8,9 +8,8 @@ description: 'Adopt or re-sync the SZA Unified Rules in a repo. Write or refresh
 One repo per run. This replaces the old copy-paste spread-back prompt: the canon now travels with the session
 as a plugin, so nothing is copied and nothing can drift silently.
 
-The canon is **read-only** from this session, with exactly one exception: the repo's own record under
-`rules/contrib/` - the facts file `<repo>.md` and its history file `history/<repo>.md`. Rule fixes go back to
-the canon repo in their own session.
+The canon is **read-only** from this session, with exactly one exception: the repo's own facts record
+`rules/contrib/<repo>.md`. Rule fixes go back to the canon repo in their own session.
 
 Canon: [README.md](../../rules/README.md) (consumption model),
 [NEW_PROJECT_CHECKLIST.md](../../rules/NEW_PROJECT_CHECKLIST.md) (the new-repo front door),
@@ -23,8 +22,8 @@ Canon: [README.md](../../rules/README.md) (consumption model),
 ## Step 0 - Mode
 
 - **`rules/contrib/<repo>.md` exists** -> this is an **existing** repo. Read that facts record first: overlay
-  facts, channel rows, open questions, recorded divergences. Do not read `rules/contrib/history/<repo>.md` -
-  it is the dated account of earlier runs and decides nothing.
+  facts, channel rows, open questions, recorded divergences. Do not read `rules/contrib/history/` - it is
+  frozen and decides nothing.
 - **No record** -> this is a **new** repo. Follow
   [NEW_PROJECT_CHECKLIST.md](../../rules/NEW_PROJECT_CHECKLIST.md) top to bottom in place of steps 2-4, then
   continue from step 5, creating the record from `rules/contrib/TEMPLATE.md`. Step 6a is not skippable.
@@ -175,8 +174,9 @@ fine to skip with a one-line reason where it does not. It ports as a **concept**
 format, ticket-id scheme, branch-naming scheme, or file name is mandated. Work the six decisions below and
 write each answer into the repo's rules file, so the next session inherits it instead of re-inventing it.
 
-**(a) Name the three files.** The work-remaining file, the ready file, the shipped-history file. Defaults:
-`PLAN/RELEASE_QUEUE.md`, `PLAN/RELEASE_READY.md`, `PLAN/RELEASE_QUEUE_DONE.md`. Put them wherever the repo
+**(a) Name the three records.** Work remaining, ready, shipped history. Defaults: `PLAN/RELEASE_QUEUE.md`,
+`PLAN/RELEASE_READY.md`, `PLAN/RELEASE_QUEUE_DONE.md`. A repo on the shared harness keeps only the queue file
+and renders the other two from its ledger (`release-queue -Show Ready|Done`). Put files wherever the repo
 already keeps planning text.
 
 **(b) Find the single write path into the ticket store, and hook the reconcile there.** One function, one
@@ -302,10 +302,8 @@ For a bootstrap run, use the gate command from step 1.
 ## Step 9 - Record and commit
 
 - Update `rules/contrib/<repo>.md` in place: rewrite every fact, channel row, delta and open question this run
-  changed, and delete the ones it settled. Never append a dated section to that file.
-- Append a dated `## Canon adoption <YY-MM-DD HH:mm>` section to `rules/contrib/history/<repo>.md` (when the
-  file is absent, create it with the first line `# History: <repo>`): what changed, which questions closed,
-  which divergences are now recorded, what remains.
+  changed, and delete the ones it settled. Never append a dated section to that file or under
+  `rules/contrib/history/`; what changed and what remains goes into the report.
 - Commit **in the target repo** per its conventions - English message, co-author trailer. Push only if the
   repo's flow requires it.
 - File the canon fixes you found as tickets in the canon (`spec-draft.ps1 -Project canon`) and cite their ids in
@@ -331,13 +329,13 @@ For a bootstrap run, use the gate command from step 1.
       records its builds, `import` and `probe` ran and their outputs are in the report.
 - [ ] The repo's own gates pass, with exit codes cited.
 - [ ] The compliance gate's error count is zero, or every remaining error has a recorded exemption.
-- [ ] The facts record is current, and `rules/contrib/history/<repo>.md` carries a dated adoption section.
+- [ ] The facts record is current.
 - [ ] Needed canon fixes are filed as tickets in the canon (ids in the report), and the canon itself was not edited.
 
 ## Guardrails
 
 - One repo per run. Never batch several - each has its own gates and its own commit.
-- The canon is read-only here, except this repo's contrib record and its history file.
+- The canon is read-only here, except this repo's contrib record.
 - Never invent a fact for the stamp. A tag regex comes from the release script; the site root comes from the
   Pages API. An unknown value is asked about once, then written down.
 - Adding a product to the hub is an owner decision, not a consequence of adopting the canon.

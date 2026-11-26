@@ -1,14 +1,14 @@
 #requires -Version 7.0
 <#
 .SYNOPSIS
-  S0151: release-queue.ps1 -Seed, the one-off that moves an existing ledger onto the plan files, and the unlisted-row
+  S0151: release-queue.ps1 -Seed, the one-off that moves an existing ledger onto the release plan, and the unlisted-row
   count of -Validate. Child processes of the harness's own scripts only, against a throwaway repository under the
   system temp directory.
 .DESCRIPTION
-  The sync never adds a ready ticket that stands in neither plan file (it shipped in an earlier package, is the
-  premise). The seed is the owner's action for a ledger that already holds built, unshipped work: it adds those
-  tickets to one package of the ready file, splits a hand-kept queue file by status keeping the owner's `#` group
-  comment lines with the rows that move, and is a dry run unless -Apply is given.
+  The sync never adds a ready ticket that stands on neither side of the plan (it shipped earlier, is the premise).
+  The seed is the owner's action for a ledger that already holds built, unshipped work: it puts those tickets into one
+  package of the finished side (ledger fields, TASK-FLOW 0.52), splits a hand-kept queue file by status keeping the
+  owner's `#` group comment lines with the rows that move, and is a dry run unless -Apply is given.
 
   The fixture is a ledger of nine rows and a hand-kept queue file of four: S0001 unfinished under package 1; S0002
   and S0003 ready, under one group comment; S0004 ready, in package 2 under a two-line group comment. S0005, S0006
@@ -18,15 +18,15 @@
   Cases:
     validate before - -Validate names the four ready ledger rows listed in neither file and still reports the one
                       unfinished row missing from the queue as drift (exit 1)
-    dry run         - -Seed -Release 3 -Since .. writes nothing (the queue file byte for byte, no ready file, no done
-                      file) and prints each add, move, new and left-out row, with the group comment of a moved row
-    apply           - -Apply creates the ready and the done file; the ready file holds package 1 and package 2 with
-                      their group comments and package 3 with S0005, S0006, S0009 in id order; S0007 is left out; the
-                      queue file keeps its comments and gains S0008 at package 3; the ledger file is untouched
+    dry run         - -Seed -Release 3 -Since .. writes nothing (the queue file and the ledger byte for byte, no ready
+                      file, no done file) and prints each add, move, new and left-out row, with a moved row's group
+    apply           - -Apply writes the ledger and no ready or done file; the ready view holds package 1 and package 2
+                      with their group comments and package 3 with S0005, S0006, S0009 in id order; S0007 is left out;
+                      the queue file keeps its comments and gains S0008 at package 3
     validate after  - -Validate exits 0 and counts the one row left out
-    second apply    - without -Since, with a tenth ready row and an eleventh the ledger reopened while the ready file
-                      still lists it as Verified: S0007 and S0010 land at the end of the existing package 3 block (one
-                      heading), S0011 goes back to the queue, nothing else moves, and the output says no -Since was given
+    second apply    - without -Since, with a tenth ready row and an eleventh the ledger reopened while its row still
+                      carries a package: S0007 and S0010 land at the end of the existing package 3 run (one heading),
+                      S0011 goes back to the queue, nothing else moves, and the output says no -Since was given
     arguments       - a non-numeric -Release and an unreadable -Since each stop before any write
   Exit 0 when every case passed, 1 on any failure.
 #>
@@ -88,7 +88,8 @@ function Invoke-Tool([string] $Root, [string[]] $Arguments) { return (Wait-Tool 
 function Get-Skeleton([string] $Path) {
     # The lines that carry the plan: package headings, `#` lines and the ticket token of each row.
     $out = New-Object System.Collections.Generic.List[string]
-    foreach ($line in ([IO.File]::ReadAllText($Path) -split "`r?`n")) {
+    $text = if ($Path.Contains("`n")) { $Path } else { [IO.File]::ReadAllText($Path) }
+    foreach ($line in ($text -split "`r?`n")) {
         $t = $line.Trim()
         if ($t -match '^(\d+|--)$' -or $t.StartsWith('#')) { $out.Add($t) }
         elseif ($t -match '^(S\d{4}_\S+)\s') { $out.Add($Matches[1]) }
@@ -157,7 +158,7 @@ try {
         $r = $phaseOne['validate']
         Assert-Equal $r.code 1 "-Validate exit code: $($r.out)"
         Assert-That ($r.out -match 'missing from the queue: S0008_eight') "S0008 is not named as missing: $($r.out)"
-        Assert-That ($r.out -match 'note - 4 ready ledger row\(s\) are listed in neither plan file') "the count of unlisted ready rows is missing or wrong: $($r.out)"
+        Assert-That ($r.out -match 'note - 4 ready ledger row\(s\) are on neither side of the plan') "the count of unlisted ready rows is missing or wrong: $($r.out)"
         Assert-That ($r.out -match '-Seed -Release') "the note does not name the seed: $($r.out)"
     }
 
@@ -182,38 +183,35 @@ try {
         $r = Invoke-Tool $repo @('-Seed', '-Release', '3', '-Since', '2026-11-13 01:30', '-Apply')
         Assert-Equal $r.code 0 "-Seed -Apply: $($r.out)"
         Assert-That ($r.out -notmatch 'DRY RUN') "an applied seed calls itself a dry run: $($r.out)"
-        Assert-That ($r.out -match 'create\s+PLAN/RELEASE_READY\.md' -and $r.out -match 'create\s+PLAN/RELEASE_QUEUE_DONE\.md') "the created files are not named: $($r.out)"
         Assert-That ($r.out -match 'seed - added 3 ready ticket\(s\) to package 3, moved 3 from the queue file') "the summary does not say added 3 and moved 3: $($r.out)"
-        Assert-That (Test-Path -LiteralPath $readyPath) 'the ready file was not created'
-        Assert-That (Test-Path -LiteralPath $donePath) 'the done file was not created'
-        Assert-That (([IO.File]::ReadAllText($donePath)) -match '(?m)^# Shipped Release Packages\r?$') 'the done file has no standard header'
-        Assert-That (([IO.File]::ReadAllText($readyPath)) -match '(?m)^# Release Content \(ready\)\r?$') 'the ready file has no standard header'
-        Assert-Equal (Get-Skeleton $readyPath) ('# Release Content (ready)|1|# Group A - sorting|S0002_two|S0003_three|2|# Group B - wear|# second line of group B|S0004_four|3|S0005_five|S0006_six|S0009_nine') 'the ready file'
+        Assert-That (-not (Test-Path -LiteralPath $readyPath) -and -not (Test-Path -LiteralPath $donePath)) 'a ready or a shipped file was written'
+        $view = (Invoke-Tool $repo @('-Show', 'Ready')).out
+        Assert-Equal (Get-Skeleton $view) ('# Release Content (ready)|1|# Group A - sorting|S0002_two|S0003_three|2|# Group B - wear|# second line of group B|S0004_four|3|S0005_five|S0006_six|S0009_nine') 'the ready view'
         Assert-Equal (Get-Skeleton $queuePath) ('# Release queue|1|S0001_one|# Group A - sorting|2|# Group B - wear|# second line of group B|3|S0008_eight') 'the queue file'
-        Assert-That (([IO.File]::ReadAllText($readyPath)) -notmatch 'S0007_seven') 'the row before -Since was written'
-        Assert-That (([IO.File]::ReadAllText($readyPath)) -match 'S0002_two\s+26-11-14 10:00\s+Implemented') 'a moved row lost its changed stamp'
-        Assert-That (([IO.File]::ReadAllText($readyPath)) -match 'S0005_five\s+26-11-16 08:00\s+Verified') 'an added row does not carry the ledger stamp'
-        Assert-Equal ([IO.File]::ReadAllText($ledgerPath)) $ledgerBefore 'the ledger after an applied seed'
+        Assert-That ($view -match 'S0002_two\s+26-11-14 10:00\s+Implemented') 'a moved row lost its changed stamp'
+        Assert-That ($view -match 'S0005_five\s+26-11-16 08:00\s+Verified') 'an added row does not carry the ledger stamp'
+        $seven = @([IO.File]::ReadAllLines($ledgerPath) | ForEach-Object { $_ | ConvertFrom-Json } | Where-Object { $_.id -eq 'S0007' })[0]
+        Assert-That ($null -eq $seven.PSObject.Properties['package']) 'the row before -Since got a package'
     }
 
     Run-Case 'validate after: clean, and the one row left out is counted' {
         $r = Invoke-Tool $repo @('-Validate')
         Assert-Equal $r.code 0 "-Validate after the seed: $($r.out)"
         Assert-That ($r.out -match 'OK - 8 ticket\(s\), no drift') "the OK line is missing: $($r.out)"
-        Assert-That ($r.out -match 'note - 1 ready ledger row\(s\) are listed in neither plan file') "the left-out row is not counted: $($r.out)"
+        Assert-That ($r.out -match 'note - 1 ready ledger row\(s\) are on neither side of the plan') "the left-out row is not counted: $($r.out)"
     }
 
     Run-Case 'second apply: no -Since, one more ready row, one reopened; the package block grows, the reopened row goes back, nothing else moves' {
-        # S0011 stands in the ready file as Verified while the ledger has reopened it as Draft - the state a ledger
-        # write leaves behind when the sync did not run. The seed does what the sync would: the row goes back.
-        Write-Utf8 $ledgerPath (([IO.File]::ReadAllText($ledgerPath)) + (New-Row 'S0010' 'ten' 'Verified' '2026-11-17 09:00') + "`n" + (New-Row 'S0011' 'eleven' 'Draft' '2026-11-17 10:00') + "`n")
-        Write-Utf8 $readyPath (([IO.File]::ReadAllText($readyPath)) + "S0011_eleven                                                   26-11-17 10:00  Verified`r`n")
+        # S0011 stands on the finished side while the ledger has reopened it as Draft - the state a ledger write
+        # leaves behind when the sync did not run. The seed does what the sync would: the row goes back.
+        $eleven = (New-Row 'S0011' 'eleven' 'Draft' '2026-11-17 10:00').TrimEnd('}') + ',"package":"3","packageOrder":99,"packageChanged":"26-11-17 10:00"}'
+        Write-Utf8 $ledgerPath (([IO.File]::ReadAllText($ledgerPath)) + (New-Row 'S0010' 'ten' 'Verified' '2026-11-17 09:00') + "`n" + $eleven + "`n")
         $r = Invoke-Tool $repo @('-Seed', '-Release', '3', '-Apply')
         Assert-Equal $r.code 0 "second -Seed -Apply: $($r.out)"
         Assert-That ($r.out -match 'no -Since') "the missing -Since is not said: $($r.out)"
-        Assert-That ($r.out -match 'back\s+S0011_eleven\s+Draft\s+PLAN/RELEASE_READY\.md -> PLAN/RELEASE_QUEUE\.md, package 3') "the return of S0011 is not listed: $($r.out)"
+        Assert-That ($r.out -match 'back\s+S0011_eleven\s+Draft\s+ready -> PLAN/RELEASE_QUEUE\.md, package 3') "the return of S0011 is not listed: $($r.out)"
         Assert-That ($r.out -match 'added 2 ready ticket\(s\) to package 3, moved 0 from the queue file, put 1 back in the queue') "the second summary is wrong: $($r.out)"
-        Assert-Equal (Get-Skeleton $readyPath) ('# Release Content (ready)|1|# Group A - sorting|S0002_two|S0003_three|2|# Group B - wear|# second line of group B|S0004_four|3|S0005_five|S0006_six|S0009_nine|S0007_seven|S0010_ten') 'the ready file after the second seed'
+        Assert-Equal (Get-Skeleton (Invoke-Tool $repo @('-Show', 'Ready')).out) ('# Release Content (ready)|1|# Group A - sorting|S0002_two|S0003_three|2|# Group B - wear|# second line of group B|S0004_four|3|S0005_five|S0006_six|S0009_nine|S0007_seven|S0010_ten') 'the ready view after the second seed'
         Assert-Equal (Get-Skeleton $queuePath) ('# Release queue|1|S0001_one|# Group A - sorting|2|# Group B - wear|# second line of group B|3|S0008_eight|S0011_eleven') 'the queue file after the second seed'
     }
 

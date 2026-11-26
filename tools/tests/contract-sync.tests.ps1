@@ -164,7 +164,7 @@ try {
             "# Fixture`nStatus: Draft" | Set-Content (Join-Path $root 'PLAN/S0001_fixture.md')
             $insert = Invoke-Child (Join-Path $SourceRoot 'tools/harness/spec_catalog/insert.ps1') @('-Id', 'S0001', '-Name', 'fixture', '-File', 'PLAN/S0001_fixture.md')
             Assert-That ($insert.code -eq 0) $insert.output
-            $result = Invoke-Child (Join-Path $SourceRoot 'tools/harness/spec_catalog/complete.ps1') @('-Id', 'S0001', '-Status', 'Archived', '-SkipValidate')
+            $result = Invoke-Child (Join-Path $SourceRoot 'tools/harness/spec_catalog/complete.ps1') @('-Id', 'S0001', '-Status', 'Archived', '-Reason', 'not needed: fixture', '-SkipValidate')
             Assert-That ($result.code -eq 0) $result.output
             if ($configured) {
                 Assert-That ($result.output -match 'engineering/log.md not found') 'Configured log check was skipped'

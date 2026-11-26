@@ -83,8 +83,11 @@ param(
     [string]$Reason = 'session-bootstrap',
 
     [ValidateSet('json', 'table')]
-    [string]$Format = 'json'
+    [string]$Format = 'json',
+    [switch]$Help
 )
+
+if ($Help) { . (Join-Path $PSScriptRoot '../_help.ps1'); Show-SzaHelp $PSCommandPath; exit 0 }
 
 . (Join-Path $PSScriptRoot '..\_profile.ps1')
 

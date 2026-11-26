@@ -22,8 +22,12 @@
 # read here has to survive its absence or this library would break them the moment it loads.
 $script:IdleRunDefaultThreshold = 2
 $script:IdleRunDefaultOutcomes = @(
-    'ok', 'timeout', 'claim-lost', 'no-progress-or-claim-lost'
+    'ok', 'timeout', 'claim-lost', 'no-progress', 'no-progress-or-claim-lost'
 )
+
+# One outcome under two spellings (TASK-FLOW 0.51): rows written before it say no-progress-or-claim-lost, a profile
+# may name either, and a set that names one counts both.
+$script:IdleRunSpellings = @('no-progress', 'no-progress-or-claim-lost')
 
 # The third class (S4265). A run is one of: one that COUNTS (an idle outcome), one that ENDS the
 # series (any other outcome, or a status move), and one that is NEUTRAL - it says nothing about the
@@ -55,7 +59,11 @@ function Get-IdleRunPolicy {
     if ($threshold -lt 1) { $threshold = $script:IdleRunDefaultThreshold }
     $outcomes = @(Get-IdleRunProfileValue -Path 'runner.idleOutcomes' -Default $script:IdleRunDefaultOutcomes)
     if ($outcomes.Count -eq 0) { $outcomes = $script:IdleRunDefaultOutcomes }
-    return [pscustomobject]@{ Threshold = $threshold; Outcomes = @($outcomes | ForEach-Object { [string] $_ }) }
+    $outcomes = @($outcomes | ForEach-Object { [string] $_ })
+    if (@($outcomes | Where-Object { $script:IdleRunSpellings -contains $_ }).Count -gt 0) {
+        $outcomes = @($outcomes + $script:IdleRunSpellings | Select-Object -Unique)
+    }
+    return [pscustomobject]@{ Threshold = $threshold; Outcomes = $outcomes }
 }
 
 function ConvertTo-IdleRunDate {

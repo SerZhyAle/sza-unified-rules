@@ -234,7 +234,7 @@ try {
 
     Run-Case 'archive.ps1 keeps a file that is already in the archive directory' {
         $env:SZA_PROJECT_ROOT = $repo
-        $out = & pwsh -NoProfile -File $archive -Id S1601 2>&1 | Out-String
+        $out = & pwsh -NoProfile -File $archive -Id S1601 -Reason 'not needed: fixture' 2>&1 | Out-String
         $code = $LASTEXITCODE
         Assert-That ($code -eq 0) "archive exit $code : $($out.Trim())"
         Assert-That ($out -match 'already there') "no 'already there' in: $($out.Trim())"

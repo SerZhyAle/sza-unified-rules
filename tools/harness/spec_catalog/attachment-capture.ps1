@@ -43,6 +43,21 @@ function Copy-DraftAttachments([string[]] $Paths, [string] $SpecPath, [string] $
     return $Newline + $Newline + '**Attachments:**' + $Newline + ($links -join $Newline) + $Newline
 }
 
+# The request text goes into a ticket once. A template with a second {{TEXT}} token (section 0 plus a second block)
+# gets a pointer there instead of a second copy. The later tokens are replaced first, so a token inside the text
+# itself is never expanded or removed.
+function Add-DraftOwnerText([string] $Body, [string] $Value) {
+    $token = '{{TEXT}}'
+    $at = $Body.IndexOf($token, [StringComparison]::Ordinal)
+    if ($at -lt 0) { return $Body }
+    $tail = $Body.Substring($at + $token.Length)
+    if ($tail.Contains($token)) {
+        Write-Host 'capture-draft: the ticket template has more than one {{TEXT}} token; the request text is written once, at the first' -ForegroundColor Yellow
+        $tail = $tail.Replace($token, '(The request text stands once, above.)')
+    }
+    return $Body.Substring(0, $at) + $Value + $tail
+}
+
 # A project-owned capture script that takes no -Attach: the ticket it wrote gets the files afterwards, linked right
 # after the first verbatim copy of the request text, so the text itself is never touched.
 function Add-DraftAttachmentLinks([string[]] $Paths, [string] $SpecPath, [string] $RequestText) {

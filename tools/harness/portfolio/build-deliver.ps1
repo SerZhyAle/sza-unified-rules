@@ -68,9 +68,9 @@
     3 the build failed (non-zero exit, timeout) or produced no artifacts, or the build token never freed
     4 the version did not resolve - refused, not guessed
 #>
-[CmdletBinding(PositionalBinding = $false)]
+[CmdletBinding(PositionalBinding = $false, DefaultParameterSetName = 'Run')]
 param(
-    [Parameter(Mandatory)][string]$Project,
+    [Parameter(Mandatory, ParameterSetName = 'Run')][Parameter(ParameterSetName = 'Help')][string]$Project,
     [string]$Ticket = '',
     [string]$BuildCommand = '',
     [string]$Version = '',
@@ -80,8 +80,11 @@ param(
     [switch]$DeliverOnly,
     [int]$TokenWaitSeconds = 900,
     [int]$TimeoutSeconds = 1800,
-    [switch]$Json
+    [switch]$Json,
+    [Parameter(Mandatory, ParameterSetName = 'Help')][switch]$Help
 )
+
+if ($Help) { . (Join-Path $PSScriptRoot '../_help.ps1'); Show-SzaHelp $PSCommandPath; exit 0 }
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'

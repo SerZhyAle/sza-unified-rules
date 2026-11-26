@@ -35,18 +35,21 @@ Moved verbatim from [CLAUDE.md](../../CLAUDE.md) on 2026-11-25. The always-on ru
   `release-ledger.ps1 build` (kind `release`) before staging, and after the plugin-cache check passes (`updated` or
   `current`) it runs `publish -State live` - warning on error and never failing the deploy.
   When the deploy is run without a message, one generated line (`Get-DeployChangeNote` in `deploy.ps1`) is both
-  the commit subject and the note of that build row: the subjects of the local commits not yet on the remote,
-  the changed rule documents by name, and a count of the other changed paths per top-level folder. A line over
-  72 characters is cut in the subject and carried whole in the commit body. The body also names the plugin
-  version, so `git log --grep` with a version number finds what that version holds. With a message, the subject
-  is the message and the note is its first line.
+  the commit subject and the note of that build row: the ids of the tickets the deploy carries
+  (`Get-DeployTickets`: finished ledger rows since the last deploy commit and ids in unpushed subjects, else ids
+  in the added diff lines) with the first title; only when no id is found, the subjects of the local commits not
+  yet on the remote, the changed rule documents by name, and a count of the other changed paths per top-level
+  folder. A line over 72 characters is cut in the subject and carried whole in the commit body. The body also
+  holds one `id: title` line per ticket and names the plugin version, so `git log --grep` with a version number
+  finds what that version holds. The `publish` row gets the ids as its note. With a message, the subject is the
+  message and the build note is its first line.
   [tools/tests/deploy-release-ledger.tests.ps1](../../tools/tests/deploy-release-ledger.tests.ps1) covers it with stubs.
 - **The deploy also ships the canon's own release package** (from 2026-11-18, TASK-FLOW rule 16): right after
   `publish -State live`, under the same guard, it runs `tools/harness/spec_catalog/ship-package.ps1 -Version <plugin
-  version>` with `SZA_PROJECT_ROOT` pinned to this checkout. The ready rows of `PLAN/RELEASE_READY.md` move into
-  `PLAN/RELEASE_QUEUE_DONE.md`, the marker advances, and the `Verified` tickets in neither plan file are archived;
-  `Implemented` and `BlockNeedUserTest` tickets stay in the ledger. A problem there warns and never changes the
-  exit code. Case 9 of the suite above covers the call site.
+  version>` with `SZA_PROJECT_ROOT` pinned to this checkout. The finished rows of the plan are recorded as a
+  shipment on their ledger rows, the marker advances, and the `Verified` tickets on neither side whose shipment names
+  a version are archived with that reason; `Implemented`, `BlockNeedUserTest` and unproven `Verified` tickets stay in
+  the ledger. A problem there warns and never changes the exit code. Case 9 of the suite above covers the call site.
 - **The deploy also brings this machine's plugin to the pushed version** (from 2026-10-29): after the push, on `main`,
   when the cache is behind, it runs `claude plugin marketplace update sza-unified-rules` and `claude plugin update
   sza@sza-unified-rules` and checks that the cache reached the version. A failure only warns and prints the commands;

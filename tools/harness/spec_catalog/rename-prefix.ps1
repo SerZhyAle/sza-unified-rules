@@ -10,7 +10,7 @@
          (S4466 -> FMSAND-4466), the ledger row gets the new id and file and lists the old id in `formerIds`, the
          spec file and its folder are renamed, and every mention of the old file name in the specs is rewritten;
       3. rewrites the old id inside the token lines of the specs (`Blocker:`, `Блокер:`, `Carrier:`, `Blocks:`) and
-         inside `statusNote` and `blocked_by` of the ledger rows, the rows of the three plan files and this
+         inside `statusNote` and `blocked_by` of the ledger rows, the rows of the queue file and this
          repository's rows of the portfolio queue file;
       4. with -AllRepos, also the `<key>:<old id>` token lines in the specs of every other registered repository;
       5. retags the status-bound debug probes of the renamed tickets in source (probes.scanRoots, the project's probe
@@ -401,8 +401,9 @@ $specDirs = @([string](Get-SzaProfileValue 'paths.specsDir'), [string](Get-SzaPr
 foreach ($f in (Get-RpSpecFiles $root $specDirs)) {
     Update-RpFile $f { param($t) Convert-RpSelfTokens (Convert-RpBaseNames $t) }
 }
-# the three plan files
-foreach ($p in @((Get-ReleaseQueuePath), (Get-ReleaseReadyPath), (Get-ReleaseQueueDonePath))) {
+# the queue file; the finished side and the shipment history are ledger fields (TASK-FLOW 0.52), and the files an
+# older tool kept them in are read by former id and never written
+foreach ($p in @((Get-ReleaseQueuePath))) {
     if ($p -and (Test-Path -LiteralPath $p -PathType Leaf)) { Update-RpFile $p { param($t) Convert-RpBaseNames $t } }
 }
 # this repository's rows of the portfolio queue file

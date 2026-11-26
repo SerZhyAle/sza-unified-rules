@@ -10,11 +10,10 @@ LGPL/GPL native media stack, and the third-party-stream Store-review posture are
 Version shape, winget mechanics, MSIX/Store re-sign, agent-kit/spec-lifecycle, and WPF/.NET desktop specifics are already
 saturated by fastmediasorter_lite/epub/filedo and are NOT repeated.
 
-> **Keep this note in the record.** Current facts, edited in place. Never append a dated section to this file:
-> what happened and when goes to the file of the same name under `history/`
-> ([the rules of that folder](history/README.md)), which is not reading for a task. A delta the core absorbed,
-> a candidate that was applied or refused and a question that was answered are deleted here; the history
-> section of that day says what became of them.
+> **Keep this note in the record.** Current facts, edited in place. Never append a dated section to this file,
+> and append nothing under `history/` either: those files are frozen ([the rules of that folder](history/README.md))
+> and are not reading for a task. A delta the core absorbed, a candidate that was applied or refused and a
+> question that was answered are deleted here.
 
 ## Overlay facts (verified against this repo 2026-07-23; corrected in place from the 2026-10-02 entry, canon ticket S0120)
 - **Source root & release-mechanics:** `src/StreamsPlayer.Core` (platform-neutral) + `src/StreamsPlayer.App` (WPF);

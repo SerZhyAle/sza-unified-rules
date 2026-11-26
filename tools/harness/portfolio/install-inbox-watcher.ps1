@@ -52,8 +52,11 @@ param(
     [string]$InboxRoot = '',
     [int]$RepeatMinutes = 5,
     [switch]$Uninstall,
-    [switch]$DryRun
+    [switch]$DryRun,
+    [switch]$Help
 )
+
+if ($Help) { . (Join-Path $PSScriptRoot '../_help.ps1'); Show-SzaHelp $PSCommandPath; exit 0 }
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'

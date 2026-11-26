@@ -8,11 +8,13 @@ Local engineering records have an independent ignored registry under `dev/`. Ini
 checkout with `python tools/docs/check-documents.py --init-local --register --render`. The local corpus
 configuration declares the existing engineering roots and excludes frozen completed tickets and every
 ticket file (`PLAN/S<nnnn>_*.md` or `PLAN/CANONR-<nnnn>_*.md`): the ledger records a ticket, so a capture
-needs no registry row and no step is owed after one. Files directly inside ticket `attachments/` folders,
-including archived ticket folders, are excluded with their owning ticket. Other documents under `PLAN/` -
-queue files and phase notes - are registered like any document. A checkout whose local corpus predates these
-exclusions copies the newer entries from `LOCAL_IGNORE` in `tools/docs/check-documents.py` into its local
-configuration and runs `--register --render` once; ticket and attachment rows drop out. Neither the published
+needs no registry row and no step is owed after one. Files directly inside a ticket folder's `attachments/`,
+`evidence/` and `research/` folders, including archived ticket folders, are excluded with their owning ticket:
+every local corpus applies these three whatever its configuration lists, so a pass that writes an evidence log
+or a research note owes no row. Other documents under `PLAN/` - queue files and phase notes - are registered
+like any document. A checkout whose local corpus predates the ticket-file exclusions copies the newer entries
+from `LOCAL_IGNORE` in `tools/docs/check-documents.py` into its local configuration and runs
+`--register --render` once; ticket and ticket-folder rows drop out. Neither the published
 registry nor its generated map lists local records. A clone without a local corpus checks
 the published corpus only; the verdict reports how many corpora it inspected.
 

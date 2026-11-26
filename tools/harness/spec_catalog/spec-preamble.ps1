@@ -30,22 +30,25 @@
          the opposite reaction to a refused lease.
       3  a live sibling session owns the lease (ticket-lease.ps1's own code) - stop before any work.
 #>
-[CmdletBinding()]
+[CmdletBinding(DefaultParameterSetName = 'Run')]
 param(
-    [Parameter(Mandatory)][ValidatePattern('^[A-Za-z][A-Za-z0-9-]*\d{2,}$')][string] $Id,   # the shape only; the profile's grammar is checked below
-    [string] $Reason = 'spec-preamble',
-    [string] $ProductArea,
-    [string] $Trigger,
+    [Parameter(Position = 0, Mandatory, ParameterSetName = 'Run')][Parameter(ParameterSetName = 'Help')][ValidatePattern('^[A-Za-z][A-Za-z0-9-]*\d{2,}$')][string] $Id,   # the shape only; the profile's grammar is checked below
+    [Parameter(Position = 1)][string] $Reason = 'spec-preamble',
+    [Parameter(Position = 2)][string] $ProductArea,
+    [Parameter(Position = 3)][string] $Trigger,
     [switch] $NoLease,
     # S2404: the handoff path a previous claim printed. Forwarded verbatim to the lease child,
     # so a runtime with no session id can re-claim through the preamble instead of exiting 3 -
     # the preamble is the only call /spec-dev claims through, so printing the path without
     # accepting one left the ticket's own symptom alive on the path most drivers use.
-    [string] $Handoff,
+    [Parameter(Position = 4)][string] $Handoff,
     [switch] $Drift,
     [switch] $NoDrift,
-    [switch] $Json
+    [switch] $Json,
+    [Parameter(Mandatory, ParameterSetName = 'Help')][switch]$Help
 )
+
+if ($Help) { . (Join-Path $PSScriptRoot '../_help.ps1'); Show-SzaHelp $PSCommandPath; exit 0 }
 
 . (Join-Path $PSScriptRoot '..\_profile.ps1')
 if (-not (Test-SzaTicketId $Id)) { Write-Error "Invalid -Id '$Id' (must match $(Get-SzaTicketIdDisplay))."; exit 2 }

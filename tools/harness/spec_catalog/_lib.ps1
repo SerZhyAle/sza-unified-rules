@@ -26,6 +26,11 @@ $script:RepoRoot = $repoRoot
 # the row Add-ReleaseLines never appends below.
 . (Join-Path $libDir '_owner-gate.ps1')
 
+# TASK-FLOW 0.52: package assignment and shipment history live on the ledger row, and the one reason gate every
+# archiving path calls.
+. (Join-Path $libDir '_plan-ledger.ps1')
+. (Join-Path $libDir '_archive-reason.ps1')
+
 # The refusal journal, so a status gate that blocks a transition leaves a row a reader can find
 # after the tool output has scrolled away. Shared with every other harness cluster rather than
 # owned here: one journal is what makes one reader able to answer for all of them.
@@ -61,7 +66,9 @@ if ((Get-SzaEnv 'SPEC_CATALOG_DIR')) {
 }
 # Owner-facing release queue: which release package each open ticket belongs to, in the
 # owner's hand-kept order. The catalog stays the source of truth for STATUS; the queue owns
-# ORDER and RELEASE ASSIGNMENT, which no script may reshuffle. See PLAN/RELEASE_QUEUE.md.
+# ORDER and RELEASE ASSIGNMENT of unfinished work, which no script may reshuffle. Finished work and
+# shipments are ledger fields (TASK-FLOW 0.52, _plan-ledger.ps1): the ready and the done path are read
+# once, for the import of what an older tool left there, and never written. See PLAN/RELEASE_QUEUE.md.
 $script:ReleaseQueuePath     = (Get-SzaPath 'releaseQueue')
 $script:ReleaseReadyPath     = (Get-SzaPath 'releaseReady')
 $script:ReleaseQueueDonePath = (Get-SzaPath 'releaseQueueDone')
@@ -393,35 +400,48 @@ function Invoke-CatalogTransaction {
 function Write-Catalog {
     # Writes the ACTIVE journal only. Archive records are never passed here.
     # S2400: an empty set is legal - a batch archive of the last active records leaves none.
-    param([AllowEmptyCollection()][object[]] $Records = @())
+    #
+    # Single choke point for every catalog mutation (insert/update/complete/archive/delete/
+    # bulk-update), so the release plan follows along without any skill knowing about it: the plan
+    # fields travel in the same journal write as the status, and the queue file is rewritten after it.
+    #
+    # -SkipProjection leaves the portfolio projection (Sync-PortfolioProjection) to the caller. A caller that
+    # holds the catalog lock passes it and refreshes the projection after Exit-CatalogLock.
+    #
+    # S2512: a failure to compute or RE-RENDER the plan must not abort the caller. Letting a throw escape
+    # after the journal moved left the caller's spec header unsynced and reported a projection's error as
+    # if the transition itself had failed. Warn, name the repair, carry on.
+    param(
+        [AllowEmptyCollection()][object[]] $Records = @(),
+        [switch] $SkipProjection
+    )
+    $plan = $null
+    try {
+        $plan = Update-ReleasePlan -Records $Records
+    } catch {
+        Write-Host ("  release plan not updated: {0}" -f $_.Exception.Message) -ForegroundColor DarkYellow
+        Write-Host "  the journal is written and authoritative - rebuild the plan with release-queue.ps1 -Reconcile" -ForegroundColor DarkYellow
+    }
     # @() - an empty set formats to $null, which Write-JsonlFile refuses (S2400).
     $lines = @(Format-CatalogLines -Records $Records)
     Write-JsonlFile -Path $script:CatalogPath -Lines $lines
-    # Single choke point for every catalog mutation (insert/update/complete/archive/delete/
-    # bulk-update), so the release queue follows along without any skill knowing about it.
-    #
-    # S2512: a failure to RE-RENDER the queue must not abort the caller. Both release files are a
-    # projection of the journal, rewritten on every mutation and rebuildable on demand, whereas the
-    # journal write above has already landed and cannot be rolled back. Letting a throw escape here
-    # therefore aborted the caller AFTER the journal moved but BEFORE it mirrored the new status
-    # into the spec header - leaving the two sources of truth silently disagreeing, printing no
-    # confirmation line, and reporting a projection's error as if the transition itself had failed.
-    # That is the exact shape recorded on 2026-09-04. Warn, name the repair, carry on.
-    try {
-        Sync-ReleaseQueue -Records $Records
-    } catch {
-        Write-Host ("  release queue not re-rendered: {0}" -f $_.Exception.Message) -ForegroundColor DarkYellow
-        Write-Host "  the journal is written and authoritative - rebuild the files with release-queue.ps1 -Reconcile" -ForegroundColor DarkYellow
+    if ($null -ne $plan) {
+        try {
+            Complete-ReleasePlan -Plan $plan -Records $Records
+        } catch {
+            Write-Host ("  release queue not re-rendered: {0}" -f $_.Exception.Message) -ForegroundColor DarkYellow
+            Write-Host "  the journal is written and authoritative - rebuild the file with release-queue.ps1 -Reconcile" -ForegroundColor DarkYellow
+        }
+    }
+    if (-not $SkipProjection -and -not (Get-SzaEnv 'SKIP_RELEASE_QUEUE')) {
+        try { Sync-PortfolioProjection }
+        catch { Write-Host ("  portfolio queue not refreshed: {0}" -f $_.Exception.Message) -ForegroundColor DarkYellow }
     }
 }
 
 # ── Release queue (PLAN/RELEASE_QUEUE.md) ────────────────────────────────────────────────────
 
 function Get-ReleaseQueuePath { return $script:ReleaseQueuePath }
-
-function Get-ReleaseReadyPath { return $script:ReleaseReadyPath }
-
-function Get-ReleaseQueueDonePath { return $script:ReleaseQueueDonePath }
 
 function Get-ReleaseQueueDuplicatesDropped { return $script:ReleaseQueueDuplicatesDropped }
 
@@ -603,8 +623,6 @@ function Format-ReleaseQueueLine {
 
 function Read-ReleaseQueue { return ,(Read-ReleaseFile -Path $script:ReleaseQueuePath) }
 
-function Read-ReleaseReady { return ,(Read-ReleaseFile -Path $script:ReleaseReadyPath) }
-
 function Read-ReleaseFile {
     # Returns the file as an ordered list of line objects. Data lines are parsed; everything
     # else (heading, prose, blanks, the owner's own notes) is carried through verbatim so a
@@ -775,109 +793,12 @@ function Invoke-PortfolioProjectionChild {
     return @{ code = $LASTEXITCODE; out = ($out -join ' ') }
 }
 
-function Sync-ReleaseQueue {
-    # Reconcile BOTH release files against the catalog and move tickets between them by status.
-    #
-    #   RELEASE_QUEUE.md  - work still to do before the release: everything below Implemented,
-    #                       including tickets blocked on another ticket / a question / an
-    #                       external party (the owner wants those visible and sortable).
-    #   RELEASE_READY.md  - the release's finished content: Implemented, Verified,
-    #                       BlockNeedUserTest. Not something to plan around any more.
-    #
-    # Invariants:
-    #   - never reorders existing lines (the order is the owner's plan),
-    #   - never rewrites the `rel` column - a ticket keeps its package when it moves file,
-    #   - updates the changed-date ONLY when the status actually moved,
-    #   - a status change across the ready boundary moves the line to the other file,
-    #   - drops a line whose ticket left the active journal (archived or deleted),
-    #   - never ADDS a ready ticket that is in neither file: it shipped in an earlier package
-    #     (release-queue.ps1 -Seed is the owner's one-off for a ledger where that is false, S0151),
-    #   - keeps ONE line per ticket id across both files: the first occurrence wins its position
-    #     and its `rel` column, every later one is dropped (S1698).
-    #
-    # -SkipProjection leaves the portfolio projection (Sync-PortfolioProjection) to the caller. A caller that
-    # holds the catalog lock passes it and refreshes the projection after Exit-CatalogLock: that projection is
-    # a `pq sync` child, and the child may start insert.ps1 or update.ps1 (TASK-FLOW rules 65 and 68), which
-    # take the same mutex - a process cannot win a lock its own parent is holding.
-    param(
-        [Parameter(Mandatory)][AllowEmptyCollection()][object[]] $Records,
-        [switch] $SkipProjection
-    )
-
-    if ((Get-SzaEnv 'SKIP_RELEASE_QUEUE')) { return }
-    if (-not (Test-Path $script:ReleaseQueuePath)) {
-        # S0102: still not an error - the journal write stands and no file is created - but it is said once
-        # per process, because a profile naming a file nobody created read exactly like a reconciled queue.
-        if (-not $script:ReleaseQueueMissingNoted) {
-            $script:ReleaseQueueMissingNoted = $true
-            Write-Host ("  release queue: no file at {0} (paths.releaseQueue) - nothing reconciled; work order is the ledger's. Not an error of this write." -f $script:ReleaseQueuePath) -ForegroundColor DarkYellow
-        }
-        if (-not $SkipProjection) { Sync-PortfolioProjection }
-        return
-    }
-
-    $script:ReleaseQueueDuplicatesDropped = 0
-
-    $byId = @{}
-    foreach ($r in $Records) { $byId[$r.id] = $r }
-
-    $stamp = Get-ReleaseChangedStamp
-    $seen = @{}
-    $toReady = New-Object System.Collections.Generic.List[object]
-    $toQueue = New-Object System.Collections.Generic.List[object]
-
-    # One pass per file: keep what still belongs, collect what crossed the boundary.
-    $keptQueue = Select-ReleaseLines -Path $script:ReleaseQueuePath -ById $byId -Seen $seen `
-        -Stamp $stamp -WantReady $false -Moved $toReady
-    $keptReady = Select-ReleaseLines -Path $script:ReleaseReadyPath -ById $byId -Seen $seen `
-        -Stamp $stamp -WantReady $true -Moved $toQueue
-
-    # A brand-new ticket is unfinished by definition, so it lands in the queue only.
-    $current = Get-CurrentRelease
-    foreach ($r in ($Records | Sort-Object -Property id)) {
-        if ($seen.ContainsKey($r.id)) { continue }
-        if (Test-ReleaseReadyStatus -Status $r.status) { continue }
-        $changed = ConvertTo-ReleaseChangedStamp -Value "$($r.updated)"
-        $toQueue.Add([pscustomobject]@{
-            Kind    = 'ticket'
-            Release = $current
-            Ticket  = (Get-TicketBaseName -File $r.file)
-            Changed = $changed
-            Status  = $r.status
-            Id      = $r.id
-        })
-    }
-
-    Add-ReleaseLines -Target $keptQueue -Additions $toQueue
-    Add-ReleaseLines -Target $keptReady -Additions $toReady
-
-    Write-ReleaseFile -Path $script:ReleaseQueuePath -Lines $keptQueue
-    # S0150: a row that crossed to the ready side was written nowhere when the file was absent - the
-    # queue pass had already dropped it, and -Reconcile cannot bring a ready row back (a ready ticket
-    # in neither file is assumed shipped earlier). Create the file with the standard header - the same
-    # one scaffold/init-task-flow.ps1 writes - so the row always lands somewhere. No ready rows and no
-    # file still writes nothing: a project that never had a ready side keeps not having one.
-    $readyHasTickets = $false
-    foreach ($l in $keptReady) { if ($l.Kind -eq 'ticket') { $readyHasTickets = $true; break } }
-    if ($readyHasTickets -and -not (Test-Path $script:ReleaseReadyPath)) {
-        $headerText = @(Get-ReleaseReadyHeaderLines)
-        for ($i = $headerText.Count - 1; $i -ge 0; $i--) {
-            $keptReady.Insert(0, [pscustomobject]@{ Kind = 'verbatim'; Text = $headerText[$i] })
-        }
-    }
-    if ((Test-Path $script:ReleaseReadyPath) -or $readyHasTickets) {
-        Write-ReleaseFile -Path $script:ReleaseReadyPath -Lines $keptReady
-    }
-    if (-not $SkipProjection) { Sync-PortfolioProjection }
-}
-
 function Get-ReleaseReadyHeaderLines {
-    # The header of a RELEASE_READY.md the plan tool creates - the text scaffold/init-task-flow.ps1 writes. One
-    # definition for the two creators of the file: the sync (S0150) and the seed (S0151).
+    # The header of the ready view (release-queue.ps1 -Show Ready).
     return @(
         '# Release Content (ready)'
         ''
-        'Finished as far as its package is concerned. Written by the plan tool, sorted by nobody.'
+        'Finished as far as its package is concerned. A view of the ticket ledger, sorted by nobody.'
         ''
         ('{0,-62} {1,-15} {2}' -f 'ticket', 'changed', 'status').TrimEnd()
         ''
@@ -885,22 +806,22 @@ function Get-ReleaseReadyHeaderLines {
 }
 
 function Get-ReleaseDoneHeaderLines {
-    # The header of a RELEASE_QUEUE_DONE.md the seed creates, the text scaffold/init-task-flow.ps1 writes. The ship
-    # step finds its insertion point as the first `## release` line, so the header is whatever stands above it.
+    # The header of the shipped view (release-queue.ps1 -Show Done).
     return @(
         '# Shipped Release Packages'
         ''
-        'What actually went out, newest first. Each block is one release package, moved here verbatim from the'
-        'queue file by the ship step. This file is written by that step - do not hand-edit it.'
+        'What actually went out, newest first. Each block is one shipment of one release package, rendered'
+        'from the ticket ledger.'
         ''
     )
 }
 
 function Select-ReleaseLines {
-    # Walk one release file: refresh each ticket from the catalog, keep the ones that still
-    # belong here, and hand the rest to [$Moved] for the sibling file.
+    # Walk one side of the plan - the queue file's lines or the ledger's finished side: refresh each
+    # ticket from the catalog, keep the ones that still belong here, and hand the rest to [$Moved] for
+    # the sibling side.
     param(
-        [Parameter(Mandatory)][string] $Path,
+        [Parameter(Mandatory)][AllowEmptyCollection()] $Lines,
         [Parameter(Mandatory)][hashtable] $ById,
         [Parameter(Mandatory)][hashtable] $Seen,
         [Parameter(Mandatory)][string] $Stamp,
@@ -910,7 +831,6 @@ function Select-ReleaseLines {
     # ,$kept on every exit: a bare `return $list` unrolls into a fixed-size object[], and the
     # caller's later .Insert() would fail with "Collection was of a fixed size".
     $kept = New-Object System.Collections.Generic.List[object]
-    if (-not (Test-Path $Path)) { return ,$kept }
 
     # S1725: the id of the ticket line standing directly above the current one, within this file.
     # A line that crosses to the sibling file carries it as an anchor, so coming back it can be put
@@ -919,7 +839,7 @@ function Select-ReleaseLines {
     # order of work, so a status that went ready and came back silently re-prioritised its own ticket.
     $previousTicketId = $null
 
-    foreach ($line in (Read-ReleaseFile -Path $Path)) {
+    foreach ($line in $Lines) {
         if ($line.Kind -ne 'ticket') { $kept.Add($line); continue }
         # S1698: one line per id, across BOTH files. $Seen is shared by the two passes, so this
         # collapses a line duplicated inside one file and a ticket listed in queue AND ready
@@ -943,6 +863,7 @@ function Select-ReleaseLines {
             Status  = $rec.status
             Id      = $line.Id
             After   = $previousTicketId                  # S1725: and so does its place in the block
+            Notes   = @(if ($null -ne $line.PSObject.Properties['Notes']) { $line.Notes })
         }
         $previousTicketId = $line.Id
         if ((Test-ReleaseReadyStatus -Status $rec.status) -eq $WantReady) { $kept.Add($row) } else { $Moved.Add($row) }
@@ -1144,14 +1065,14 @@ function Add-ReleaseSeedRows {
 }
 
 function Invoke-ReleaseSeed {
-    # Computes the seed over the plan files as they stand and, with -Apply, writes it. The caller holds the catalog
+    # Computes the seed over the plan as it stands and, with -Apply, writes it. The caller holds the catalog
     # lock for the whole call. Without -Apply nothing is written, so the report is exactly what -Apply would do.
     #
-    #   moved      queue-file rows whose ledger status is ready -> the ready file, same package, group lines kept
-    #   returned   ready-file rows whose ledger status fell below Implemented -> the queue file (the sync's move)
-    #   added      ready tickets of the ledger in neither file, last updated at or after -Since -> package $Release
-    #   leftOut    ready tickets of the ledger in neither file that -Since excludes
-    #   queueAdded unfinished tickets in neither file -> the queue at the open package (what every ledger write does)
+    #   moved      queue-file rows whose ledger status is ready -> the finished side, same package, group lines kept
+    #   returned   finished-side rows whose ledger status fell below Implemented -> the queue file (the sync's move)
+    #   added      ready tickets of the ledger on neither side, last updated at or after -Since -> package $Release
+    #   leftOut    ready tickets of the ledger on neither side that -Since excludes, or that already shipped
+    #   queueAdded unfinished tickets on neither side -> the queue at the open package (what every ledger write does)
     #
     # Nothing existing is reordered and no row changes its package.
     param(
@@ -1169,7 +1090,6 @@ function Invoke-ReleaseSeed {
         Added             = (New-Object System.Collections.Generic.List[object])
         LeftOut           = (New-Object System.Collections.Generic.List[object])
         QueueAdded        = (New-Object System.Collections.Generic.List[object])
-        Created           = (New-Object System.Collections.Generic.List[string])
         DuplicatesDropped = 0
     }
 
@@ -1181,10 +1101,20 @@ function Invoke-ReleaseSeed {
     $toQueue = New-Object System.Collections.Generic.List[object]
     $script:ReleaseQueueDuplicatesDropped = 0
 
-    $groups = Get-ReleaseRowGroups -Lines (Read-ReleaseQueue)
-    $keptQueue = Select-ReleaseLines -Path $script:ReleaseQueuePath -ById $byId -Seen $seen `
+    $archived = @()
+    $import = $null
+    if (-not (Test-LegacyPlanImported)) {
+        $archived = Read-JsonlFile -Path $script:ArchivePath
+        $import = Import-LegacyReleaseFiles -Records $Records -ArchiveRecords $archived -QueueIds (Get-QueueIdSet)
+    }
+    $readyLines = Get-ReadyLinesFromRecords -Records $Records
+    if ($null -ne $import) { Add-ReadyRows -Target $readyLines -Additions $import.ReadyRows }
+
+    $queueLines = Read-ReleaseQueue
+    $groups = Get-ReleaseRowGroups -Lines $queueLines
+    $keptQueue = Select-ReleaseLines -Lines $queueLines -ById $byId -Seen $seen `
         -Stamp $stamp -WantReady $false -Moved $toReady
-    $keptReady = Select-ReleaseLines -Path $script:ReleaseReadyPath -ById $byId -Seen $seen `
+    $keptReady = Select-ReleaseLines -Lines $readyLines -ById $byId -Seen $seen `
         -Stamp $stamp -WantReady $true -Moved $toQueue
     foreach ($row in $toQueue) { $report.Returned.Add($row) }
 
@@ -1195,6 +1125,7 @@ function Invoke-ReleaseSeed {
         $moved = [pscustomobject]@{
             Kind = 'ticket'; Release = $row.Release; Ticket = $row.Ticket; Changed = $row.Changed
             Status = $row.Status; Id = $row.Id; Group = $group
+            Notes = @(if ($null -ne $group) { $group.Lines })
         }
         $readyAdds.Add($moved)
         $report.Moved.Add($moved)
@@ -1215,7 +1146,8 @@ function Invoke-ReleaseSeed {
             continue
         }
         $reason = ''
-        if ($null -ne $SinceMoment) {
+        if (@(Get-RecordShipments -Record $r).Count -gt 0) { $reason = 'recorded as shipped' }
+        elseif ($null -ne $SinceMoment) {
             $moment = ConvertTo-ReleaseSeedMoment -Text $updatedText
             if ($null -eq $moment) { $reason = 'no readable updated stamp to place against -Since' }
             elseif ($moment -lt $SinceMoment) { $reason = 'last updated before -Since' }
@@ -1223,42 +1155,33 @@ function Invoke-ReleaseSeed {
         $item = [pscustomobject]@{
             Kind = 'ticket'; Release = $Release; Ticket = (Get-TicketBaseName -File $r.file)
             Changed = (ConvertTo-ReleaseChangedStamp -Value $updatedText); Status = $r.status; Id = $r.id
-            Group = $null; Updated = $updatedText; Reason = $reason
+            Group = $null; Notes = @(); Updated = $updatedText; Reason = $reason
         }
         if ($reason) { $report.LeftOut.Add($item) } else { $readyAdds.Add($item); $report.Added.Add($item) }
     }
 
     Add-ReleaseLines -Target $keptQueue -Additions $toQueue
-    if (-not (Test-Path -LiteralPath $script:ReleaseReadyPath)) {
-        $report.Created.Add('releaseReady')
-        $headerText = @(Get-ReleaseReadyHeaderLines)
-        for ($i = $headerText.Count - 1; $i -ge 0; $i--) {
-            $keptReady.Insert(0, [pscustomobject]@{ Kind = 'verbatim'; Text = $headerText[$i] })
-        }
-    }
     Add-ReleaseSeedRows -Target $keptReady -Additions $readyAdds
-    $doneMissing = -not (Test-Path -LiteralPath $script:ReleaseQueueDonePath)
-    if ($doneMissing) { $report.Created.Add('releaseQueueDone') }
     $report.DuplicatesDropped = $script:ReleaseQueueDuplicatesDropped
 
     if ($Apply) {
-        foreach ($path in @($script:ReleaseQueuePath, $script:ReleaseReadyPath, $script:ReleaseQueueDonePath)) {
-            $dir = Split-Path -Parent $path
-            if ($dir -and -not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
-        }
+        $kept = Set-PackageFields -ById $byId -Lines $keptReady
+        foreach ($r in $Records) { if (-not $kept.ContainsKey([string]$r.id)) { Remove-PackageFields -Record $r } }
         Write-ReleaseFile -Path $script:ReleaseQueuePath -Lines $keptQueue
-        Write-ReleaseFile -Path $script:ReleaseReadyPath -Lines $keptReady
-        if ($doneMissing) {
-            $payload = [string]::Join("`r`n", @(Get-ReleaseDoneHeaderLines)) + "`r`n"
-            [System.IO.File]::WriteAllText($script:ReleaseQueueDonePath, $payload, (New-Object System.Text.UTF8Encoding($false)))
+        Write-JsonlFile -Path $script:CatalogPath -Lines @(Format-CatalogLines -Records $Records)
+        if ($null -ne $import) {
+            if ($import.ArchiveChanged) { Write-ArchiveCatalog -Records $archived }
+            Set-LegacyPlanImported
         }
     }
     return $report
 }
 
 function Write-ArchiveCatalog {
-    # Writes the ARCHIVE journal. Empty set allowed (e.g. nothing archived yet).
+    # Writes the ARCHIVE journal. Empty set allowed (e.g. nothing archived yet). An archived ticket is on no
+    # side of the plan, so the package fields leave it here; its shipment history stays.
     param([AllowEmptyCollection()][object[]] $Records = @())
+    foreach ($r in $Records) { if ($null -ne $r) { Remove-PackageFields -Record $r } }
     # @() - an empty set formats to $null, which Write-JsonlFile refuses (S2400).
     $lines = @(Format-CatalogLines -Records $Records)
     Write-JsonlFile -Path $script:ArchivePath -Lines $lines
@@ -1832,7 +1755,8 @@ function Assert-ClosingGates {
     #
     # Archived is deliberately absent from the gated list: it closes a ticket that
     # already passed these gates, and blocking cleanup would make tidying the catalog
-    # harder than leaving it untidy.
+    # harder than leaving it untidy. The one thing it owes is a one-line reason (TASK-FLOW 0.52),
+    # asked first so a refusal comes before the probe removal below touches a file.
     param(
         [Parameter(Mandatory)][string] $Id,
         [string] $OldStatus,
@@ -1848,7 +1772,9 @@ function Assert-ClosingGates {
         # Invoke-ProbeRemovalBatch, for a whole bulk transition at once. The per-ticket removal and
         # check-probe-absent.ps1 below are then skipped; every other gate still runs. Meaningful
         # only on the way out of BlockNeedUserTest, and only with probes.removeOnExit true.
-        [switch] $ProbesCleared
+        [switch] $ProbesCleared,
+        # CANONR-0236 - the caller runs Invoke-ProbeExitStep itself, after gates of its own.
+        [switch] $DeferProbeExit
     )
     # S2324 - BlockNeedUserTest joins the gated set. It is NOT a closed status, and the
     # difference decides which checkers run: the two contracts below ask what a FINISHED
@@ -1857,6 +1783,10 @@ function Assert-ClosingGates {
     # the moment the probe invariant becomes violable - measured 2026-09-02, 20 tickets sat
     # in this status with no probe, and the set had turned over in a day rather than sitting
     # still, so a sweep alone would refill.
+    if ($NewStatus -eq 'Archived') {
+        Assert-ArchiveReason -Id $Id -OldStatus "$OldStatus" -Reason $StatusNote -Supplied $NoteSupplied
+    }
+
     $gatedStatuses = @('Implemented', 'Verified', 'BlockNeedUserTest')
 
     # S2581 - the other three Block* statuses enter this function now, but they are NOT added to
@@ -1893,13 +1823,45 @@ function Assert-ClosingGates {
     # S0056 - bulk-update.ps1 clears the probes of every leaving ticket in ONE batch (one lock, one
     # scan) before it calls this function per ticket, and says so with -ProbesCleared. Without it the
     # sixty-ticket release archive took a lock round trip and a full tree scan per ticket.
-    if ($OldStatus -eq 'BlockNeedUserTest' -and $NewStatus -ne 'BlockNeedUserTest' -and -not $ProbesCleared) {
-        if ([bool](Get-SzaProfileValue 'probes.removeOnExit')) {
-            Invoke-ProbeRemovalOnExit -Id $Id
-        }
-        Invoke-SpecCheckers -Id $Id -NewStatus $NewStatus -Checkers @('check-probe-absent.ps1')
+    #
+    # CANONR-0236 - the exit step now runs LAST, after every refusing checker below has passed.
+    # It used to run first, so a later refusal (check-evidence-durable.ps1, measured 2026-11-25 on
+    # fms-a:S4819) rejected the transition with the probes already deleted: the ticket stayed in
+    # BlockNeedUserTest with no probe. The checkers are read-only, so judging them first loses
+    # nothing. A mutator with gates of its own after this function (update.ps1: Owner inputs,
+    # Assert-Record) passes -DeferProbeExit and calls Invoke-ProbeExitStep itself once they passed.
+    $checksArgs = @{ Id = $Id; OldStatus = $OldStatus; NewStatus = $NewStatus; StatusNote = $StatusNote; NoteSupplied = $NoteSupplied }
+    Assert-TransitionChecks @checksArgs
+    if (-not $ProbesCleared -and -not $DeferProbeExit) {
+        Invoke-ProbeExitStep -Id $Id -OldStatus $OldStatus -NewStatus $NewStatus
     }
+}
 
+function Invoke-ProbeExitStep {
+    # CANONR-0236 - the BlockNeedUserTest exit step (S2934, S4270): the remover when
+    # probes.removeOnExit is true, then check-probe-absent.ps1 on what it left. A no-op for any
+    # other transition. Called only after every read-only gate of the transition has passed.
+    param(
+        [Parameter(Mandatory)][string] $Id,
+        [string] $OldStatus,
+        [Parameter(Mandatory)][string] $NewStatus
+    )
+    if ($OldStatus -ne 'BlockNeedUserTest' -or $NewStatus -eq 'BlockNeedUserTest') { return }
+    if ([bool](Get-SzaProfileValue 'probes.removeOnExit')) {
+        Invoke-ProbeRemovalOnExit -Id $Id
+    }
+    Invoke-SpecCheckers -Id $Id -NewStatus $NewStatus -Checkers @('check-probe-absent.ps1')
+}
+
+function Assert-TransitionChecks {
+    # CANONR-0236 - every read-only refusing check of Assert-ClosingGates, without the probe exit step.
+    param(
+        [Parameter(Mandatory)][string] $Id,
+        [string] $OldStatus,
+        [Parameter(Mandatory)][string] $NewStatus,
+        [string] $StatusNote,
+        [bool] $NoteSupplied
+    )
     $isBlockEntry = $NewStatus -like 'Block*'
     if ($OldStatus -eq 'BlockQuestions' -and -not $isBlockEntry -and $NewStatus -ne 'Archived') {
         $record = Find-Record -Id $Id
@@ -1991,6 +1953,10 @@ function Assert-ClosingGates {
     # noise: measured 2026-09-02, S1884's split audit block made check-audit-recorded.ps1
     # answer PASS on a three-line stub carrying no '**Outcome:**' at all.
     $checkers.Add('check-headings-unique.ps1')
+
+    # CANONR-0210, TASK-FLOW 0.53 - a spec file above 40 KB is handed on only with a link to its evidence log. Both
+    # halves of the split need it: every later pass reads the file whole, whether it waits for a human or is finished.
+    $checkers.Add('check-spec-size.ps1')
 
     if ($NewStatus -eq 'BlockNeedUserTest') {
         # S2324 - a ticket parked for a human to watch must carry the probe that lets the

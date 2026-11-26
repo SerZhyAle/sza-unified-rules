@@ -476,7 +476,7 @@ function Initialize-PqQueueFile {
             $i++
         })
     $lines = [Collections.Generic.List[string]]::new()
-    $lines.Add("# PORTFOLIO_QUEUE.md - the owner's file.")
+    $lines.Add('# PORTFOLIO_QUEUE.md - the owner orders the work here.')
     $lines.Add('# The order of the projects is their rank in the registry (pq rank); the order of the lines is the order of work inside a project.')
     $lines.Add("# Written once by 'pq queue -Init'. Edit it by hand; the sync adds new tickets to their project, pq arrange (and pq queue) lines it up in the order of work.")
     $lines.Add('')

@@ -85,6 +85,11 @@ $Script:SzaProfileDefaults = [ordered]@{
         watchdogLog      = 'temp/scratch/watchdog/watchdog.log'
         changelog        = 'dev/CHANGELOG.md'
         documentRegistry = 'docs/DOCUMENT_REGISTRY.jsonl'
+        # HARNESS-PROFILE rule 18: the registry of the local, ignored corpus (DOC-INTERNAL-QUALITY item K).
+        # Empty means "this repository declares no local registry". A declared path is read by the
+        # registry validator and query only when the file exists - a clone does not carry an ignored
+        # file - and never by the renderer, which publishes no index of files a reader cannot open.
+        localDocumentRegistry = ''
         docsMap          = 'docs/DOCS_MAP.md'
         sitemap          = 'sitemap.xml'
         allFeatures      = 'docs/ALL_FEATURES.jsonl'
@@ -787,14 +792,8 @@ function Get-SzaHook {
     return (Join-Path (Get-SzaProjectRoot) $s)
 }
 
-function Show-SzaHelp {
-    <#
-    .SYNOPSIS
-        Print a script's comment-based help - the -Help switch every harness CLI carries.
-    #>
-    param([Parameter(Mandatory)][string]$Path)
-    Get-Help -Name $Path -Detailed | Out-String -Width 120 | Write-Host
-}
+# Show-SzaHelp, the -Help switch of a harness CLI.
+. (Join-Path $PSScriptRoot '_help.ps1')
 
 function Test-SzaStatusName {
     param([Parameter(Mandatory)][string]$Status)

@@ -9,11 +9,10 @@ Read: NEW_PROJECT_CHECKLIST, PLATFORM_OVERLAYS, REPOSITORY_LAYOUT, CONTRACTS, IN
 
 DeviceInfo for Android and Wear OS: the Device Information (System Info) sub-applications of FastMediaSorter (phone `SystemInfoActivity`, wear `SystemInfoScreen` and its contributor architecture, plus the battery work of FastMediaSorter S4529; `fastmediasorter_mob_v2.md`) as an independent product with its own release lifecycle, requested by FastMediaSorter S4528. The fourth Android extraction after StreamsPlayer, Tourist and Filler (`streamsplayer_mob.md`, `tourist_mob.md`, `filler_mob.md`), so almost all overlay-B material is CONFIRM of those records, and the adoption itself followed `filler_mob.md` step for step: a bootstrap stamp that supported scheduler discovery only, completed afterwards by the repository's own S0001. Genuinely new against the siblings: the repository ships two installable packages from two Gradle modules (`phone`, `wear`) under one application id, with no watch face; and, since 2026-11-13, it is the first of the four whose public presence exists before any build was uploaded - a public GitHub repository, a GitHub Pages product site and a Google Play Console app, all created on the owner's order in one session, with the application id bound to the console app at its creation (see "Public presence 2026-11-13"). The app is **not published**: no bundle was uploaded and no review was submitted.
 
-> **Keep this note in the record.** Current facts, edited in place. Never append a dated section to this file:
-> what happened and when goes to the file of the same name under `history/`
-> ([the rules of that folder](history/README.md)), which is not reading for a task. A delta the core absorbed,
-> a candidate that was applied or refused and a question that was answered are deleted here; the history
-> section of that day says what became of them.
+> **Keep this note in the record.** Current facts, edited in place. Never append a dated section to this file,
+> and append nothing under `history/` either: those files are frozen ([the rules of that folder](history/README.md))
+> and are not reading for a task. A delta the core absorbed, a candidate that was applied or refused and a
+> question that was answered are deleted here.
 
 ## Overlay facts (verified against this repo, 2026-11-13)
 

@@ -34,7 +34,11 @@
       5. anything else                                                                    -> kind idea
          (a lower-case token with a hyphen or underscore that names no slug is refused as an unknown slug, and a
          token shaped like a ticket reference that no project claims is refused too: a bare word by the usual id shape,
-         an id and a slug by its id part - a letter-run that holds a digit, a mistyped id included)
+         an id and a slug by its id part - a letter-run that holds a digit, a mistyped id included; a bare token that
+         starts with the literal id prefix of the current or a registered project, "CANONR-" or "S", followed by digits
+         with a lost digit or O/I/l typed for one, is refused naming the ticket with that number - v2, bug1, mp3 stay ideas)
+    Before any step, wrapping is dropped (CANONR-0224): quotes around the argument or one glued to either end (what
+    "copy as path" leaves), and a trailing comma or semicolon after a single word.
     Next mode (/spec-next, /sn): no argument -> project-next in the current project; a bare registered key ->
     project-next there; "<key>:<id>" -> refused (next takes no ticket); anything else -> refused.
 
@@ -72,6 +76,14 @@ function Out-Reading([string] $Kind, $Project, $Root, $Id, $Slug, [string] $Reas
 }
 
 $text = ([string]$Arg).Trim()
+# Wrapping is not part of a reference (CANONR-0224): quotes around the argument, or one glued to either end as "copy as
+# path" leaves it, and a comma or semicolon after one word as pasted from a list.
+$quoteChars = [char[]]@([char]0x22, [char]0x27, [char]0x60, [char]0x201C, [char]0x201D, [char]0x2018, [char]0x2019)
+do {
+    $before = $text
+    $text = $text.Trim().Trim($quoteChars).Trim()
+    if ($text -notmatch '\s') { $text = $text.TrimEnd([char[]]@(',', ';')) }
+} while ($text -ne $before -and $text.Length -gt 0)
 $isToken = ($text.Length -gt 0 -and $text -notmatch '\s')
 
 # ---- the registry (it may be missing: the current project is still answerable) ----
@@ -124,6 +136,15 @@ function Get-IdPattern([string] $Root) {
     $legacy = @(@(Get-Grammar $Root 'legacyTicketIdPatterns') | Where-Object { $_ } | ForEach-Object { [string]$_ })
     if ($legacy.Count) { $pattern = '(?:' + ((@($pattern) + $legacy) -join ')|(?:') + ')' }
     return $pattern
+}
+
+# The literal letters (and hyphen) a project's own id shape begins with - "CANONR-" for ^CANONR-\d{4}$, "S" for the
+# default - or $null when the pattern does not begin with a literal letter run.
+function Get-IdPrefix([string] $Root) {
+    $pattern = [string](Get-Grammar $Root 'ticketIdPattern')
+    if (-not $pattern) { $pattern = $defaultIdPattern }
+    if ($pattern -match '^\^?([A-Za-z]+-?)(?:\\d|\[0-9\])') { return $Matches[1] }
+    return $null
 }
 
 function Test-IdShape([string] $Root, [string] $Token) {
@@ -322,6 +343,24 @@ if ($isToken) {
     $shaped = if ($stem) { Test-StemIdShaped $stem.id } else { $text -match '^[A-Za-z]{1,8}-?\d{4,}(_\S*)?$' }
     if ($shaped) {
         Out-Reading 'refused' $hereKey $hereRoot $null $null "no such ticket: '$text' is shaped like a ticket reference and neither $hereKey nor a registered project claims it"
+    }
+    # A bare id with a mistyped number (a digit lost, a letter typed for a digit) is told from a word such as v2 or bug1
+    # by the literal id prefix of the current or a registered project (CANONR-0224). It is refused with the ticket it most
+    # likely means, never resolved by a guess and never captured as an idea.
+    if (-not $stem) {
+        $prefixRoots = @(@([pscustomobject]@{ key = $hereKey; path = $hereRoot }) + @($registered | Where-Object { [string]$_.key -cne $hereKey }))
+        foreach ($p in $prefixRoots) {
+            $prefix = Get-IdPrefix ([string]$p.path)
+            if (-not $prefix -or $text.Length -le $prefix.Length -or -not $text.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) { continue }
+            $rest = $text.Substring($prefix.Length)
+            $minRest = if ($prefix.Length -ge 2) { 1 } else { 3 }
+            if ($rest.Length -lt $minRest -or $rest.Length -gt 9 -or $rest -notmatch '^[0-9OoIl]+$' -or $rest -notmatch '\d') { continue }
+            $digits = ($rest -replace '[Oo]', '0') -replace '[Il]', '1'
+            $pRows = Read-Rows ([string]$p.path)
+            $near = if ($null -ne $pRows) { @(Find-Number $pRows $digits) } else { @() }
+            $hint = if ($near.Count -eq 1) { "; did you mean $($near[0].Id) ('$($near[0].Name)')?" } else { "; write the full id" }
+            Out-Reading 'refused' ([string]$p.key) ([string]$p.path) $null $null "no such ticket: '$text' is the id prefix '$prefix' of $($p.key) with a mistyped number$hint"
+        }
     }
 }
 

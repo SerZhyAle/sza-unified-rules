@@ -10,7 +10,7 @@
           the token caps, all-or-nothing, a foreign pass's claim rejected, stale tokens cleared, release by owner only,
           device never offered.
       2.  Waiting (R29-R34): the fingerprint parts, change detection per file kind, a lease heartbeat rewrite is not a
-          change, the drop fingerprint on the spec file, the wait `why` counts, drop-lift thrash.
+          change, the drop fingerprint on the spec file, the wait `why` counts.
       3.  Stop and console (R54-R56): level ranks, stop file parsing, the most severe applicable stop, busy targets,
           target completion (repo stop leaves a hold), pause, transcript record formatting, Read-PqTail offset/carry, the
           pass follower the worker window prints from (older session from its end, handoff session from its start, cap),
@@ -174,17 +174,6 @@ try {
         $none = Get-PqWaitReasons -Rank @{ skipped = @(); autoSkipReasons = @{} }
         Check ($none['none'] -eq 1) 'nothing held back -> none=1'
     }
-    Case 'drop-lift thrash: the 3rd lift inside the window holds the ticket' {
-        $lifts = @{}
-        $now = [datetime]::UtcNow
-        $a = Register-PqLift -Lifts $lifts -Key 'demo:S0001' -Now $now
-        $b = Register-PqLift -Lifts $lifts -Key 'demo:S0001' -Now $now.AddMinutes(10)
-        $c = Register-PqLift -Lifts $lifts -Key 'demo:S0001' -Now $now.AddMinutes(20)
-        Check (-not $a.thrash -and -not $b.thrash -and $c.thrash -and $c.count -eq 3) "thrash at the 3rd lift: $($c | ConvertTo-Json -Compress)"
-        $old = Register-PqLift -Lifts $lifts -Key 'demo:S0002' -Now $now.AddHours(-2)
-        $fresh = Register-PqLift -Lifts $lifts -Key 'demo:S0002' -Now $now
-        Check ($fresh.count -eq 1 -and -not $fresh.thrash) 'lifts outside the 60-minute window are forgotten'
-    }
 
     # ================= 3. stop and console =================
     Case 'stop level ranks: drain < pass (default) < halt < kill' {
@@ -347,7 +336,7 @@ try {
         $lines = @(
             (& $mk 1 'claim.lost' 'demo' 'S0001')
             (& $mk 2 'tripwire.trip' 'demo' 'S0009')
-            (& $mk 3 'agent.hold' '' '' @{ agent = 'zai' })
+            (& $mk 3 'agent.hold' '' '' @{ agent = 'zai'; until = [DateTimeOffset]::UtcNow.AddHours(7).ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'"); resetSource = 'guessed' })
             (& $mk 4 'intake.robotDraft' 'demo' 'S0007' @{ count = 21; cap = 20; capped = $true })
             (& $mk 5 'ticket.thrash' 'demo' 'S0001' @{ passes = 3; window = 60 })
             (& $mk 6 'xrepo.cycle' '' '' @{ cycle = @('a:S1', 'b:S2') })
@@ -362,7 +351,7 @@ try {
         Check (@($wev.gaps).Count -eq 1 -and $wev.gaps[0].count -eq 1 -and $wev.gaps[0].after -eq 6) "one seq gap after 6: $($wev.gaps | ConvertTo-Json -Compress)"
         $f = @(Get-PqFindings -Runs @() -Events $wev.events -Gaps $wev.gaps -Bad $wev.bad)
         $fids = @($f | ForEach-Object { $_.fid })
-        Check (($fids -join ',') -ceq 'PQ-DATA01,PQ-RACE01,PQ-SAFE01,PQ-LIMIT01,PQ-THRASH01,PQ-XREPO01,PQ-SAFE02') "findings severity-first: $($fids -join ',')"
+        Check (($fids -join ',') -ceq 'PQ-DATA01,PQ-RACE01,PQ-LIMIT01,PQ-THRASH01,PQ-XREPO01,PQ-SAFE02') "findings severity-first: $($fids -join ',')"
         Check (@($f | Where-Object { $_.fid -ceq 'PQ-DATA01' })[0].severity -ceq 'high') 'log health is high'
         Check (@($f | Where-Object { $_.fid -ceq 'PQ-RACE01' })[0].evidence.Count -ge 1) 'findings carry event refs'
         $tr = @(Get-PqTrace -Root $root -Repo 'demo' -Id 'S0001')

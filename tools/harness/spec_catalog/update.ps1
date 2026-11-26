@@ -1,3 +1,13 @@
+<#
+update.ps1 - change one ticket of the ledger and its spec file together (TASK-FLOW ledger writer).
+
+  pwsh -NoProfile -File <harness>/spec_catalog/update.ps1 -Id <id> -Status <word> [-StatusNote <text>]
+
+Only the fields passed are written. -Title is the short display name (80 characters at most, '' removes it).
+-StatusNote: non-empty sets it, '' clears it, omitted preserves it - except that a move to a non-Block*
+status clears it. -ExpectedStatus refuses the write when the ticket has moved meanwhile.
+Exit 0: written, or help printed. Exit 1: refused or failed.
+#>
 # PositionalBinding = $false (S1504): a stray unnamed token is never intentional here, and the
 # first free positional slot is $Name - so it renamed the ticket instead of failing. Backslash is
 # not an escape character in PowerShell, so a note written `.. tagged \"S1474:\" ..` closes its
@@ -27,7 +37,7 @@ param(
 
 if ($Help) {
     Show-SzaHelp $PSCommandPath
-    exit $LASTEXITCODE
+    exit 0
 }
 if (-not $Id) {
     Write-Error 'update.ps1 requires -Id <Sxxxx>. Run with -Help for the parameter list.' -ErrorAction Continue
@@ -179,7 +189,12 @@ if ($PSBoundParameters.ContainsKey('Status')) {
     # the journal below still holds the previous note, so a checker reading the record would
     # validate the text being replaced rather than the text replacing it.
     Assert-ClosingGates -Id $Id -OldStatus $oldStatus -NewStatus $Status `
-        -StatusNote ([string]$StatusNote) -NoteSupplied ($PSBoundParameters.ContainsKey('StatusNote'))
+        -StatusNote ([string]$StatusNote) -NoteSupplied ($PSBoundParameters.ContainsKey('StatusNote')) `
+        -DeferProbeExit
+}
+elseif ($PSBoundParameters.ContainsKey('StatusNote') -and $oldStatus -eq 'Archived') {
+    # TASK-FLOW 0.52: a note rewritten on an archived row is its archive reason.
+    Assert-ArchiveReason -Id $Id -OldStatus 'Archived' -Reason $StatusNote -Supplied $true
 }
 
 # Owner-Inputs gate: any transition INTO Approved requires the spec file's
@@ -205,6 +220,12 @@ if ($PSBoundParameters.ContainsKey('Status') -and $Status -eq 'Approved' -and $o
 $updated.updated = Get-Now
 
 Assert-Record -Record $updated
+
+# CANONR-0236 - the BlockNeedUserTest exit step (probe removal, then check-probe-absent.ps1) runs only
+# now, after every read-only gate above passed, so a refused transition never leaves a ticket without its probes.
+if ($PSBoundParameters.ContainsKey('Status')) {
+    Invoke-ProbeExitStep -Id $Id -OldStatus $oldStatus -NewStatus $Status
+}
 
 # TASK-FLOW rule 70 (S0076): a ticket entering Implemented, Verified or BlockNeedUserTest takes its spec file (and
 # folder) into paths.specArchiveDir, and one leaving them for an open status brings them back. After every gate above

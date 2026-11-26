@@ -24,13 +24,19 @@ LOCAL_IGNORE = [
     {"pattern": "PLAN/CANONR-[0-9][0-9][0-9][0-9]_*.md",
      "reason": "Ticket records belong to the ledger (PLAN/spec-catalog.jsonl), written by every capture and status "
                "move; a registry row would repeat it and go stale the day a ticket is captured."},
-    {"pattern": "PLAN/*/attachments/*",
-     "reason": "Ticket attachments are evidence owned by the ticket ledger record, not independently maintained "
-               "documents."},
-    {"pattern": "PLAN/DONE/*/attachments/*",
-     "reason": "Archived ticket attachments are evidence owned by the ticket ledger record, not independently "
-               "maintained documents."},
 ]
+
+# Files a pass writes into a ticket's own folder: attachments, the evidence log (TASK-FLOW rule 19) and research
+# notes. They belong to the ticket record, not to the maintained documentation, and a pass never registers them.
+# --init-local writes them into a new local corpus; every local corpus also applies them whatever its config says,
+# so a corpus created before a pattern existed does not turn red the first time a pass writes such a file.
+TICKET_ARTIFACT_IGNORE = [
+    {"pattern": f"PLAN/{home}*/{folder}/*",
+     "reason": f"{'Archived t' if home else 'T'}icket {folder} files are owned by the ticket ledger record, not "
+               "independently maintained documents."}
+    for home in ("", "DONE/") for folder in ("attachments", "evidence", "research")
+]
+LOCAL_IGNORE += TICKET_ARTIFACT_IGNORE
 
 
 # What --register writes as the update trigger of a record that has none. A record that still carries exactly
@@ -98,7 +104,8 @@ def inventory(root, config):
         candidates = path.rglob("*") if path.is_dir() else [path]
         files.update(p.relative_to(root).as_posix() for p in candidates
                      if p.is_file() and p.suffix.lower() in (".md", ".rst", ".html"))
-    for ignore in config.get("ignore", []):
+    ignores = config.get("ignore", []) + (TICKET_ARTIFACT_IGNORE if config.get("visibility") == "local" else [])
+    for ignore in ignores:
         if not ignore.get("reason"):
             raise ValueError("Ignore entry needs a reason")
         files = {f for f in files if not Path(f).match(ignore["pattern"])}

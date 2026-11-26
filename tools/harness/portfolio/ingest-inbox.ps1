@@ -65,8 +65,11 @@ param(
     [int[]]$BackoffSeconds = @(),
     [long]$MaxPacketBytes = 0,
     [int]$MaxFiles = 0,
-    [string]$SpecDraft = ''
+    [string]$SpecDraft = '',
+    [switch]$Help
 )
+
+if ($Help) { . (Join-Path $PSScriptRoot '../_help.ps1'); Show-SzaHelp $PSCommandPath; exit 0 }
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'

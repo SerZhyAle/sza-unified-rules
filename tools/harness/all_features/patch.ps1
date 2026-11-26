@@ -31,21 +31,25 @@
 .EXAMPLE
     .\scripts\all_features\patch.ps1 -Id audio-player.pulsing-rings-backdrop -Status removed
 #>
+[CmdletBinding(DefaultParameterSetName = 'Run')]
 param(
-    [Parameter(Mandatory = $true)] [string]$Id,
-    [string]$NewId = "",
-    [string]$AddFlavors = "",
-    [string]$RemoveFlavors = "",
-    [string]$SetFlavors = "",
-    [ValidateSet("active", "removed")] [string]$Status = "",
-    [string]$Name = "",
-    [string]$Description = "",
-    [string]$Area = "",
-    [string]$Spec = "",
-    [string]$Gate = "",
+    [Parameter(Position = 0, Mandatory = $true, ParameterSetName = 'Run')][Parameter(ParameterSetName = 'Help')] [string]$Id,
+    [Parameter(Position = 1)][string]$NewId = "",
+    [Parameter(Position = 2)][string]$AddFlavors = "",
+    [Parameter(Position = 3)][string]$RemoveFlavors = "",
+    [Parameter(Position = 4)][string]$SetFlavors = "",
+    [Parameter(Position = 5)][ValidateSet("active", "removed")] [string]$Status = "",
+    [Parameter(Position = 6)][string]$Name = "",
+    [Parameter(Position = 7)][string]$Description = "",
+    [Parameter(Position = 8)][string]$Area = "",
+    [Parameter(Position = 9)][string]$Spec = "",
+    [Parameter(Position = 10)][string]$Gate = "",
     [switch]$NoLegal,
-    [switch]$Quiet
+    [switch]$Quiet,
+    [Parameter(Mandatory, ParameterSetName = 'Help')][switch]$Help
 )
+
+if ($Help) { . (Join-Path $PSScriptRoot '../_help.ps1'); Show-SzaHelp $PSCommandPath; exit 0 }
 
 . (Join-Path $PSScriptRoot '..\_profile.ps1')
 

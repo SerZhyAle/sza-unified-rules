@@ -83,17 +83,10 @@ versioned op that may cost money or become public) has one home:
 
 ## 6. Bash / tooling safety
 
-- Never run `find` from a disk-wide root or without a depth bound in a shell tool - a dropped session
-  can leave an orphaned scan flooding handles. Use the editor's file/content search or the project's
-  catalog query instead. Enforce it with a pre-tool hook that blocks the call before the shell spawns,
-  rather than trusting the convention.
-- **Never put a PowerShell script in Bash command-head position** - `./build.ps1 -Release`,
-  `.\a.ps1 fk`, `scripts/foo.ps1`. Bash cannot execute a `.ps1`: it chokes on the BOM plus the `<#`
-  comment block and dies with a syntax error, **and a backgrounded task still reports exit 0** - so a
-  failed build or a failed gate masquerades as passing. That is the worst shape a defect can take, because
-  the false PASS is what gets read and reported. Route it through the interpreter:
-  `pwsh -NoProfile -File ./build.ps1 -Release`. Reading a `.ps1` is fine - only the command-head position
-  is the trap.
+- **No disk-wide or unbounded `find`**; prefer the editor's search - enforced by hook `guard-bash`, see
+  [hooks/README.md](../hooks/README.md).
+- **No `.ps1` in Bash command-head position** (`pwsh -NoProfile -File ./build.ps1`) - enforced by hook
+  `guard-bash`, see [hooks/README.md](../hooks/README.md).
 - **Always pass `-NoProfile`** when invoking PowerShell from a tool call: an operator's profile is not part
   of the contract, and loading it costs startup on every spawn.
 - **Every tool call gets a fresh interpreter; only the working directory survives.** Shell state -
@@ -106,23 +99,14 @@ versioned op that may cost money or become public) has one home:
   no persistent-session channel to read a result through in any case. What genuinely repays staying warm
   is the *build tool's* own daemon and its caches, which already persist because they are long-lived
   external processes: keep those alive, and stop looking for a faster shell.
-- **Batch a multi-step shell chore into one process**, and mind which shell you are in. `& { cmd1; if
-  ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; cmd2 }` is PowerShell syntax and a syntax error in Bash
-  (`$LASTEXITCODE` is unset there and `& { .. }` backgrounds an empty group). From Bash, hand it to the
-  interpreter: `pwsh -NoProfile -Command "& { cmd1; cmd2 }"`, or call one script per step.
-- **Never put a PowerShell cmdlet in Bash command-head position** - `ls | Select-Object -First 3`,
-  `Get-ChildItem -Recurse`, the same after a `;`. A `Verb-Noun` cmdlet is not a program on `PATH`, so Bash
-  answers `exit 127` and returns nothing; measured on the reference machine, roughly **89 cmdlets were
-  piped into the Bash tool in one week**, each one a turn that produced no output. Pipe to `head`/`sed`, or
-  issue the whole line from the PowerShell tool.
-- **An interpreter that is not installed on the machine is a dead command, not a convention** - and the
-  cheaper fix is usually to *make the name work* (a shim onto `PATH`) rather than to guard it, because no
-  hook can fix and retry a failed command.
-- **An argument value beginning with a slash that names a command, not a path, is silently corrupted.**
-  MSYS rewrites `-Reason "/spec-dev .."` into `C:/Program Files/Git/spec-dev ..` with **nothing failing**:
-  the exit code stays 0 and the mangled text lands in exactly the files where that value was the only
-  record of who was doing what. Three accepted forms: double the leading slash (`//spec-dev ..`), prefix
-  the call with `MSYS2_ARG_CONV_EXCL='*'`, or issue it from the PowerShell tool.
+- **Batch a multi-step shell chore into one process.** From Bash: `pwsh -NoProfile -Command "& { cmd1;
+  cmd2 }"`; a bare `& { .. }` is refused by hook `guard-bash`, see [hooks/README.md](../hooks/README.md).
+- **No PowerShell cmdlet in Bash command-head position** - enforced by hook `guard-bash`, see
+  [hooks/README.md](../hooks/README.md).
+- **An interpreter Bash cannot resolve is a dead command** (prefer a shim onto `PATH`) - enforced by hook
+  `guard-bash`, see [hooks/README.md](../hooks/README.md).
+- **A slash-command argument value is corrupted by MSYS** (`//name`, `MSYS2_ARG_CONV_EXCL='*'` or the
+  PowerShell tool) - enforced by hook `guard-bash`, see [hooks/README.md](../hooks/README.md).
 - **Three more silent Windows traps, none of them caught by a shipped hook.** A device path (`/sdcard/..`,
   `/data/local/tmp/..`) passed to `adb` becomes `C:/Program Files/Git/sdcard/..` even through a wrapper
   script, because MSYS rewrites the wrapper's arguments before it runs - same two ways out as above, the
@@ -149,7 +133,7 @@ versioned op that may cost money or become public) has one home:
 - **Bash quoting corrupts text without failing.** Backticks inside a quoted argument run as command
   substitution; `\$VAR` and `$false` inside a double-quoted `pwsh -Command` are expanded by Bash first; a
   heredoc collapses a doubled backslash, turns `\a` into BEL, breaks on an apostrophe and mangles Cyrillic.
-  Author a file with the editor's write tool, not a heredoc.
+  Author a file with the editor's write tool, not a heredoc (hook `guard-bash` limits its length).
 - **Encoding across the shell boundary.** A child `pwsh`'s console output is cp866 while its arguments
   arrive intact, so verify text on disk, never from the echo; a script whose stdout is parsed as JSON writes
   raw UTF-8 bytes; in Git Bash `grep -c $'\r'` counts every line, and `grep -i` does not fold Cyrillic case.
@@ -160,12 +144,5 @@ versioned op that may cost money or become public) has one home:
   probe: what it writes is permanent.
 - Prefer the project's own wrapper scripts over hand-rolled git/gh invocations with fragile nested
   quoting.
-- **This whole family ships as hooks with the `sza` plugin**, in [`hooks/`](../hooks/README.md) - the
-  `find` guard, the command-head guards for both a `.ps1` and a cmdlet, the missing-interpreter check and
-  the slash-argument check are batched into a single script behind a single pre-filter, so five gates on
-  the same event cost one interpreter start; the fire-and-forget guard that enforces
-  [AI_USAGE.md](AI_USAGE.md) section 1's forbidden half stays a separate registration, because its
-  pre-filter fires on a disjoint payload. They block the call before the shell spawns, in every
-  repository, not only in canon adopters. A project does not need its own copy; see
-  [AI_USAGE.md](AI_USAGE.md) section 5 for why an unenforced version of any of them is worth roughly
-  nothing.
+- **The hooks named above ship with the `sza` plugin** and apply in every repository - see
+  [hooks/README.md](../hooks/README.md).

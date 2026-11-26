@@ -109,7 +109,9 @@ host with no repository) and **every finding shared across products** (a portfol
 policy choice that is not about one product alone): ask a shared question **once** in the hub's portfolio promotion
 ticket, and have every affected product ticket cite that hub ticket (`Blocker: <hubKey>:<id>` when blocked on the
 decision) rather than duplicating the question across N product tickets (S0042). Write the findings as acceptance
-criteria that cite the report by path and date. An audit finding is never captured as a fresh Draft on the agent's
+criteria that cite the report by path and date. A report table is never pasted into a spec: what the ticket needs
+goes once into its [evidence log](../spec-to-audit/references/audit-verdict.md#the-spec-stays-short), and a second
+ticket cites that copy. An audit finding is never captured as a fresh Draft on the agent's
 own initiative ([spec-draft](../spec-draft/SKILL.md) "What this skill never does").
 
 ## Prepublish

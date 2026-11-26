@@ -110,20 +110,20 @@ minute ceiling rather than this file's 480.
         the owner is demonstrably there rather than merely looking live - its process still runs
         (S2500), or it holds or awaits a lock naming this ticket (S2608).
 #>
-[CmdletBinding()]
+[CmdletBinding(DefaultParameterSetName = 'Run')]
 param(
-    [Parameter(Mandatory = $true)]
+    [Parameter(Position = 0, Mandatory = $true, ParameterSetName = 'Run')][Parameter(ParameterSetName = 'Help')]
     [ValidateSet('Claim', 'Release', 'List', 'Status', 'Sweep', 'Clean')]
     [string]$Verb,
 
-    [string]$Id,
+    [Parameter(Position = 1)][string]$Id,
 
-    [string]$Reason = 'spec-picker',
+    [Parameter(Position = 2)][string]$Reason = 'spec-picker',
 
-    [string]$Handoff,
+    [Parameter(Position = 3)][string]$Handoff,
 
     # Release only the runner's reservation, including after another session has reclaimed the id.
-    [string]$ExpectedSessionId,
+    [Parameter(Position = 4)][string]$ExpectedSessionId,
 
     [switch]$Json,
 
@@ -141,11 +141,14 @@ param(
     # observation wins over the assertion.
     [switch]$Force,
 
-    [int]$StaleMinutes = 0,
+    [Parameter(Position = 5)][int]$StaleMinutes = 0,
 
     # Clean only - see .PARAMETER QuietMinutes. 0 means the shared liveness window.
-    [int]$QuietMinutes = 0
+    [Parameter(Position = 6)][int]$QuietMinutes = 0,
+    [Parameter(Mandatory, ParameterSetName = 'Help')][switch]$Help
 )
+
+if ($Help) { . (Join-Path $PSScriptRoot '../_help.ps1'); Show-SzaHelp $PSCommandPath; exit 0 }
 
 . (Join-Path $PSScriptRoot '..\_profile.ps1')
 

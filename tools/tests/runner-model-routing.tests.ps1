@@ -385,7 +385,7 @@ try {
         $archived = Add-Ticket $script:routingProject 'task-archived'
         Remove-ComplexityLine $script:routingProject $archived
         $env:SZA_PROJECT_ROOT = $script:routingProject
-        $ar = & pwsh -NoProfile -File (Join-Path $harness 'spec_catalog/archive.ps1') -Id $archived -AllowMissingArtefact 2>&1 | Out-String
+        $ar = & pwsh -NoProfile -File (Join-Path $harness 'spec_catalog/archive.ps1') -Id $archived -AllowMissingArtefact -Reason 'not needed: fixture' 2>&1 | Out-String
         Assert-That ($LASTEXITCODE -eq 0) "archive $archived exited $($LASTEXITCODE): $ar"
         $extra = @()
         foreach ($n in 1..9) {

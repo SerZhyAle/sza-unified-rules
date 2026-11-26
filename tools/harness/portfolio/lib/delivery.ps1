@@ -439,17 +439,19 @@ function New-PqDeliveryEvent {
 
 # The newest build.delivered per project, in event order - what pq status prints.
 function Get-PqLastDeliveries {
-    $logDir = Join-Path (Get-PqRoot) 'log'
-    if (-not [IO.Directory]::Exists($logDir)) { return @() }
+    $root = Get-PqRoot
     $latest = [ordered]@{}
-    foreach ($f in [IO.Directory]::GetFiles($logDir, 'events-*.jsonl')) {
-        foreach ($e in (Read-PqDay -Path $f).events) {
-            if ($e.ev -cne 'build.delivered') { continue }
-            $project = [string]$e.d.project
-            if (-not $project) { continue }
-            $prev = $latest[$project]
-            if ($null -eq $prev -or ([string]$e.ts -cgt [string]$prev.at)) {
-                $latest[$project] = [pscustomobject]@{ project = $project; version = [string]$e.d.version; at = [string]$e.ts }
+    # Plain day files and the archived ones (TASK-FLOW 0.51 item F): a delivery may be older than the plain days.
+    foreach ($date in @(Get-PqLogDates -Root $root)) {
+        foreach ($f in @(Read-PqDayFiles -Root $root -Date $date)) {
+            foreach ($e in $f.day.events) {
+                if ($e.ev -cne 'build.delivered') { continue }
+                $project = [string]$e.d.project
+                if (-not $project) { continue }
+                $prev = $latest[$project]
+                if ($null -eq $prev -or ([string]$e.ts -cgt [string]$prev.at)) {
+                    $latest[$project] = [pscustomobject]@{ project = $project; version = [string]$e.d.version; at = [string]$e.ts }
+                }
             }
         }
     }

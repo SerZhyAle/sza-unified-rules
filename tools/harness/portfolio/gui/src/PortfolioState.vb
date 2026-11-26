@@ -556,7 +556,9 @@ Public Class PortfolioState
     ' Outcomes that count as idle when the repository's profile (runner.idleOutcomes) does not say, and the three that
     ' are neutral: a run that ended on the account's usage limit, a claim lost before the launch and a failed launch say
     ' nothing about the ticket, so the walk steps over them (TASK-FLOW rule 24).
-    Private Shared ReadOnly IdleDefaultOutcomes As String() = {"ok", "timeout", "claim-lost", "no-progress-or-claim-lost"}
+    Private Shared ReadOnly IdleDefaultOutcomes As String() = {"ok", "timeout", "claim-lost", "no-progress", "no-progress-or-claim-lost"}
+    ' One outcome under two spellings (TASK-FLOW 0.51): a set that names either counts both.
+    Private Shared ReadOnly IdleUnmovedSpellings As String() = {"no-progress", "no-progress-or-claim-lost"}
     Private Shared ReadOnly IdleNeutralOutcomes As String() = {"limit-hit", "claim-lost-before-launch", "launch-failed"}
     Private Shared ReadOnly IdleParkedStatuses As String() = {"BlockQuestions", "BlockExternal", "BlockByOtherTask"}
     ' The lift (_idle-runs.ps1 Test-IdleRunLifted): a spec file written more than this long after the newest counted run
@@ -622,6 +624,8 @@ Public Class PortfolioState
             Catch
                 ' A profile that does not read leaves the canon's defaults, as _idle-runs.ps1 does for a key it cannot find.
             End Try
+
+            If outcomes.Intersect(IdleUnmovedSpellings).Any() Then outcomes = outcomes.Union(IdleUnmovedSpellings).ToArray()
 
             Dim runsDir = If(Path.IsPathFullyQualified(runsRel), runsRel, Path.Combine(repoPath, runsRel.Replace("/"c, Path.DirectorySeparatorChar)))
             If Not Directory.Exists(runsDir) Then Return result

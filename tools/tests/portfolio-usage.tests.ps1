@@ -77,7 +77,7 @@ try {
     $l2 = [pscustomobject]@{ id = 'S1'; usage = [pscustomobject]@{ model = 'claude-opus-5-5'; input = 1; output = 2; cacheRead = 3; cacheWrite = 4; requests = 1; complete = $true; session = 'other' }; costUsd = 0.0001; priceAsOf = '2026-11-01' }
     $f = Merge-PqPassUsage -Rows @($l1, $l1, $l2)
     Check ($f.usage.requests -eq 4 -and $f.usage.input -eq 1016) "repeated session counted once (requests $($f.usage.requests))"
-    Check ($f.costUsd -eq 0.0195 -and $f.priceAsOf -eq '2026-11-01') 'cost summed, oldest price date'
+    Check ($f.costUsd -eq 0.0195 -and -not $f.Contains('priceAsOf')) 'cost summed; the price date stays on the journal row (0.51)'
     $f2 = Merge-PqPassUsage -Rows @($l1, [pscustomobject]@{ id = 'S1'; outcome = 'ok' })
     Check ($f2.usage.complete -eq $false -and $null -eq $f2.costUsd) 'a launch without usage makes the pass incomplete and unpriced'
     $f3 = Merge-PqPassUsage -Rows @([pscustomobject]@{ id = 'S1'; outcome = 'ok' })

@@ -67,14 +67,18 @@
 .EXAMPLE
     pwsh -NoProfile -File scripts/utils/wait-for-lock-turn.ps1 -Name Build -Reason "a.ps1 d"
 #>
+[CmdletBinding(DefaultParameterSetName = 'Run')]
 param(
-    [Parameter(Mandatory)][string]$Name,
-    [Parameter(Mandatory)][string]$Reason,
-    [int]$WaitTimeoutSeconds = 3600,
-    [int]$PollSeconds = 5,
+    [Parameter(Position = 0, Mandatory, ParameterSetName = 'Run')][Parameter(ParameterSetName = 'Help')][string]$Name,
+    [Parameter(Position = 1, Mandatory, ParameterSetName = 'Run')][Parameter(ParameterSetName = 'Help')][string]$Reason,
+    [Parameter(Position = 2)][int]$WaitTimeoutSeconds = 3600,
+    [Parameter(Position = 3)][int]$PollSeconds = 5,
     [switch]$Acquire,
-    [string]$Handoff = ''
+    [Parameter(Position = 4)][string]$Handoff = '',
+    [Parameter(Mandatory, ParameterSetName = 'Help')][switch]$Help
 )
+
+if ($Help) { . (Join-Path $PSScriptRoot '../_help.ps1'); Show-SzaHelp $PSCommandPath; exit 0 }
 
 . (Join-Path $PSScriptRoot '..\_profile.ps1')
 

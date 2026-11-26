@@ -11,6 +11,8 @@ Checks (core docs = rules/*.md; contrib/ and contrib/history/ get link-check onl
   5. Every skills/<name>/SKILL.md carries a frontmatter block its host can read: closed, YAML-safe, with a
      non-empty name and description, the description 400 characters at most.
   6. The canon-controlled SessionStart stdout fits its UTF-8 byte budget.
+  7. Every core doc fits its line in tools/rules-size-budget.json, every doc has a line and every line a doc,
+     and each line carries a date and a reason. A tree without that file is not judged, and the verdict says so.
 
 Exit codes: 0 = clean; 1 = violations found; 2 = internal error.
 Usage: pwsh -File tools/check-rules.ps1
@@ -174,9 +176,8 @@ try {
     if (Test-Path -LiteralPath $contribDir) {
         $contribDocs = @(Get-ChildItem -Path $contribDir -Filter *.md -File)
     }
-    # The dated history of each record sits one folder down (rules/contrib/history/<project>.md), is appended
-    # to and is read by no skill. It gets the same link check: a section moved there keeps a link only when
-    # the link gained one more '../'.
+    # The frozen history of each record sits one folder down (rules/contrib/history/<project>.md) and is read
+    # by no skill. It gets the same link check, so a moved rule doc cannot leave it with a dead link.
     $historyDir = Join-Path $contribDir 'history'
     $historyDocs = @()
     if (Test-Path -LiteralPath $historyDir) {
@@ -283,12 +284,33 @@ try {
         $violations.Add("hooks/session-start.ps1: payload $sessionStartBytes UTF-8 bytes exceeds budget $maxSessionStartBytes")
     }
 
+    # Check 7: the size budget of every core doc.
+    $budgetName = 'tools/rules-size-budget.json'
+    $budgetPath = Join-Path $PSScriptRoot 'rules-size-budget.json'
+    $budgetNote = "no size budget ($budgetName is absent)"
+    if (Test-Path -LiteralPath $budgetPath -PathType Leaf) {
+        . (Join-Path $PSScriptRoot 'lib/size-budget.ps1')
+        $budgets = @((Get-Content -LiteralPath $budgetPath -Raw | ConvertFrom-Json).budgets)
+        foreach ($d in ($budgets | Group-Object file | Where-Object Count -gt 1)) {
+            $violations.Add("$($budgetName): $($d.Name) has $($d.Count) budget lines")
+        }
+        foreach ($row in $budgets) {
+            $problems = Test-SzaSizeBudget -Path (Join-Path $root "$($row.file)") -Budget "$($row.bytes)" `
+                -Date "$($row.date)" -Reason "$($row.reason)" -BudgetFile $budgetName
+            foreach ($problem in @($problems)) { $violations.Add("$($row.file): $problem") }
+        }
+        foreach ($doc in $coreDocs) {
+            if (@($budgets.file) -cnotcontains $doc.Name) { $violations.Add("$($doc.Name): no budget line in $budgetName") }
+        }
+        $budgetNote = "$($budgets.Count) size budgets kept"
+    }
+
     if ($violations.Count -gt 0) {
         $violations | ForEach-Object { Write-Host "FAIL $_" }
         Write-Error "check-rules: $($violations.Count) violation(s)" -ErrorAction Continue
         exit 1
     }
-    Write-Host "check-rules: OK ($($coreDocs.Count) core docs, $($contribDocs.Count) contrib docs, $($historyDocs.Count) history docs, $($skillDocs.Count) skills; SessionStart $sessionStartBytes/$maxSessionStartBytes UTF-8 bytes)"
+    Write-Host "check-rules: OK ($($coreDocs.Count) core docs, $($contribDocs.Count) contrib docs, $($historyDocs.Count) history docs, $($skillDocs.Count) skills; SessionStart $sessionStartBytes/$maxSessionStartBytes UTF-8 bytes; $budgetNote)"
     exit 0
 }
 catch {

@@ -10,7 +10,8 @@
 #   rule 46 - the run row's finishedAt is local yyyy-MM-ddTHH:mm:ss with no zone; agentExit is an integer or absent
 #   rule 46 - no zone-offset finishedAt is left in the loop
 #   rule 41 - an agent record is refused for a halt, limitPollMinutes or limitDetector.pattern the contract does not allow
-#   rule 42 - agent.fallback is written only with a why of its vocabulary (an owner stop is not a fallback)
+#   rule 42 - agent.fallback is written only with a why of its vocabulary (an owner stop is not a fallback), and
+#             since TASK-FLOW 0.50 never per ranking for a limit
 #   rule 48 - agent.resume carries heldFor and says reset or probe
 #   rule 51 - the dispatcher's and the runner's level regexes are the same three
 #   rule 61 - repo.free carries the by, holderKind and start of the occupancy it ends
@@ -95,7 +96,8 @@ Assert-Equal (Get-AgentProblems @{ limitDetector = @{ kind = 'exitText'; pattern
 Assert-Equal (Test-PqFallbackWhy 'stopped') $false 'rule 42: an owner stop is not a fallback why'
 Assert-Equal (@(@('limit', 'maxParallel', 'levelNotAllowed', 'aboveCeiling', 'noPipelineForm', 'launchFailed') | Where-Object { -not (Test-PqFallbackWhy $_) }).Count) 0 'rule 42: every why of the vocabulary is written'
 $loopText = [IO.File]::ReadAllText((Join-Path $lib 'loop.ps1'))
-Assert-Equal ($loopText -match "if \(-not \(Test-PqFallbackWhy \(\[string\]\`$fb\.why\)\)\) \{ continue \}\s+\`$null = Write-PqEvent -Log \`$log -Ev 'agent\.fallback'") $true 'rule 42: the loop filters agent.fallback by the vocabulary'
+Assert-Equal ($loopText -match "foreach \(\`$fb in @\(Get-PqRankingFallbacks \`$pick\)\) \{\s+\`$null = Write-PqEvent -Log \`$log -Ev 'agent\.fallback'") $true 'rule 42: the loop writes agent.fallback per ranking through Get-PqRankingFallbacks'
+Assert-Equal ((Get-PqRankingFallbacks @{ fallbacks = @(@{ from = 'a'; why = 'stopped' }, @{ from = 'b'; why = 'limit' }, @{ from = 'c'; why = 'aboveCeiling' }) } | ForEach-Object { $_.from }) -join ',') 'c' 'rule 42: an owner stop and a limit are no per-ranking fallback, every other reason is'
 
 # ---- rule 48: agent.resume ----
 $now = [DateTimeOffset]::new(2026, 11, 15, 12, 0, 0, [TimeSpan]::Zero)
@@ -105,7 +107,9 @@ $r = Get-PqHoldResume @{ writtenAt = '2026-11-15T10:00:00.000Z'; until = '2026-1
 Assert-Equal "$($r.heldFor)/$($r.by)" '7200/reset' 'rule 48: a timed hold resumes by reset'
 $r = Get-PqHoldResume @{ writtenAt = 'garbage' } $now
 Assert-Equal "$($r.heldFor)/$($r.by)" '0/probe' 'rule 48: an unreadable hold time gives heldFor 0'
-Assert-Equal ($loopText.Contains("heldFor = `$resume.heldFor; by = `$resume.by")) $true 'rule 48: the loop writes heldFor into agent.resume'
+$agentsText = [IO.File]::ReadAllText((Join-Path $lib 'agents.ps1'))
+Assert-Equal ($agentsText.Contains("heldFor = (Get-PqValue `$resume 'heldFor' 0); by = `$by")) $true 'rule 48: the cleared hold writes heldFor into agent.resume'
+Assert-Equal ($loopText.Contains('Remove-PqAgentHoldAfterPass -Log $log -Name $agentName')) $true 'rule 48: the loop clears a hold through Remove-PqAgentHoldAfterPass'
 
 # ---- rule 51: one parser of the line for both readers (TASK-FLOW 0.32, S0139) ----
 $levelRx = { param([string]$Text) @([regex]::Matches($Text, "'(\^\((?:light|medium|hard)\|[^']+)'") | ForEach-Object { $_.Groups[1].Value }) -join ' ' }
@@ -157,7 +161,7 @@ foreach ($k in @('$startD.watch', '$startD.detached', '$startD.canon', '$startD.
 # ---- rule 41: analysis.thresholds ----
 $thrashRuns = @(1..2 | ForEach-Object { [pscustomobject]@{ repo = 'demo'; id = 'S0001'; statusBefore = 'Approved'; statusAfter = 'Approved'; outcome = 'no-progress' } })
 $fid = { param($t) @(Get-PqFindings -Runs $thrashRuns -Events @() -Gaps @() -Thresholds $t | ForEach-Object { $_.fid }) -join ',' }
-Assert-Equal (& $fid $null) '' 'rule 41: two passes are under the default thrash threshold of 4'
+Assert-Equal (& $fid $null) '' 'rule 41: two passes are under the default thrash threshold of 3'
 Assert-Equal (& $fid ([pscustomobject]@{ 'PQ-THRASH01' = 2 })) 'PQ-THRASH01' 'rule 41: analysis.thresholds PQ-THRASH01 2 makes them a finding'
 Assert-Equal (& $fid ([pscustomobject]@{ 'PQ-THRASH01' = 'two'; unknownName = 1 })) '' 'rule 41: a non-number and an unknown name are ignored'
 

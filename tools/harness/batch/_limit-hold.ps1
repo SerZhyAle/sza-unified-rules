@@ -19,6 +19,7 @@
 # Compatible with PowerShell 7+, and safe to load under Set-StrictMode Latest.
 
 . (Join-Path $PSScriptRoot '..\_profile.ps1')
+. (Join-Path $PSScriptRoot '_limit-tail.ps1')
 
 $script:LimitHoldFileName = 'limit-hold.json'
 
@@ -262,9 +263,12 @@ function Get-LimitSignal {
         a last record - an API error message whose text matches - is a limit hit too, and the reset time is read
         from that text (seen live on 2026-11-23, the claude-api provider).
 
-        Without a transcript, and only for a child that did not exit 0, the tail of the captured log
-        is matched for `hit your .{1,40} limit`. The tail and the exit code are what keep a child
-        that merely wrote ABOUT limits (this very mechanism's tickets) from being read as one.
+        Without a transcript, only the last 40 lines of the captured log are matched (Get-LimitLogTail),
+        and only for a child that exited with a non-zero code (TASK-FLOW 0.50): `hit your .{1,40} limit`
+        for Claude's own prose, else -Pattern. The tail and the exit code are what keep a child that
+        merely wrote ABOUT limits (this very mechanism's tickets) from being read as one: a match
+        before the tail, and any match of a child that exited 0 or whose exit code was not read, is no
+        limit.
 
         With neither, $null: the run stays whatever it was.
     .OUTPUTS
@@ -310,8 +314,8 @@ function Get-LimitSignal {
         return [pscustomobject]@{ Source = 'transcript'; ResetsAt = $resetsAt; RateLimitType = $type; Pattern = $null }
     }
 
-    if (-not [string]::IsNullOrWhiteSpace($LogBody) -and ($null -eq $ExitCode -or [int64]$ExitCode -ne 0)) {
-        $tail = if ($LogBody.Length -gt 4000) { $LogBody.Substring($LogBody.Length - 4000) } else { $LogBody }
+    if (-not [string]::IsNullOrWhiteSpace($LogBody) -and $null -ne $ExitCode -and [int64]$ExitCode -ne 0) {
+        $tail = Get-LimitLogTail $LogBody
         if ([string]::IsNullOrWhiteSpace($Pattern)) {
             if ($tail -match 'hit your (.{1,40}?) limit') {
                 return [pscustomobject]@{ Source = 'log'; ResetsAt = $null; RateLimitType = $Matches[1].Trim(); Pattern = 'hit your (.{1,40}?) limit' }

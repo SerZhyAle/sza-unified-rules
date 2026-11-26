@@ -41,16 +41,20 @@
     pwsh -NoProfile -File scripts/utils/lock-status.ps1 -Name Code -Json
     pwsh -NoProfile -File scripts/utils/lock-status.ps1 -Name Build -Wait -WaitTimeoutSeconds 300
 #>
+[CmdletBinding(DefaultParameterSetName = 'Run')]
 param(
-    [Parameter(Mandatory)][string]$Name,
+    [Parameter(Position = 0, Mandatory, ParameterSetName = 'Run')][Parameter(ParameterSetName = 'Help')][string]$Name,
     [switch]$Json,
     [switch]$StrictExit,
     # S1432: also report the queue behind the lock - who is waiting and in what order.
     [switch]$Queue,
     [switch]$Wait,
-    [int]$WaitTimeoutSeconds = 900,
-    [int]$PollSeconds = 2
+    [Parameter(Position = 1)][int]$WaitTimeoutSeconds = 900,
+    [Parameter(Position = 2)][int]$PollSeconds = 2,
+    [Parameter(Mandatory, ParameterSetName = 'Help')][switch]$Help
 )
+
+if ($Help) { . (Join-Path $PSScriptRoot '../_help.ps1'); Show-SzaHelp $PSCommandPath; exit 0 }
 
 . (Join-Path $PSScriptRoot '..\_profile.ps1')
 

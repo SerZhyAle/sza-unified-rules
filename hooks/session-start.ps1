@@ -9,6 +9,9 @@ It also appends the type memory of the session's user (tools/memory/memory.ps1):
 <memory root>/types/<tag>/ whose type.json matches this stamp's overlay, channels, site kind or role. The memory
 root is SZA_MEMORY_ROOT, else <claude home>/memory; no folder there means nothing is appended.
 
+When the plugin runs from a cache folder named by its version and a higher version folder sits beside it, one
+line asks for a session restart.
+
 Exits 0 with the SessionStart hookSpecificOutput shape, or 0 with no output when the repo is not an
 adopter. It can never block a session.
 #>
@@ -90,6 +93,21 @@ The full rule set and working skills ship with the ``sza`` plugin.
 The lines below are the hard invariants; everything else lives in the reference docs and the skills.
 
 "@
+
+    # A session keeps the plugin version it started with. Installed from the cache, the plugin root is the folder
+    # sza/<version>; a higher sibling means this session runs superseded code. Folder names only, to stay fast.
+    try {
+        $running = $null
+        if ([version]::TryParse((Split-Path $pluginRoot -Leaf), [ref]$running)) {
+            $newest = $running
+            foreach ($d in [IO.Directory]::GetDirectories((Split-Path $pluginRoot -Parent))) {
+                $v = $null
+                if ([version]::TryParse([IO.Path]::GetFileName($d), [ref]$v) -and $v -gt $newest) { $newest = $v }
+            }
+            if ($newest -gt $running) { $header += "`nplugin cache is older than installed ${newest}: restart the session`n" }
+        }
+    }
+    catch { }
 
     $payload = [pscustomobject]@{
         hookSpecificOutput = [pscustomobject]@{

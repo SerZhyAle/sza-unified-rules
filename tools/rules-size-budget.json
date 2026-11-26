@@ -1,0 +1,27 @@
+{
+  "$comment": "Size budget of every rules/*.md in bytes without CR, judged by tools/check-rules.ps1. Growth needs an equal deletion in the same edit, or the line raised with the date and the reason.",
+  "budgets": [
+    {"file":"AI_USAGE.md","bytes":32817,"date":"2026-11-26","reason":"baseline (CANONR-0221)"},
+    {"file":"AUTHOR.md","bytes":6476,"date":"2026-11-26","reason":"baseline (CANONR-0221)"},
+    {"file":"CHANNEL_MATRIX.md","bytes":22215,"date":"2026-11-26","reason":"baseline (CANONR-0221)"},
+    {"file":"CONTRACTS.md","bytes":18552,"date":"2026-11-26","reason":"CANONR-0225: unattended canon pass writes the catalog, one writer at a time"},
+    {"file":"DEVELOPMENT.md","bytes":39599,"date":"2026-11-26","reason":"baseline (CANONR-0221)"},
+    {"file":"DOCUMENTATION_CONCEPT.md","bytes":23513,"date":"2026-11-26","reason":"baseline (CANONR-0221)"},
+    {"file":"GITHUB_INTERACTION.md","bytes":11359,"date":"2026-11-26","reason":"baseline (CANONR-0221)"},
+    {"file":"INVARIANTS.md","bytes":6333,"date":"2026-11-26","reason":"baseline (CANONR-0221)"},
+    {"file":"LOCALIZATION.md","bytes":5667,"date":"2026-11-26","reason":"baseline (CANONR-0221)"},
+    {"file":"NEW_PROJECT_CHECKLIST.md","bytes":9161,"date":"2026-11-26","reason":"baseline (CANONR-0221)"},
+    {"file":"PLATFORM_OVERLAYS.md","bytes":28471,"date":"2026-11-26","reason":"baseline (CANONR-0221)"},
+    {"file":"PROMOTION.md","bytes":26991,"date":"2026-11-26","reason":"baseline (CANONR-0221)"},
+    {"file":"README.md","bytes":14889,"date":"2026-11-26","reason":"baseline (CANONR-0221)"},
+    {"file":"RELEASE_AND_DISTRIBUTION.md","bytes":35415,"date":"2026-11-26","reason":"baseline (CANONR-0221)"},
+    {"file":"REPOSITORY_LAYOUT.md","bytes":15876,"date":"2026-11-26","reason":"baseline (CANONR-0221)"},
+    {"file":"SECURITY_AND_PRIVACY.md","bytes":16670,"date":"2026-11-26","reason":"baseline (CANONR-0221)"},
+    {"file":"SITE_CONFIGURATION.md","bytes":8259,"date":"2026-11-26","reason":"baseline (CANONR-0221)"},
+    {"file":"SPREAD_BACK_PROMPT.md","bytes":1430,"date":"2026-11-26","reason":"baseline (CANONR-0221)"},
+    {"file":"SUPPORT_AND_FEEDBACK.md","bytes":7145,"date":"2026-11-26","reason":"baseline (CANONR-0221)"},
+    {"file":"TESTING_AND_QA.md","bytes":30724,"date":"2026-11-26","reason":"baseline (CANONR-0221)"},
+    {"file":"UI_UX.md","bytes":20000,"date":"2026-11-26","reason":"baseline (CANONR-0221)"},
+    {"file":"WINDOWS_PACKAGING.md","bytes":5001,"date":"2026-11-26","reason":"baseline (CANONR-0221)"}
+  ]
+}

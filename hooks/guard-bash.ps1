@@ -1,13 +1,15 @@
 <#
 guard-bash.ps1 - Claude Code PreToolUse hook (matcher: Bash), shipped by the sza plugin.
 
-One script, five checks, one interpreter start. Each check refuses something that CANNOT WORK in the
-Bash tool on a Windows machine - none of them is a convention:
+One script, seven checks, one interpreter start. Each of the first five refuses something that CANNOT WORK
+in the Bash tool on a Windows machine - none of them is a convention:
 
-  1. `find` with a disk-wide root, or without -maxdepth        (an orphaned scan floods OS handles)
+  1. `find` with a disk-wide root; or, without -maxdepth, with no start path or one outside the project
+     (an orphaned scan floods OS handles). A relative or in-repository start path needs no -maxdepth.
   2. a `.ps1` in command-head position                          (bash cannot execute it, and still exits 0)
   3. a PowerShell `Verb-Noun` cmdlet in command-head position   (not a program on PATH: exit 127, no output)
-  4. an interpreter name that resolves nowhere on this machine  (exit 127, no output)
+  4. an interpreter name that resolves nowhere for Bash         (exit 127, no output). A script of that
+     name in ~/bin is read first: a shim whose `exec` target is missing is refused too.
   5. the PowerShell `& { .. }` batching idiom at command start  (bash backgrounds an empty group)
 
 Plus one corruption check that is not a refusal of the head but of an argument:
@@ -16,9 +18,13 @@ Plus one corruption check that is not a refusal of the head but of an argument:
      `-Reason "/spec-dev .."` into `C:/Program Files/Git/spec-dev ..` silently, exit code 0, and the
      mangled text lands in whatever file that value was the only record in.
 
-Canon home: GITHUB_INTERACTION.md section 6 "Bash / tooling safety", which states every one of these AND
-that they must be enforced by a pre-tool hook rather than trusted as conventions. This file is that
-enforcement.
+And one limit on a shape that keeps failing:
+
+  7. a heredoc body over 15 lines                               (quoting corrupts it, or bash dies with
+     'unexpected EOF while looking for matching') - write the file with the Write tool instead.
+
+Canon home: GITHUB_INTERACTION.md section 6 "Bash / tooling safety", which names these traps and points
+at hooks/README.md. This file is the enforcement and holds their detail.
 
 WHY ONE SCRIPT AND NOT FIVE. Starting PowerShell costs 170-250 ms on Windows and a Bash guard pays it on
 every call that trips its pre-filter. Five registrations on the same event would pay it up to five times
@@ -37,7 +43,7 @@ Fail-open on any parse error so a malformed payload never breaks Bash globally.
 
 Exit codes (DEVELOPMENT.md section 15, reachable-exit-code contract):
   0  allow - nothing impossible found, or the payload could not be judged.
-  2  block - one of the six above, named in the message with the working form to use instead.
+  2  block - one of the seven above, named in the message with the working form to use instead.
 
 Heredoc bodies are removed before segmentation for ALL checks, so a command quoted inside a heredoc body
 is data and not a command head. That is a deliberate relaxation of the older stand-alone find guard,
@@ -55,13 +61,21 @@ if ($env:SZA_HOOKS_OFF -in @('1', 'true', 'TRUE')) { Allow }
 # `<<TAG`, `<<'TAG'`, `<<"TAG"`, `<<-TAG` are all recognised; `<<<` (herestring) is not a heredoc and is
 # left alone. An unterminated heredoc swallows the rest of the payload, which is the safe direction:
 # fewer segments, so fewer chances to over-block.
+# The longest TERMINATED body is recorded for check 7: an unterminated match is more likely a `<<` that was
+# never a heredoc (a shift, a quoted mention), and must not be counted.
+$longestHeredoc = 0
 function Remove-HeredocBodies([string]$text) {
     $lines = $text -split "`r?`n"
     $out = New-Object System.Collections.Generic.List[string]
     $tag = $null
+    $bodyLines = 0
     foreach ($line in $lines) {
         if ($null -ne $tag) {
-            if ($line.Trim() -eq $tag) { $tag = $null }
+            if ($line.Trim() -eq $tag) {
+                $tag = $null
+                if ($bodyLines -gt $script:longestHeredoc) { $script:longestHeredoc = $bodyLines }
+            }
+            else { $bodyLines++ }
             continue
         }
         $out.Add($line)
@@ -69,6 +83,7 @@ function Remove-HeredocBodies([string]$text) {
         if ($m.Success) {
             $tag = @($m.Groups[1].Value, $m.Groups[2].Value, $m.Groups[3].Value |
                 Where-Object { $_ })[0]
+            $bodyLines = 0
         }
     }
     return ($out -join "`n")
@@ -104,12 +119,96 @@ function Split-UnquotedSegments([string]$text) {
     return $segs
 }
 
+# --------------------------------------------------------------------------- paths
+
+# `/p/dir` is how MSYS spells `P:\dir`; every other form is returned as it came.
+function ConvertFrom-MsysPath([string]$path) {
+    $m = [regex]::Match($path, '^/([A-Za-z])(/.*)?$')
+    if ($m.Success) { return $m.Groups[1].Value + ':/' + $m.Groups[2].Value.TrimStart('/') }
+    return $path
+}
+
+$homeDir = ConvertFrom-MsysPath ([string]$(if ($env:HOME) { $env:HOME } else { $env:USERPROFILE }))
+
+# The start paths of one `find` segment: what stands between the head and the first expression token.
+function Get-FindStartPaths([string]$segment, [string]$rawHead) {
+    $m = [regex]::Match($segment, '(?:^|\s)' + [regex]::Escape($rawHead) + '(?=\s|$)')
+    if (-not $m.Success) { return }
+    $words = @([regex]::Matches($segment.Substring($m.Index + $m.Length), '(?:"[^"]*"|''[^'']*''|[^\s"''])+') |
+        ForEach-Object { $_.Value })
+    for ($n = 0; $n -lt $words.Count; $n++) {
+        $w = $words[$n]
+        if ($w -cmatch '^-([HLP]|O\d*)$') { continue }
+        if ($w -ceq '-D') { $n++; continue }
+        if ($w -match '^\d*[<>]') { if ($w -match '^\d*[<>]+$') { $n++ }; continue }
+        if ($w.StartsWith('-') -or $w -in @('!', '\', '\!', ',')) { break }
+        $w
+    }
+}
+
+# True for a start path that stays inside the project: a relative one, or an absolute one under the git root
+# of the call's working directory. A variable, `~`, the home folder and a drive root are never that.
+function Test-ProjectPath([string]$word, [string]$cwd) {
+    $p = $word -replace '["'']', ''
+    if ($p -eq '' -or $p -match '[$`]' -or $p.StartsWith('~')) { return $false }
+    $absolute = $p -match '^([\\/]|[A-Za-z]:)'
+    $climbs = $p -match '(^|[\\/])\.\.([\\/]|$)'
+    if (-not $cwd) { return (-not $absolute -and -not $climbs) }
+    try {
+        $base = [System.IO.Path]::GetFullPath((ConvertFrom-MsysPath $cwd))
+        $full = [System.IO.Path]::GetFullPath((ConvertFrom-MsysPath $p), $base).TrimEnd('\', '/')
+        if ($full -eq [System.IO.Path]::GetPathRoot($full).TrimEnd('\', '/')) { return $false }
+        if ($homeDir -and $full -eq [System.IO.Path]::GetFullPath($homeDir).TrimEnd('\', '/')) { return $false }
+        if (-not $absolute -and -not $climbs) { return $true }
+        $dir = $base
+        while ($dir -and -not (Test-Path -LiteralPath ([System.IO.Path]::Combine($dir, '.git')))) {
+            $dir = [System.IO.Path]::GetDirectoryName($dir)
+        }
+        if (-not $dir) { return $false }
+        $root = $dir.TrimEnd('\', '/')
+        $sep = [System.IO.Path]::DirectorySeparatorChar
+        return ($full -eq $root -or $full.StartsWith($root + $sep, [System.StringComparison]::OrdinalIgnoreCase))
+    }
+    catch { return (-not $absolute -and -not $climbs) }
+}
+
+# --------------------------------------------------------------------------- interpreter resolution
+
+# What Bash would run for a bare name. A script in ~/bin comes first (Git Bash puts that folder early on its
+# PATH) and its `exec` line names the real target; a shim onto a missing target is as dead as a missing name.
+# Anything this cannot judge counts as resolving.
+function Test-BashResolves([string]$name, [int]$depth = 0) {
+    try {
+        $shim = if ($homeDir) { [System.IO.Path]::Combine($homeDir, 'bin', $name) } else { $null }
+        if ($shim -and (Test-Path -LiteralPath $shim -PathType Leaf)) {
+            $target = $null
+            foreach ($line in @(Get-Content -LiteralPath $shim -TotalCount 40 -ErrorAction Stop)) {
+                $m = [regex]::Match($line, '^\s*exec\s+(?:"([^"]+)"|''([^'']+)''|([^\s"'']+))')
+                if ($m.Success) { $target = $m.Groups[1].Value + $m.Groups[2].Value + $m.Groups[3].Value }
+            }
+            if (-not $target -or $target -match '[$`]') { return $true }
+            if ($target -match '[\\/]') {
+                $win = ConvertFrom-MsysPath $target
+                if ($win -notmatch '^[A-Za-z]:') { return $true }     # /usr/bin/.. - visible to MSYS only
+                return (Test-Path -LiteralPath $win)
+            }
+            if (@('py', 'python', 'python3', 'node') -notcontains $target) { return $true }
+            if ($depth -ge 3) { return $false }                      # shims that only call each other
+            return (Test-BashResolves $target ($depth + 1))
+        }
+        return [bool](Get-Command -Name $name -ErrorAction SilentlyContinue)
+    }
+    catch { return $true }
+}
+
 # --------------------------------------------------------------------------- payload
 
 try {
     $raw = [Console]::In.ReadToEnd()
     if ([string]::IsNullOrWhiteSpace($raw)) { Allow }
-    $cmd = [string](($raw | ConvertFrom-Json).tool_input.command)
+    $payload = $raw | ConvertFrom-Json
+    $cmd = [string]($payload.tool_input.command)
+    $cwd = [string]($payload.cwd)
 } catch {
     # Never break Bash on a malformed hook payload.
     Allow
@@ -205,10 +304,13 @@ foreach ($seg in (Split-UnquotedSegments $scanned)) {
             if ($broad) { break }
         }
         if ($broad) {
-            Deny("Blocked by sza guard-bash (canon GITHUB_INTERACTION.md section 6): find with a disk-wide root path (/, ~, drive root, /c/, //host). On Windows/MSYS an orphaned find.exe from a dropped session keeps scanning the whole disk and floods handles. $findAdvice If you truly need find, give it a concrete non-root start path AND -maxdepth N.")
+            Deny("Blocked by sza guard-bash (canon GITHUB_INTERACTION.md section 6): find with a disk-wide root path (/, ~, drive root, /c/, //host). On Windows/MSYS an orphaned find.exe from a dropped session keeps scanning the whole disk and floods handles. $findAdvice If you truly need find, give it a concrete start path: a relative or in-repository one is enough.")
         }
         if (($rest -join ' ') -notmatch '(^|\s)-maxdepth(\s|=|$)') {
-            Deny("Blocked by sza guard-bash (canon GITHUB_INTERACTION.md section 6): find without -maxdepth. An unbounded find can orphan on Windows/MSYS and scan the whole disk, flooding handles. $findAdvice If you truly need find, add -maxdepth N and a concrete start path.")
+            $starts = @(Get-FindStartPaths $s $rawHead)
+            if ($starts.Count -eq 0 -or @($starts | Where-Object { -not (Test-ProjectPath $_ $cwd) }).Count -gt 0) {
+                Deny("Blocked by sza guard-bash (canon GITHUB_INTERACTION.md section 6): find without -maxdepth and without a project start path (none given, a variable, ~, or a path outside this repository). Such a find can orphan on Windows/MSYS and scan the whole disk, flooding handles. $findAdvice If you truly need find, start it at a relative or in-repository path, or add -maxdepth N to a concrete one.")
+            }
         }
     }
 
@@ -227,11 +329,10 @@ foreach ($seg in (Split-UnquotedSegments $scanned)) {
     # ---- check 4: an interpreter that resolves nowhere
     # Only a bare name is judged. An explicit path is the caller's own claim about where it lives, and a
     # name that can be MADE to work (a shim onto PATH) must not be refused - so this asks the machine.
+    # Every segment head comes through here, so the second command of a chain is judged like the first.
     if ($fragileInterpreters -contains $headLower -and $head -notmatch '[\\/]') {
-        $resolved = $null
-        try { $resolved = Get-Command -Name $head -ErrorAction SilentlyContinue } catch { $resolved = $null }
-        if (-not $resolved) {
-            Deny("Blocked by sza guard-bash (canon GITHUB_INTERACTION.md section 6): '$head' resolves to nothing on this machine, so Bash would answer 'command not found' (exit 127) and return no output - and no hook can fix and retry a failed command. Put a shim for it on PATH (the canon's preference: make the name work rather than guard it), call the interpreter by its full path, or use one that is installed.")
+        if (-not (Test-BashResolves $head)) {
+            Deny("Blocked by sza guard-bash (canon GITHUB_INTERACTION.md section 6): '$head' resolves to nothing for Bash on this machine (not on PATH, or its ~/bin shim execs a missing target), so Bash would answer 'command not found' (exit 127) and return no output - and no hook can fix and retry a failed command. Use the PowerShell tool, put a working shim in ~/bin (the canon's preference: make the name work rather than guard it), or call the interpreter by its full path.")
         }
     }
 
@@ -247,6 +348,13 @@ foreach ($seg in (Split-UnquotedSegments $scanned)) {
             Deny("Blocked by sza guard-bash (canon GITHUB_INTERACTION.md section 6): the argument value '$val' begins with a slash and names a command rather than a path, and MSYS rewrites it SILENTLY - '/$first ..' becomes 'C:/Program Files/Git/$first ..', exit code 0, nothing fails, and the corrupted text lands in whatever record that value was written into. Three accepted forms: double the leading slash ('//$first ..'), prefix the call with MSYS2_ARG_CONV_EXCL='*', or issue the call from the PowerShell tool.")
         }
     }
+}
+
+# --------------------------------------------------------------------------- check 7: a long heredoc
+
+# Last, so a more specific refusal above names its own cause first.
+if ($longestHeredoc -gt 15) {
+    Deny("Blocked by sza guard-bash (canon GITHUB_INTERACTION.md section 6): a heredoc body of $longestHeredoc lines (the limit is 15). Bash quoting corrupts a long heredoc without failing, or dies with 'unexpected EOF while looking for matching' - write the file with the Write tool, run it from the PowerShell tool.")
 }
 
 Allow

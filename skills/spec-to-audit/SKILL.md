@@ -89,7 +89,9 @@ is the contract the audit later checks the build against.
   goes on. What stays an owner decision: one-way and outward steps (publish, release, store submit),
   contract changes, scope, money, and facts only the owner knows.
 - The ticket has one authoritative record with an id and a first-line **Status:**, mutated only through its
-  tool where one exists - a catalog CLI, a journal - never hand-edited.
+  tool where one exists - a catalog CLI, a journal - never hand-edited. The header line is written by that tool
+  from the record; archiving through it takes one reason line (`duplicate of <id>`, `not needed: <why>`,
+  `done in <id>`).
 - The ticket's `**Complexity:**` line exists and was **rewritten at this spec pass**, confirmation included:
   it no longer reads `not assessed at capture` (see [DEVELOPMENT.md](../../rules/DEVELOPMENT.md) section
   8). A primitive-spec rung skips this item - it has three sections and no pipeline.
@@ -319,6 +321,12 @@ table, the grep rules, and the `## Last Audit` block format. Complete the
 The self-audit is a **separate, static pass** against the spec's own contract - not a re-run of the build.
 That is what keeps it cheap enough to actually run.
 
+**The spec stays a short working document.** The owner's words stand once, in section 0. Per-pass records, earlier
+audit blocks, site-audit tables and other logs go to the ticket's `evidence/log.md`, linked once by an `Evidence:`
+line; `## Last Audit` keeps the latest verdict only, about 40 lines at most
+([the layout](references/audit-verdict.md#the-spec-stays-short)). This holds in every stage, not only at the audit.
+The status tool refuses a hand-over of a spec above 40 KB that has no such link (TASK-FLOW 0.53).
+
 Three rules give "Verified" its meaning, and all are **refusals**, not advice:
 
 - **`Verified` rests on an executed check (TASK-FLOW 0.48).** The `## Last Audit` block records at least one
@@ -439,7 +447,14 @@ An unattended pass runs without human interaction in a headless queue session.
   the prepared context follows the usual workflow.
 - **The ticket and tool are named up front**: the ticket is `<spec path>` in `<repo root>`; change its status only with `<update.ps1 path> -Id <id> -Status <s>`, never by editing the `**Status:**` line.
 - **Repository scope**: work within this repository. For a cross-repository blocker, follow the
-  filing and waiting-status procedure in Stage 1.
+  filing and waiting-status procedure in Stage 1. In the canon repository (stamp role `canon-home`) the
+  contracts catalog is in scope as well: an unattended canon pass is a canon session, so a catalog amendment
+  the owner approved - a question block stamped `answered` with the approval, or an owner request that orders
+  the amendment - is made by the pass itself, under `tools/contracts-writer-lock.ps1 -Acquire -Ticket <id>`
+  with the two catalog snapshots, and the ticket is never parked again for the catalog step, for which
+  session carries it, or as a `DO:` (CANONR-0225). An amendment not yet approved parks once in
+  `BlockQuestions` with its `Q:`; a question an answered block already settles is never asked again. A
+  product repository's pass still writes no contract.
 - **Foreground execution only**: this is a headless pass: start no background agent or command, wait for each in the foreground, and set the status before your last message. In headless mode the end of the turn is the end of the pass; orphaned background work fails.
 - **Compile gate (S0040)**: if this pass edited compiled source, run the repository's declared
   compile-only command - `commands.compileCheck` in this repo's `.sza-profile.json` - once, in the

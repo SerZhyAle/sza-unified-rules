@@ -78,7 +78,12 @@ function Bash-Payload([string]$command) {
 
 Write-Host '--- guard-bash: REFUSE (canon GITHUB_INTERACTION.md section 6) ---'
 Invoke-Case 'find / - disk-wide root'           'guard-bash.ps1' (Bash-Payload 'find / -name x') 2
-Invoke-Case 'find . - no -maxdepth'             'guard-bash.ps1' (Bash-Payload 'find . -name x') 2
+Invoke-Case 'find with no start path'           'guard-bash.ps1' (Bash-Payload 'find -name x') 2
+Invoke-Case 'find / - -maxdepth does not help'  'guard-bash.ps1' (Bash-Payload 'find / -maxdepth 2') 2
+Invoke-Case 'find outside the repo, unbounded'  'guard-bash.ps1' (Bash-Payload 'find /usr/share -name x') 2
+Invoke-Case 'find from a variable, unbounded'   'guard-bash.ps1' (Bash-Payload 'find "$d" -name x') 2
+Invoke-Case 'find climbing out, unbounded'      'guard-bash.ps1' (Bash-Payload 'find ../../.. -name x') 2
+Invoke-Case 'heredoc body of 16 lines'          'guard-bash.ps1' (Bash-Payload ("cat <<'EOF' > x.md`n" + ("line`n" * 16) + 'EOF')) 2 -MustContain 'write the file with the Write tool'
 Invoke-Case '.ps1 in command-head position'     'guard-bash.ps1' (Bash-Payload './a.ps1 fk') 2
 Invoke-Case 'cmdlet in head position'           'guard-bash.ps1' (Bash-Payload 'Get-ChildItem -Recurse') 2
 Invoke-Case 'cmdlet after a pipe'               'guard-bash.ps1' (Bash-Payload 'ls | Select-Object -First 3') 2
@@ -88,6 +93,12 @@ Invoke-Case 'slash arg naming a command'        'guard-bash.ps1' (Bash-Payload '
 
 Write-Host '--- guard-bash: ALLOW - the load-bearing half ---'
 Invoke-Case 'find with -maxdepth'               'guard-bash.ps1' (Bash-Payload 'find . -maxdepth 2 -name x') 0
+Invoke-Case 'find . - relative, no -maxdepth'   'guard-bash.ps1' (Bash-Payload 'find . -name x') 0
+Invoke-Case 'find relative dirs into head'      'guard-bash.ps1' (Bash-Payload 'cd x && find src tools -name "*.cs" 2>/dev/null | head') 0
+$inRepo = (@{ tool_name = 'Bash'; cwd = $repoRoot; tool_input = @{ command = "find '$($repoRoot -replace '\\', '/')/hooks' -name x" } } | ConvertTo-Json -Compress)
+Invoke-Case 'find in-repo absolute path'        'guard-bash.ps1' $inRepo 0
+Invoke-Case 'heredoc body of 15 lines'          'guard-bash.ps1' (Bash-Payload ("cat <<'EOF' > x.md`n" + ("line`n" * 15) + 'EOF')) 0
+Invoke-Case 'a shift is not a heredoc'          'guard-bash.ps1' (Bash-Payload ('echo $((1<<n))' + ("`necho a" * 20))) 0
 Invoke-Case 'find inside a quoted pattern'      'guard-bash.ps1' (Bash-Payload 'grep -n "guard-find" a.md') 0
 Invoke-Case 'pwsh -File a.ps1'                  'guard-bash.ps1' (Bash-Payload 'pwsh -NoProfile -File ./a.ps1 fk') 0
 Invoke-Case 'grep over a .ps1'                  'guard-bash.ps1' (Bash-Payload 'grep -n exit scripts/foo.ps1') 0
@@ -111,11 +122,31 @@ Invoke-Case 'empty payload - fails open'        'guard-bash.ps1' '' 0
 # "prefer making a name work over refusing it". On a machine with a python3 shim and no node, this pair
 # asserts both directions at once.
 Write-Host '--- guard-bash: interpreter resolution, expectation read off this machine ---'
-foreach ($interp in @('python3', 'node')) {
-    $resolved = Get-Command -Name $interp -ErrorAction SilentlyContinue
-    $expect = if ($resolved) { 0 } else { 2 }
-    $label = if ($resolved) { "$interp resolves - allowed" } else { "$interp resolves nowhere - refused" }
-    Invoke-Case $label 'guard-bash.ps1' (Bash-Payload "$interp -e 1") $expect
+# A throwaway HOME: the hook reads ~/bin/<name> first, so an empty one leaves PATH to answer, and the shim
+# cases below give the same verdicts on every machine.
+$fakeHome = Join-Path ([System.IO.Path]::GetTempPath()) ('sza-smoke-home-' + [guid]::NewGuid().ToString('N'))
+$savedHome = $env:HOME
+try {
+    $null = New-Item -ItemType Directory -Force -Path (Join-Path $fakeHome 'bin')
+    $env:HOME = $fakeHome
+    foreach ($interp in @('python3', 'node')) {
+        $resolved = Get-Command -Name $interp -ErrorAction SilentlyContinue
+        $expect = if ($resolved) { 0 } else { 2 }
+        $label = if ($resolved) { "$interp resolves - allowed" } else { "$interp resolves nowhere - refused" }
+        Invoke-Case $label 'guard-bash.ps1' (Bash-Payload "$interp -e 1") $expect
+    }
+    $shim = Join-Path $fakeHome 'bin/python'
+    [System.IO.File]::WriteAllText($shim, "#!/usr/bin/env bash`nexec /c/sza-no-such-dir/python.exe `"`$@`"`n")
+    Invoke-Case 'python after && - dead shim target' 'guard-bash.ps1' (Bash-Payload 'cd x && python -V') 2
+    [System.IO.File]::WriteAllText((Join-Path $fakeHome 'bin/python3'), "#!/usr/bin/env bash`nexec python `"`$@`"`n")
+    Invoke-Case 'python3 shim onto a dead shim'      'guard-bash.ps1' (Bash-Payload 'ls; python3 -V') 2
+    $alive = (Join-Path $PSHOME 'pwsh.exe') -replace '\\', '/'
+    [System.IO.File]::WriteAllText($shim, "#!/usr/bin/env bash`nexec `"$alive`" `"`$@`"`n")
+    Invoke-Case 'python after | - working shim'      'guard-bash.ps1' (Bash-Payload 'ls | python -V') 0
+}
+finally {
+    $env:HOME = $savedHome
+    Remove-Item -LiteralPath $fakeHome -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 Write-Host '--- guard-fire-and-forget (canon AI_USAGE.md section 1) ---'

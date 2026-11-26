@@ -22,7 +22,7 @@
 # "free", both select it, and the claim made later by whoever acts on the pick decides the race
 # after the loser already spent its run. Measured 2026-10-18 over the runner journals: six pairs of
 # instances started the same ticket within a minute in fourteen days, every loser journalled as
-# no-progress-or-claim-lost or claim-lost-before-launch, which also counts toward its idle hold.
+# no-progress or claim-lost-before-launch, which also counts toward its idle hold.
 # Under -Claim the walk claims each surviving candidate with ticket-lease.ps1 (an atomic create)
 # and a lost claim walks on to the next candidate, so the caller receives a ticket it already owns
 # and the loser of a race never sees the contested id at all. A caller that then decides not to work
@@ -80,8 +80,11 @@ param(
     [string]$ClaimAs = '',
     [string]$Reason = 'spec-next-preflight',
     [Parameter(ValueFromRemainingArguments = $true)]
-    [string[]]$AdditionalExclude = @()
+    [string[]]$AdditionalExclude = @(),
+    [switch]$Help
 )
+
+if ($Help) { . (Join-Path $PSScriptRoot '../_help.ps1'); Show-SzaHelp $PSCommandPath; exit 0 }
 
 . (Join-Path $PSScriptRoot '..\_profile.ps1')
 

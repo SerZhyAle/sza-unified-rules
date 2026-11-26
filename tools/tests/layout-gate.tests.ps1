@@ -176,7 +176,7 @@ try {
         function Get-Body([string]$Path) { (Get-Content -LiteralPath $Path -Raw) -replace '(?m)^\*\*Status:\*\*[^
 ]*', '**Status:** <any>' }
         $beforeBody = Get-Body $spec
-        & pwsh -NoProfile -File (Join-Path $harness 'spec_catalog/archive.ps1') -Id S0001 2>&1 | Out-Null
+        & pwsh -NoProfile -File (Join-Path $harness 'spec_catalog/archive.ps1') -Id S0001 -Reason 'not needed: fixture' 2>&1 | Out-Null
         Assert-That ($LASTEXITCODE -eq 0) 'archive failed'
         $archived = Join-Path $project 'PLAN/archive/S0001_frozen.md'
         Assert-That (Test-Path -LiteralPath $archived) 'the spec file is not under PLAN/archive'

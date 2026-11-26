@@ -32,6 +32,9 @@
 # The finding lifecycle events (finding.open, finding.close, finding.escalate) and the tickets of R46 (improve) are not built:
 # a finding here is computed from the window each time it is asked for, nothing is filed, nothing is written.
 
+# The walk PQ-THRASH01 shares with the loop's retry bound (TASK-FLOW 0.51 item D).
+. (Join-Path $PSScriptRoot 'offer-limit.ps1')
+
 $script:PqMinSample = 5
 
 function Get-PqWindow([int]$Days = 7) {
@@ -92,14 +95,9 @@ function Read-PqRunFile {
 function Read-PqWindowEvents {
     param([Parameter(Mandatory)][string]$Root, [datetime]$Since = [datetime]::MinValue)
     $result = @{ events = [Collections.Generic.List[object]]::new(); bad = 0; unsupported = 0; gaps = [Collections.Generic.List[object]]::new() }
-    $logDir = Join-Path $Root 'log'
-    if (-not [IO.Directory]::Exists($logDir)) { return $result }
     $sinceUtc = $Since.ToUniversalTime()
-    $dates = [Collections.Generic.SortedSet[string]]::new([StringComparer]::Ordinal)
-    foreach ($f in [IO.Directory]::GetFiles($logDir, 'events-*.jsonl')) {
-        if ([IO.Path]::GetFileName($f) -match '^events-(\d{4}-\d{2}-\d{2})\.') { [void]$dates.Add($Matches[1]) }
-    }
-    foreach ($d in $dates) {
+    # Plain day files and the archived ones (TASK-FLOW 0.51 item F).
+    foreach ($d in @(Get-PqLogDates -Root $Root)) {
         $day = [datetime]::ParseExact($d, 'yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture).AddDays(1)
         if ($day -le $sinceUtc.Date) { continue }
         $m = Merge-PqDay -Root $Root -Date $d
@@ -214,6 +212,18 @@ function Get-PqThreshold($Thresholds, [string]$Name, [double]$Default) {
     return $Default
 }
 
+# A guessed agent.hold whose until lies more than -CapHours after the event itself: a writer that did not cut its
+# guess (TASK-FLOW 0.50). An event without a time, or with one that does not parse, is not one.
+function Test-PqHoldOverCap($E, [double]$CapHours) {
+    try {
+        $d = Get-PqValue $E 'd'
+        $until = [DateTimeOffset]::Parse([string](Get-PqValue $d 'until'))
+        $from = [datetime]::Parse([string](Get-PqValue $E 'ts'), [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::AdjustToUniversal)
+        return (($until - $from).TotalHours -gt $CapHours)
+    }
+    catch { return $false }
+}
+
 function Get-PqFindings {
     param($Runs, $Events, $Gaps, [int]$Bad = 0, $Thresholds = $null)
     $runs = @($Runs)
@@ -226,29 +236,33 @@ function Get-PqFindings {
     $of = { param($name) @($events | Where-Object { $_.ev -ceq $name }) }
 
     # PQ-RACE01: a claim lost, or a pass the runner could not claim.
-    $lost = @(& $of 'claim.lost') + @($runs | Where-Object { (Get-PqValue $_ 'outcome' '') -cin @('claim-lost', 'claim-lost-before-launch') })
-    if ($lost.Count -gt 0) { & $add 'PQ-RACE01' 'high' 'runner' "$($lost.Count) claim(s) lost: two workers reached one ticket" $lost.Count 1 @(@(& $of 'claim.lost') | ForEach-Object { Get-PqEventRef $_ }) }
+    $lostEvents = @(& $of 'claim.lost')
+    $lostRows = @($runs | Where-Object { (Get-PqValue $_ 'outcome' '') -cin @('claim-lost', 'claim-lost-before-launch') })
+    $lost = $lostEvents.Count + $lostRows.Count
+    if ($lost -gt 0) {
+        $refs = @($lostEvents | ForEach-Object { Get-PqEventRef $_ }) + @($lostRows | ForEach-Object { "run $(Get-PqValue $_ 'repo' ''):$(Get-PqValue $_ 'id' '') $(Get-PqValue $_ 'pass' (Get-PqValue $_ 'finishedAt' ''))" })
+        & $add 'PQ-RACE01' 'high' 'runner' "$lost claim(s) lost: two workers reached one ticket" $lost 1 $refs
+    }
 
     # PQ-SAFE02: the cap of robot-filed tickets was reached.
     $capped = @(& $of 'intake.robotDraft' | Where-Object { (Get-PqValue $_.d 'capped' $false) -eq $true })
     if ($capped.Count -gt 0) { & $add 'PQ-SAFE02' 'low' 'owner' "the cap of robot-filed tickets was reached $($capped.Count) time(s)" $capped.Count 1 @($capped | ForEach-Object { Get-PqEventRef $_ }) }
 
-    # PQ-SAFE01: a tripwire trip.
-    $trips = @(& $of 'tripwire.trip')
-    if ($trips.Count -gt 0) { & $add 'PQ-SAFE01' 'high' 'runner' "$($trips.Count) tripwire trip(s)" $trips.Count 1 @($trips | ForEach-Object { Get-PqEventRef $_ }) }
 
-    # PQ-LIMIT01: a usage limit with no reset time, or a detector that fired while unproven.
-    $holds = @(& $of 'agent.hold' | Where-Object { -not (Get-PqValue $_.d 'until') -or (Get-PqValue $_.d 'detector' '') -ceq 'unproven' })
-    if ($holds.Count -gt 0) { & $add 'PQ-LIMIT01' 'medium' 'profile' "$($holds.Count) limit hold(s) with no reset time or from an unproven detector" $holds.Count 1 @($holds | ForEach-Object { Get-PqEventRef $_ }) }
+    # PQ-LIMIT01: a guessed hold that ran longer than the cap - a writer that did not cut its guess (TASK-FLOW 0.50).
+    $limitCapHours = Get-PqThreshold $Thresholds 'PQ-LIMIT01' 6
+    $holds = @(& $of 'agent.hold' | Where-Object { (Get-PqValue $_.d 'resetSource' '') -ceq 'guessed' -and (Test-PqHoldOverCap $_ $limitCapHours) })
+    if ($holds.Count -gt 0) { & $add 'PQ-LIMIT01' 'medium' 'runner' "$($holds.Count) guessed hold(s) longer than $limitCapHours h" $holds.Count 1 @($holds | ForEach-Object { Get-PqEventRef $_ }) }
 
-    # PQ-THRASH01: a ticket offered four or more times in the window with no net advance, and the loop's own ticket.thrash.
+    # PQ-THRASH01: a ticket whose offers in the window advanced nothing (the walk of the loop's retry bound,
+    # offer-limit.ps1), and the loop's own ticket.thrash.
     $thr = @(& $of 'ticket.thrash')
     $byTicket = @{}
     foreach ($r in $runs) { $k = "$(Get-PqValue $r 'repo' ''):$(Get-PqValue $r 'id' '')"; if (-not $byTicket.ContainsKey($k)) { $byTicket[$k] = [Collections.Generic.List[object]]::new() }; $byTicket[$k].Add($r) }
-    $thrashMin = Get-PqThreshold $Thresholds 'PQ-THRASH01' 4
-    $stuck = @($byTicket.Keys | Where-Object { $byTicket[$_].Count -ge $thrashMin -and (Get-PqValue $byTicket[$_][0] 'statusBefore' '') -ceq (Get-PqValue $byTicket[$_][$byTicket[$_].Count - 1] 'statusAfter' '') })
+    $thrashMin = [int](Get-PqThreshold $Thresholds 'PQ-THRASH01' $script:PqOfferLimit)
+    $stuck = @($byTicket.Keys | Where-Object { $null -ne (Get-PqStuckOffers -Rows $byTicket[$_] -Min $thrashMin) } | Sort-Object)
     if ($thr.Count -gt 0 -or $stuck.Count -gt 0) {
-        & $add 'PQ-THRASH01' 'medium' 'skill' "$($stuck.Count) ticket(s) offered 4+ times with no net advance ($($stuck -join ', ')); $($thr.Count) held back by the loop" ($stuck.Count + $thr.Count) $thrashMin @($thr | ForEach-Object { Get-PqEventRef $_ })
+        & $add 'PQ-THRASH01' 'medium' 'skill' "$($stuck.Count) ticket(s) offered $thrashMin+ times with no net advance ($($stuck -join ', ')); $($thr.Count) held back by the loop" ($stuck.Count + $thr.Count) $thrashMin @($thr | ForEach-Object { Get-PqEventRef $_ })
     }
 
     # PQ-RES03: a ticket that waited for a resource token for half an hour or more.
@@ -260,9 +274,6 @@ function Get-PqFindings {
         })
     if ($longWait.Count -gt 0) { & $add 'PQ-RES03' 'medium' 'runner' "$($longWait.Count) ticket(s) waited 30+ minutes for a build or emulator token ($(@($longWait | ForEach-Object Name) -join ', '))" $longWait.Count $resMin @($waits | ForEach-Object { Get-PqEventRef $_ }) }
 
-    # PQ-STALL01: a pass with no signal for too long.
-    $stall = @(& $of 'pass.stall')
-    if ($stall.Count -gt 0) { & $add 'PQ-STALL01' 'medium' 'runner' "$($stall.Count) pass(es) went quiet" $stall.Count 1 @($stall | ForEach-Object { Get-PqEventRef $_ }) }
 
     # PQ-XREPO01: a cycle among cross-repository blockers.
     $cyc = @(& $of 'xrepo.cycle')

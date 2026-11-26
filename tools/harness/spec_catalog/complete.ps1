@@ -3,7 +3,10 @@ param(
     [Parameter(Mandatory)][string] $Id,
     [ValidateSet('Verified','Archived')]
     [string] $Status = 'Verified',
-    [switch] $SkipValidate
+    [switch] $SkipValidate,
+    # TASK-FLOW 0.52: the one-line archive reason, handed to close.ps1; required with -Status Archived.
+    [Alias('StatusNote')]
+    [string] $Reason
 )
 
 . (Join-Path $PSScriptRoot '..\_profile.ps1')
@@ -68,5 +71,7 @@ if ([string]::IsNullOrWhiteSpace($changelog)) {
 
 # 3. Close
 Write-Host "[3/3] closing $Id -> $Status..." -ForegroundColor Cyan
-& (Join-Path $PSScriptRoot 'close.ps1') -Id $Id -Status $Status
+$closeArgs = @{ Id = $Id; Status = $Status }   # splatted by name: an omitted reason stays omitted
+if ($PSBoundParameters.ContainsKey('Reason')) { $closeArgs['Reason'] = $Reason }
+& (Join-Path $PSScriptRoot 'close.ps1') @closeArgs
 exit $LASTEXITCODE

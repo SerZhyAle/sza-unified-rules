@@ -25,8 +25,8 @@ name, so a repo may keep its inventory wherever it documents hooks.
 
 | Hook | Event | Verdict | What it does | Canon home |
 | --- | --- | --- | --- | --- |
-| [`session-start.ps1`](session-start.ps1) | `SessionStart` | injects | the hard invariants and the matching type memory, in an adopting repo only | [INVARIANTS.md](../rules/INVARIANTS.md) |
-| [`guard-bash.ps1`](guard-bash.ps1) | `PreToolUse` (Bash) | refuses | five things that cannot work in Bash on Windows, plus one that corrupts silently | [GITHUB_INTERACTION.md](../rules/GITHUB_INTERACTION.md) section 6 |
+| [`session-start.ps1`](session-start.ps1) | `SessionStart` | injects | the hard invariants and the matching type memory, in an adopting repo only; plus a restart line when a newer plugin version is installed in the cache | [INVARIANTS.md](../rules/INVARIANTS.md) |
+| [`guard-bash.ps1`](guard-bash.ps1) | `PreToolUse` (Bash) | refuses | five things that cannot work in Bash on Windows, one argument that corrupts silently, and a heredoc body over 15 lines; a `find` with a relative or in-repository start path passes without `-maxdepth` | [GITHUB_INTERACTION.md](../rules/GITHUB_INTERACTION.md) section 6 |
 | [`guard-fire-and-forget.ps1`](guard-fire-and-forget.ps1) | `PreToolUse` (Bash) | refuses | backgrounding a gate, a closure facade or a catalog mutator | [AI_USAGE.md](../rules/AI_USAGE.md) section 1 |
 | [`guard-uncapped-read.ps1`](guard-uncapped-read.ps1) | `PreToolUse` (Read) | rewrites | windows an uncapped read of a file over 500 lines, and says so | [AI_USAGE.md](../rules/AI_USAGE.md) sections 3 and 5 |
 | [`guard-rules-budget.ps1`](guard-rules-budget.ps1) | `PreToolUse` (Edit, Write) | refuses, warns | refuses growth of a rules file past its hard limit; warns over the budget of a rules file or a memory index | [AI_USAGE.md](../rules/AI_USAGE.md) sections 4 and 5 |
@@ -146,6 +146,19 @@ harness, not of a project's conventions: an orphaned `find.exe` floods handles o
 context grows the same way in every repo. Gating them on adoption would leave the failure live in exactly
 the repos that have not adopted yet.
 
+## What guard-bash lets through
+
+Two of its checks judge more than a name, so their allow side is written down:
+
+- **`find`.** A disk-wide root (`/`, `~`, a drive root, `/c/`, `//host`) is refused with or without
+  `-maxdepth`. Without `-maxdepth` the call also needs a start path, and every start path has to be relative
+  or under the git root of the call's working directory. A variable, `~/..`, the home folder, or a path that
+  leaves the repository still needs `-maxdepth`.
+- **`python`, `python3`, `node`.** Every command head of a chain is judged. A script of that name in
+  `~/bin` is read first and its `exec` target must resolve; with no such script the hook asks its own
+  `PATH`, which can be longer than the one the Bash tool sees - a shim in `~/bin` is what makes the answer
+  exact.
+
 ## Cost
 
 A hook wired to a frequent tool must **pre-filter in the harness's own shell first**
@@ -155,11 +168,11 @@ could possibly trip them - on the reference corpus that skipped ~89% of the spaw
 **The pre-filter may only skip calls the real check would have allowed**; the scripts stay authoritative.
 `guard-fire-and-forget` is the cheapest of them by construction: its pre-filter tests for the literal
 `"run_in_background":true` field, so it never spawns on an ordinary foreground call, which is nearly all
-of them.
+of them. It stays a separate registration because that pre-filter fires on a disjoint payload.
 
-The same rule is why the five Bash checks live in **one** script. Five registrations on one event would
-pay the interpreter start up to five times for a single command, and three of the five need the same
-quote-aware segmentation, so five scripts would also have carried five copies of that parse. That is the
+The same rule is why the seven Bash checks live in **one** script. A registration per check on one event
+would pay the interpreter start once per check for a single command, and most of them need the same
+quote-aware segmentation, so separate scripts would also have carried copies of that parse. That is the
 canon's own "batch the fast gates into one process"
 ([DEVELOPMENT.md](../rules/DEVELOPMENT.md) section 15) applied to its own hooks -
 `on-user-prompt.ps1` carries **both** prompt-submit advisories for the identical reason.
@@ -167,8 +180,8 @@ canon's own "batch the fast gates into one process"
 ## Testing them
 
 ```powershell
-pwsh -NoProfile -File hooks/tests/smoke-hooks.ps1        # 63 cases, exit 0 required
-pwsh -NoProfile -File hooks/tests/smoke-prefilters.ps1   # 32 cases, exit 0 required
+pwsh -NoProfile -File hooks/tests/smoke-hooks.ps1        # 76 cases, exit 0 required
+pwsh -NoProfile -File hooks/tests/smoke-prefilters.ps1   # 33 cases, exit 0 required
 ```
 
 Every refusal is smoked **from both sides** - payloads it must refuse and payloads it must allow -

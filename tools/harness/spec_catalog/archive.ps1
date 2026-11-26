@@ -24,6 +24,11 @@
     would strand the record in the active journal and back into PLAN/RELEASE_READY.md on every
     release. `-AllowMissingArtefact` is the third of those exits.
 
+    TASK-FLOW 0.52: an entry into Archived carries one line, kept in `statusNote` - `-Reason` (`duplicate of <id>`,
+    `not needed: <why>` or `done in <id>`; one reason for every id of the call), or `-FromShipment`, which writes
+    `shipped in v<version> (release <N>)` from each row's own newest shipment and refuses a row that records none.
+    A row already `Archived` keeps what it holds.
+
     Exit codes:
       0  every id archived (including any archived under -AllowMissingArtefact, which is behaviour
          the caller asked for, not a failure).
@@ -39,7 +44,14 @@ param(
     # path - no fabricated one is invented - and the id is named after `NO ARTEFACT:` on the summary
     # line. The durable registry of a known loss stays scripts/quality/archive-artefacts-baseline.txt
     # in the consuming repo; this switch is per-call, so it cannot silently become a second one.
-    [switch] $AllowMissingArtefact
+    [switch] $AllowMissingArtefact,
+
+    # The archive reason of every id in this call (TASK-FLOW 0.52).
+    [Alias('StatusNote')]
+    [string] $Reason,
+
+    # The release sweep's form: each id takes the reason its recorded shipment proves.
+    [switch] $FromShipment
 )
 
 . (Join-Path $PSScriptRoot '..\_profile.ps1')
@@ -95,6 +107,10 @@ $plans      = [System.Collections.Generic.List[object]]::new()
 # release sweep's stream - step 12c archived 187 ids in one process - so the fact has to reach the
 # one line an operator actually reads, the summary.
 $noArtefact = [System.Collections.Generic.List[string]]::new()
+
+if ($FromShipment -and $PSBoundParameters.ContainsKey('Reason')) { throw 'Give -Reason or -FromShipment, not both.' }
+# A shipment recorded only in the file an older tool wrote is put on its row first, so it can prove the reason.
+if ($FromShipment) { Save-LegacyPlanImport }
 
 # Phase 1: resolve every id and locate its artefacts before anything is touched.
 foreach ($oneId in $ids) {
@@ -155,8 +171,19 @@ foreach ($oneId in $ids) {
         continue
     }
 
+    $oneReason = $null
+    if ($record.status -ne 'Archived') {
+        $oneReason = if ($FromShipment) { Get-ShippedArchiveReason -Record $record } else { $Reason }
+        $problem = if ($FromShipment -and $null -eq $oneReason) { 'the ledger records no shipment of this ticket with a release version' }
+                   else { Test-ArchiveReason -Record $record -Reason $oneReason }
+        if ($null -ne $problem) {
+            $failed.Add($oneId); $lines.Add("${oneId}: not archived - $problem."); continue
+        }
+    }
+
     $plans.Add([pscustomobject]@{
         Id           = $oneId
+        Reason       = $oneReason
         Record       = $record
         SpecFile     = $specFile
         SpecFileRel  = $recordFileRelative
@@ -203,6 +230,7 @@ if ([bool](Get-SzaProfileValue 'probes.removeOnExit')) {
 # once and written once - the per-id Add-ArchiveRecord path re-read and rewrote the whole archive
 # journal for every id, which is what made the release sweep scale with the archive's size.
 $archivedIds = [System.Collections.Generic.HashSet[string]]::new()
+$headers = [System.Collections.Generic.List[hashtable]]::new()
 if ($plans.Count -gt 0) {
     Enter-CatalogLock
     try {
@@ -220,9 +248,6 @@ if ($plans.Count -gt 0) {
             try {
                 $moved = [System.Collections.Generic.List[string]]::new()
                 if ($null -ne $plan.SpecFile) {
-                    # Set the in-file header to Archived before moving, so the artefact in
-                    # PLAN/archive/ matches the journal (shared fail-soft helper, first line only).
-                    [void](Sync-SpecHeaderStatus -PathRef $plan.SpecFile -Status 'Archived')
                     $specFileName = Split-Path -Path $plan.SpecFile -Leaf
                     if (-not (Test-SamePath $plan.SpecFile (Join-Path $doneDir $specFileName))) {
                         Move-Item -LiteralPath $plan.SpecFile -Destination (Join-Path $doneDir $specFileName) -Force
@@ -268,9 +293,13 @@ if ($plans.Count -gt 0) {
                 if ($old.PSObject.Properties.Name -contains 'tier' -and $null -ne $old.tier -and "$($old.tier)" -ne '') {
                     $archived | Add-Member -NotePropertyName 'tier' -NotePropertyValue ([int]$old.tier)
                 }
-                # 'statusNote' is dropped, not carried over: it describes what a Block* status is waiting
+                # The old 'statusNote' is not carried over: it describes what a Block* status is waiting
                 # for, and Archived waits for nothing. Archiving straight from BlockQuestions used to freeze
-                # a stale "owner decision needed" note into the archive journal forever (S1186).
+                # a stale "owner decision needed" note into the archive journal forever (S1186). The note an
+                # archived row keeps is its archive reason; a row archived earlier keeps its own.
+                $keptNote = if ($null -ne $plan.Reason) { $plan.Reason }
+                            elseif ($old.status -eq 'Archived' -and $old.PSObject.Properties.Name -contains 'statusNote') { [string]$old.statusNote }
+                if ($keptNote) { $archived | Add-Member -NotePropertyName 'statusNote' -NotePropertyValue $keptNote }
                 $fixedKeys = @('id','name','status','priority','tier','file','created','updated','statusNote')
                 foreach ($prop in $old.PSObject.Properties) {
                     if ($fixedKeys -notcontains $prop.Name -and -not ($archived.PSObject.Properties.Name -contains $prop.Name)) {
@@ -281,6 +310,9 @@ if ($plans.Count -gt 0) {
 
                 $archiveById[$oneId] = $archived
                 [void]$archivedIds.Add($oneId)
+                if ($null -ne $plan.SpecFile) {
+                    $headers.Add(@{ Path = (Join-Path $doneDir $specFileName); Note = $keptNote })
+                }
                 $movedStr = if ($moved.Count -gt 0) { $moved -join ', ' } else { '(no files found)' }
                 $lines.Add("$oneId archived [priority -> 0]. Moved: $movedStr -> $doneLabel")
             }
@@ -294,6 +326,10 @@ if ($plans.Count -gt 0) {
             Write-ArchiveCatalog -Records ([object[]]@($archiveById.Values))
             $remaining = @($allRecords | Where-Object { -not $archivedIds.Contains([string]$_.id) })
             Write-Catalog -Records ([object[]]$remaining)
+        }
+        # The header follows the ledger: written after the journals, with the reason the row now carries.
+        foreach ($header in $headers) {
+            [void](Sync-SpecHeaderStatus -PathRef $header.Path -Status 'Archived' -StatusNote $header.Note)
         }
     }
     finally {

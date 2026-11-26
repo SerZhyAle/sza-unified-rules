@@ -40,8 +40,11 @@ param(
     [switch]$EmitSpec,
     [string]$OutFile,
     [switch]$Json,
-    [switch]$FailOnLag
+    [switch]$FailOnLag,
+    [switch]$Help
 )
+
+if ($Help) { . (Join-Path $PSScriptRoot 'harness/_help.ps1'); Show-SzaHelp $PSCommandPath; exit 0 }
 
 $ErrorActionPreference = 'Stop'
 

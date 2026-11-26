@@ -24,7 +24,13 @@ Commands:
   audit   [-Json] [-Threshold 0.34]
           Duplicates across projects (description word overlap), index drift (a file not in its MEMORY.md, a line
           pointing at no file), memories with no scope, and per project the count of *-state memories older than
-          -StaleDays (default 21) as cleanup candidates. Writes nothing.
+          -StaleDays (default 21) as cleanup candidates. Also every adopter repository (.sza-canon.json) with more
+          than -ActiveSessions (default 5) session transcripts changed in the last -ActiveDays (default 7) days and
+          no memory note in any of its project folders. Writes nothing.
+  check   -Path <file>[,<file>..]
+          Refuses a new project note that repeats a wider one: the same slug (file name or `name`, punctuation
+          ignored) or the same first body line (20 characters or more) as a global or type note. Names that note.
+          A file under the memory root is not a project note and passes.
   promote -Path <file>[,<file>..] -Scope global|type:<tag> [-Name <slug>]
           Gives a memory a wider scope. When <slug>.md does not exist at the target yet, the first -Path is moved
           there; every other -Path (or all of them, when the target exists) is retired as a duplicate. Each source
@@ -32,15 +38,17 @@ Commands:
   index   [-Folder <dir>] [-All]
           Syncs MEMORY.md with the files of a folder: keeps existing lines of present files as written, drops lines of
           missing files, appends a line for each unlisted file from its frontmatter. -All does every project folder,
-          the global folder and every type folder.
+          the global folder and every type folder. A new (unlisted) project note that `check` would refuse gets no
+          line; the other notes are synced.
   types   [-Cwd <dir>]
           Prints the type tags that match the repository holding -Cwd (default: the current directory).
 
-Exit: 0 on success, 1 on a usage or file error. audit exits 0 even when it finds something - it is a report.
+Exit: 0 on success; 1 on a usage or file error, or when check or index refuses a note. audit exits 0 even when it
+finds something - it is a report.
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Position = 0, Mandatory)][ValidateSet('audit', 'promote', 'index', 'types')][string]$Command,
+    [Parameter(Position = 0, Mandatory)][ValidateSet('audit', 'check', 'promote', 'index', 'types')][string]$Command,
     [string[]]$Path,
     [string]$Scope,
     [string]$Name,
@@ -49,6 +57,8 @@ param(
     [switch]$Json,
     [double]$Threshold = 0.34,
     [int]$StaleDays = 21,
+    [int]$ActiveDays = 7,
+    [int]$ActiveSessions = 5,
     [string]$Cwd
 )
 $ErrorActionPreference = 'Stop'
@@ -105,6 +115,95 @@ function Get-Words([string]$s) {
     $set = New-Object 'System.Collections.Generic.HashSet[string]'
     foreach ($w in [regex]::Matches($s.ToLowerInvariant(), '[\p{L}\p{N}]{4,}')) { [void]$set.Add($w.Value) }
     , $set
+}
+
+# Letters and digits only, lower case: 'Never_undo - with git' and 'never-undo-with-git' are one key.
+function Get-Key([string]$s) { ($s.ToLowerInvariant() -replace '[^\p{L}\p{N}]+', ' ').Trim() }
+
+# What a note is recognised by: its slugs (file name and `name`) and its first body line.
+function Get-NoteKeys([string]$file) {
+    $m = Read-Memory $file
+    $slugs = @(([IO.Path]::GetFileNameWithoutExtension($file)), $m.Name | ForEach-Object { Get-Key $_ } | Where-Object { $_ })
+    $first = ''
+    foreach ($line in ([regex]::Replace($m.Text, '(?s)\A---\r?\n.*?\r?\n---', '') -split '\r?\n')) {
+        $first = Get-Key $line
+        if ($first) { break }
+    }
+    [pscustomobject]@{ Slugs = $slugs; First = $first }
+}
+
+# The global and type notes, read once per run.
+$script:wider = $null
+function Get-WiderNotes {
+    if ($null -ne $script:wider) { return $script:wider }
+    $script:wider = @(foreach ($f in Get-AllFolders) {
+            if ($f.Kind -eq 'project') { continue }
+            foreach ($file in Get-MemoryFiles $f.Dir) {
+                $k = Get-NoteKeys $file.FullName
+                [pscustomobject]@{ Scope = $f.Label; Slug = $file.BaseName; File = $file.FullName; Slugs = $k.Slugs; First = $k.First }
+            }
+        })
+    $script:wider
+}
+
+function Test-UnderMemoryRoot([string]$path) {
+    $root = [IO.Path]::GetFullPath((Get-MemoryRoot)).TrimEnd('\', '/')
+    $full = [IO.Path]::GetFullPath($path).TrimEnd('\', '/')
+    $full -eq $root -or $full.StartsWith($root + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)
+}
+
+# The refusal text for a project note that repeats a wider one, else $null. A first line shorter than 20 characters
+# ('# Notes') says nothing about the lesson.
+function Find-WiderMatch([string]$file) {
+    $k = Get-NoteKeys $file
+    foreach ($w in Get-WiderNotes) {
+        $by = if (@($k.Slugs | Where-Object { $w.Slugs -contains $_ }).Count) { 'slug' }
+        elseif ($k.First.Length -ge 20 -and $k.First -eq $w.First) { 'first line' }
+        if ($by) { return "refused $file - same $by as the $($w.Scope) note '$($w.Slug)' ($($w.File)); extend that note instead" }
+    }
+    $null
+}
+
+# Notes anywhere below a memory folder, state/ included; the indexes are not notes.
+function Get-NoteCount([string]$dir) {
+    if (-not (Test-Path -LiteralPath $dir)) { return 0 }
+    @(Get-ChildItem -LiteralPath $dir -File -Filter '*.md' -Recurse | Where-Object Name -notin 'MEMORY.md', 'INDEX.md').Count
+}
+
+# The working directory a transcript was recorded in - the project folder name cannot be turned back into a path.
+function Get-SessionDir($transcripts) {
+    foreach ($t in $transcripts) {
+        foreach ($line in (Get-Content -LiteralPath $t.FullName -TotalCount 50 -Encoding utf8)) {
+            $m = [regex]::Match($line, '"cwd"\s*:\s*("(?:[^"\\]|\\.)*")')
+            if ($m.Success) { return (ConvertFrom-Json $m.Groups[1].Value) }
+        }
+    }
+    $null
+}
+
+function Get-EmptyAdopters {
+    $projects = Join-Path (Get-ClaudeHome) 'projects'
+    if (-not (Test-Path -LiteralPath $projects)) { return }
+    $since = (Get-Date).AddDays(-$ActiveDays)
+    $repos = @{}
+    foreach ($p in Get-ChildItem -LiteralPath $projects -Directory) {
+        $recent = @(Get-ChildItem -LiteralPath $p.FullName -File -Filter '*.jsonl' | Where-Object LastWriteTime -ge $since | Sort-Object LastWriteTime -Descending)
+        $notes = Get-NoteCount (Join-Path $p.FullName 'memory')
+        if (-not $recent.Count -and -not $notes) { continue }
+        # A folder with notes and no recent session still counts for its repository.
+        $all = if ($recent.Count) { $recent } else { @(Get-ChildItem -LiteralPath $p.FullName -File -Filter '*.jsonl' | Select-Object -First 3) }
+        $sessionDir = Get-SessionDir ($all | Select-Object -First 3)
+        if (-not $sessionDir) { continue }
+        # A recorded directory on a drive that is gone must not end the report.
+        $stamp = try { Find-Stamp $sessionDir } catch { $null }
+        if (-not $stamp) { continue }
+        $repo = Split-Path $stamp -Parent
+        if (-not $repos.ContainsKey($repo)) { $repos[$repo] = [pscustomobject]@{ Repo = $repo; Sessions = 0; Notes = 0 } }
+        $repos[$repo].Sessions += $recent.Count
+        $repos[$repo].Notes += $notes
+    }
+    $repos.Values | Where-Object { $_.Notes -eq 0 -and $_.Sessions -gt $ActiveSessions } | Sort-Object Repo |
+        ForEach-Object { [pscustomobject]@{ Repo = $_.Repo; Sessions = $_.Sessions } }
 }
 
 function Get-IndexLines([string]$dir) {
@@ -165,15 +264,21 @@ function Sync-Index([string]$dir) {
         $out.Add($line)
     }
     $added = 0
+    $refused = New-Object System.Collections.Generic.List[string]
+    $isProject = -not (Test-UnderMemoryRoot $dir)
     foreach ($f in ($files | Sort-Object Name)) {
         if ($listed.ContainsKey($f.Name)) { continue }
+        if ($isProject) {
+            $why = Find-WiderMatch $f.FullName
+            if ($why) { $refused.Add($why); continue }
+        }
         $out.Add((New-IndexLine (Read-Memory $f.FullName))); $added++
     }
     while ($out.Count -gt 0 -and $out[$out.Count - 1] -eq '') { $out.RemoveAt($out.Count - 1) }
     if ($files.Count -gt 0 -or (Test-Path -LiteralPath (Join-Path $dir 'MEMORY.md'))) {
         [IO.File]::WriteAllText((Join-Path $dir 'MEMORY.md'), (($out -join "`n") + "`n"), $utf8)
     }
-    [pscustomobject]@{ Folder = $dir; Added = $added; Dropped = $dropped; Lines = $out.Count }
+    [pscustomobject]@{ Folder = $dir; Added = $added; Dropped = $dropped; Lines = $out.Count; Refused = $refused.ToArray() }
 }
 
 function Set-ScopeLine([string]$file, [string]$scope) {
@@ -240,10 +345,23 @@ function Get-MatchingTypes([string]$stampFile) {
     }
 }
 
+$exitCode = 0
 switch ($Command) {
+    'check' {
+        if (-not $Path) { throw 'check needs -Path' }
+        foreach ($p in $Path) {
+            $file = (Resolve-Path -LiteralPath $p).Path
+            $why = if (-not (Test-UnderMemoryRoot $file)) { Find-WiderMatch $file }
+            if ($why) { $why; $exitCode = 1 } else { "ok $file" }
+        }
+    }
     'index' {
         $dirs = if ($All) { (Get-AllFolders).Dir } elseif ($Folder) { @($Folder) } else { throw 'index needs -Folder <dir> or -All' }
-        foreach ($d in $dirs) { $r = Sync-Index $d; '{0}: +{1} -{2} ({3} lines)' -f $r.Folder, $r.Added, $r.Dropped, $r.Lines }
+        foreach ($d in $dirs) {
+            $r = Sync-Index $d
+            '{0}: +{1} -{2} ({3} lines)' -f $r.Folder, $r.Added, $r.Dropped, $r.Lines
+            foreach ($why in $r.Refused) { $why; $exitCode = 1 }
+        }
     }
     'types' {
         $start = if ($Cwd) { $Cwd } else { (Get-Location).Path }
@@ -350,6 +468,7 @@ switch ($Command) {
             NoScope    = $noScope
             Stale      = $stale.ToArray()
             OverBudget = $big.ToArray()
+            EmptyAdopters = @(Get-EmptyAdopters)
         }
         if ($Json) { $report | ConvertTo-Json -Depth 5; break }
         "memories: $($mems.Count) in $($folders.Count) folders (root $(Get-MemoryRoot))"
@@ -363,6 +482,8 @@ switch ($Command) {
         $noScope.GetEnumerator() | Sort-Object Name | ForEach-Object { '  {0}: {1}' -f $_.Name, $_.Value }
         "`n*-state memories older than $StaleDays days (cleanup candidates):"
         $stale | ForEach-Object { '  {0}: {1}' -f $_.Folder, $_.OldStateMemories }
+        "`nadopter repos with an empty memory folder and more than $ActiveSessions sessions in $ActiveDays days: $($report.EmptyAdopters.Count)"
+        $report.EmptyAdopters | ForEach-Object { '  {0}: {1} sessions' -f $_.Repo, $_.Sessions }
     }
 }
-exit 0
+exit $exitCode

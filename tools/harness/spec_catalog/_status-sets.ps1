@@ -24,6 +24,21 @@ function Test-ReleaseReadyStatus {
     return $Status -in @('Implemented', 'Verified', 'BlockNeedUserTest')
 }
 
+function Get-SpecHeaderStatus {
+    # The status word the first '**Status:**' line of a spec file opens with, or $null when the file is absent,
+    # carries no such line or opens with no word of the vocabulary. The header is a rendering of the ledger row
+    # (TASK-FLOW rule 4); this reads it only to report where the two differ.
+    param([Parameter(Mandatory)][string] $Path, [Parameter(Mandatory)][string[]] $Vocabulary)
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $null }
+    $match = [regex]::Match([IO.File]::ReadAllText($Path), '(?m)^\*\*Status:\*\*\s*(?<status>[^\r\n]+)')
+    if (-not $match.Success) { return $null }
+    $raw = $match.Groups['status'].Value.Trim()
+    foreach ($word in @($Vocabulary | Sort-Object -Property Length -Descending)) {
+        if ($raw -ceq $word -or $raw.StartsWith("$word ", [StringComparison]::Ordinal)) { return $word }
+    }
+    return $null
+}
+
 function Test-BlockerReleasedStatus {
     # Released = this blocker no longer holds its dependents back. That is the release-ready set
     # plus Archived, which is a soft-delete: an archived blocker will never advance, so waiting on

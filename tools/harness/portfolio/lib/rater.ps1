@@ -362,8 +362,8 @@ function Invoke-PqRaterChain($Registry, $Info, [string]$RepoKey, [string]$Ticket
     return @{ ok = $false; score = -1; rater = '' }
 }
 
-# The runner writes `no-progress-or-claim-lost` for an unmoved run it cannot tell apart; a reader treats it as
-# `no-progress` (TASK-FLOW rule 23).
+# A row written before TASK-FLOW 0.51 spells an unmoved run `no-progress-or-claim-lost`; a reader treats it as
+# `no-progress` (rule 23).
 function ConvertTo-PqEscalationOutcome([string]$Outcome) {
     if ($Outcome -ceq 'no-progress-or-claim-lost') { return 'no-progress' }
     return $Outcome

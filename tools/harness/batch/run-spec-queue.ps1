@@ -128,7 +128,9 @@
     --session-id the runner chose (when the CLI's --help lists the flag), so after it exits - or is
     killed on its timeout - the runner reads that session's transcript: when the LAST assistant
     record is the CLI's synthetic limit record, the run is journalled `limit-hit` ahead of
-    `child-failed`. Such a run is neutral to its ticket: the ticket is not dropped for the rest of the
+    `child-failed`; without a transcript only the last 40 lines of the -Quiet log of a child that exited
+    non-zero are matched, and a pass that moved the ticket is never `limit-hit` (TASK-FLOW 0.50). Such a
+    run is neutral to its ticket: the ticket is not dropped for the rest of the
     run, and the idle series steps over the row, neither growing nor ending. The limit is written to
     one shared file, <runs dir>/limit-hold.json, holding the reset time and only ever raising it.
     Before EVERY launch - a restarted runner's first one included - the runner reads it and, while it
@@ -142,7 +144,8 @@
     limit is written to the hold as above, then the run ends (exit 0 after a launch that hit the limit; exit 5
     when the hold was already in force and nothing launched). A pass of another provider (-AgentJson with a
     name other than claude) reads and writes <runs dir>/limit-hold.<name>.json, so one provider's wall never
-    holds another's pass, and it recognises its limit by the record's limitDetector.pattern in the -Quiet log.
+    holds another's pass, and it recognises its limit by the record's limitDetector.pattern in the last 40
+    lines of the -Quiet log.
 
     Stopping: `.\a.ps1 rs`, or this script with -Stop, writes temp/STOP-SPEC-QUEUE and every instance
     finishes the ticket it is on, then stops cleanly; -Stop -Instance b stops one instance only, and
@@ -1242,6 +1245,9 @@ function Resolve-RunOutcome {
            and two such rows in a row are what took tickets out of automatic ranking. A child the
            runner killed on its timeout takes the same name when its last act was the limit: the
            limit is why it made no more progress. Only 'ok' and 'timeout' are ever renamed this way.
+           Since TASK-FLOW 0.50 (CANONR-0206) only a pass that moved nothing is 'limit-hit': a pass
+           after which the status differs is journaled by its exit, as any other pass, and writes no
+           hold.
         3. A non-zero exit is 'child-failed'.
         4. Otherwise the pre-existing guess: a child that exited quickly having changed nothing
            usually lost its claim to a parallel instance.
@@ -1253,8 +1259,9 @@ function Resolve-RunOutcome {
         unreadable status is a missing reading, not a move - and moved outranks the outcome in every
         consumer, so renaming those rows without this would leave them reading as successes.
 
-        A limit hit keeps Moved truthful: a ticket that advanced before the limit arrived reports
-        moved, and the idle series reads that move as the end of its previous series.
+        A pass that moved the ticket and then met the limit is not a limit hit (TASK-FLOW 0.50): the
+        provider served the pass that moved it, the next launch meets the wall and holds it, and the
+        move still ends the idle series of that ticket.
     #>
     param(
         [string] $Outcome,
@@ -1266,8 +1273,16 @@ function Resolve-RunOutcome {
         [switch] $ProviderErrorHit
     )
 
+    # Moved is decided first: a pass that moved the ticket is never a limit hit (TASK-FLOW 0.50).
+    $moved = $true
+    if ($Outcome -like 'claim-lost*' -or [string]::IsNullOrWhiteSpace($StatusAfter)) {
+        $moved = $false
+    } else {
+        $moved = ($StatusBefore -ne $StatusAfter)
+    }
+
     $resolved = $Outcome
-    if ($LimitHit -and $resolved -in @('ok', 'timeout', 'context-handoff')) {
+    if ($LimitHit -and -not $moved -and $resolved -in @('ok', 'timeout', 'context-handoff')) {
         $resolved = 'limit-hit'
     }
     if ($ProviderErrorHit -and $resolved -in @('ok', 'timeout', 'child-failed', 'context-handoff')) {
@@ -1277,15 +1292,8 @@ function Resolve-RunOutcome {
         if ($null -ne $ExitCode -and [int]$ExitCode -ne 0) {
             $resolved = 'child-failed'
         } elseif ($StatusBefore -eq $StatusAfter -and $ElapsedSeconds -lt 120) {
-            $resolved = 'no-progress-or-claim-lost'
+            $resolved = 'no-progress'
         }
-    }
-
-    $moved = $true
-    if ($resolved -like 'claim-lost*' -or [string]::IsNullOrWhiteSpace($StatusAfter)) {
-        $moved = $false
-    } else {
-        $moved = ($StatusBefore -ne $StatusAfter)
     }
 
     return [pscustomobject]@{ Outcome = $resolved; Moved = $moved }
@@ -1639,7 +1647,6 @@ while ($true) {
         $prompt = $prompt.Replace('{specPath}', $specPath).Replace('{specpath}', $specPath).Replace('<spec path>', $specPath)
         $prompt = $prompt.Replace('{repoRoot}', $RepoRoot).Replace('{reporoot}', $RepoRoot).Replace('<repo root>', $RepoRoot)
         $prompt = $prompt.Replace('{updatePath}', $updateRel).Replace('{updatepath}', $updateRel).Replace('<update.ps1 path>', $updateRel)
-        $prompt += ' Final message: at most 10 lines; state the status reached, what ran with exit codes, and what remains.'
         $managedSkill = Get-ManagedPassSkill -Prompt $PromptTemplate
         if ($managedSkill -and $reservation) {
             $pass = Initialize-PassBookkeeping -Id $id -Root $RepoRoot -TempDir $tempDir
@@ -1690,22 +1697,25 @@ while ($true) {
             }
         }
 
-        # S0140: what the runner adds to a Claude child - the opt-in of a parallel pass, and the request to grade an
-        # ungraded ticket - rides in the system prompt, never in the prompt: words after `/spec-all <id>` reach the
-        # command as part of its argument and the resolver reads it as an idea (proof run 2026-11-18, canon:S0140
-        # section 3.5).
+        # S0140: what the runner adds to a child - the opt-in of a parallel pass, the request to grade an ungraded
+        # ticket, and the request for a short final message - rides in the system prompt, never in the prompt: words
+        # after `/spec-all <id>` reach the command as part of its argument and the resolver reads them as an idea
+        # (proof run 2026-11-18, canon:S0140 section 3.5).
         $optIn = if ($Parallel -and $isClaudeChild) { Get-ParallelOptIn $Parallel } else { '' }
         $gradeAsk = if ($isClaudeChild -and $ModelPolicy -eq 'shape' -and -not $childComplexity) {
             'Before other ticket work, research the ticket and write its **Complexity:** line as a grade 0-9 (0-3 light, 4-6 medium, 7-9 hard) with the reason for your assessment.'
         } else { '' }
-        if ($optIn -or $gradeAsk) {
+        $finalAsk = 'Final message: at most 10 lines; state the status reached, what ran with exit codes, and what remains.'
+        $tailAsk = @($gradeAsk, $finalAsk).Where({ $_ }) -join ' '
+        if ($optIn -or $tailAsk) {
             # A template that names the flag says the CLI takes it; otherwise the CLI's own --help does.
             if (@($childArgs -cmatch '^--append-system-prompt(=|$)').Count -gt 0 -or (Test-ChildHelpLists '--append-system-prompt')) {
-                $childArgs = @(Add-ChildSystemPrompt -ChildArgs $childArgs -Lead $optIn -Tail $gradeAsk)
+                $childArgs = @(Add-ChildSystemPrompt -ChildArgs $childArgs -Lead $optIn -Tail $tailAsk)
             }
             else {
                 if ($optIn) { Write-Host "  parallel       : $Parallel asked, but the CLI's --help does not list --append-system-prompt; the pass runs single" -ForegroundColor Yellow }
                 if ($gradeAsk) { Write-Host "  complexity     : no grade declared, and the CLI's --help does not list --append-system-prompt; the pass is not asked for one" -ForegroundColor Yellow }
+                Write-Host "  final message  : not asked, and the CLI's --help does not list --append-system-prompt; the pass runs with the CLI's default length"
             }
         }
 
@@ -2076,15 +2086,15 @@ while ($true) {
         $recAfter = Get-TicketRecord -Id $id
         $statusAfter = [string]$recAfter.status
 
-        # S0029: reconcile a hand-edited status line from the spec header.
-        # When the spec header's first **Status:** differs from the ledger, call update.ps1 -Status <header value>
-        # (the gates still judge it) and log "status reconciled from the spec header"; a refused move is recorded
-        # as outcome status-drift, not no-progress.
+        # S0029, turned round by TASK-FLOW 0.52: the spec header is written from the ledger and never read back
+        # into it. When the header's first **Status:** differs from the ledger, call update.ps1 with the ledger's
+        # own status - the catalog tool rewrites the header - and, when the ticket did not move in this pass,
+        # record the outcome status-drift, not no-progress: the child edited the line instead of calling the tool.
         if ($null -ne $recAfter -and -not [string]::IsNullOrWhiteSpace([string]$recAfter.file)) {
             $specFileAfter = Join-Path $RepoRoot ([string]$recAfter.file)
             if (Test-Path -LiteralPath $specFileAfter -PathType Leaf) {
                 $specText = [IO.File]::ReadAllText($specFileAfter)
-                $rxStatus = [regex]'(?m)^\*\*Status:\*\*\s*(?<status>[^\r\n]+)(?:\r?\n\*\*Status note:\*\*\s*(?<note>[^\r\n]*))?'
+                $rxStatus = [regex]'(?m)^\*\*Status:\*\*\s*(?<status>[^\r\n]+)'
                 $mStatus = $rxStatus.Match($specText)
                 if ($mStatus.Success) {
                     $rawHeaderStatus = $mStatus.Groups['status'].Value.Trim()
@@ -2097,23 +2107,13 @@ while ($true) {
                         }
                     }
                     if ($null -ne $headerStatus -and $headerStatus -ne $statusAfter) {
-                        $headerNote = if ($mStatus.Groups['note'].Success -and -not [string]::IsNullOrWhiteSpace($mStatus.Groups['note'].Value)) {
-                            $mStatus.Groups['note'].Value.Trim()
-                        } else { $null }
-
-                        $updateArgs = @('-NoProfile', '-File', $update, '-Id', $id, '-Status', $headerStatus)
-                        if ($null -ne $headerNote) {
-                            $updateArgs += @('-StatusNote', $headerNote)
-                        }
-                        $updateOutput = & pwsh @updateArgs 2>&1
+                        $updateOutput = & pwsh -NoProfile -File $update -Id $id -Status $statusAfter 2>&1
                         if ($LASTEXITCODE -eq 0) {
-                            Write-Host ("  run-spec-queue: {0} status reconciled from the spec header ({1} -> {2})" -f $id, $statusAfter, $headerStatus) -ForegroundColor DarkCyan
-                            $statusAfter = $headerStatus
-                            if ($pass) { $recAfter = Get-TicketRecord -Id $id }
+                            Write-Host ("  run-spec-queue: {0} spec header rewritten from the ledger ({1} -> {2})" -f $id, $headerStatus, $statusAfter) -ForegroundColor DarkYellow
                         } else {
-                            Write-Host ("  run-spec-queue: {0} status reconciliation from spec header refused by gates: {1}" -f $id, ($updateOutput | Out-String).Trim()) -ForegroundColor DarkYellow
-                            $outcome = 'status-drift'
+                            Write-Host ("  run-spec-queue: {0} spec header differs from the ledger and was not rewritten: {1}" -f $id, ($updateOutput | Out-String).Trim()) -ForegroundColor DarkYellow
                         }
+                        if ($statusAfter -eq $statusBefore) { $outcome = 'status-drift' }
                     }
                 }
             }
@@ -2257,6 +2257,12 @@ while ($true) {
         try {
             $passTranscript = if ($sessionId) { Find-ChildTranscript -SessionId $sessionId } else { $null }
             $passUsage = Get-PassUsage -TranscriptPath $passTranscript -SessionId $sessionId
+            # No Claude transcript: a codex child is known by the banner in its captured output.
+            if ($null -eq $passUsage) { $passUsage = Get-CodexPassUsage -LogBody $logBody }
+            # An agy child prints no totals: they are in the transcript of the session it opened.
+            if ($null -eq $passUsage -and [IO.Path]::GetFileNameWithoutExtension([string]$claude) -ieq 'agy') {
+                $passUsage = Get-GeminiPassUsage -TicketId $id -RepoRoot $RepoRoot -Since $started
+            }
         } catch {
             $passUsage = $null
         }

@@ -4,11 +4,10 @@ Read: README, NEW_PROJECT_CHECKLIST, SITE_CONFIGURATION, DOCUMENTATION_CONCEPT, 
 
 The hub is the SZA portfolio website (`sza.od.ua`): a hand-authored single-page site served from the repo root via GitHub Pages and mirrored into Google Sites. It is the **first web-shape repo** to reach `contrib/` - every earlier record is a Windows desktop or Android app, so the store/winget/MSIX machinery they document does not apply here at all. The genuinely new material is the **Web overlay in practice** (Pages + custom domain + Google-Sites-bridge, site-update vs release, no version/changelog) and the fact that this one repo is also the **shared-kit home**: it hosts both the `Unified_Rules/` canon and the `kit/` web style system that the rest of the portfolio consumes. SITE_CONFIGURATION.md was itself extracted from this repo, so most plumbing is CONFIRM, not new.
 
-> **Keep this note in the record.** Current facts, edited in place. Never append a dated section to this file:
-> what happened and when goes to the file of the same name under `history/`
-> ([the rules of that folder](history/README.md)), which is not reading for a task. A delta the core absorbed,
-> a candidate that was applied or refused and a question that was answered are deleted here; the history
-> section of that day says what became of them.
+> **Keep this note in the record.** Current facts, edited in place. Never append a dated section to this file,
+> and append nothing under `history/` either: those files are frozen ([the rules of that folder](history/README.md))
+> and are not reading for a task. A delta the core absorbed, a candidate that was applied or refused and a
+> question that was answered are deleted here.
 
 ## Overlay facts (verified against this repo)
 

@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Contract | `HARNESS-PROFILE` |
-| Version | 0.23, draft; source reader verified at 0.13; rules 9 to 12 and 14 to 17 implemented, rule 8 in part |
+| Version | 0.24, draft; source reader verified at 0.13; rules 9 to 12 and 14 to 18 implemented, rule 8 in part |
 | Home | the shared contracts catalog, domain `rule-adoption/` (the path is in [CLAUDE.md](../../CLAUDE.md)) |
 | Role | **consumer**, and the schema's owner. Each repository running the harness writes its own profile |
 
@@ -84,3 +84,8 @@
   Fast case: `tools/tests/rename-prefix.tests.ps1`. The reader vectors are regenerated at the next release.
 - 0.23 (2026-11-26, CANONR-0204, rule 17: the optional `runner.passCeiling`, a launch's `minutes` and `usd`) is
   validated by the profile reader and exercised by the `pass-ceiling` suite.
+- `paths.localDocumentRegistry` is optional (rule 18, the 2026-11-26 amendment, CANONR-0235): the registry of the local,
+  ignored corpus (`DOC-INTERNAL-QUALITY` item K), shipped empty in `_profile.ps1` and in the profile template.
+  `document_registry/validate.ps1` and `query.ps1` read it when the file exists and say nothing when it does not;
+  `generate.ps1` never reads it. Fast case: `tools/tests/document-registry.tests.ps1`. The default was added to
+  `_profile.ps1`, so the reader vectors are regenerated at the next release.

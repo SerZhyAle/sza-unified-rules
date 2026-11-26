@@ -28,16 +28,19 @@
 #   2 - bad arguments: -Id missing or malformed, -Reason missing for 'add'.
 #       Distinct from 1 on purpose - a typo'd id must not read as "not skipped".
 
-[CmdletBinding()]
+[CmdletBinding(DefaultParameterSetName = 'Run')]
 param(
-    [Parameter(Mandatory = $true)]
+    [Parameter(Position = 0, Mandatory = $true, ParameterSetName = 'Run')][Parameter(ParameterSetName = 'Help')]
     [ValidateSet('add', 'remove', 'list', 'check', 'reset')]
     [string]$Action,
 
-    [string]$Id,
-    [string]$Reason = '',
-    [int]$Ttl = 7
+    [Parameter(Position = 1)][string]$Id,
+    [Parameter(Position = 2)][string]$Reason = '',
+    [Parameter(Position = 3)][int]$Ttl = 7,
+    [Parameter(Mandatory, ParameterSetName = 'Help')][switch]$Help
 )
+
+if ($Help) { . (Join-Path $PSScriptRoot '../_help.ps1'); Show-SzaHelp $PSCommandPath; exit 0 }
 
 . (Join-Path $PSScriptRoot '..\_profile.ps1')
 

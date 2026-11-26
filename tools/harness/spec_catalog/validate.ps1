@@ -243,6 +243,24 @@ if ($badSource.Count -gt 0) {
     Add-Result 'Source' 'OK' 'every source is a known value (a row without the field is valid)'
 }
 
+<# 12. HeaderStatus (TASK-FLOW 0.52): the spec header is a rendering of the row. WARN at most: the ledger is
+       right whatever the file says, and update.ps1 -Status <ledger status> rewrites the line. Archived rows are
+       not read - many predate the rule. #>
+$vocabulary = @(Get-SzaProfileValue 'grammar.statusVocabulary')
+$headerDrift = New-Object System.Collections.Generic.List[string]
+foreach ($r in $records) {
+    if ($r.status -eq 'Archived') { continue }
+    $headerStatus = Get-SpecHeaderStatus -Path (Join-Path $repoRoot $r.file) -Vocabulary $vocabulary
+    if ($null -ne $headerStatus -and $headerStatus -cne [string]$r.status) {
+        $headerDrift.Add(('{0}: header {1}, ledger {2}' -f $r.id, $headerStatus, $r.status))
+    }
+}
+if ($headerDrift.Count -gt 0) {
+    Add-Result 'HeaderStatus' 'WARN' ('spec header differs from the ledger (rewrite with update.ps1 -Status <ledger status>): {0}' -f ($headerDrift -join '; '))
+} else {
+    Add-Result 'HeaderStatus' 'OK' 'every readable spec header mirrors its row'
+}
+
 # Render report
 $results | ForEach-Object {
     $color = switch ($_.level) { 'OK' { 'Green' }; 'WARN' { 'Yellow' }; default { 'Red' } }

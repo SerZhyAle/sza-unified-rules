@@ -90,10 +90,20 @@
 # message (as log.error reports a failure), any other object (an enum, a FileInfo, a type) its text, never its
 # property graph; every string made so passes (1) and (2).
 #   Read-PqDay -Path <file>         one event file -> @{ events; bad; unsupported; partial; gaps } (below).
+#   Get-PqLogDates -Root <root>     the UTC days the log holds, plain or archived, in order.
+#   Read-PqDayFiles -Root <root> -Date <yyyy-MM-dd>
+#                                   every events-<date>.*.jsonl of the day, from <root>\log and from the day's
+#                                   archive, each @{ name; day = <Read-PqDay shape> }; a name both hold is read from
+#                                   log\ alone; an archive that does not open is one entry with bad = 1.
 #   Merge-PqDay -Root <root> -Date <yyyy-MM-dd>
-#                                   every events-<date>.*.jsonl under <root>\log, read with Read-PqDay, events
-#                                   ordered by ts, then wr, then seq (ordinal) -> the same shape plus files;
-#                                   partial is then a list of @{ file; text } and every gap names its file.
+#                                   the files of Read-PqDayFiles, events ordered by ts, then wr, then seq (ordinal)
+#                                   -> the shape of Read-PqDay plus files; partial is then a list of @{ file; text }
+#                                   and every gap names its file.
+#   Invoke-PqLogArchive -Root <root> [-KeepDays 14]
+#                                   moves the day files whose UTC date is more than -KeepDays days past into
+#                                   log\archive\events-<date>.zip, one per day, names and bytes unchanged
+#                                   (TASK-FLOW 0.51 item F). A file is deleted only after the archive holds the same
+#                                   bytes; one a writer holds stays. -> @{ days; files } moved. Never throws.
 #   Test-PqEnvelope -Line <string|object>
 #                                   the rule codes a line violates, in this order; none means valid: not-json (also
 #                                   JSON that is not an object), v-not-1, ts-format, seq-not-positive-int,
@@ -865,8 +875,7 @@ function Test-PqEnvelope {
 
 function Read-PqDay {
     param([string]$Path)
-    $result = @{ events = [object[]]@(); bad = 0; unsupported = 0; partial = $null; gaps = [object[]]@() }
-    if (-not [IO.File]::Exists($Path)) { return $result }
+    if (-not [IO.File]::Exists($Path)) { return @{ events = [object[]]@(); bad = 0; unsupported = 0; partial = $null; gaps = [object[]]@() } }
     $fs = [IO.FileStream]::new($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete)
     try {
         $ms = [IO.MemoryStream]::new()
@@ -874,12 +883,19 @@ function Read-PqDay {
         $bytes = $ms.ToArray()
     }
     finally { $fs.Dispose() }
+    return (ConvertFrom-PqDayBytes -Bytes $bytes -Name ([IO.Path]::GetFileName($Path)))
+}
+
+# The bytes of one event file, from the log or from an archive, in the shape of Read-PqDay.
+function ConvertFrom-PqDayBytes {
+    param([byte[]]$Bytes, [string]$Name)
+    $result = @{ events = [object[]]@(); bad = 0; unsupported = 0; partial = $null; gaps = [object[]]@() }
     $offset = 0
-    if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) { $offset = 3 }
-    $parts = [Text.Encoding]::UTF8.GetString($bytes, $offset, $bytes.Length - $offset).Split("`n")
+    if ($Bytes.Length -ge 3 -and $Bytes[0] -eq 0xEF -and $Bytes[1] -eq 0xBB -and $Bytes[2] -eq 0xBF) { $offset = 3 }
+    $parts = [Text.Encoding]::UTF8.GetString($Bytes, $offset, $Bytes.Length - $offset).Split("`n")
     $last = $parts.Length - 1
     if ($parts[$last].Length -gt 0) { $result.partial = $parts[$last] }
-    $file = [IO.Path]::GetFileName($Path)
+    $file = $Name
     $events = [Collections.Generic.List[object]]::new()
     $walk = [Collections.Generic.List[object]]::new()
     for ($i = 0; $i -lt $last; $i++) {
@@ -924,18 +940,14 @@ function Merge-PqDay {
         throw "PqPathArgumentInvalid: -Date '$Date' is not yyyy-MM-dd"
     }
     $result = @{ events = [object[]]@(); bad = 0; unsupported = 0; partial = [object[]]@(); gaps = [object[]]@(); files = [string[]]@() }
-    $logDir = Join-Path $Root 'log'
-    if (-not [IO.Directory]::Exists($logDir)) { return $result }
-    $pattern = '^events-' + [regex]::Escape($Date) + '\.[^.\\/]+\.jsonl$'
-    $files = [string[]]@([IO.Directory]::GetFiles($logDir) | Where-Object { [IO.Path]::GetFileName($_) -cmatch $pattern })
-    [Array]::Sort($files, [StringComparer]::Ordinal)
+    $files = @(Read-PqDayFiles -Root $Root -Date $Date)
     $keys = [Collections.Generic.List[string]]::new()
     $items = [Collections.Generic.List[object]]::new()
     $partial = [Collections.Generic.List[object]]::new()
     $gaps = [Collections.Generic.List[object]]::new()
     foreach ($f in $files) {
-        $name = [IO.Path]::GetFileName($f)
-        $day = Read-PqDay -Path $f
+        $name = $f.name
+        $day = $f.day
         $result.bad += $day.bad
         $result.unsupported += $day.unsupported
         if ($null -ne $day.partial) { $partial.Add([ordered]@{ file = $name; text = $day.partial }) }
@@ -959,6 +971,164 @@ function Merge-PqDay {
     $result.events = $sorted
     $result.partial = $partial.ToArray()
     $result.gaps = $gaps.ToArray()
-    $result.files = [string[]]@($files | ForEach-Object { [IO.Path]::GetFileName($_) })
+    $result.files = [string[]]@($files | ForEach-Object { $_.name })
     return $result
+}
+
+# ---- old day files (TASK-FLOW 0.51 item F) ----
+
+$script:PqArchiveKeepDays = 14
+$script:PqDayFileName = '^events-(\d{4}-\d{2}-\d{2})\.[^.\\/]+\.jsonl$'
+
+function Get-PqArchiveDir([string]$Root) { return (Join-Path (Join-Path $Root 'log') 'archive') }
+
+function Get-PqLogDates {
+    param([Parameter(Mandatory)][string]$Root)
+    $dates = [Collections.Generic.SortedSet[string]]::new([StringComparer]::Ordinal)
+    $logDir = Join-Path $Root 'log'
+    if ([IO.Directory]::Exists($logDir)) {
+        foreach ($f in [IO.Directory]::GetFiles($logDir, 'events-*.jsonl')) {
+            if ([IO.Path]::GetFileName($f) -cmatch $script:PqDayFileName) { [void]$dates.Add($Matches[1]) }
+        }
+    }
+    $archive = Get-PqArchiveDir $Root
+    if ([IO.Directory]::Exists($archive)) {
+        foreach ($f in [IO.Directory]::GetFiles($archive, 'events-*.zip')) {
+            if ([IO.Path]::GetFileName($f) -cmatch '^events-(\d{4}-\d{2}-\d{2})\.zip$') { [void]$dates.Add($Matches[1]) }
+        }
+    }
+    return [string[]]@($dates)
+}
+
+function Read-PqZipEntry($Entry) {
+    $in = $Entry.Open()
+    try {
+        $ms = [IO.MemoryStream]::new()
+        $in.CopyTo($ms)
+        return , $ms.ToArray()
+    }
+    finally { $in.Dispose() }
+}
+
+function Read-PqDayFiles {
+    param([Parameter(Mandatory)][string]$Root, [Parameter(Mandatory)][string]$Date)
+    $found = [Collections.Generic.SortedDictionary[string, object]]::new([StringComparer]::Ordinal)
+    $pattern = '^events-' + [regex]::Escape($Date) + '\.[^.\\/]+\.jsonl$'
+    $logDir = Join-Path $Root 'log'
+    if ([IO.Directory]::Exists($logDir)) {
+        foreach ($f in [IO.Directory]::GetFiles($logDir, "events-$Date.*.jsonl")) {
+            $name = [IO.Path]::GetFileName($f)
+            if ($name -cmatch $pattern) { $found[$name] = @{ name = $name; day = (Read-PqDay -Path $f) } }
+        }
+    }
+    $zipFile = Join-Path (Get-PqArchiveDir $Root) "events-$Date.zip"
+    if ([IO.File]::Exists($zipFile)) {
+        try {
+            $zip = [IO.Compression.ZipFile]::OpenRead($zipFile)
+            try {
+                foreach ($entry in $zip.Entries) {
+                    $name = $entry.FullName
+                    if ($name -cnotmatch $pattern -or $found.ContainsKey($name)) { continue }
+                    $found[$name] = @{ name = $name; day = (ConvertFrom-PqDayBytes -Bytes (Read-PqZipEntry $entry) -Name $name) }
+                }
+            }
+            finally { $zip.Dispose() }
+        }
+        catch {
+            $name = [IO.Path]::GetFileName($zipFile)
+            $found[$name] = @{ name = $name; day = @{ events = [object[]]@(); bad = 1; unsupported = 0; partial = $null; gaps = [object[]]@() } }
+        }
+    }
+    return @($found.Values)
+}
+
+# The bytes of a closed file, or $null while a writer holds it (a writer has write access, which this share refuses).
+function Read-PqClosedFile([string]$Path) {
+    try {
+        $fs = [IO.FileStream]::new($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+        try {
+            $ms = [IO.MemoryStream]::new()
+            $fs.CopyTo($ms)
+            return , $ms.ToArray()
+        }
+        finally { $fs.Dispose() }
+    }
+    catch { return $null }
+}
+
+function Invoke-PqLogArchive {
+    param([Parameter(Mandatory)][string]$Root, [int]$KeepDays = $script:PqArchiveKeepDays)
+    $done = @{ days = 0; files = 0 }
+    $mutex = $null
+    $held = $false
+    try {
+        $logDir = Join-Path $Root 'log'
+        if (-not [IO.Directory]::Exists($logDir)) { return $done }
+        $cut = (Get-PqNow).UtcDateTime.Date.AddDays(-$KeepDays).ToString('yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture)
+        $byDay = [ordered]@{}
+        foreach ($f in [IO.Directory]::GetFiles($logDir, 'events-*.jsonl')) {
+            if ([IO.Path]::GetFileName($f) -cnotmatch $script:PqDayFileName) { continue }
+            $date = $Matches[1]
+            if ([string]::CompareOrdinal($date, $cut) -ge 0) { continue }
+            if (-not $byDay.Contains($date)) { $byDay[$date] = [Collections.Generic.List[string]]::new() }
+            $byDay[$date].Add($f)
+        }
+        if ($byDay.Count -eq 0) { return $done }
+        # One process archives at a time; another one that finds it busy leaves the work to it.
+        $hash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($Root.ToLowerInvariant())))
+        $mutex = [Threading.Mutex]::new($false, "sza-pq-archive-$hash")
+        try { $held = $mutex.WaitOne(0) }
+        catch [Threading.AbandonedMutexException] { $held = $true }
+        if (-not $held) { return $done }
+        $archive = Get-PqArchiveDir $Root
+        $null = [IO.Directory]::CreateDirectory($archive)
+        foreach ($date in @($byDay.Keys)) {
+            $zipFile = Join-Path $archive "events-$date.zip"
+            $tmp = "$zipFile.$PID.tmp"
+            try {
+                $take = [ordered]@{}
+                foreach ($f in $byDay[$date]) {
+                    $bytes = Read-PqClosedFile $f
+                    if ($null -ne $bytes) { $take[$f] = $bytes }
+                }
+                if ($take.Count -eq 0) { continue }
+                if ([IO.File]::Exists($zipFile)) { [IO.File]::Copy($zipFile, $tmp, $true) }
+                $zip = [IO.Compression.ZipFile]::Open($tmp, [IO.Compression.ZipArchiveMode]::Update)
+                try {
+                    foreach ($f in @($take.Keys)) {
+                        $name = [IO.Path]::GetFileName($f)
+                        if ($null -ne $zip.GetEntry($name)) { continue }
+                        $out = $zip.CreateEntry($name).Open()
+                        try { $out.Write($take[$f], 0, $take[$f].Length) } finally { $out.Dispose() }
+                    }
+                }
+                finally { $zip.Dispose() }
+                [IO.File]::Move($tmp, $zipFile, $true)
+                $moved = 0
+                $zip = [IO.Compression.ZipFile]::OpenRead($zipFile)
+                try {
+                    foreach ($f in @($take.Keys)) {
+                        $entry = $zip.GetEntry([IO.Path]::GetFileName($f))
+                        $now = Read-PqClosedFile $f
+                        if ($null -eq $entry -or $null -eq $now) { continue }
+                        # A name the archive already held with other bytes keeps its plain file, which readers prefer.
+                        if (-not [Linq.Enumerable]::SequenceEqual([byte[]](Read-PqZipEntry $entry), [byte[]]$now)) { continue }
+                        try { [IO.File]::Delete($f); $moved++ } catch { }
+                    }
+                }
+                finally { $zip.Dispose() }
+                if ($moved -gt 0) { $done.days++; $done.files += $moved }
+            }
+            catch { }
+            finally { if ([IO.File]::Exists($tmp)) { try { [IO.File]::Delete($tmp) } catch { } } }
+        }
+    }
+    catch { }
+    finally {
+        if ($null -ne $mutex) {
+            if ($held) { $mutex.ReleaseMutex() }
+            $mutex.Dispose()
+        }
+    }
+    return $done
 }

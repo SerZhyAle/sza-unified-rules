@@ -50,8 +50,11 @@ param(
     [string] $Model = '',
     [switch] $Write,
     [switch] $PromptOnly,
-    [string] $Anchors = ''
+    [string] $Anchors = '',
+    [switch]$Help
 )
+
+if ($Help) { . (Join-Path $PSScriptRoot '../_help.ps1'); Show-SzaHelp $PSCommandPath; exit 0 }
 $ErrorActionPreference = 'Stop'
 $lib = Join-Path $PSScriptRoot 'lib'
 foreach ($f in 'paths', 'events', 'registry', 'loop', 'ledger-watch', 'agents') { . (Join-Path $lib "$f.ps1") }

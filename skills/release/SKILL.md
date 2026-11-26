@@ -42,9 +42,10 @@ Never invent a version shape, a tag format, a channel, or an anchor. Read them, 
    the `param()` block of `release.ps1`, the version-validating regex. **These override any prose.**
 
 Those five settle the *mechanics*. The **scope** - which tickets this release carries - has its own source
-where the repo keeps a **release package plan**: two plain-text files, work-remaining and ready, projected
-from the ticket store ([RELEASE_AND_DISTRIBUTION.md](../../rules/RELEASE_AND_DISTRIBUTION.md) §8; default
-names `PLAN/RELEASE_QUEUE.md` + `PLAN/RELEASE_READY.md` + a history file). That plan is **the** answer to
+where the repo keeps a **release package plan**: the work-remaining queue file and a ready side
+([RELEASE_AND_DISTRIBUTION.md](../../rules/RELEASE_AND_DISTRIBUTION.md) §8; the shared harness keeps the queue in
+`PLAN/RELEASE_QUEUE.md` and prints the ready side with `spec_catalog/release-queue -Show Ready`, the history with
+`-Show Done`). That plan is **the** answer to
 "what is left before we ship" - read it rather than re-deriving scope out of the ticket store, and never
 reorder a line or touch a package number. Where the repo has no plan, scope comes from the ledger and the
 commit log as before; do not stand one up mid-release.
@@ -314,6 +315,8 @@ Release's asset URL and SHA256:
 4. **Any extra channel**: VS Code Marketplace (own semver clock, only if the subtree changed), Chrome/Edge
    (independent reviews), Play tracks, sideload, VR. For Play, follow the
    [API release procedure](../store-publish/references/google-play.md#7-publishing-a-release-through-the-api).
+   One release train is one review submission per application id: phone, Wear and listing changes ship in one edit and
+   one commit, never as several submissions in a row (the procedure's opening section says why).
 5. **Site publish**, if the repo serves one - see [feature-to-site](../feature-to-site/SKILL.md).
 
 Cross-cutting: if the artifact bundles third-party binaries, `THIRD-PARTY-NOTICES.txt` must be **inside every
@@ -347,10 +350,11 @@ A release is not done until it is proven live.
   shared harness this is one script, `spec_catalog/ship-package` (the repository's
   `tools/harness.ps1 spec_catalog/ship-package ..` or the plugin's `tools/harness/spec_catalog/ship-package.ps1`).
   Run it with `-Release <N> -Version <v> -DryRun` first - `<N>` is the package marker the run plan printed,
-  `<v>` the version that shipped - read the counts, then run it again without `-DryRun`. It moves every numbered
-  ready block up to `<N>` into the history file (newest first, stamped with the version), puts the marker on
-  `<N>+1`, and only then archives the `Verified` tickets that are in neither plan file. A ticket shipped as
-  `Implemented` or awaiting the owner's test stays in the ticket store until it is verified. Skip the script
+  `<v>` the version that shipped - read the counts, then run it again without `-DryRun`. It records every numbered
+  ready block up to `<N>` as shipped (newest first, stamped with the version), puts the marker on `<N>+1`, and only
+  then archives the `Verified` tickets on neither side whose recorded shipment names a version. A ticket shipped as
+  `Implemented` or awaiting the owner's test stays in the ticket store until it is verified; a `Verified` ticket with
+  no recorded shipment, or shipped without `-Version`, stays too and is named - archive it with a reason. Skip the script
   where the repository's own release script already shipped the package: a second run with the same
   `-Release <N>` finds nothing ready and moves nothing. A repository with a plan tool of its own keeps the same
   order - never run the sweep first: it drops those lines, and the record of what shipped goes with them. Then
@@ -379,7 +383,7 @@ A release is not done until it is proven live.
 - [ ] Every detected channel shipped or explicitly declared out of scope.
 - [ ] Frozen anchors verified unchanged on every channel touched.
 - [ ] Post-release proof including **update from a real prior install**.
-- [ ] Release package shipped into the history file **before** any archive sweep, marker advanced, the
+- [ ] Release package recorded as shipped **before** any archive sweep, marker advanced, the
       unfinished lines reported and left exactly as the owner ordered them (where the repo keeps a plan).
 - [ ] Every channel step recorded in the release ledger, a `probe` run after the last one.
 - [ ] State reset, release recorded, owner told with links.

@@ -119,7 +119,7 @@ try {
     }
     New-Fixture $rootB $inline @('BlockNeedUserTest', 'BlockNeedUserTest', 'BlockNeedUserTest')
     New-Fixture $rootC $inline @('BlockNeedUserTest', 'BlockNeedUserTest', 'BlockNeedUserTest')
-    $childArchive = Start-Child $rootB 'child-archive' ("& '{0}' -Id S0001,S0002,S0003" -f (Join-Path $harness 'spec_catalog\archive.ps1'))
+    $childArchive = Start-Child $rootB 'child-archive' ("& '{0}' -Id S0001,S0002,S0003 -Reason 'not needed: fixture'" -f (Join-Path $harness 'spec_catalog\archive.ps1'))
     New-Fixture $rootD $inline @('BlockNeedUserTest', 'BlockNeedUserTest', 'BlockNeedUserTest')
     $childUpdate = Start-Child $rootD 'child-update' ("& '{0}' -Id S0001 -Status Implemented" -f (Join-Path $harness 'spec_catalog\update.ps1'))
     $childBulk = Start-Child $rootC 'child-bulk' ("& '{0}' -Id S0001,S0002,S0003 -Status Implemented" -f (Join-Path $harness 'spec_catalog\bulk-update.ps1'))

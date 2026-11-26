@@ -79,7 +79,7 @@
 #>
 [CmdletBinding(PositionalBinding = $false, DefaultParameterSetName = 'Steps')]
 param(
-    [Parameter(Mandatory = $true)]
+    [Parameter(Mandatory = $true, ParameterSetName = 'Checkbox')][Parameter(Mandatory = $true, ParameterSetName = 'Steps')][Parameter(ParameterSetName = 'Help')]
     [ValidatePattern('^[A-Za-z][A-Za-z0-9-]*\d{2,}$')]   # the shape only; the profile's grammar is checked after it loads
     [string]$Id,
 
@@ -98,7 +98,7 @@ param(
     [ValidateSet('Phase', 'Index')]
     [string]$Target = 'Phase',
 
-    [Parameter(Mandatory = $true)]
+    [Parameter(Mandatory = $true, ParameterSetName = 'Checkbox')][Parameter(Mandatory = $true, ParameterSetName = 'Steps')][Parameter(ParameterSetName = 'Help')]
     [ValidateSet('NotDone', 'InProgress', 'Done', 'Manual')]
     [string]$State,
 
@@ -108,8 +108,11 @@ param(
 
     [switch]$Json,
 
-    [switch]$Reconcile
+    [switch]$Reconcile,
+    [Parameter(Mandatory, ParameterSetName = 'Help')][switch]$Help
 )
+
+if ($Help) { . (Join-Path $PSScriptRoot '../_help.ps1'); Show-SzaHelp $PSCommandPath; exit 0 }
 
 . (Join-Path $PSScriptRoot '..\_profile.ps1')
 if (-not (Test-SzaTicketId $Id)) { Write-Error "Invalid -Id '$Id' (must match $(Get-SzaTicketIdDisplay))."; exit 2 }

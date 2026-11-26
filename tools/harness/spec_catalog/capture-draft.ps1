@@ -21,7 +21,8 @@
     project can receive work before its owner runs init-task-flow. Only the form falls back: the numbering,
     grammar and archive still come from the project profile, nothing is created in the project besides the
     ticket itself, and giving the project its own form stays init-task-flow's call (the owner's).
-    Tokens: {{ID}}, {{SLUG}}, {{NAME}}, {{DATE}}, {{COMPLEXITY}}, {{TEXT}}.
+    Tokens: {{ID}}, {{SLUG}}, {{NAME}}, {{DATE}}, {{COMPLEXITY}}, {{TEXT}}. The text is written at the
+    first {{TEXT}} only; a later one is replaced by a pointer, so a ticket never holds two copies.
 
     The `**Complexity:** <level> - <reason>` header line (DEVELOPMENT.md section 8) comes from the
     template's own `**Complexity:** {{COMPLEXITY}}` line: the token becomes the -Complexity value, else
@@ -30,7 +31,7 @@
     reader then treats the ticket as it treats any spec with no declaration.
 
     If the row was written and the file could not be, the row is left in place and named in the error:
-    `delete.ps1 -Id <id> -Confirm` retires it, or the file can be written by hand. Nothing is removed
+    `delete.ps1 -Id <id> -Confirm -Reason 'not needed: <why>'` retires it, or the file can be written by hand. Nothing is removed
     silently.
 
 .PARAMETER Slug
@@ -230,11 +231,11 @@ try {
     # tokens, so a token inside them is never expanded.
     $eol = if ($body.Contains("`r`n")) { "`r`n" } else { "`n" }
     $attachmentBlock = Copy-DraftAttachments -Paths $attachmentPaths -SpecPath $filePath -Newline $eol
-    $body = $body.Replace('{{TEXT}}', ($Text + $attachmentBlock))
+    $body = Add-DraftOwnerText -Body $body -Value ($Text + $attachmentBlock)
     [IO.File]::WriteAllText($filePath, $body, [Text.UTF8Encoding]::new($false))
 } catch {
     Write-Host "capture-draft: ledger row $id was written but its spec file was not: $($_.Exception.Message)" -ForegroundColor Red
-    Write-Host "capture-draft: write $fileRel by hand, or retire the row with delete.ps1 -Id $id -Confirm." -ForegroundColor Red
+    Write-Host "capture-draft: write $fileRel by hand, or retire the row with delete.ps1 -Id $id -Confirm -Reason 'not needed: <why>'." -ForegroundColor Red
     exit 1
 }
 Write-Host "capture-draft: $fileRel"

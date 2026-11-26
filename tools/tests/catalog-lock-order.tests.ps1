@@ -16,12 +16,12 @@
                  lock free; a second Exit-CatalogLock starts nothing; with no lock it runs at once; Write-Catalog
                  under the lock starts nothing and the release runs it; a child of the queue sync
                  (SZA_PQ_IN_SYNC=1) refreshes none
-    ship       - release-queue.ps1 -Ship -Release 1 ships a block with a missing and with a one-line
-                 RELEASE_QUEUE_DONE.md and exits 0 (S0145: the $existing if-expression unrolled the array)
+    ship       - release-queue.ps1 -Ship records an imported ready row as a shipment on its ledger row, advances the
+                 marker and leaves the old ready and shipped files as they were
     plan files - release-queue.ps1 -SetCurrent and -Ship take the catalog lock (a text match on the two branches);
                  -SetCurrent still rewrites the marker (one real run)
-    ready file - update.ps1 moving a Draft row to Implemented with no RELEASE_READY.md creates the file
-                 with the standard header and lands the row in it (S0150: the row was dropped silently)
+    finished   - update.ps1 moving a Draft row to Implemented puts its package on the ledger row and writes no
+                 ready file (S0150: the row was once dropped silently)
   Exit 0 when every case passed, 1 on any failure.
 #>
 [CmdletBinding()]
@@ -138,33 +138,27 @@ foreach ($k in $steps.Keys) { Write-Output ('{0}={1}' -f $k, $steps[$k]) }
         Assert-Equal $got['no-projection-child'] '3' 'a child of a campaign (SZA_PQ_NO_PROJECTION=1) refreshes no projection'
     }
 
-    Run-Case 'ship: a missing and a one-line DONE file ship a block (S0145)' {
+    Run-Case 'ship: a row of an old ready file is imported, shipped onto its ledger row, and neither old file changes a byte' {
         $tool = Join-Path $Harness 'spec_catalog\release-queue.ps1'
         $readyPath = Join-Path $repo 'PLAN\RELEASE_READY.md'
         $queuePath = Join-Path $repo 'PLAN\RELEASE_QUEUE.md'
         $donePath = Join-Path $repo 'PLAN\RELEASE_QUEUE_DONE.md'
 
-        # Case A: the DONE file does not exist at all - the first release of a new project.
+        # No shipped file at all - the first release of a project.
+        Write-Utf8 (Join-Path $repo 'PLAN\spec-catalog.jsonl') ((New-Row 'S0002' 'ship-one' 'PLAN/S0002_ship-one.md' 'Implemented') + "`n")
         Write-Utf8 $readyPath "# Release ready`r`n`r`n1`r`nS0002_ship-one   26-11-18 12:00  Implemented`r`n"
         Write-Utf8 $queuePath "# Release queue`r`n`r`ncurrent-next-release: 1`r`n"
-        if (Test-Path -LiteralPath $donePath) { Remove-Item -LiteralPath $donePath -Force }
-        $r = Invoke-Tool $repo $tool @('-Ship', '-Release', '1')
-        Assert-Equal $r.code 0 "-Ship with a missing DONE file: $($r.out)"
-        $done = [IO.File]::ReadAllText($donePath)
-        Assert-That ($done -match '(?m)^## release 1\b') "the shipped block is missing from the DONE file: $done"
-        Assert-That ($done -match 'S0002_ship-one') "the shipped row is missing from the DONE file: $done"
+        $readyBefore = [IO.File]::ReadAllText($readyPath)
+        $r = Invoke-Tool $repo $tool @('-Ship', '-Release', '1', '-Version', '1.0.0')
+        Assert-Equal $r.code 0 "-Ship: $($r.out)"
+        $row = [IO.File]::ReadAllText((Join-Path $repo 'PLAN\spec-catalog.jsonl')) | ConvertFrom-Json
+        Assert-Equal @($row.shipments).Count 1 'the shipments of the row'
+        Assert-Equal $row.shipments[0].version '1.0.0' 'the shipped version'
+        Assert-Equal $row.shipments[0].changed '26-11-18 12:00' 'the row stamp travels with the shipment'
+        Assert-That ($null -eq $row.PSObject.Properties['package']) 'the shipped row still carries a package'
+        Assert-Equal ([IO.File]::ReadAllText($readyPath)) $readyBefore 'the old ready file'
+        Assert-That (-not (Test-Path -LiteralPath $donePath)) 'a shipped file was created'
         Assert-That (([IO.File]::ReadAllText($queuePath)) -match '(?m)^current-next-release: 2\s*$') "the marker did not advance"
-
-        # Case B: the DONE file holds a single line - a header with no block under it yet.
-        Write-Utf8 $readyPath "# Release ready`r`n`r`n1`r`nS0003_ship-two   26-11-18 12:00  Verified`r`n"
-        Write-Utf8 $queuePath "# Release queue`r`n`r`ncurrent-next-release: 1`r`n"
-        Write-Utf8 $donePath "# Release history`r`n"
-        $r = Invoke-Tool $repo $tool @('-Ship', '-Release', '1')
-        Assert-Equal $r.code 0 "-Ship with a one-line DONE file: $($r.out)"
-        $done = [IO.File]::ReadAllText($donePath)
-        Assert-That ($done -match 'S0003_ship-two') "the shipped row is missing from the one-line DONE file: $done"
-        $ready = [IO.File]::ReadAllText($readyPath)
-        Assert-That ($ready -notmatch 'S0003_ship-two') "the shipped row was not dropped from the ready file: $ready"
     }
 
     Run-Case 'plan files: release-queue.ps1 -SetCurrent and -Ship take the catalog lock, and -SetCurrent still rewrites the marker' {
@@ -181,11 +175,10 @@ foreach ($k in $steps.Keys) { Write-Output ('{0}={1}' -f $k, $steps[$k]) }
         Assert-That ($queue -match '(?m)^current-next-release: 4\s*$') "the marker was not rewritten: $queue"
     }
 
-    Run-Case 'ready file: a row crossing to a missing RELEASE_READY.md creates the file instead of being dropped (S0150)' {
+    Run-Case 'finished side: a row that finishes keeps its package on the ledger row and writes no ready file' {
         $tool = Join-Path $Harness 'spec_catalog\update.ps1'
         $readyPath = Join-Path $repo 'PLAN\RELEASE_READY.md'
         $queuePath = Join-Path $repo 'PLAN\RELEASE_QUEUE.md'
-        # A Draft row in the queue, a ready file that does not exist - the state a young project is in.
         Write-Utf8 (Join-Path $repo 'PLAN\spec-catalog.jsonl') `
             ((New-Row 'S0004' 'ready-file' 'PLAN/S0004_ready-file.md') + "`n")
         Write-Utf8 (Join-Path $repo 'PLAN\S0004_ready-file.md') "# S0004_ready-file`n`n**Status:** Draft`n"
@@ -194,10 +187,10 @@ foreach ($k in $steps.Keys) { Write-Output ('{0}={1}' -f $k, $steps[$k]) }
 
         $r = Invoke-Tool $repo $tool @('-Id', 'S0004', '-Status', 'Implemented')
         Assert-Equal $r.code 0 "update.ps1 to Implemented: $($r.out)"
-        Assert-That (Test-Path -LiteralPath $readyPath) "RELEASE_READY.md was not created"
-        $ready = [IO.File]::ReadAllText($readyPath)
-        Assert-That ($ready -match '(?m)^# Release Content \(ready\)\r?$') "the standard header is missing: $ready"
-        Assert-That ($ready -match 'S0004_ready-file\s+\d{2}-\d{2}-\d{2} \d{2}:\d{2}\s+Implemented') "the row is not in the ready file: $ready"
+        $row = [IO.File]::ReadAllText((Join-Path $repo 'PLAN\spec-catalog.jsonl')) | ConvertFrom-Json
+        Assert-Equal $row.package '1' 'the package of the finished row'
+        Assert-Equal $row.packageOrder 1 'its place on the finished side'
+        Assert-That (-not (Test-Path -LiteralPath $readyPath)) 'a ready file was written'
         $queue = [IO.File]::ReadAllText($queuePath)
         Assert-That ($queue -notmatch 'S0004_ready-file') "the row is still in the queue file too: $queue"
     }

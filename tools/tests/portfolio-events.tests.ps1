@@ -657,8 +657,7 @@ try {
             @{ Args = @{ Kind = 'runState' }; Rel = "run${sep}current.json" }
             @{ Args = @{ Kind = 'beat' }; Rel = "run${sep}beat" }
             @{ Args = @{ Kind = 'log' }; Rel = 'log' }
-            @{ Args = @{ Kind = 'live' }; Rel = "log${sep}live" }
-            @{ Args = @{ Kind = 'livePass'; Pass = 'R20261027T101500-ab12.3' }; Rel = "log${sep}live${sep}R20261027T101500-ab12.3.log" }
+            @{ Args = @{ Kind = 'logArchive' }; Rel = "log${sep}archive" }
             @{ Args = @{ Kind = 'events'; Date = '2026-10-27'; Token = 'pq' }; Rel = "log${sep}events-2026-10-27.pq.jsonl" }
             @{ Args = @{ Kind = 'events'; Date = '2026-10-27'; Token = 'cli-4242' }; Rel = "log${sep}events-2026-10-27.cli-4242.jsonl" }
             @{ Args = @{ Kind = 'resources' }; Rel = 'resources' }
@@ -680,7 +679,6 @@ try {
         $bad = @(
             @{ Kind = 'hold'; Agent = "..${sep}x" }
             @{ Kind = 'hold'; Agent = 'a/b' }
-            @{ Kind = 'livePass'; Pass = 'a\b' }
             @{ Kind = 'events'; Date = '2026-10-27'; Token = '..' }
             @{ Kind = 'events'; Date = '27.10.2026'; Token = 'pq' }
             @{ Kind = 'stopTarget'; StopKind = 'repo'; Target = "..${sep}..${sep}x" }
@@ -708,9 +706,8 @@ try {
         $null = Get-PqRoot
         $null = Initialize-PqRoot
         $null = Initialize-PqRoot
-        foreach ($k in 'registry', 'queue', 'runs', 'stop', 'holds', 'run', 'runState', 'beat', 'log', 'live', 'resources', 'monitor', 'reports') { $null = Get-PqPath -Kind $k }
+        foreach ($k in 'registry', 'queue', 'runs', 'stop', 'holds', 'run', 'runState', 'beat', 'log', 'logArchive', 'resources', 'monitor', 'reports') { $null = Get-PqPath -Kind $k }
         $null = Get-PqPath -Kind hold -Agent claude
-        $null = Get-PqPath -Kind livePass -Pass 'p.1'
         $null = Get-PqPath -Kind events -Date '2026-10-27' -Token pq
         $null = Get-PqPath -Kind stopTarget -StopKind ticket -Target 'k__S0001'
         $null = Get-PqPath -Kind resourceToken -Token build -Repo k -Id S0001

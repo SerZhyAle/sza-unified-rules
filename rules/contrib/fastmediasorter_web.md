@@ -15,11 +15,10 @@ repository on 2026-10-15); the other works on the person's own files in the brow
 program. The adoption mechanics are CONFIRM of `tourist_mob.md`. Genuinely new: **no overlay fits** - the first
 portfolio product whose artifact is a web application, neither an installed program nor a product page.
 
-> **Keep this note in the record.** Current facts, edited in place. Never append a dated section to this file:
-> what happened and when goes to the file of the same name under `history/`
-> ([the rules of that folder](history/README.md)), which is not reading for a task. A delta the core absorbed,
-> a candidate that was applied or refused and a question that was answered are deleted here; the history
-> section of that day says what became of them.
+> **Keep this note in the record.** Current facts, edited in place. Never append a dated section to this file,
+> and append nothing under `history/` either: those files are frozen ([the rules of that folder](history/README.md))
+> and are not reading for a task. A delta the core absorbed, a candidate that was applied or refused and a
+> question that was answered are deleted here.
 
 ## Names (owner, 2026-10-16)
 

@@ -251,6 +251,27 @@ class Documents(unittest.TestCase):
         self.assertIn("PLAN/LATER.md: missing registry entry", later.stdout)
         self.assertNotIn("S0002", later.stdout)
 
+    def test_local_corpus_skips_ticket_artifacts_whatever_its_config(self):
+        # CANONR-0231: a local config written before the evidence and research patterns existed stays green when
+        # a pass writes those files; any other document in a ticket folder still owes a row.
+        self.config = self.root / "dev/corpus.json"
+        self.config.write_text(json.dumps({"visibility": "local", "registry": "dev/registry.jsonl",
+            "map": "dev/map.md", "roots": ["dev", "PLAN"], "ignore": []}))
+        (self.root / "dev/map.md").touch()
+        ticket = self.root / "PLAN/CANONR-0001_ticket"
+        archived = self.root / "PLAN/DONE/CANONR-0002_done"
+        for folder in (ticket / "evidence", ticket / "research", archived / "evidence", archived / "research"):
+            folder.mkdir(parents=True)
+        (self.root / "dev/note.md").write_text("# Note\n")
+        self.assertEqual(self.check(register=True, render=True)[0], [])
+        (ticket / "evidence/log.md").write_text("# Evidence log\n")
+        (ticket / "research/draft.md").write_text("# Draft\n")
+        (archived / "evidence/log.md").write_text("# Archived log\n")
+        (archived / "research/notes.md").write_text("# Archived notes\n")
+        self.assertEqual(self.check()[0], [])
+        (ticket / "VENUES.md").write_text("# Venues\n")
+        self.assertFailure("PLAN/CANONR-0001_ticket/VENUES.md: missing registry entry")
+
 
 if __name__ == "__main__":
     suite = unittest.defaultTestLoader.loadTestsFromTestCase(Documents)

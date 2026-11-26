@@ -48,7 +48,7 @@ specifics marked *(overlay)*.
   [DOCUMENTATION_CONCEPT.md](DOCUMENTATION_CONCEPT.md) §3).
 - **One canonical `og:locale` `ll_CC` map across the portfolio's 13 languages**:
   `en` -> `en_US`, `ru` -> `ru_RU`, `uk` -> `uk_UA`, `ar` -> `ar_AR`, `bn` -> `bn_BD`, `de` -> `de_DE`,
-  `es` -> `es_MX`, `fr` -> `fr_FR`, `hi` -> `hi_IN`, `id` -> `id_ID`, `pt` -> `pt_BR`, `ur` -> `ur_PK`,
+  `es` -> `es_MX`, `fr` -> `fr_FR`, `hi` -> `hi_IN`, `it` -> `it_IT`, `pt` -> `pt_BR`, `ur` -> `ur_PK`,
   `zh` -> `zh_CN`. **One exception**: a page written in a regional variety takes that variety's territory
   (`epub2html` keeps `pt_PT`, its text being European Portuguese). Reconciled divergences: `cyrflip`
   `ar_SA` -> `ar_AR`, `epub2html` `bn_IN` -> `bn_BD`.

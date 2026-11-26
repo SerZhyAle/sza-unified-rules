@@ -26,6 +26,11 @@
 #                 It reported that a commit mentioned the id, which in a one-developer,
 #                 one-branch, commit-the-whole-tree repository was true of nearly every ticket.
 #
+# Header drift (TASK-FLOW 0.52): the spec file's **Status:** line is written from the ledger by the catalog tools
+# and by nothing else. A line that differs is reported - `HEADER DRIFT` in the table, `header_status` and
+# `header_mismatch` in the JSON - and leaves the verdict and the exit code, which speak of the markers, as they are.
+# The repair is update.ps1 -Id <id> -Status <ledger status>.
+#
 # Exit codes:
 #   0 - no drift detected (CLEAN)
 #   1 - drift detected (inline markers found post-spec-creation)
@@ -47,6 +52,8 @@ if (-not (Test-SzaTicketId $Id)) {
     exit 2
 }
 
+. (Join-Path $PSScriptRoot '_status-sets.ps1')
+
 $root = (Get-SzaProjectRoot)
 $pwshExe = if (Test-Path "$env:ProgramFiles\PowerShell\7\pwsh.exe") {
     "$env:ProgramFiles\PowerShell\7\pwsh.exe"
@@ -67,6 +74,8 @@ if ($rec -is [array]) { $rec = $rec[0] }
 $created = $rec.created
 $updated = $rec.updated
 $specFile = Join-Path $root $rec.file
+$headerStatus = Get-SpecHeaderStatus -Path $specFile -Vocabulary @(Get-SzaProfileValue 'grammar.statusVocabulary')
+$headerMismatch = $null -ne $headerStatus -and $headerStatus -cne [string]$rec.status
 
 # Retained for the JSON contract only - it is no longer a git window, just the earlier of the two
 # catalog dates, reported so a reader can see how old the ticket is.
@@ -166,6 +175,8 @@ try {
             code_markers  = $markers
             commits_count = $commits.Count
             markers_count = $markers.Count
+            header_status = $headerStatus
+            header_mismatch = $headerMismatch
         }
         $result | ConvertTo-Json -Depth 6 -Compress
     }
@@ -183,6 +194,9 @@ try {
             if ($markers.Count -gt 3) {
                 Write-Host "    .. ($($markers.Count - 3) more)" -ForegroundColor DarkGray
             }
+        }
+        if ($headerMismatch) {
+            Write-Host "  HEADER DRIFT: the spec says '$headerStatus', the ledger says '$($rec.status)' (ledger authoritative)" -ForegroundColor Yellow
         }
         $vColor = if ($verdict -eq 'DRIFT') { 'Yellow' } else { 'Green' }
         Write-Host "  verdict: $verdict" -ForegroundColor $vColor

@@ -405,7 +405,18 @@ function Invoke-PqAgents {
         $p = Resolve-PqProvider $Release
         if ($null -eq $p) { Write-PqError 'UnknownProvider' "no provider '$Release'"; return 2 }
         $released = $false
-        foreach ($agentName in @(Get-PqProviderAgents $p)) { if (Remove-PqAgentHold -Name $agentName) { $released = $true } }
+        # The end of a hold is written as any other (TASK-FLOW 0.50): agent.resume by the owner, and the end of its
+        # agent.fallback. Fail-open like owner.action: a failed event write changes nothing.
+        $cliLog = $null
+        if ($null -eq $script:PqDefaultLog) { $cliLog = Open-PqLog -Writer cli }
+        try {
+            foreach ($agentName in @(Get-PqProviderAgents $p)) {
+                if (Remove-PqAgentHoldAfterPass -Log $script:PqDefaultLog -Name $agentName -By owner) { $released = $true }
+            }
+        }
+        finally {
+            if ($null -ne $cliLog) { $null = Close-PqLog -Log $cliLog }
+        }
         Write-PqOwnerAction 'agents'
         if (-not $Json) { if ($released) { "released $($p.id) - its limit hold is cleared" } else { "$($p.id) was not held" } }
     }
@@ -529,7 +540,7 @@ function Invoke-PqDryRun {
     if ($Json) {
         ConvertTo-Json -InputObject ([ordered]@{ candidates = $rank.candidates; plan = $rank.plan; skipped = $rank.skipped; excluded = $rank.excluded
                 autoSkipReasons = $rank.autoSkipReasons; fill = $rank.fill; heads = $rank.heads; ms = $rank.ms; queueRows = $rank.queueRows; queueBad = $rank.queueBad
-                lifts = @($rank.lifts) }) -Depth 16
+                lifts = @($rank.lifts); thrashHeld = @($rank.thrashHeld) }) -Depth 16
         return 0
     }
     "pq dry-run: fill=$($rank.fill) slots=$n enabled=$($enabled.Count) candidates=$(@($rank.candidates).Count)"
@@ -542,6 +553,7 @@ function Invoke-PqDryRun {
     }
     foreach ($p in @($rank.plan)) { "slot $($p.slot): $($p.repo):$($p.id)" }
     foreach ($s in @($rank.skipped)) { "skip $($s.repo) - $($s.why)" }
+    foreach ($th in @($rank.thrashHeld)) { "held $($th.key) - $($th.passes) offers of the last $($script:PqOfferHours) h advanced nothing (ticket.thrash); an edit of its spec lifts it" }
     foreach ($l in @($rank.lifts)) {
         "lift $($l.blocked) -> root $($l.root) ($($l.status)): " + $(if ($l.offered) { 'offered in its place' } else { "not worked ($($l.why))" })
     }
@@ -1176,28 +1188,27 @@ function Read-PqCliEvents([switch]$Today) {
     $root = Get-PqRoot
     $logDir = Join-Path $root 'log'
     $events = [Collections.Generic.List[object]]::new()
-    if ([IO.Directory]::Exists($logDir)) {
-        if ($Today) {
-            # "Today" is the local day (S0025); the files stay named by their UTC date (rule 54), and a local day can
-            # span two of them, so the neighbouring dates are read too and the events are kept by their own ts.
-            $now = [DateTimeOffset]::Now
-            $localToday = $now.LocalDateTime.Date
-            $dates = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
-            foreach ($d in -1, 0, 1) { $null = $dates.Add($now.AddDays($d).UtcDateTime.ToString('yyyy-MM-dd')) }
-            foreach ($date in $dates) {
-                foreach ($f in [IO.Directory]::GetFiles($logDir, 'events-' + $date + '.*.jsonl')) {
-                    foreach ($e in (Read-PqDay -Path $f).events) {
-                        $ts = [DateTimeOffset]::MinValue
-                        if ([DateTimeOffset]::TryParse([string]$e.ts, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref]$ts) -and $ts.LocalDateTime.Date -eq $localToday) {
-                            $events.Add($e)
-                        }
+    if (-not $Today) {
+        # The whole log: the plain day files and the archived ones (TASK-FLOW 0.51 item F).
+        foreach ($date in @(Get-PqLogDates -Root $root)) {
+            foreach ($f in @(Read-PqDayFiles -Root $root -Date $date)) { foreach ($e in $f.day.events) { $events.Add($e) } }
+        }
+    }
+    elseif ([IO.Directory]::Exists($logDir)) {
+        # "Today" is the local day (S0025); the files stay named by their UTC date (rule 54), and a local day can
+        # span two of them, so the neighbouring dates are read too and the events are kept by their own ts.
+        $now = [DateTimeOffset]::Now
+        $localToday = $now.LocalDateTime.Date
+        $dates = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+        foreach ($d in -1, 0, 1) { $null = $dates.Add($now.AddDays($d).UtcDateTime.ToString('yyyy-MM-dd')) }
+        foreach ($date in $dates) {
+            foreach ($f in [IO.Directory]::GetFiles($logDir, 'events-' + $date + '.*.jsonl')) {
+                foreach ($e in (Read-PqDay -Path $f).events) {
+                    $ts = [DateTimeOffset]::MinValue
+                    if ([DateTimeOffset]::TryParse([string]$e.ts, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref]$ts) -and $ts.LocalDateTime.Date -eq $localToday) {
+                        $events.Add($e)
                     }
                 }
-            }
-        }
-        else {
-            foreach ($f in [IO.Directory]::GetFiles($logDir, 'events-*.jsonl')) {
-                foreach ($e in (Read-PqDay -Path $f).events) { $events.Add($e) }
             }
         }
     }

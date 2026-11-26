@@ -73,8 +73,8 @@ SECURITY_AND_PRIVACY / SUPPORT_AND_FEEDBACK / SITE_CONFIGURATION / PROMOTION.**
 > **Status: shipped as a plugin.** Extracted from the portfolio's most mature repo, reconciled against the
 > active repos through 2026-07-27, then moved out of the site repository into its own home so it can be
 > installed rather than pointed at. `contrib/` keeps the per-project facts records (overlay facts, channel
-> rows, open project-specific questions) - read a project's facts record before working in that repo; the
-> dated account of how it got there is in `contrib/history/` and is not reading for a task. Neighbouring kits
+> rows, open project-specific questions) - read a project's facts record before working in that repo;
+> `contrib/history/` is frozen and is not reading for a task. Neighbouring kits
 > these docs cross-reference and must not duplicate: the web style kit in the `sza.od.ua` repo, and the
 > `universal-agent-kit` repo (a public, scrubbed AI-usage distillation).
 
@@ -120,10 +120,8 @@ in this folder, is the live map of adoption - `tools/check-compliance.ps1` reads
   per session. It replaces the old copy-paste spread-back prompt.
 - **Surveying a new project:** copy `contrib/TEMPLATE.md`, fill it against the repo with evidence, dedupe
   against the existing records, and fold only owner-approved universal deltas into the core.
-- **A project's record is two files.** `contrib/<project>.md` holds the current facts and is edited in place;
-  `contrib/history/<project>.md` holds the dated sections (adoption, re-sync, spread-back, campaign notes), is
-  appended to and is read by no skill. A facts change is delivered by the plugin version like a rule change;
-  a history-only change raises no version.
+- **A project's record is one file.** `contrib/<project>.md` holds the current facts, is edited in place and
+  is delivered by the plugin version like a rule change. `contrib/history/` is frozen.
 - **A channel-specific trap goes into the skill reference, not into a rule doc.** A console quirk, a form's field
   order, a word a store flags, a runner's default: its home is the reference of the skill that runs that channel
   (`skills/<skill>/references/`), which is outside the digest. The rule doc keeps the rule and one pointer, so a lesson
@@ -189,7 +187,5 @@ One name per concept, so every project and every agent means the same thing:
 - **Overlay fact** - one of the four per-type specifics: source root & release-mechanics folder, version
   shape, channels + listing files, frozen anchors.
 - **Contribution (`contrib/`)** - a per-project facts file recording that project's overlay facts and
-  divergences, edited in place; reconciled into the core on 2026-07-23 and kept as the per-project record.
-  Its dated history is a second file, `contrib/history/<project>.md`.
-- **Product compass / persona** - the non-technical target users (the grandmother, the gym-goer) whose
+  divergences, edited in place; reconciled into the core on 2026-07-23 and kept as the per-project record.- **Product compass / persona** - the non-technical target users (the grandmother, the gym-goer) whose
   happy-path defines what counts as a defect.

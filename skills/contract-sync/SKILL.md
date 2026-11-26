@@ -147,7 +147,10 @@ Commit only if the owner asks, and only in this repository. A change in the cata
 written - say plainly what you changed in it. The catalog keeps a local git history that only the canon
 session (`sza-unified-rules`) writes: **from any other repository's session, run no git command in
 `P:\Contracts`** - not `status`, not `diff`, not `add`, `commit`, `checkout`, `restore` or `stash`. Several
-sessions write there at once, and one session's command can stage or discard the work of another.
+sessions write there at once, and one session's command can stage or discard the work of another. A canon
+session - attended or an unattended pass - writes the catalog under `tools/contracts-writer-lock.ps1 -Acquire
+-Ticket <id>` (exit 4: wait, run it again), reads the version it bumps only after the grant, and runs `-Release`
+after the closing snapshot.
 
 ---
 

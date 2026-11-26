@@ -1,6 +1,9 @@
 [CmdletBinding()]
 param(
     [string] $Id,
+    # TASK-FLOW 0.52: the one-line archive reason kept in statusNote - duplicate of <id>, not needed: <why>, done in <id>.
+    [Alias('StatusNote')]
+    [string] $Reason,
     [switch] $Confirm,
     [switch] $Help
 )
@@ -41,7 +44,7 @@ for ($i = 0; $i -lt $records.Count; $i++) {
 if ($idx -lt 0) { throw "Record '$Id' not found." }
 
 if (-not $Confirm) {
-    Write-Output "Would soft-delete $Id ($($records[$idx].name) - current status: $($records[$idx].status)). Re-run with -Confirm to apply."
+    Write-Output "Would soft-delete $Id ($($records[$idx].name) - current status: $($records[$idx].status)). Re-run with -Confirm and -Reason '<one line>' to apply."
     exit 1
 }
 
@@ -50,6 +53,8 @@ if ($old.status -eq 'Archived') {
     Write-Output "$Id already Archived (no-op)."
     exit 0
 }
+
+Assert-ArchiveReason -Id $Id -OldStatus ([string]$old.status) -Reason $Reason -Supplied ($PSBoundParameters.ContainsKey('Reason'))
 
 $archived = [pscustomobject]@{
     id       = [string]$old.id
@@ -64,12 +69,20 @@ if ($old.PSObject.Properties.Name -contains 'tier' -and $null -ne $old.tier -and
     $archived | Add-Member -NotePropertyName 'tier' -NotePropertyValue ([int]$old.tier)
 }
 
+# Every other field of the row travels: the shipment history and the former ids stay readable.
+foreach ($prop in $old.PSObject.Properties) {
+    if (-not ($archived.PSObject.Properties.Name -contains $prop.Name)) {
+        $archived | Add-Member -NotePropertyName $prop.Name -NotePropertyValue $prop.Value
+    }
+}
+Set-PlanProp -Record $archived -Name 'statusNote' -Value $Reason
 Assert-Record -Record $archived
 # Relocate into the archive journal (append) and drop from the active one, so
 # the split invariant holds (no Archived row in the active journal).
 Add-ArchiveRecord -Record $archived
 $remaining = @($records | Where-Object { $_.id -ne $Id })
 Write-Catalog -Records ([object[]]$remaining)
+[void](Sync-SpecHeaderStatus -PathRef $archived.file -Status 'Archived' -StatusNote $Reason)
 Exit-CatalogLock
 Write-Output "$Id Archived."
 exit 0

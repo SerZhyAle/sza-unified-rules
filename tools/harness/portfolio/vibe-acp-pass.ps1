@@ -29,15 +29,18 @@
 .PARAMETER IdleMinutes
     Minutes without any message from the agent before the pass is ended.
 #>
-[CmdletBinding()]
+[CmdletBinding(DefaultParameterSetName = 'Run')]
 param(
-    [Parameter(Mandatory)][string]$Prompt,
-    [string]$Model = '',
-    [string]$Thinking = '',
-    [string]$Mode = 'auto-approve',
-    [string]$Exe = '',
-    [int]$IdleMinutes = 30
+    [Parameter(Position = 0, Mandatory, ParameterSetName = 'Run')][Parameter(ParameterSetName = 'Help')][string]$Prompt,
+    [Parameter(Position = 1)][string]$Model = '',
+    [Parameter(Position = 2)][string]$Thinking = '',
+    [Parameter(Position = 3)][string]$Mode = 'auto-approve',
+    [Parameter(Position = 4)][string]$Exe = '',
+    [Parameter(Position = 5)][int]$IdleMinutes = 30,
+    [Parameter(Mandatory, ParameterSetName = 'Help')][switch]$Help
 )
+
+if ($Help) { . (Join-Path $PSScriptRoot '../_help.ps1'); Show-SzaHelp $PSCommandPath; exit 0 }
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest

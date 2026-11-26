@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Contract | `TASK-FLOW` |
-| Version | 0.49, draft |
+| Version | 0.53, draft |
 | Home | the shared contracts catalog, domain `task-flow/` (the path is in [CLAUDE.md](../../CLAUDE.md)) |
 | Role | **shared implementation, partial**: `tools/harness/` supplies the ticket tools, repository runner and day-0 scaffold; `tools/harness/portfolio/` supplies the dispatcher, registry, queue, rank and event log. The open differences are the dated exceptions of the registry. The owner is `shared`, so this repository edits the contract only through the canon session |
 
@@ -56,6 +56,22 @@
   applied by recommendation, never a `DO:`. The `spec-quiz` skill and the spec-to-audit quiz reference carry it; the
   exceptions have one home, `rules/AI_USAGE.md` section 1. `quiz-list.ps1` prints the lines several tickets share
   (`quiz-shared`).
+- 0.50 (2026-11-26, CANONR-0206, section 26, rules 42 and 48, `EVENTS.md` section 13): a text detector reads the last
+  40 lines of a pass that exited non-zero, and the reset time comes from the same lines (`batch/_limit-tail.ps1`, read
+  by `_limit-hold.ps1` and `portfolio/lib/agents.ps1`); `Resolve-RunOutcome` never names a pass that moved the ticket
+  `limit-hit`; the hold and `agent.hold` carry `resetSource`, a guessed `until` is cut to six hours, and a hold
+  written before 0.50 reads by its `until`; `agent.fallback` for a limit is written when the hold starts and ends,
+  never per ranking; `PQ-LIMIT01` reports a guessed hold longer than six hours. Covered by `limit-detector`.
+- 0.51 (2026-11-26, CANONR-0208, section 27, `EVENTS.md` section 14): a runner writes `no-progress` where it wrote
+  `no-progress-or-claim-lost`, and the idle walk (`batch/_idle-runs.ps1`, PQShell's copy) counts either spelling; the
+  portfolio row drops `priceAsOf`; `Reclaim-PqDeadWorker` ends an `orphaned` row at the pass's last `pass.beat` or the
+  repository lock's write time, with `detectedAfterMinutes`, from facts `Set-PqWorkerPass` records at the launch;
+  `portfolio/lib/offer-limit.ps1` holds a ticket whose newest three offers of 24 hours advanced nothing (it replaces
+  the drop-lift thrash and feeds `PQ-THRASH01`); `pass.beat` is written once per five minutes and an unchanged blocker
+  result once (`run/xrepo-said.json`); `Invoke-PqLogArchive` zips day files older than 14 days and every log reader
+  reads the zips; the live-log path kinds and the findings `PQ-STALL01` and `PQ-SAFE01` are gone. Covered by
+  `pq-records` (fast, run); the edited release-tier suites (`portfolio-s0016`, `portfolio-events`,
+  `portfolio-conformance`, `portfolio-usage`) were not run, and PQShell was not built.
 - The CANONR-0197 exception and gap G11 are closed (2026-11-26): the rendered R0 launcher
   (`scaffold/templates/r0-runner.ps1.tpl`, filled by `init-task-flow.ps1`) and this repository's `r0.ps1` no longer
   rank `Implemented`; the campaign form of `portfolio/spec-draft.ps1` records `campaign` or the inherited `robot`
@@ -64,6 +80,17 @@
   row announces it (`run/intake-announced.json`); PQShell's idle walk applies the lift (source edit, built with the
   next panel build). Covered by `ticket-source`, `idle-hold`, `portfolio-limit-reset` and `catalog-lock-order`
   (fast, run); `batch-runner.tests.ps1` and the day-0 rehearsal were not run.
+- 0.52 (2026-11-26, CANONR-0211, section 28, rules 3, 4, 14-17 and 35): `spec_catalog/_plan-ledger.ps1` keeps the
+  package, order and shipment history of finished work on the ledger row; `release-queue.ps1 -Show Ready|Done` renders
+  them, and the ready and done files an older tool wrote are imported and never written. `_archive-reason.ps1` is the
+  one reason gate of every archiving path; `ship-package.ps1` archives with `archive.ps1 -FromShipment`. The runner
+  rewrites a differing spec header from the ledger. The unused plan-form pilot recorder is deleted and `closed_at` is
+  no longer written. Covered by `release-plan-ledger`, `archive-reason`, `header-mirror`, `catalog-lock-order` and
+  `release-queue-seed` (fast, run); the edited release-tier suites and the day-0 rehearsal were not run.
+- 0.53 (2026-11-26, CANONR-0210, section 29, rules 6, 8 and 19): a new entry into `Implemented`, `Verified` or
+  `BlockNeedUserTest` of a spec file above 40960 bytes needs a relative evidence link into the ticket's `evidence/`
+  folder. `check-spec-size.ps1` applies it from `Assert-ClosingGates` (the link test is `Find-SpecEvidenceLink` in
+  `_spec-size.ps1`). Covered by `spec-size`.
 - S0011 re-read section 5 and the partial adoption row without advancing its 2026-10-07 verification.
   S0012 (closed 2026-10-26) handed remaining harness/runtime evidence to S0013. Reader and completion tests
   certify no live-agent flow; S0013 recorded one real-agent step of one ticket and nothing more.

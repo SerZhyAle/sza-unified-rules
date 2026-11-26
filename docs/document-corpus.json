@@ -4,7 +4,7 @@
   "map": "docs/DOCS_MAP.md",
   "roots": ["README.md", "AGENTS.md", "CLAUDE.md", "EXPERIENCE_MAP.md", "rules", "skills", "hooks", "tools", "docs", "templates", "memory", ".claude/rules"],
   "ignore": [
-    {"pattern": "rules/contrib/history/*.md", "reason": "Append-only dated project history, read by no skill; the current facts are in rules/contrib/<project>.md."}
+    {"pattern": "rules/contrib/history/*.md", "reason": "Frozen dated project history, read by no skill; the current facts are in rules/contrib/<project>.md."}
   ],
   "generated": [
     {

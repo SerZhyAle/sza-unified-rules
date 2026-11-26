@@ -243,7 +243,8 @@ Write-Output 'PS51 complexity reader: PASS'
         Assert-Eq (@(Add-ChildSystemPrompt -ChildArgs @('--append-system-prompt=house') -Lead 'L') -join '|') '--append-system-prompt=L house' 'merged with the = form'
         Assert-Eq (@(Add-ChildSystemPrompt -ChildArgs @('-p', 'x')) -join '|') '-p|x' 'nothing to add'
         $src = [IO.File]::ReadAllText($runner)
-        if (-not $src.Contains('Add-ChildSystemPrompt -ChildArgs $childArgs -Lead $optIn -Tail $gradeAsk')) { throw 'the runner does not append the opt-in' }
+        if (-not $src.Contains('Add-ChildSystemPrompt -ChildArgs $childArgs -Lead $optIn -Tail $tailAsk')) { throw 'the runner does not append the opt-in' }
+        if (-not $src.Contains('@($gradeAsk, $finalAsk)')) { throw 'the final-message request does not reach the system prompt' }
         if ($src -match '\$prompt \+=') { throw 'the runner still adds words after the prompt' }
     }
 

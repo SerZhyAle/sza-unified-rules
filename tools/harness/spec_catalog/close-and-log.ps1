@@ -29,7 +29,8 @@
 # -FeatGate names the flag (or a NAME+NAME conjunction) that gates the capability, and is written into
 # the record's `gate` field; empty writes no gate. It is passed through to all_features/add.ps1, which
 # alone validates the names and rejects repeats - this script keeps no second validator (S2937).
-# Pass -StatusOnly to update only the journal status without close.ps1 (keeps no closed_at).
+# Pass -StatusOnly to update only the journal status without close.ps1.
+# -Status Archived requires -StatusNote, the one-line archive reason (TASK-FLOW 0.52).
 # Pass -PostStatus when the caller already moved the ticket. The current status is checked
 # before running the logging and post-close steps.
 #
@@ -50,10 +51,10 @@
 # Exit codes: 0 all steps done | 1 a step failed (see the aggregate report) | 2 bad arguments
 # (nothing was mutated).
 
-[CmdletBinding(PositionalBinding = $false)]
+[CmdletBinding(PositionalBinding = $false, DefaultParameterSetName = 'Run')]
 param(
-    [Parameter(Mandatory = $true)][string]$Id,
-    [Parameter(Mandatory = $true)]
+    [Parameter(Mandatory = $true, ParameterSetName = 'Run')][Parameter(ParameterSetName = 'Help')][string]$Id,
+    [Parameter(Mandatory = $true, ParameterSetName = 'Run')][Parameter(ParameterSetName = 'Help')]
     [ValidateSet('Draft', 'Approved', 'Tactical', 'In Progress',
         'Implemented', 'Verified', 'Partial', 'Broken',
         'BlockByOtherTask', 'BlockNeedUserTest', 'BlockQuestions', 'BlockExternal',
@@ -80,8 +81,11 @@ param(
     [switch]$SkipCatalogSync,
     [switch]$SkipFuncLog,
     [switch]$StatusOnly,
-    [switch]$PostStatus
+    [switch]$PostStatus,
+    [Parameter(Mandatory, ParameterSetName = 'Help')][switch]$Help
 )
+
+if ($Help) { . (Join-Path $PSScriptRoot '../_help.ps1'); Show-SzaHelp $PSCommandPath; exit 0 }
 
 . (Join-Path $PSScriptRoot '..\_profile.ps1')
 
@@ -104,6 +108,9 @@ function Reject([string]$msg) {
 
 if (-not (Test-SzaTicketId $Id)) { Reject "Invalid -Id '$Id' (must match $(Get-SzaTicketIdDisplay))" }
 if ($StatusOnly -and $PostStatus) { Reject '-StatusOnly and -PostStatus are mutually exclusive.' }
+if ($Status -eq 'Archived' -and -not $PostStatus -and [string]::IsNullOrWhiteSpace($StatusNote)) {
+    Reject '-Status Archived needs -StatusNote: duplicate of <id>, not needed: <why>, or done in <id>.'
+}
 
 # Cross-process transport form: `pwsh -File` binds only the FIRST element of a multi-element
 # array argument, so callers from another process pass one string holding a JSON ARRAY.
@@ -210,7 +217,7 @@ function Step([string]$label, [scriptblock]$action, [switch]$Fatal) {
 
 Write-Host "close-and-log: $Id -> $Status" -ForegroundColor Yellow
 
-# 1. Status update (close.ps1 stamps closed_at on Verified/Archived; update.ps1 otherwise).
+# 1. Status update (close.ps1 for Verified/Archived; update.ps1 otherwise).
 $useClose = (-not $StatusOnly) -and ($Status -in @('Verified', 'Archived'))
 Step "status" -Fatal {
     if ($PostStatus) {
@@ -221,7 +228,9 @@ Step "status" -Fatal {
     }
     elseif ($useClose) {
         $closePath = Join-Path $PSScriptRoot 'close.ps1'
-        & $pwshExe -File $closePath -Id $Id -Status $Status
+        $closeArgs = @('-File', $closePath, '-Id', $Id, '-Status', $Status)
+        if ($Status -eq 'Archived') { $closeArgs += @('-Reason', $StatusNote) }
+        & $pwshExe @closeArgs
         if ($LASTEXITCODE -ne 0) { throw "close.ps1 exited $LASTEXITCODE" }
     }
     else {

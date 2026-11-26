@@ -110,7 +110,7 @@ explains: INFO naming that step.
      each failure MED. No `og:image:width`, `:height` or `:alt`: LOW; a declared size off the measured one: MED.
    - `og:locale` is `ll_CC` for the page's `lang` from the portfolio's canonical 13-language map
      ([LOCALIZATION.md](../../../rules/LOCALIZATION.md) §3: `en_US`, `ru_RU`, `uk_UA`, `ar_AR`, `bn_BD`, `de_DE`,
-     `es_MX`, `fr_FR`, `hi_IN`, `id_ID`, `pt_BR`, `ur_PK`, `zh_CN`; one exception: a page written in a regional
+     `es_MX`, `fr_FR`, `hi_IN`, `it_IT`, `pt_BR`, `ur_PK`, `zh_CN`; one exception: a page written in a regional
      variety takes that variety's territory, so `epub2html` keeps `pt_PT` for European Portuguese text, while
      `cyrflip` `ar_SA` -> `ar_AR` and `epub2html` `bn_IN` -> `bn_BD` reconcile to the map): another form (`en`) or a
      territory outside the map and exception is LOW, another language MED. A finding shared across products is asked

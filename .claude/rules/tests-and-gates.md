@@ -15,7 +15,10 @@ Moved verbatim from [CLAUDE.md](../../CLAUDE.md) on 2026-11-25. The always-on ru
   (`fast` is 5 s or less, `release` is above), the measured seconds, the date and what it covers. A suite with no row
   is release tier, unmeasured. [tools/tests/run-tier.ps1](../../tools/tests/run-tier.ps1) reads it: `-List` prints every row
   and every unlisted suite, `-Suite <name>` runs one fast suite and refuses any other, `-Tier fast` runs every fast row,
-  and `-Suite <name> -Measure` is the owner-named run that times a suite and writes its row.
+  and `-Suite <name> -Measure` is the owner-named run that times a suite and writes its row, `lastPass` included on a
+  pass. `-Stale` lists the release suites whose test file or covered `paths` changed after `lastPass`, or that have no
+  recorded pass; it runs no suite, and `deploy.ps1 -DryRun` prints it as information. A new release row gets its
+  `paths` by hand.
 - **There is no case filter - "one test" is one file.** Each `tools/tests/*.tests.ps1` is a standalone script that
   prints a PASS or FAIL line per case and exits 1 on any failure; its header comment lists the cases and says what it
   touches (most build throwaway repositories and a throwaway portfolio root, and take `-KeepScratch` to leave them for

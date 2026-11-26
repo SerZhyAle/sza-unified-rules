@@ -24,11 +24,21 @@
 #   Test-PqAgentProbeDue -Hold <hold> -Agent <record> / Get-PqPassAgentMax -Pick <pick> / Get-PqProbeResult
 #       whether the next pass of the agent is the probe of a poll hold; the agent cap of the assignment (1 for a probe,
 #       so two workers never probe at once); and the `agent.probe` result (ok, limit, error) of a pass that was one.
-#   Set-PqAgentHold -Name -Pass -Source -Detector [-Until] / Remove-PqAgentHold -Name
-#       write (until only ever moves forward) or clear holds\<agent>.json.
+#   Set-PqAgentHold -Name -Pass -Source -Detector [-Until] [-ResetSource] [-Record] [-PassThru] / Remove-PqAgentHold -Name
+#       write (until only ever moves forward; a guessed until never past six hours) or clear holds\<agent>.json. With
+#       -PassThru the write answers @{ until; resetSource; started } (started: the hold was not holding before).
+#   Set-PqAgentHoldFromPass -Log -Name -Pass .. / Remove-PqAgentHoldAfterPass -Log -Name ..
+#       the same two, with their events: agent.hold and, once per hold, the start of its agent.fallback; agent.resume
+#       and the end of that fallback (TASK-FLOW 0.50).
+#   Get-PqHoldResetSource -Hold <hold> / Get-PqLogLimitReset -RepoPath -TicketId -Record
+#       where a hold's reset time came from (log or guessed; a hold written before 0.50 reads by its until), and the
+#       same reading of a pass's own log: @{ until; resetSource } or $null.
 #   Select-PqAgent -Registry <registry> -RepoPath <dir> -Level <level>
 #       @{ agent; record; template; fallbacks } for the first agent that passes every test, or with agent $null when
 #       none does. fallbacks lists @{ from; why } (limit, maxParallel, levelNotAllowed, noPipelineForm) for each passed over.
+#   Get-PqRankingFallbacks -Pick <pick>
+#       the pass-overs a ranking records with agent.fallback: every reason but a limit, which is recorded when its
+#       hold starts and ends, never per ranking (TASK-FLOW 0.50).
 #
 # A limit is read only from the provider's own output: Claude's transcript (the repository runner's detector), another
 # provider's pass log by its record's limitDetector pattern. A fast failure with no limit text is an ordinary failed
@@ -49,6 +59,8 @@ $script:PqFastFailureSeconds = 120
 # a grade 0-9 is recognised too; score is the grade (a word reads as 1, 5 or 8; -1 for none), numeric says the line
 # carries a digit, pinned that the owner marked it, spec the spec file's full path ('' when there is none).
 . (Join-Path $PSScriptRoot '..\..\spec_catalog\lib\complexity-grade.ps1')
+# Get-LimitLogTail: the lines of a pass log a limit and its reset time are read from (TASK-FLOW 0.50).
+. (Join-Path $PSScriptRoot '..\..\batch\_limit-tail.ps1')
 function Get-PqTicketLevelInfo {
     param([Parameter(Mandatory)][string]$RepoPath, [Parameter(Mandatory)][string]$TicketId)
     $info = [pscustomobject]@{ id = $TicketId; level = ''; why = 'noLine'; captureDefault = $false; score = -1; numeric = $false; pinned = $false; spec = ''; parallel = $false }
@@ -224,22 +236,55 @@ function Get-PqProbeResult([int]$Limits, [bool]$Killed, [bool]$Failed, [string]$
     return 'ok'
 }
 
+# The longest a guessed hold runs (TASK-FLOW 0.50): six hours from its own writtenAt.
+$script:PqGuessedHoldCapSeconds = 6 * 3600
+
+# Where the reset time of a hold came from (TASK-FLOW 0.50): the record's resetSource, else - a hold written before
+# 0.50 - `log` with a timestamp and `guessed` without one, which is what every such hold was.
+function Get-PqHoldResetSource($Hold) {
+    $source = [string](Get-PqValue $Hold 'resetSource' '')
+    if ($source -ceq 'log' -or $source -ceq 'guessed') { return $source }
+    if (Get-PqValue $Hold 'until') { return 'log' }
+    return 'guessed'
+}
+
 function Set-PqAgentHold {
-    param([Parameter(Mandatory)][string]$Name, [string]$Pass, [string]$Source = 'fastFailure', [string]$Detector = 'unproven', [string]$Until)
+    <#
+    .SYNOPSIS
+        Write the hold of an agent; with -PassThru answer what was written and whether the hold started here.
+    .DESCRIPTION
+        -ResetSource says where -Until came from (TASK-FLOW 0.50): `log`, read from the provider's own message, or
+        `guessed`, whose until is cut to six hours after the moment of writing. A timestamp already on disk that lies
+        further ahead is kept, with its own source. -Record, the agent's record, is read for limitPollMinutes when the
+        hold on disk names no time; without it the shipped default stands.
+    #>
+    param([Parameter(Mandatory)][string]$Name, [string]$Pass, [string]$Source = 'fastFailure', [string]$Detector = 'unproven', [string]$Until,
+        [string]$ResetSource = 'log', $Record = $null, [switch]$PassThru)
     # Resolved before the lock: the lock's body sees Invoke-PqStateLock's own $name, which shadows $Name.
     $file = Get-PqPath -Kind hold -Agent $Name
     $agentName = $Name
-    Invoke-PqStateLock {
+    $result = Invoke-PqStateLock {
         $dir = Split-Path -Parent $file
         if (-not [IO.Directory]::Exists($dir)) { $null = [IO.Directory]::CreateDirectory($dir) }
-        # Rule 48: until only ever moves forward; $null never replaces a timestamp still in the future.
+        $now = [DateTimeOffset]::UtcNow
         $old = Read-PqState $file
+        $wasHeld = Test-PqAgentHeld $old $Record
+        # Rule 48: until only ever moves forward; $null never replaces a timestamp still in the future.
         $oldUntil = Get-PqValue $old 'until'
         $newUntil = if ($Until) { $Until } else { $null }
+        $newSource = if ($ResetSource -ceq 'guessed') { 'guessed' } else { 'log' }
+        if ($newSource -ceq 'guessed' -and $newUntil) {
+            # A guessed time never runs past six hours (TASK-FLOW 0.50).
+            try {
+                $cap = $now.AddSeconds($script:PqGuessedHoldCapSeconds)
+                if ([DateTimeOffset]::Parse($newUntil) -gt $cap) { $newUntil = $cap.ToString('yyyy-MM-ddTHH:mm:ss.fffZ') }
+            }
+            catch { }
+        }
         if ($oldUntil) {
             try {
                 $o = [DateTimeOffset]::Parse([string]$oldUntil)
-                if ($o -gt [DateTimeOffset]::UtcNow -and (-not $newUntil -or [DateTimeOffset]::Parse($newUntil) -lt $o)) { $newUntil = [string]$oldUntil }
+                if ($o -gt $now -and (-not $newUntil -or [DateTimeOffset]::Parse($newUntil) -lt $o)) { $newUntil = [string]$oldUntil; $newSource = (Get-PqHoldResetSource $old) }
             }
             catch { }
         }
@@ -248,13 +293,36 @@ function Set-PqAgentHold {
             until = $newUntil
             source = $Source
             detector = $Detector
-            writtenAt = [DateTimeOffset]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
+            resetSource = $newSource
+            writtenAt = $now.ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
             pass = $Pass
         }
         $tmp = "$file.$PID.tmp"
         [IO.File]::WriteAllText($tmp, ($obj | ConvertTo-Json -Compress), [Text.UTF8Encoding]::new($false))
         [IO.File]::Move($tmp, $file, $true)
+        [pscustomobject]@{ until = $newUntil; resetSource = $newSource; started = (-not $wasHeld) }
     }
+    if ($PassThru) { return $result }
+}
+
+# A hold written for a pass that ended on a limit, with its events (TASK-FLOW 0.50): agent.hold and - only when the
+# hold was not holding before, so two workers meeting one wall write one - the start of its agent.fallback (from the
+# agent, why limit, and no `to`: the agent of the next pass is not known yet). Answers what Set-PqAgentHold -PassThru
+# answers. A worker or a run may be absent; a log that is absent writes no event.
+function Set-PqAgentHoldFromPass {
+    param($Log, [Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][string]$Pass, [string]$Detector = 'unproven', [string]$Until,
+        [string]$ResetSource = 'guessed', $Record = $null, [string]$Run = '', [string]$Repo = '', [string]$Id = '', $Worker = $null)
+    $hold = Set-PqAgentHold -Name $Name -Pass $Pass -Source 'log' -Detector $Detector -Until $Until -ResetSource $ResetSource -Record $Record -PassThru
+    $null = Write-PqEvent -Log $Log -Ev 'agent.hold' -Run $Run -Repo $Repo -Id $Id -Pass $Pass -Worker $Worker -Agent $Name -D ([ordered]@{
+        agent = $Name; until = $hold.until; source = 'log'; detector = $Detector; resetSource = $hold.resetSource
+    })
+    if ($hold.started) {
+        $start = [ordered]@{ from = $Name; repo = $Repo; id = $Id; why = 'limit'; change = 'start' }
+        if ($hold.until) { $start.until = $hold.until }
+        $start.resetSource = $hold.resetSource
+        $null = Write-PqEvent -Log $Log -Ev 'agent.fallback' -Run $Run -Repo $Repo -Id $Id -Pass $Pass -Worker $Worker -Agent $Name -D $start
+    }
+    return $hold
 }
 
 function Remove-PqAgentHold([Parameter(Mandatory)][string]$Name) {
@@ -263,6 +331,25 @@ function Remove-PqAgentHold([Parameter(Mandatory)][string]$Name) {
         if ([IO.File]::Exists($file)) { Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue; return $true }
         return $false
     }
+}
+
+# The hold a finished pass cleared, with its events (TASK-FLOW 0.50): agent.resume and the end of the hold's
+# agent.fallback (from and to the agent, why limit). $true when a hold was removed, $false when there was none.
+# -By owner is the owner's release of a hold (pq agents -Release): it names no pass, so repo and id are absent.
+function Remove-PqAgentHoldAfterPass {
+    param($Log, [Parameter(Mandatory)][string]$Name, [string]$Run = '', [string]$Repo = '', [string]$Id = '', [string]$Pass = '', $Worker = $null,
+        [string]$By = '')
+    $old = Get-PqAgentHold $Name
+    if (-not (Remove-PqAgentHold -Name $Name)) { return $false }
+    $resume = Get-PqHoldResume $old
+    $by = if ($By) { $By } else { [string](Get-PqValue $resume 'by' 'reset') }
+    $null = Write-PqEvent -Log $Log -Ev 'agent.resume' -Run $Run -Repo $Repo -Id $Id -Pass $Pass -Worker $Worker -Agent $Name -D ([ordered]@{
+        agent = $Name; heldFor = (Get-PqValue $resume 'heldFor' 0); by = $by
+    })
+    $end = [ordered]@{ from = $Name; to = $Name; why = 'limit'; change = 'end' }
+    if ($Repo) { $end.repo = $Repo; $end.id = $Id }
+    $null = Write-PqEvent -Log $Log -Ev 'agent.fallback' -Run $Run -Repo $Repo -Id $Id -Pass $Pass -Worker $Worker -Agent $Name -D $end
+    return $true
 }
 
 # Live passes of one agent, from the other workers' state files (this worker is between passes when it asks).
@@ -283,6 +370,16 @@ function Get-PqAgentLiveCount([Parameter(Mandatory)][string]$Name) {
 # stop itself, not a fallback test, so the loop writes no `agent.fallback` for it.
 $script:PqFallbackWhys = @('limit', 'maxParallel', 'levelNotAllowed', 'aboveCeiling', 'noPipelineForm', 'launchFailed')
 function Test-PqFallbackWhy([string]$Why) { return $script:PqFallbackWhys -ccontains $Why }
+
+# The pass-overs a ranking records with agent.fallback (TASK-FLOW 0.50): every reason of the vocabulary but `limit`,
+# each once per ranking because it describes that one pick. A limit is recorded when its hold starts and when it ends
+# (Set-PqAgentHoldFromPass, Remove-PqAgentHoldAfterPass), never per ranking.
+function Get-PqRankingFallbacks($Pick) {
+    return @(@(Get-PqValue $Pick 'fallbacks' @()) | Where-Object {
+        $why = [string](Get-PqValue $_ 'why' '')
+        (Test-PqFallbackWhy $why) -and $why -cne 'limit'
+    })
+}
 
 # The grade a ticket is chosen at (TASK-FLOW 0.32 item C): its own grade, else the grade of its level word, else 5.
 function Get-PqSelectScore([int]$Score, [string]$Level) {
@@ -548,7 +645,7 @@ function ConvertTo-PqLimitZone {
 }
 
 # The dated form of a limit that lifts on another day (Codex's weekly limit): "try again at Nov 19th, 2026 11:35 PM".
-# The caller hands over a whole pass log, and a log quotes limit texts (source lines, test fixtures), so the form counts
+# The caller hands over the end of a pass log, and a log quotes limit texts (source lines, test fixtures), so the form counts
 # only when it is the LAST limit-shaped text of the log - the real message ends it - and only when the time lies within
 # eight days: a quoted fixture from another year must not park a provider. Anything else returns $null, and the clock
 # and span forms are tried as before.
@@ -573,7 +670,7 @@ function Get-PqDatedLimitTime {
 
 # The span form of a limit text, a time counted from now: agy's quota error ("Resets in 57h10m24s") and the Antigravity
 # Models & Usage line ("it will fully refresh in 4 days, 6 hours"). The units are days, hours, minutes and seconds in that
-# order, each optional, set apart by spaces, commas or "and". The caller hands over a whole pass log and a log quotes limit
+# order, each optional, set apart by spaces, commas or "and". The caller hands over the end of a pass log and a log quotes limit
 # texts (source lines, test fixtures, this function's own comment), so the LAST span-shaped text counts - the real message
 # ends the log - and a text that names no number ("resets in the morning") is no span at all. A span coarser than the
 # minute (days and hours only) is read as given: the hold may lift up to a unit early, and the next real pass that meets
@@ -599,11 +696,16 @@ function Get-PqSpanLimitTime {
 # call, against 7 h 20 min if it were Kyiv time and 9 h 20 min if UTC, for a five hour window); empty reads it as this
 # machine's local time. The result is the ISO UTC time the machine-wide hold takes (a minute's margin past it), or $null
 # when the text names no time or names one already past.
-function ConvertFrom-PqLimitText {
+#
+# TASK-FLOW 0.50: ConvertFrom-PqLimitTextSource is the same reading with its provenance, @{ at; source }. `source` is
+# `log` when the message names the moment in full - a day with a clock time, a clock time in UTC with its day, or a
+# span counted from now - and `guessed` when the reader picked the day of a clock time that names none.
+function ConvertFrom-PqLimitTextSource {
     param([string]$Text, [string]$Offset = '', [DateTimeOffset]$Now = [DateTimeOffset]::UtcNow)
     if ([string]::IsNullOrWhiteSpace($Text)) { return $null }
     $at = $null
-    # The caller hands over a whole pass log, and a log quotes limit texts (source lines, test fixtures): the real
+    $source = 'log'
+    # The caller hands over the end of a pass log, and a log quotes limit texts (source lines, test fixtures): the real
     # message ends it, so within one form the LAST match counts, never the first. Across forms the order stands
     # as it was - ISO time, dated time, clock time, span - and the span form reads its last match too.
     $isoAll = [regex]::Matches($Text, '(?i)reset(?:s)?\s+(?:at|on)\s+(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}(?::\d{2})?)')
@@ -644,6 +746,8 @@ function ConvertFrom-PqLimitText {
                     $candidate = $candidate.AddDays(1)
                 }
                 $at = $candidate
+                # A clock time without a day: the reader picks the day, so the time is a guess (TASK-FLOW 0.50).
+                $source = 'guessed'
             }
         }
         else {
@@ -653,7 +757,15 @@ function ConvertFrom-PqLimitText {
     if ($null -eq $at) { return $null }
     $at = $at.AddSeconds(60)
     if ($at -le $Now) { return $null }
-    return $at.UtcDateTime.ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
+    return @{ at = $at.UtcDateTime.ToString('yyyy-MM-ddTHH:mm:ss.fffZ'); source = $source }
+}
+
+# The time alone, as the callers before TASK-FLOW 0.50 read it.
+function ConvertFrom-PqLimitText {
+    param([string]$Text, [string]$Offset = '', [DateTimeOffset]$Now = [DateTimeOffset]::UtcNow)
+    $read = ConvertFrom-PqLimitTextSource -Text $Text -Offset $Offset -Now $Now
+    if ($null -eq $read) { return $null }
+    return $read.at
 }
 
 # S0035: When the primary provider in agentOrder is held with a reset time <= 15 minutes away,
@@ -688,8 +800,18 @@ function Get-PqPrimaryResetWait {
 }
 
 # The reset time in the pass's own log (<runs folder>\<ticket>.<agent>.log or <ticket>.log, written because a record with a limit pattern runs the
-# runner -Quiet): for the providers whose limit the runner could not time (resetsAt null). $null when there is none.
+# runner -Quiet): for the providers whose limit the runner could not time (resetsAt null). Only the last 40 lines are
+# read, as the detector reads them (TASK-FLOW 0.50). $null when there is none.
 function Get-PqLogLimitUntil {
+    param([Parameter(Mandatory)][string]$RepoPath, [Parameter(Mandatory)][string]$TicketId, $Record)
+    $read = Get-PqLogLimitReset -RepoPath $RepoPath -TicketId $TicketId -Record $Record
+    if ($null -eq $read) { return $null }
+    return (Get-PqValue $read 'until')
+}
+
+# The same time with where it came from (TASK-FLOW 0.50): @{ until; resetSource } - resetSource is `log` or `guessed`,
+# as ConvertFrom-PqLimitTextSource reads it - or $null when the log is missing or names no time.
+function Get-PqLogLimitReset {
     param([Parameter(Mandatory)][string]$RepoPath, [Parameter(Mandatory)][string]$TicketId, $Record)
     try {
         $paths = Get-PqRepoPaths -RepoPath $RepoPath
@@ -700,7 +822,9 @@ function Get-PqLogLimitUntil {
         }
         if (-not [IO.File]::Exists($file)) { return $null }
         $offset = [string](Get-PqValue (Get-PqValue $Record 'limitDetector') 'resetOffset' '')
-        return (ConvertFrom-PqLimitText -Text ([IO.File]::ReadAllText($file)) -Offset $offset)
+        $read = ConvertFrom-PqLimitTextSource -Text (Get-LimitLogTail ([IO.File]::ReadAllText($file))) -Offset $offset
+        if ($null -eq $read) { return $null }
+        return [ordered]@{ until = $read.at; resetSource = $read.source }
     }
     catch { return $null }
 }

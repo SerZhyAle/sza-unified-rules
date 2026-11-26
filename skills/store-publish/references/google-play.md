@@ -341,6 +341,14 @@ watch face. The `release` skill supplies the release spine and pre-flight. Apply
 including the 0.4 amendment (section 8). Use the API for signed AAB transfer after the checks below. Use Play Console
 for app setup, App content declarations and the review or publication actions the release requires.
 
+**One release train, one review submission.** The phone bundle, the Wear bundle and the listing changes of one release go
+together: one edit and one successful commit per application id, so Google opens one review for that batch. Never send a
+second submission for the same application id in the same train - each one restarts the review, and the previous release
+waited 11 days for it. The commit guard in step 6 refuses a commit while a review is open; this rule keeps a train from
+ever needing that refusal. A watch face with its own application id is a separate app with its own edit and review, so it
+is committed in the same work session, right after the other members of the train, and never held back for a later
+release.
+
 1. **Bind the release.** The owner must have ordered this exact release. Require a written pre-flight PASS for the
    version and each artifact, the frozen application id and upload signer, monotonic version codes, no reach regression,
    the current target-API requirements, and the applicable `GOOGLE-PLAY` checks. Identify the exact signed AAB and

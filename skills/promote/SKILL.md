@@ -88,9 +88,8 @@ go ledger (PROMOTION §8 item 8).
 
 ## Step 5 - Record and report
 
-- Append one dated line to the repo's history file (`rules/contrib/history/<project>.md`; when it is absent,
-  create it with the first line `# History: <project>`): the ticket id and its state. That file and the facts
-  record beside it are the only canon files a project session may touch.
+- Write one line into the repo's facts record (`rules/contrib/<project>.md`) in place: the campaign ticket id
+  and its state. That record is the only canon file a project session may touch.
 - Report to the owner: the ticket path, the baseline numbers, the decisions the ticket needs from the owner, and
   the first A·GO steps that would run after a go.
 

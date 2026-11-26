@@ -25,6 +25,9 @@
          any folder; a ticket-shaped word nobody claims is refused.
      12. A mistyped id with a slug (three digits, a letter for a digit) is refused, never an idea; an underscore word whose
          id part holds no digit stays an idea.
+     13. Wrapping and near forms of a bare id (CANONR-0224): quotes, a quote glued to a path, a trailing comma are dropped;
+         a bare id with a lost digit or a letter for a digit, under a known id prefix, is refused naming the ticket; v2,
+         bug1 and mp3 stay ideas.
 #>
 [CmdletBinding()]
 param([switch] $KeepScratch)
@@ -238,6 +241,22 @@ try {
         }
     }
 
+    Run-Case '13. wrapping is dropped; a bare id with a mistyped number is refused with the ticket it means; words stay ideas' {
+        foreach ($arg in '"DELTA-0009_delta-nine"', 'DELTA-0009,', 'Z:\x\PLAN\DONE\DELTA-0009_delta-nine.md"', '"Z:\x\PLAN\DELTA-0009_delta-nine.md"', "'S0030';") {
+            $r = Resolve-It $arg
+            Assert-That ($r.code -eq 0 -and $r.kind -in @('ticket', 'local-id') -and $r.id -in @('DELTA-0009', 'S0030')) "$arg, got $($r | ConvertTo-Json -Compress)"
+        }
+        foreach ($arg in 'DELTA-009', 'DELTA-OO09', 'delta-9') {
+            $r = Resolve-It $arg
+            Assert-That ($r.code -eq 2 -and $r.kind -eq 'refused' -and $r.project -eq 'delta' -and $r.reason -like '*did you mean DELTA-0009*') "$arg, got $($r | ConvertTo-Json -Compress)"
+        }
+        $r = Resolve-It 'S030'
+        Assert-That ($r.code -eq 2 -and $r.kind -eq 'refused' -and $r.reason -like '*did you mean S0030*') "S030, got $($r | ConvertTo-Json -Compress)"
+        foreach ($arg in 'v2', 'bug1', 'mp3', 'S3', 'fix the "rotate" crash,') {
+            $r = Resolve-It $arg
+            Assert-That ($r.code -eq 0 -and $r.kind -eq 'idea') "$arg, got $($r | ConvertTo-Json -Compress)"
+        }
+    }
     $sw.Stop()
     Write-Host ("`n{0} cases, {1} passed, {2} failed, {3:N1} s" -f $run, $passed, $failed, $sw.Elapsed.TotalSeconds)
 }

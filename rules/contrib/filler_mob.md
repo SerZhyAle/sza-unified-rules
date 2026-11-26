@@ -11,11 +11,10 @@ Filler for Android: the local-storage Filler of FastMediaSorter (upstream ticket
 
 Public presence since 2026-11-13: a public GitHub repository, a GitHub Pages privacy site and a Google Play Console app, all created on the owner's order; nothing is published on Google Play. The product's one channel is Google Play, with the phone app and the watch app under one application id and one listing.
 
-> **Keep this note in the record.** Current facts, edited in place. Never append a dated section to this file:
-> what happened and when goes to the file of the same name under `history/`
-> ([the rules of that folder](history/README.md)), which is not reading for a task. A delta the core absorbed,
-> a candidate that was applied or refused and a question that was answered are deleted here; the history
-> section of that day says what became of them.
+> **Keep this note in the record.** Current facts, edited in place. Never append a dated section to this file,
+> and append nothing under `history/` either: those files are frozen ([the rules of that folder](history/README.md))
+> and are not reading for a task. A delta the core absorbed, a candidate that was applied or refused and a
+> question that was answered are deleted here.
 
 ## Overlay facts (verified against this repo, 2026-11-10; refreshed 2026-11-13 where marked)
 

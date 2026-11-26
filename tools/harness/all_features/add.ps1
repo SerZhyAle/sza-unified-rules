@@ -43,8 +43,11 @@ param(
     [Parameter(Mandatory = $false, ParameterSetName = 'Add')] [ValidateSet("active", "removed")] [string]$Status = "active",
     [Parameter(Mandatory = $true, ParameterSetName = 'List')] [switch]$ListAreas,
     [switch]$NoLegal,
-    [switch]$Quiet
+    [switch]$Quiet,
+    [Parameter(Mandatory, ParameterSetName = 'Help')][switch]$Help
 )
+
+if ($Help) { . (Join-Path $PSScriptRoot '../_help.ps1'); Show-SzaHelp $PSCommandPath; exit 0 }
 
 . (Join-Path $PSScriptRoot '..\_profile.ps1')
 

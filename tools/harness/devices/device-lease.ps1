@@ -57,15 +57,18 @@
     reached); 3 claim lost - a live foreign session holds a requested target; 4 release refused - a live foreign
     session owns a requested lease.
 #>
-[CmdletBinding()]
+[CmdletBinding(DefaultParameterSetName = 'Run')]
 param(
-    [Parameter(Mandatory)][ValidateSet('Claim', 'Release', 'List', 'Status', 'Sweep')][string]$Verb,
-    [string[]]$Id,
+    [Parameter(Position = 0, Mandatory, ParameterSetName = 'Run')][Parameter(ParameterSetName = 'Help')][ValidateSet('Claim', 'Release', 'List', 'Status', 'Sweep')][string]$Verb,
+    [Parameter(Position = 1)][string[]]$Id,
     [switch]$Any,
     [switch]$All,
-    [string]$Reason = 'device-lease',
-    [switch]$Json
+    [Parameter(Position = 2)][string]$Reason = 'device-lease',
+    [switch]$Json,
+    [Parameter(Mandatory, ParameterSetName = 'Help')][switch]$Help
 )
+
+if ($Help) { . (Join-Path $PSScriptRoot '../_help.ps1'); Show-SzaHelp $PSCommandPath; exit 0 }
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 

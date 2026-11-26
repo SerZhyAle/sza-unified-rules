@@ -7,8 +7,13 @@
       -List [-Tier fast]      every row and every unlisted suite (or one tier, with the sum of its seconds)
       -Tier fast              runs every fast row, one line per suite
       -Suite <name>           runs one fast suite; refuses a release-tier or unmeasured one
-      -Suite <name> -Measure  the owner-named run: runs any suite, times it, writes seconds, date and tier
-      -Registry <file>        another registry file (a scratch copy); suites still come from this checkout
+      -Suite <name> -Measure  the owner-named run: runs any suite, times it, writes seconds, date, tier and, on a pass,
+                              lastPass
+      -Stale                  release suites whose test file or covered paths (the row's `paths`) changed after
+                              lastPass, or that have no recorded pass; reads git and file times, writes nothing, runs
+                              no suite; information only, exit 0
+      -Registry <file>        another registry file (a scratch copy)
+      -Root <dir>             another checkout to take suites and history from (fixtures); needs -Registry
 
     Exit codes: 0 pass, 1 a suite failed or a row is wrong, 2 refused or could not run.
 #>
@@ -18,13 +23,17 @@ param(
     [ValidateSet('fast', 'release')][string] $Tier,
     [string] $Suite,
     [switch] $Measure,
-    [string] $Registry
+    [switch] $Stale,
+    [string] $Registry,
+    [string] $Root
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $inv = [cultureinfo]::InvariantCulture
-$root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
+# $Root and $root are one variable (names are case-insensitive): the parameter, or else this checkout.
+if ($Root -and -not $Registry) { Write-Host 'run-tier: COULD NOT RUN - -Root needs -Registry <file>'; exit 2 }
+$root = [IO.Path]::GetFullPath($(if ($Root) { $Root } else { Join-Path $PSScriptRoot '..\..' }))
 if (-not $Registry) { $Registry = Join-Path $PSScriptRoot 'tiers.json' }
 if (-not (Test-Path -LiteralPath $Registry)) { Write-Host "run-tier: COULD NOT RUN - registry not found: $Registry"; exit 2 }
 $Registry = (Resolve-Path -LiteralPath $Registry).Path
@@ -69,6 +78,60 @@ function Save-Registry {
     [IO.File]::WriteAllText($Registry, (($text -join "`n") + "`n"), [Text.UTF8Encoding]::new($false))
 }
 
+function Get-RowValue($Row, [string] $Name) { $p = $Row.PSObject.Properties[$Name]; if ($p) { $p.Value } }
+
+function Read-Git([string[]] $GitArgs) {
+    $out = @(& git --no-optional-locks -C $root -c core.quotepath=false @GitArgs 2>$null)
+    if ($LASTEXITCODE -ne 0) { throw "git $($GitArgs[0]) failed (exit $LASTEXITCODE)" }
+    $out | Where-Object { $_ }
+}
+
+# The newest day (yyyy-MM-dd, local) any of the paths changed: the last commit that touched them, or the file time of
+# an edit not committed yet (robots run this checkout as it is on disk). A file deleted and not committed counts as today.
+function Get-ChangeDay([string[]] $Paths) {
+    $days = [Collections.Generic.List[string]]::new()
+    foreach ($stamp in @(Read-Git (@('log', '-1', '--format=%cI', '--') + $Paths))) {
+        $days.Add([datetimeoffset]::Parse($stamp, $inv).ToLocalTime().ToString('yyyy-MM-dd', $inv))
+    }
+    $dirty = @(Read-Git (@('diff', '--name-only', '--no-renames', 'HEAD', '--') + $Paths)) +
+    @(Read-Git (@('ls-files', '--others', '--exclude-standard', '--') + $Paths))
+    foreach ($file in $dirty) {
+        $full = Join-Path $root $file
+        $at = if (Test-Path -LiteralPath $full -PathType Leaf) { (Get-Item -LiteralPath $full -Force).LastWriteTime } else { Get-Date }
+        $days.Add($at.ToString('yyyy-MM-dd', $inv))
+    }
+    $days | Sort-Object | Select-Object -Last 1
+}
+
+# One object per stale release suite. Days are compared, so a change on the day of the pass is not reported.
+function Get-StaleSuites {
+    foreach ($r in @($rows | Where-Object { $_.tier -eq 'release' })) {
+        $passed = [string](Get-RowValue $r 'lastPass')
+        $paths = @($r.path) + @(Get-RowValue $r 'paths' | Where-Object { $_ })
+        $missing = @($paths | Where-Object { -not (Test-Path -LiteralPath (Join-Path $root $_)) })
+        $why = if ($missing) { "listed path missing: $($missing -join ', ')" }
+        elseif (-not $passed) { 'no recorded pass' }
+        else {
+            $changed = Get-ChangeDay $paths
+            if ($changed -and [string]::CompareOrdinal($changed, $passed) -gt 0) { "last pass $passed, changed $changed" }
+        }
+        if (-not $why) { continue }
+        if ($paths.Count -eq 1) { $why += ' (the row lists no covered paths)' }
+        [pscustomobject]@{ path = $r.path; why = $why }
+    }
+    foreach ($p in $unlisted) { [pscustomobject]@{ path = $p; why = 'no recorded pass (no registry row)' } }
+}
+
+if ($Stale) {
+    if ($Suite -or $Measure -or $Tier -or $List) { Write-Host 'run-tier: COULD NOT RUN - -Stale takes only -Registry and -Root'; exit 2 }
+    try { $behind = @(Get-StaleSuites) }
+    catch { Write-Host "run-tier: COULD NOT RUN - $($_.Exception.Message)"; exit 2 }
+    foreach ($s in $behind) { Write-Host "STALE  $($s.path) - $($s.why)" }
+    $all = @($rows | Where-Object { $_.tier -eq 'release' }).Count + $unlisted.Count
+    Write-Host "run-tier: $($behind.Count) of $all release suites stale (information; a suite runs only when the owner names it: -Suite <name> -Measure)"
+    exit 0
+}
+
 if ($Measure -and -not $Suite) { Write-Host 'run-tier: COULD NOT RUN - -Measure needs -Suite <name>'; exit 2 }
 
 if ($Suite) {
@@ -89,10 +152,13 @@ if ($Suite) {
     if ($Measure) {
         $newTier = if ($res.seconds -le $line) { 'fast' } else { 'release' }
         $today = (Get-Date).ToString('yyyy-MM-dd', $inv)
-        if ($row) { $row.tier = $newTier; $row.seconds = $res.seconds; $row.measured = $today }
-        else { $rows.Add([pscustomobject][ordered]@{ path = $path; tier = $newTier; seconds = $res.seconds; measured = $today; covers = '' }) }
+        if ($row) {
+            $row.tier = $newTier; $row.seconds = $res.seconds; $row.measured = $today
+            $row | Add-Member -NotePropertyName lastPass -NotePropertyValue $today -Force
+        }
+        else { $rows.Add([pscustomobject][ordered]@{ path = $path; tier = $newTier; seconds = $res.seconds; measured = $today; lastPass = $today; covers = '' }) }
         Save-Registry
-        Write-Host "run-tier: recorded $path - $newTier, $(Format-Sec $res.seconds) s, $today$(if (-not $row) { ' (new row: fill its covers text by hand)' })"
+        Write-Host "run-tier: recorded $path - $newTier, $(Format-Sec $res.seconds) s, $today$(if (-not $row) { ' (new row: fill its covers text, and paths for a release suite, by hand)' })"
     }
     Write-Host "run-tier: PASS  $(Format-Sec $res.seconds) s  $path"
     exit 0

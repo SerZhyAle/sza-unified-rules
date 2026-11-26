@@ -73,24 +73,24 @@
 #    file is per session now, so there is no foreign owner to refuse. Not reused, so an old
 #    caller still testing for 4 reads a code this script can no longer return.)
 
-[CmdletBinding()]
+[CmdletBinding(DefaultParameterSetName = 'Run')]
 param(
-    [Parameter(Mandatory = $true)]
+    [Parameter(Position = 0, Mandatory = $true, ParameterSetName = 'Run')][Parameter(ParameterSetName = 'Help')]
     [ValidateSet('Init', 'Record', 'Device', 'CheckContext', 'Resume', 'Report', 'Handoff')]
     [string]$Verb,
 
-    [string]$Id,
+    [Parameter(Position = 1)][string]$Id,
 
-    [ValidateSet('advanced', 'verified', 'blocked', 'skipped')]
+    [Parameter(Position = 2)][ValidateSet('advanced', 'verified', 'blocked', 'skipped')]
     [string]$Outcome,
 
-    [string]$Note = '',
+    [Parameter(Position = 3)][string]$Note = '',
 
-    [string]$Online,
+    [Parameter(Position = 4)][string]$Online,
 
-    [string]$SelectedDevice,
+    [Parameter(Position = 5)][string]$SelectedDevice,
 
-    [int]$Threshold = 300000,
+    [Parameter(Position = 6)][int]$Threshold = 300000,
 
     # Deprecated since S1437, accepted as a no-op: the state file is per session, so there is
     # nothing to take over. Kept so a stored command line carrying it does not fail on an
@@ -100,8 +100,11 @@ param(
     # How long an owner's last sign of life may be before it counts as gone. Deliberately
     # generous: a session waiting on a release build writes nothing to its transcript for
     # tens of minutes, and a false "dead" verdict re-creates the very wipe this guards.
-    [int]$StaleMinutes = 45
+    [Parameter(Position = 7)][int]$StaleMinutes = 45,
+    [Parameter(Mandatory, ParameterSetName = 'Help')][switch]$Help
 )
+
+if ($Help) { . (Join-Path $PSScriptRoot '../_help.ps1'); Show-SzaHelp $PSCommandPath; exit 0 }
 
 . (Join-Path $PSScriptRoot '..\_profile.ps1')
 

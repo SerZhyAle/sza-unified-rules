@@ -74,8 +74,11 @@ param(
     [string]$Desktop,
     [string]$RootDir,
     [switch]$Remove,
-    [switch]$DryRun
+    [switch]$DryRun,
+    [switch]$Help
 )
+
+if ($Help) { . (Join-Path $PSScriptRoot '../_help.ps1'); Show-SzaHelp $PSCommandPath; exit 0 }
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'

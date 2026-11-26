@@ -99,7 +99,7 @@ went unprotected. Now [`hooks/`](hooks/README.md) carries them:
 | Hook | Event | Verdict | On what |
 | --- | --- | --- | --- |
 | `session-start` | `SessionStart` | injects | the hard invariants (adopting repos only) |
-| `guard-bash` | `PreToolUse` Bash | refuses | five things Bash on Windows cannot run - a `find` with no depth bound, a `.ps1` or a `Verb-Noun` cmdlet in command-head position, an interpreter that resolves nowhere, the `& { .. }` idiom - plus the slash argument MSYS corrupts silently |
+| `guard-bash` | `PreToolUse` Bash | refuses | five things Bash on Windows cannot run - a `find` that is disk-wide or unbounded outside the project, a `.ps1` or a `Verb-Noun` cmdlet in command-head position, an interpreter that resolves nowhere, the `& { .. }` idiom - plus the slash argument MSYS corrupts silently and a heredoc body over 15 lines |
 | `guard-fire-and-forget` | `PreToolUse` Bash | refuses | backgrounding a gate, a closure facade or a catalog mutator - a verdict nobody waits for |
 | `guard-uncapped-read` | `PreToolUse` Read | rewrites | an uncapped read of a file over 500 lines: windowed, with a notice saying so |
 | `on-user-prompt` | `UserPromptSubmit` | warns, nudges | context past 250k/400k; a micro-task reaching for the full pipeline |
@@ -165,9 +165,8 @@ CANON_VERSION       the monotonic version the stamp records
 
 - Rule fixes land **here first**, then spread to repos - never the other way round.
 - Run `pwsh -File tools/check-rules.ps1` (exit 0 required) before committing under `rules/` or `skills/`.
-- A project's own record lives in [`rules/contrib/`](rules/contrib/) - a facts file and, under `history/`, its
-  dated history - and those two are the only files a project session may edit here. Anything else a project
-  session needs changed here goes in as a ticket in the canon (`spec-draft.ps1 -Project canon`), for a canon
-  session to consider.
+- A project's own facts record lives in [`rules/contrib/`](rules/contrib/) and is the only file a project
+  session may edit here. Anything else a project session needs changed here goes in as a ticket in the canon
+  (`spec-draft.ps1 -Project canon`), for a canon session to consider.
 - `deploy.ps1` raises `CANON_VERSION` and the plugin version for you, through
   [`tools/bump-canon-version.ps1`](tools/bump-canon-version.ps1) - do not write either by hand.

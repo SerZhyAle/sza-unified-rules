@@ -86,6 +86,10 @@ function Get-SpecText([string]$Project, [string]$Id) {
     Get-Content -LiteralPath (Join-Path $Project $row.file) -Raw
 }
 function Get-HeaderStatus([string]$Text) { [regex]::Match($Text, '(?m)^\*\*Status:\*\*\s*(.+?)\s*$').Groups[1].Value }
+# A view the ledger renders (TASK-FLOW 0.52): the finished content or the shipment history.
+function Get-PlanView([string]$Project, [ValidateSet('Ready', 'Done')][string]$Side) {
+    return (@((Assert-Tool $Project 'spec_catalog/release-queue.ps1' @('-Show', $Side)).output) -join "`n")
+}
 
 function New-Project([string]$Name, [string[]]$Slugs = @('one', 'two', 'three')) {
     $root = Join-Path $scratch $Name
@@ -155,12 +159,12 @@ try {
 
     Test-Case 'rules 2 and 11: an id an archived or a burned ticket spent is never allocated again, and validate accounts for the hole' {
         $p = New-Project 'a-burned' @('keep', 'archived')
-        Assert-Tool $p 'spec_catalog/archive.ps1' @('-Id', 'S0002') | Out-Null
+        Assert-Tool $p 'spec_catalog/archive.ps1' @('-Id', 'S0002', '-Reason', 'not needed: fixture') | Out-Null
         Assert-That ((Assert-Tool $p 'spec_catalog/next-id.ps1').output -eq 'S0003') 'the archive did not count toward the next id'
         # The one removal the contract allows is a test fixture: a probe the harness itself wrote.
         Assert-Tool $p 'spec_catalog/capture-draft.ps1' @('-Slug', 'preview-tests-probe-x', '-Text', 'probe') | Out-Null
         Assert-That ((Get-Row $p 'S0003').name -eq 'preview-tests-probe-x') 'the probe did not get S0003'
-        Assert-Tool $p 'spec_catalog/delete.ps1' @('-Id', 'S0003', '-Confirm') | Out-Null
+        Assert-Tool $p 'spec_catalog/delete.ps1' @('-Id', 'S0003', '-Confirm', '-Reason', 'not needed: probe') | Out-Null
         Assert-Tool $p 'spec_catalog/purge-probe-records.ps1' | Out-Null
         # delete.ps1 is a soft delete and purge removes only the record; the probe's own file is the fixture's to remove.
         Remove-Item -LiteralPath (Join-Path $p 'PLAN/S0003_preview-tests-probe-x.md')
@@ -201,7 +205,7 @@ try {
         Assert-Tool $p 'spec_catalog/validate.ps1' | Out-Null
         Move-Ticket $p 'S0001' 'Approved'
         Assert-That ((Get-Content $ledger -Raw) -match '"zz_custom":\{"k":1\}') 'update dropped the unknown field'
-        Assert-Tool $p 'spec_catalog/archive.ps1' @('-Id', 'S0001') | Out-Null
+        Assert-Tool $p 'spec_catalog/archive.ps1' @('-Id', 'S0001', '-Reason', 'not needed: fixture') | Out-Null
         Assert-That ((Get-Content (Join-Path $p 'PLAN/spec-catalog-archive.jsonl') -Raw) -match '"zz_custom":\{"k":1\}') 'archive dropped the unknown field'
     }
 
@@ -279,7 +283,7 @@ try {
         Move-Ticket $p 'S0010' 'Verified'
         $reached = @()
         foreach ($row in (Get-Ledger $p)) {
-            Assert-Tool $p 'spec_catalog/archive.ps1' @('-Id', $row.id) | Out-Null
+            Assert-Tool $p 'spec_catalog/archive.ps1' @('-Id', $row.id, '-Reason', 'not needed: fixture') | Out-Null
             $reached += $row.status
         }
         Assert-That (@(Get-Ledger $p).Count -eq 0) 'a ticket stayed in the ledger'
@@ -488,7 +492,7 @@ try {
         Assert-Tool $p 'spec_catalog/release-queue.ps1' @('-Reconcile') | Out-Null
         Assert-That ([regex]::Match((Get-Content $queue -Raw), '(?m)^S0002_\S+\s+(\d\d-\d\d-\d\d \d\d:\d\d)').Groups[1].Value -eq $stamp) 'a text edit moved the changed time'
         # A missing plan file is a no-op, not an error.
-        Remove-Item -LiteralPath (Join-Path $p 'PLAN/RELEASE_QUEUE.md'), (Join-Path $p 'PLAN/RELEASE_READY.md')
+        Remove-Item -LiteralPath (Join-Path $p 'PLAN/RELEASE_QUEUE.md')
         Move-Ticket $p 'S0001' 'Approved'
         Assert-That (-not (Test-Path (Join-Path $p 'PLAN/RELEASE_QUEUE.md'))) 'a ledger write re-created a plan file the project had removed'
         # .. and the write says so, once, naming the file (S0102).
@@ -497,48 +501,46 @@ try {
         Assert-That ($said.Count -eq 1) "a ledger write over a missing plan file printed $($said.Count) notice line(s), expected 1: $($r.output)"
     }
 
-    Test-Case 'rule 16: crossing into Implemented moves the row to the ready file and reopening moves it back' {
+    Test-Case 'rule 16: crossing into Implemented moves the row to the finished side and reopening moves it back' {
         $p = New-Project 'b-ready' @('one', 'two')
         $queue = Join-Path $p 'PLAN/RELEASE_QUEUE.md'
-        $ready = Join-Path $p 'PLAN/RELEASE_READY.md'
         Move-Ticket $p 'S0001' 'Implemented'
-        Assert-That ((Get-Content $ready -Raw) -match '(?m)^S0001_\S+\s+.*Implemented') 'the row did not reach the ready file'
+        Assert-That ((Get-PlanView $p 'Ready') -match '(?m)^S0001_\S+\s+.*Implemented') 'the row did not reach the finished side'
         Assert-That ((Get-Content $queue -Raw) -notmatch 'S0001_') 'the row stayed in the queue file'
         Move-Ticket $p 'S0001' 'In Progress'
         Assert-That ((Get-Content $queue -Raw) -match '(?m)^S0001_\S+\s+.*In Progress') 'a reopened ticket did not return to the queue'
-        Assert-That ((Get-Content $ready -Raw) -notmatch 'S0001_') 'a reopened ticket stayed in the ready file'
+        Assert-That ((Get-PlanView $p 'Ready') -notmatch 'S0001_') 'a reopened ticket stayed on the finished side'
         Move-Ticket $p 'S0001' 'BlockExternal' 'vendor'
         Assert-That ((Get-Content $queue -Raw) -match '(?m)^S0001_\S+\s+.*BlockExternal') 'a Block* ticket is not planned around in the queue file'
     }
 
-    Test-Case 'rule 16: the ship step moves the ready block to the done file, advances the marker and reports unfinished rows without moving them; the archive sweep comes last' {
+    Test-Case 'rule 16: the ship step records the finished block as a shipment, advances the marker and reports unfinished rows without moving them; the archive sweep comes last' {
         $p = New-Project 'b-ship' @('one', 'two')
         Move-Ticket $p 'S0001' 'Implemented'
         $queue = Join-Path $p 'PLAN/RELEASE_QUEUE.md'
         $r = Assert-Tool $p 'spec_catalog/release-queue.ps1' @('-Ship', '-Release', '1', '-Version', '1.0.0')
         Assert-That ($r.output -match 'WARNING.*1 unfinished ticket') "the unfinished S0002 was not reported: $($r.output)"
-        Assert-That ((Get-Content (Join-Path $p 'PLAN/RELEASE_QUEUE_DONE.md') -Raw) -match 'S0001_') 'the shipped block is not in the done file'
-        Assert-That ((Get-Content (Join-Path $p 'PLAN/RELEASE_READY.md') -Raw) -notmatch 'S0001_') 'the shipped row is still in the ready file'
+        Assert-That ((Get-PlanView $p 'Done') -match 'S0001_') 'the shipment is not in the shipped view'
+        Assert-That ((Get-PlanView $p 'Ready') -notmatch 'S0001_') 'the shipped row is still on the finished side'
         Assert-That ((Get-Content $queue -Raw) -match '(?m)^current-next-release:\s*2\s*$') 'the marker did not advance to 2'
         Assert-That ((Get-Content $queue -Raw) -match '(?m)^S0002_') 'the unfinished row was moved out of the queue'
         # Only now does archiving run, and it drops the rows but not what shipped.
-        Assert-Tool $p 'spec_catalog/archive.ps1' @('-Id', 'S0001') | Out-Null
-        Assert-That ((Get-Content (Join-Path $p 'PLAN/RELEASE_QUEUE_DONE.md') -Raw) -match 'S0001_') 'archiving lost the record of what shipped'
+        Assert-Tool $p 'spec_catalog/archive.ps1' @('-Id', 'S0001', '-Reason', 'shipped in v1.0.0 (release 1)') | Out-Null
+        Assert-That ((Get-PlanView $p 'Done') -match 'S0001_') 'archiving lost the record of what shipped'
     }
 
     Test-Case 'rule 16: ship-package ships every numbered ready block up to the marker, moves the marker on and archives only the shipped Verified rows' {
         $p = New-Project 'b-shippkg' @('one', 'two', 'three')
         $queue = Join-Path $p 'PLAN/RELEASE_QUEUE.md'
-        $done = Join-Path $p 'PLAN/RELEASE_QUEUE_DONE.md'
         Add-Content (Join-Path $p (Get-Row $p 'S0001').file) "`n## Last Audit`n`nChecked by hand for the fixture: the result covers the task.`n`n- ``fixture check`` - exit 0`n"
         Move-Ticket $p 'S0001' 'Verified'
         Move-Ticket $p 'S0002' 'Implemented'
         $dry = Assert-Tool $p 'spec_catalog/ship-package.ps1' @('-Version', '1.0.0', '-DryRun')
         Assert-That ($dry.output -match 'would archive 1 Verified ticket\(s\): S0001') "the dry run did not name S0001: $($dry.output)"
-        Assert-That ((Get-Content (Join-Path $p 'PLAN/RELEASE_READY.md') -Raw) -match 'S0001_' -and (Get-Row $p 'S0001')) 'the dry run changed the plan or the ledger'
+        Assert-That ((Get-PlanView $p 'Ready') -match 'S0001_' -and (Get-Row $p 'S0001')) 'the dry run changed the plan or the ledger'
         Assert-Tool $p 'spec_catalog/ship-package.ps1' @('-Version', '1.0.0') | Out-Null
-        $doneText = Get-Content $done -Raw
-        Assert-That ($doneText -match 'S0001_' -and $doneText -match 'S0002_' -and $doneText -match 'v1\.0\.0') 'the ready block did not reach the done file with its version'
+        $doneText = Get-PlanView $p 'Done'
+        Assert-That ($doneText -match 'S0001_' -and $doneText -match 'S0002_' -and $doneText -match 'v1\.0\.0') 'the finished block was not recorded as shipped with its version'
         Assert-That ((Get-Content $queue -Raw) -match '(?m)^current-next-release:\s*2\s*$') 'the marker did not advance to 2'
         Assert-That (-not (Get-Row $p 'S0001')) 'the shipped Verified ticket is still in the ledger'
         Assert-That (@(Read-Jsonl (Join-Path $p 'PLAN/spec-catalog-archive.jsonl') | Where-Object id -eq 'S0001').Count -eq 1) 'the shipped Verified ticket is not in the archive file'
@@ -546,7 +548,7 @@ try {
         # S0003 stayed in package 1 of the queue; finished after the ship, it rides the next release under its old number.
         Move-Ticket $p 'S0003' 'Implemented'
         Assert-Tool $p 'spec_catalog/ship-package.ps1' @('-Version', '1.0.1') | Out-Null
-        Assert-That ((Get-Content $done -Raw) -match 'S0003_') 'a row that finished after its package shipped was not shipped'
+        Assert-That ((Get-PlanView $p 'Done') -match 'S0003_') 'a row that finished after its package shipped was not shipped'
         Assert-That ((Get-Content $queue -Raw) -match '(?m)^current-next-release:\s*3\s*$') 'the marker was not put on package 3'
         $again = Assert-Tool $p 'spec_catalog/ship-package.ps1' @('-Version', '1.0.2')
         Assert-That ($again.output -match 'nothing ready in package 3 or earlier') "a second run did not report nothing ready: $($again.output)"
@@ -556,7 +558,7 @@ try {
         $p = New-Project 'b-soft' @('one', 'two')
         $spec = Join-Path $p (Get-Row $p 'S0002').file
         $name = Split-Path $spec -Leaf
-        Assert-Tool $p 'spec_catalog/archive.ps1' @('-Id', 'S0002') | Out-Null
+        Assert-Tool $p 'spec_catalog/archive.ps1' @('-Id', 'S0002', '-Reason', 'not needed: fixture') | Out-Null
         Assert-That (-not (Get-Row $p 'S0002')) 'the record is still in the ledger'
         $moved = @(Read-Jsonl (Join-Path $p 'PLAN/spec-catalog-archive.jsonl') | Where-Object id -eq 'S0002')
         Assert-That ($moved.Count -eq 1 -and $moved[0].status -eq 'Archived') 'the record is not in the archive file as Archived'
@@ -586,7 +588,7 @@ try {
         Assert-That ((Get-Row $p 'S0002').status -eq 'Draft') 'the refused closing still moved the ticket'
         Assert-That ($r.output -match 'temp/') 'the refusal does not name the citation'
         # Archiving is never gated.
-        Assert-Tool $p 'spec_catalog/archive.ps1' @('-Id', 'S0002', '-AllowMissingArtefact') | Out-Null
+        Assert-Tool $p 'spec_catalog/archive.ps1' @('-Id', 'S0002', '-AllowMissingArtefact', '-Reason', 'not needed: fixture') | Out-Null
     }
 
     Test-Case 'rule 20: a step marker is ticked through the tool, and the tool refuses to guess' {

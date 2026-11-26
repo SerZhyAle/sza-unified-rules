@@ -16,6 +16,8 @@ Checks:
   CTR-STALE   how many adoption rows are still unverified (informational)
   CTR-LAG     how many adoption rows are behind their contract, from tools/contract-lag.ps1 (informational)
   CTR-NOTE    how many adoption rows carry a Notes cell above the size the registry states (informational)
+  CTR-SIZE    every file with a line in _meta/SIZE_BUDGET.md fits it, task-flow/README.md has a line, and each
+              line carries a date and a reason
 
 Exit codes: 0 = clean; 1 = violations found; 2 = internal error.
 
@@ -420,6 +422,42 @@ try {
     }
     if ($openProposals.Count -gt 0) {
         Add-Finding -Id 'CTR-PROP' -Severity 'warn' -Path '_meta/RULES.md' -Message ("$($openProposals.Count) open proposal(s) await a decision: " + ($openProposals -join ', '))
+    }
+
+    # ------------------------------------------------------------------ CTR-SIZE
+
+    $budgetName = '_meta/SIZE_BUDGET.md'
+    $budgetRequired = 'task-flow/README.md'
+    $budgetPath = Join-Path $metaDir 'SIZE_BUDGET.md'
+    if (Test-Path -LiteralPath $budgetPath) {
+        . (Join-Path $PSScriptRoot 'lib/size-budget.ps1')
+        $budgeted = @{}
+        $lineNo = 0
+        foreach ($line in (Get-Content -LiteralPath $budgetPath)) {
+            $lineNo++
+            if ($line -notmatch '^\s*\|\s*`') { continue }
+            if ($line -notmatch '^\s*\|\s*`([^`]+)`\s*\|([^|]*)\|([^|]*)\|(.*)\|\s*$') {
+                Add-Finding -Id 'CTR-SIZE' -Severity 'error' -Path $budgetName -Line $lineNo `
+                    -Message 'a budget row is not | `file` | bytes | date | reason |'
+                continue
+            }
+            $file = $Matches[1]; $bytes = $Matches[2].Trim(); $date = $Matches[3].Trim(); $reason = $Matches[4].Trim()
+            if ($budgeted.ContainsKey($file)) {
+                Add-Finding -Id 'CTR-SIZE' -Severity 'error' -Path $budgetName -Line $lineNo -Message "$file has a second budget line"
+            }
+            $budgeted[$file] = $true
+            $problems = Test-SzaSizeBudget -Path (Join-Path $CatalogRoot $file) -Budget $bytes -Date $date `
+                -Reason $reason -BudgetFile $budgetName
+            foreach ($problem in @($problems)) {
+                Add-Finding -Id 'CTR-SIZE' -Severity 'error' -Path $file -Message $problem
+            }
+        }
+        if (-not $budgeted.ContainsKey($budgetRequired)) {
+            Add-Finding -Id 'CTR-SIZE' -Severity 'error' -Path $budgetName -Message "$budgetRequired has no budget line"
+        }
+    }
+    elseif (Test-Path -LiteralPath (Join-Path $CatalogRoot $budgetRequired)) {
+        Add-Finding -Id 'CTR-SIZE' -Severity 'warn' -Path $budgetName -Message "absent - $budgetRequired has no size budget"
     }
 
     # ------------------------------------------------------------------ report

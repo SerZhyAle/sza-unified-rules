@@ -105,7 +105,7 @@ try {
     }
 
     Run-Case 'archiving the local blocker frees the ticket it alone held and keeps the other blocked' {
-        $r = Invoke-In $repoA $update @('-Id', 'S0001', '-Status', 'Archived')
+        $r = Invoke-In $repoA $update @('-Id', 'S0001', '-Status', 'Archived', '-StatusNote', 'not needed: fixture')
         Assert-That ($r.code -eq 0) "update exited $($r.code): $($r.output)"
         Assert-That ((Get-Status $repoA 'S0003') -ceq 'Tactical') "S0003 is $(Get-Status $repoA 'S0003'): $($r.output)"
         Assert-That ((Get-Status $repoA 'S0002') -ceq 'BlockByOtherTask') "S0002 is $(Get-Status $repoA 'S0002')"
@@ -115,7 +115,7 @@ try {
     }
 
     Run-Case 'archiving the cross-repository blocker frees the last waiting ticket in the other repository' {
-        $r = Invoke-In $repoB $update @('-Id', 'S0001', '-Status', 'Archived')
+        $r = Invoke-In $repoB $update @('-Id', 'S0001', '-Status', 'Archived', '-StatusNote', 'not needed: fixture')
         Assert-That ($r.code -eq 0) "update exited $($r.code): $($r.output)"
         Assert-That ((Get-Status $repoA 'S0002') -ceq 'Approved') "S0002 is $(Get-Status $repoA 'S0002'): $($r.output)"
         $spec = [IO.File]::ReadAllText((Get-ChildItem -LiteralPath $repoB -Recurse -Filter 'S0001_t.md' | Select-Object -First 1).FullName)

@@ -23,6 +23,8 @@
     "skipCache": "temp/spec-next-skip-cache.json",
     "changelog": "dev/CHANGELOG.md",
     "documentRegistry": "docs/DOCUMENT_REGISTRY.jsonl",
+    "$comment_localDocumentRegistry": "The registry of the local, ignored corpus, such as dev/DOCUMENT_REGISTRY.jsonl. Read by the registry validator and query when the file exists, never by the renderer. Leave empty when the project keeps none.",
+    "localDocumentRegistry": "",
     "docsMap": "docs/DOCS_MAP.md",
     "sitemap": "sitemap.xml",
     "allFeatures": "docs/ALL_FEATURES.jsonl",

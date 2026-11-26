@@ -1,5 +1,5 @@
 # The waiting dispatcher, in full (TASK-FLOW rules 41, 43, 58; S0016 R29-R34): what a poll looks at, when a change
-# counts, why nothing is offerable, and when a ticket is offered too often.
+# counts and why nothing is offerable.
 #
 # Dot-source this file after ledger-watch.ps1 and loop.ps1; it defines functions only, sets no preference and prints
 # nothing.
@@ -13,12 +13,9 @@
 #   Compare-PqFingerprint -Old <map> -New <map>
 #       @{ changed; files = kinds; repos = keys } - the kinds are ledger, archive, queue, ready, done, leases, stop,
 #       registry, portfolioQueue, holds, resources (the names of `poll.change`, rule 58).
-#   Get-PqWaitReasons -Rank <rank result> -Dropped <n> -Xrepo <n> -Transient <hashtable>
-#       the counts for `wait.enter` `why`: why each repository offered nothing, plus the tickets the loop itself holds
-#       back (dropped, waiting on a blocker in another repository, a token, or the owner's session).
-#   Register-PqLift -Lifts <hashtable> -Key <repo:id> -Now <datetime> [-Max 3] [-WindowMinutes 60]
-#       count one lift of a drop; @{ thrash; count } with thrash true from the Max-th lift inside the window (a ticket
-#       whose pass moves nothing, is lifted by its own writes and offered again, round and round).
+#   Get-PqWaitReasons -Rank <rank result> -Dropped <n> -Xrepo <n> -Transient <hashtable> [-Thrash <n>]
+#       the counts for `wait.enter` `why`: why each repository offered nothing, plus the tickets held back (dropped,
+#       waiting on a blocker in another repository, a token, the owner's session, or the retry bound of offer-limit.ps1).
 
 function Get-PqFileStamp([string]$Path) {
     try {
@@ -105,7 +102,7 @@ function Compare-PqFingerprint {
 }
 
 function Get-PqWaitReasons {
-    param($Rank, [int]$Dropped = 0, [int]$Xrepo = 0, $Transient = $null)
+    param($Rank, [int]$Dropped = 0, [int]$Xrepo = 0, $Transient = $null, [int]$Thrash = 0)
     $why = [ordered]@{}
     $add = { param($name, $n) if ($n -gt 0) { if ($why.Contains($name)) { $why[$name] += $n } else { $why[$name] = $n } } }
     if ($null -ne $Rank) {
@@ -121,6 +118,7 @@ function Get-PqWaitReasons {
     }
     & $add 'dropped' $Dropped
     & $add 'xrepo' $Xrepo
+    & $add 'thrash' $Thrash
     if ($null -ne $Transient) {
         foreach ($t in @($Transient.Values)) { & $add ([string]$t.why) 1 }
     }
@@ -161,12 +159,3 @@ function Get-PqWaitWords {
     return $words
 }
 
-function Register-PqLift {
-    param([Parameter(Mandatory)][hashtable]$Lifts, [Parameter(Mandatory)][string]$Key, [Parameter(Mandatory)][datetime]$Now, [int]$Max = 3, [int]$WindowMinutes = 60)
-    $cut = $Now.AddMinutes(-$WindowMinutes)
-    $list = [Collections.Generic.List[datetime]]::new()
-    if ($Lifts.ContainsKey($Key)) { foreach ($t in @($Lifts[$Key])) { if ($t -ge $cut) { $list.Add($t) } } }
-    $list.Add($Now)
-    $Lifts[$Key] = $list
-    return @{ thrash = ($list.Count -ge $Max); count = $list.Count }
-}

@@ -70,8 +70,9 @@ score.
 
 ## The output block
 
-Findings go into a compact, **overwritten** `## Last Audit` block at the bottom of the spec - never a separate
-audit file per run, which accumulates noise nobody reads.
+Findings go into a compact, **overwritten** `## Last Audit` block at the bottom of the spec - the latest verdict
+only, about 40 lines at most, and never a separate audit file per run, which accumulates noise nobody reads. A block
+about to be overwritten goes to the [evidence log](#the-spec-stays-short) first, as does whatever does not fit.
 
 ```markdown
 ## Last Audit
@@ -102,6 +103,28 @@ the entry into `Verified` and acts on no other: a ticket that stays `Implemented
 ranking whatever its counts say (TASK-FLOW rule 18), and the hold that once stamped the code tree after a
 release-only audit is withdrawn (rule 67, 0.43). What stops a pass that works a ticket without moving it is the idle
 hold of rule 24.
+
+## The spec stays short
+
+A spec is the working document the next pass reads whole. Logs and evidence live beside it.
+
+- **The owner's words stand once, in section 0.** No later section or second block copies them; refer to section 0.
+- **Records go to one file**, `<id>_<slug>/evidence/log.md` in the ticket's folder beside the spec (TASK-FLOW rule 19):
+  per-pass records, earlier audit blocks, site-audit tables, command output, measurements. It is appended to, one dated
+  `## <yyyy-MM-dd> - <pass>` section per pass, and never rewritten.
+- **The spec links it once**, relatively, so the link holds when the file and the folder move (rule 70):
+  `Evidence: [evidence log](<id>_<slug>/evidence/log.md)`. The first record adds the line; later passes leave it.
+- **What stays in the spec** is what a script reads - status lines, literal tokens, question blocks, `**Release gate:**`,
+  `**Device check:**`, the `## Last Audit` block with its counts, executed-check lines and RELEASE items - and what the
+  next pass needs in order to act.
+- **A table another ticket holds is cited, not pasted.**
+
+**The status tool holds the limit (TASK-FLOW 0.53).** A spec above 40 KB (40960 bytes) enters `Implemented`,
+`Verified` or `BlockNeedUserTest` only with that line: it starts with `Evidence:` and its relative link names an
+existing file under `<id>_<slug>/evidence/`. On a refusal, move the logs there and add the line.
+
+`tools/harness/spec_catalog/list-fat-specs.ps1 -Root <repo>` lists the spec files above 40 KB with their three biggest
+sections. It moves nothing: moving a ticket's text is the work of a pass on that ticket.
 
 ## The probe-invariant sweep
 

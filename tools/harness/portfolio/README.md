@@ -432,8 +432,11 @@ empty: wait, see Waiting
   `pq dry-run` prints a `lift` line for each refused ticket. A root the gates refuse waits for its own cause (an edit of
   its spec lifts the idle hold; a `BlockExternal` root moves when the outside party does), so the line is also the list of
   what only you can unblock. The preview and the loop share the walk, so the dry-run shows the lift that will happen.
-- A ticket whose drop was lifted three times within an hour keeps coming back unmoved, so something rewrites its row after
-  every pass: it stays dropped for an hour (`ticket.thrash`) and is tried again after.
+- A ticket gets at most three offers in 24 hours that advance nothing. When some run of its newest three or more offers of
+  that day brought it back to where they found it - unmoved, or there and back - it is held from every rank
+  (`ticket.thrash`, once; `held` in `pq dry-run`, `thrash` in the waiting line) until those offers are older than 24
+  hours or you edit its spec file; a pass after the edit that again advances nothing holds it again. A usage limit, a
+  failed launch, a provider error and a pass you halted or killed are no offers. `pq start -Ticket` still runs it.
 - `pq start -Drain` exits instead of waiting: 0 after at least one pass, 3 when nothing ran. `-MaxTickets N` ends the loop
   after N passes; `-Until <time>` (`HH:mm`, or a date and time) ends it at a clock time - no new pass after it, and a
   waiting worker ends at once.
@@ -511,10 +514,12 @@ pq agents -Apply edit.json                 # {"routes":{"zai":[{"max":4}]},"rate
 
 The first provider of the order works until its usage limit is spent. Only then does the next one take the ticket - the
 limit is read from the provider's own output (Claude: its transcript; the others: the record's `limitDetector.pattern`
-in the pass's output, which is why those passes are quiet in the console and keep their output in the repository's runs
-folder as `<ticket>.log`), and a failure with no limit text in it is an ordinary failed pass that never moves the order
-on. The spent provider is held machine-wide until the reset time its message gave; with none it is tried again every
-`limitPollMinutes` (30) by one pass - one worker takes that probe, the others keep the provider held while it runs, and
+in the last 40 lines of the output of a pass that exited non-zero, which is why those passes are quiet in the console and
+keep their output in the repository's runs folder as `<ticket>.log`), and a failure with no limit text there is an
+ordinary failed pass that never moves the order on. A pass that moved the ticket is never a limit hit (TASK-FLOW 0.50).
+The spent provider is held machine-wide until the reset time its message gave, read from the same lines; the hold's
+`resetSource` says `log` for a time the message names in full and `guessed` for a clock time without a day, and a guessed
+hold is cut to six hours. With no time it is tried again every `limitPollMinutes` (30) by one pass - one worker takes that probe, the others keep the provider held while it runs, and
 the log says how it ended (`agent.probe`, `ok`, `limit` or `error`) - and the first pass that ends without a limit puts it
 back at the head. The ticket is
 neither dropped nor counted against while this happens. If a provider's real limit message is not matched, the worker
@@ -613,8 +618,8 @@ The z.ai pattern follows z.ai's error code list (1308, 1310, 1316-1321 `Usage li
 shipped `+08:00` offset, and its detector is marked `proven`. A real z.ai pass that advances a ticket remains unverified.
 The Gemini pattern matches agy's observed `Individual quota reached. .. Resets in 57h10m24s.` message
 (`RESOURCE_EXHAUSTED`, exit 3), whose reset time is read; so is the span on Antigravity's usage page, `it will fully refresh
-in 4 days, 6 hours` (days, hours, minutes and seconds, set apart by spaces, commas or `and`; the last such text of a pass
-log counts). That page names its time to the hour, so a hold may lift up to an hour early and the next real pass that meets
+in 4 days, 6 hours` (days, hours, minutes and seconds, set apart by spaces, commas or `and`; the last such text of those
+40 lines counts). That page names its time to the hour, so a hold may lift up to an hour early and the next real pass that meets
 the limit parks the provider again. Gemini has advanced a ticket, but its shipped detector remains
 `unproven`. `gemini-neon` and `gemini-claude` share that pattern and have not yet run a real pass: the slugs are the ones
 `agy models` lists (checked 2026-11-19), and the first ticket each takes proves the pool and the limit text. When no reset time
@@ -669,8 +674,8 @@ A record for Codex, beside the Claude record (once `agents` is present, Claude n
 The command is `node` with Codex's own script, because the `codex` on PATH is a PowerShell shim a process cannot start
 directly. The record is the whole launch: `{model}` and `{effort}` come from the record, `{prompt}` from the repository. An
 optional `env` object sets environment variables for the pass only (a value may name a variable as `%NAME%`, so a key stays
-in your environment and never reaches the registry); the shipped `zai` record uses it. A pass whose output matches `limitDetector.pattern` and that exited non-zero has spent its provider's limit: the
-provider is held in `holds\<agent>.json` and the ticket goes to the next one. Exception (S0035): when a ticket is
+in your environment and never reaches the registry); the shipped `zai` record uses it. A pass whose output matches `limitDetector.pattern` in its last 40 lines, that exited non-zero and left the ticket's
+status unchanged, has spent its provider's limit: the provider is held in `holds\<agent>.json` and the ticket goes to the next one. Exception (S0035): when a ticket is
 `In Progress` and the primary provider in `agentOrder` has an active hold whose reset time is 15 minutes or less away,
 the ticket waits for the primary provider's reset via temporary transient hold rather than delegating to fallback
 providers (a free fallback agent may remain idle during the wait). Matched detector text is never stored in holds or
@@ -716,7 +721,7 @@ the standard input, so the rater gets no tools and never reads the project. `tim
 receiving the answer. No valid answer
 from any record leaves the line alone and the ticket runs at the grade 5 (`rater.fail`). The write keeps the file's
 byte-order mark and every line end, and a file that is not UTF-8 is left untouched. A pass that ends `child-failed`,
-`no-progress` (also spelled `no-progress-or-claim-lost`) or `timeout`, or leaves the ticket `Broken`, raises a numeric,
+`no-progress` (spelled `no-progress-or-claim-lost` in rows written before TASK-FLOW 0.51) or `timeout`, or leaves the ticket `Broken`, raises a numeric,
 unpinned grade by `escalateBy` (default 2, at most 9; 0 turns it off), so the next pass goes to an agent that takes the
 higher grade. Nothing is raised when the pass changed the grade itself, or ended neutrally: `limit-hit`, `launch-failed`,
 `claim-lost-before-launch`, `provider-error`, or the owner's halt or kill.
@@ -819,7 +824,7 @@ the minute line alone. The view only reads: it holds no lock, writes nothing, an
 | --- | --- |
 | `pq inbox [-Json]` | what waits for the owner across all projects: one line per kind (count, oldest age, the command that clears it), then the tickets with id, age and note; `BlockByOtherTask` as chain roots |
 | `pq report [-Days n]` | the last n days (7): passes, moved and ok shares, outcomes, ending statuses overall and by agent, entries and exits for owner-waiting statuses, closed without a build per repository (counted from the ledgers), tokens and a list-price estimate by repository, model and outcome, the passes each registered repository's own R0 made outside pq (its `runs-mono.jsonl`, in the same window, counted apart from the pq figures, with any journal that could not be read named), the splits by agent, model, complexity and repository (only where n is at least 5), waiting, occupancy, resources, stops, robot-filed tickets, limits, log health and the open findings; `-Json` for the object |
-| `pq problems [-Days n]` | the open findings only, severity first, each with the events behind it: `PQ-RACE01` (a lost claim), `PQ-SAFE01` (a tripwire), `PQ-SAFE02` (the robot-filed cap), `PQ-LIMIT01` (a limit with no reset time), `PQ-THRASH01`, `PQ-RES03` (a token waited on for 30 minutes), `PQ-STALL01`, `PQ-XREPO01` (a blocker cycle), `PQ-DATA01` (a log gap or error), `PQ-COST02` (`light` that needed three passes), `PQ-ADOPT01` (a repository far below the median); and a `stale hold:` line for a whole-project hold row whose comment says the project has no ticket queue while it now has one. The registry's `analysis.thresholds`, named by finding id, moves the threshold of `PQ-THRASH01` (passes, 4), `PQ-RES03` (minutes, 30), `PQ-COST02` (percent, 30) and `PQ-ADOPT01` (points, 25); a value that is not a number is ignored |
+| `pq problems [-Days n]` | the open findings only, severity first, each with the events or run rows behind it: `PQ-RACE01` (a lost claim), `PQ-SAFE02` (the robot-filed cap), `PQ-LIMIT01` (a guessed hold longer than six hours), `PQ-THRASH01` (offers that advanced nothing), `PQ-RES03` (a token waited on for 30 minutes), `PQ-XREPO01` (a blocker cycle), `PQ-DATA01` (a log gap or error), `PQ-COST02` (`light` that needed three passes), `PQ-ADOPT01` (a repository far below the median); and a `stale hold:` line for a whole-project hold row whose comment says the project has no ticket queue while it now has one. The registry's `analysis.thresholds`, named by finding id, moves the threshold of `PQ-LIMIT01` (hours, 6), `PQ-THRASH01` (offers, 3; the loop's own bound stays 3 in 24 hours), `PQ-RES03` (minutes, 30), `PQ-COST02` (percent, 30) and `PQ-ADOPT01` (points, 25); a value that is not a number is ignored |
 | `pq trace <key:id>` | every event of one ticket in time order, grouped by pass |
 | `pq export [-What runs|events] [-Format jsonl|csv] [-Days n]` | the run rows (default) or the events, to stdout |
 | `pq compare [-By canon|plugin|registryHash|profileHash|agent|model|complexity|repo] [-Days n]` | the run rows split by that field in the order its values first appear, with n, ok share, and a verdict between the last two values: `better` or `worse` at 15 points and n of at least 5 each, else `no evidence` |
@@ -869,8 +874,10 @@ The portfolio root is `SZA_PORTFOLIO_ROOT`, else `%USERPROFILE%\.sza\portfolio`.
 | `holds\<agent>.json` | an agent other than Claude held after a spent usage limit; delete the file to give it work again at once |
 | `run\repo-<key>.lock` | the repository a worker is in |
 | `run\ledger-<key>.json` | the last look at a repository's ledger, shared by the workers: the ticket rows and when each entered its status, so a move is written once |
-| `runs.jsonl` | one row per pass: run, pass, repository, ticket, status before and after, exit code, seconds, outcome |
-| `log\events-<UTC day>.<writer>.jsonl` | every step as an event |
+| `runs.jsonl` | one row per pass: run, pass, repository, ticket, status before and after, exit code, seconds, outcome; the rule or setting versions it ran under (`canon`, `plugin`, `registryHash`, `profileHash`) |
+| `log\events-<UTC day>.<writer>.jsonl` | every step as an event, for the newest 14 days |
+| `log\archive\events-<UTC day>.zip` | the older days, one zip per day; every `pq` reader reads them too |
+| `run\xrepo-said.json`, `run\thrash-said.json` | what the log last said of a blocked or a held ticket, so it is not said again |
 
 File two is `PLAN/RELEASE_QUEUE.md` inside each repository. The repository's own runner keeps its rows for these passes as
 instance `pq<k>` (`runs-pq<k>.jsonl`), so they show up in the repository's monitor as one more instance.
@@ -878,7 +885,10 @@ instance `pq<k>` (`runs-pq<k>.jsonl`), so they show up in the repository's monit
 ## Reading the log
 
 `PQ Status` is the first look. `PQ Log` shows events in timestamp order; narrow it in a console with `pq log -Repo <key>`,
-`-Ev <name>` and `-Json`. The events a loop writes: `run.start`, `run.end`, `rank.result`, `pass.launch`, `pass.end`,
+`-Ev <name>` and `-Json`. Event files older than 14 days are zipped when a worker starts and at each new UTC day, never
+deleted. A blocked ticket's `xrepo.resolve` and `ticket.blocked` are written when the result changes, not at every look,
+and `pass.beat` at most once per five minutes of a pass (`pq status` still shows each worker's last sign, refreshed every
+minute). The events a loop writes: `run.start`, `run.end`, `rank.result`, `pass.launch`, `pass.end`,
 `pass.limit`, `dispatch.pick` (the pick, the three alternatives passed over and why the agent), `ticket.complexity`
 (a pass rewrote the level), `wait.enter`, `wait.exit`, `run.stop`, `owner.action`, `ticket.dropped`, `ticket.dropLifted`,
 `ticket.blocked`, `ticket.unblocked`, `xrepo.resolve`, `xrepo.cycle`, `agent.fallback`, `agent.hold`,
@@ -896,13 +906,13 @@ environment values or keys.
 | `StampMissing` on register | the repository has not adopted the canon - run `adopt-canon` there first |
 | `start` waits and `Next: none` | no enabled repository offers a ticket: `PQ Dry-run`, then check `enabled`, a `hold` section in either file, and that the ticket is not leased by a manual session |
 | the order is not what the file says | `PQ Dry-run` prints the rule behind each pick and `PQ Doctor` lists bad rows; a repository named only by `<key>:<id>` rows offers just those tickets |
-| a ticket is passed over | it did not move last time and stays dropped until its status, `updated` or spec file changes; or another worker holds the repository; or its `Blocker: <key>:<id>` is not released (the worker printed `waits on`) |
+| a ticket is passed over | it did not move last time and stays dropped until its status, `updated` or spec file changes; or its offers of the last 24 hours advanced nothing (`held <key>:<id>` in `PQ Dry-run`); or another worker holds the repository; or its `Blocker: <key>:<id>` is not released (the worker printed `waits on`) |
 | an agent gets no work | it is held after its usage limit (`holds\<agent>.json`, until the reset time, or probed by one pass after `limitPollMinutes`), at its `maxParallel`, its `levels` exclude the ticket, its `routes` stop below the ticket's grade (`aboveCeiling`), or the repository has no command file for it |
 | a new repository did not join | the worker printed `not joined: <why>` once; fix that and the next scan, within ten minutes, picks it up. Registered but disabled: set a top-level `permissionMode` in `repos.json` |
 | `start` exits 3 at once | a previous `STOP` is still draining live workers - wait for them to leave |
 | refuses unattended work | the repository has no `permissionMode` - register it again with `-PermissionMode`, or set it in `repos.json` |
 | `TicketQueueMissing` from `pq tickets` | there is no ticket queue file at the path the message prints; restore it, or point the profile's `paths.releaseQueue` at the right file |
-| a worker window was closed by force | its state files stay; the next start reclaims files whose process is gone. If only the worker process ended and its runner ran on, the repository stays `occupied` until that pass ends |
+| a worker window was closed by force | its state files stay; the next start reclaims files whose process is gone, and writes an `orphaned` run row for the pass it held that ends at the pass's last `pass.beat` (else the repository lock's write time, else its start), with `detectedAfterMinutes` for the time nobody noticed. If only the worker process ended and its runner ran on, the repository stays `occupied` until that pass ends |
 | `skip <key> - stopped`, `frozen` in the worker's wait line, a `Frozen:` line of `pq status`, or `repository <key> is stopped` in the worker's console | that repository's own queue stop file exists (its `rs`, or a release freeze) - see Stopping. A freeze that expired while nobody opened the repository leaves its stop in place for good, because the freeze clears itself only when something reads it and a skipped repository is never read: run the repository's own freeze Status (FMS_A: `scripts/utils/release-freeze.ps1 -Verb Status -Scope wear`, or `-Scope phone`), which removes the expired marker and the stop it asked for, or delete the file |
 | `repository <key> is occupied` | a session of yours wrote a transcript there within `occupiedMinutes`, or holds a live lease or a live code or build lock: the robot goes past it to the next repository and looks again when the window can have run out (never sooner than half a minute); a session that ended is seen as gone after the window. A `pq start -Repo <key>` worker never prints it for transcripts of `<key>` - start the worker that way when you work in the repository yourself |
 | `waits for the build resource` | `resources.build` tokens are all held (or `emulator`); the ticket is skipped for a minute. A `Verify: device` ticket takes no token, so it never waits here |

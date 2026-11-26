@@ -27,6 +27,8 @@ $script:PqProviderStreaks = @{}
 # this file has them. They call agents.ps1 and events.ps1 at run time only.
 . (Join-Path $PSScriptRoot 'rater.ps1')
 . (Join-Path $PSScriptRoot '..\..\spec_catalog\lib\complexity-grade.ps1')
+# The bound on automatic retries (TASK-FLOW 0.51 item D), asked by every rank.
+. (Join-Path $PSScriptRoot 'offer-limit.ps1')
 
 function Get-PqNextRank {
     param(
@@ -91,6 +93,13 @@ function Get-PqNextRank {
     # worker has to remember them and `pq next` shows what the loop will do. A named ticket is the owner's word and
     # is not held back.
     if (-not $NamedTicket) { $Exclude = [string[]]@(@($Exclude) + @(Get-PqIntakeCapped $Registry)) }
+    # TASK-FLOW 0.51 item D: a ticket whose offers of the last 24 hours advanced nothing, read from runs.jsonl at every
+    # rank for the same reason. The rank result names them (thrashHeld).
+    $thrashHeld = @()
+    if (-not $NamedTicket) {
+        $thrashHeld = @(Get-PqThrashHeld $Registry)
+        if ($thrashHeld.Count -gt 0) { $Exclude = [string[]]@(@($Exclude) + @($thrashHeld | ForEach-Object { $_.key })) }
+    }
 
     $n = if ($Slots -ge 0) { $Slots } else { [int](Get-PqValue $Registry 'maxWorkers' 1) }
     $rankArgs = @{ Registry = $Registry; Queue = $queue; HeadProvider = $provider; Slots = $n; Exclude = $Exclude; Occupied = $Occupied; Stopped = (Get-PqStoppedRepos $Registry); StopAfter = $StopAfter }
@@ -116,9 +125,11 @@ function Get-PqNextRank {
             $rankArgs.Exclude = [string[]]@($Exclude + $blockedIds)
             Get-PqRank @rankArgs
         }
-        return (Get-PqXrepoFilteredRank -Registry $Registry -Ranker $ranker)
+        $result = Get-PqXrepoFilteredRank -Registry $Registry -Ranker $ranker
     }
-    return (Get-PqRank @rankArgs)
+    else { $result = Get-PqRank @rankArgs }
+    $result['thrashHeld'] = $thrashHeld
+    return $result
 }
 
 # Keys of enabled repositories whose shared queue stop file (rule 26, paths.queueStopFile) exists: the owner's `rs`, or
@@ -299,35 +310,94 @@ function Get-PqOccupiedRepos($Registry, [switch]$ReadOnly) {
     }
 }
 
+# A UTC instant read from a state file's text, or $null.
+function ConvertTo-PqStateTime([string]$Text) {
+    $at = [DateTimeOffset]::MinValue
+    if ($Text -and [DateTimeOffset]::TryParse($Text, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::AssumeUniversal, [ref]$at)) { return $at.ToUniversalTime() }
+    return $null
+}
+
+# The ts of the last pass.beat the worker of a slot wrote for its pass, or $null. The pass id names the pass; a state
+# written by an older worker names none, and then the ticket and the time the worker took it do.
+function Get-PqLastBeat {
+    param([Parameter(Mandatory)][string]$LogDir, [Parameter(Mandatory)][int]$Slot, [string]$Pass, [string]$Repo, [string]$Ticket, $Since)
+    try {
+        if (-not [IO.Directory]::Exists($LogDir)) { return $null }
+        $files = [string[]]@([IO.Directory]::GetFiles($LogDir, "events-*.w$Slot.jsonl"))
+        [Array]::Sort($files, [StringComparer]::Ordinal)
+        # A day file older than the day before the pass began cannot hold a beat of it.
+        $oldest = if ($null -ne $Since) { 'events-' + $Since.UtcDateTime.AddDays(-1).ToString('yyyy-MM-dd') } else { '' }
+        for ($fi = $files.Length - 1; $fi -ge 0; $fi--) {
+            if ($oldest -and [string]::CompareOrdinal([IO.Path]::GetFileName($files[$fi]), $oldest) -lt 0) { break }
+            $events = @((Read-PqDay -Path $files[$fi]).events)
+            for ($i = $events.Count - 1; $i -ge 0; $i--) {
+                $e = $events[$i]
+                if ([string]$e.ev -cne 'pass.beat') { continue }
+                $at = ConvertTo-PqStateTime ([string]$e.ts)
+                if ($null -eq $at) { continue }
+                if ($Pass) { if ([string]$e.pass -ceq $Pass) { return $at } }
+                elseif ([string]$e.repo -ceq $Repo -and [string]$e.id -ceq $Ticket -and ($null -eq $Since -or $at -ge $Since)) { return $at }
+            }
+        }
+    }
+    catch { }
+    return $null
+}
+
+# TASK-FLOW 0.51 item C: when the pass of a dead worker was last known to run. Its last pass.beat; else the write time of
+# the repository lock that names the worker's process; else the start of the pass. Never before the start, never after
+# now. -> @{ start; last }, UTC.
+function Get-PqDeadPassTimes {
+    param([Parameter(Mandatory)]$WorkerState, [Parameter(Mandatory)][int]$Slot, [Parameter(Mandatory)][string]$Root, [DateTimeOffset]$Now = [DateTimeOffset]::UtcNow)
+    $repo = [string](Get-PqValue $WorkerState 'repository' '')
+    $since = ConvertTo-PqStateTime ([string](Get-PqValue $WorkerState 'passSince' ''))
+    if ($null -eq $since) { $since = ConvertTo-PqStateTime ([string](Get-PqValue $WorkerState 'since' '')) }
+    $last = Get-PqLastBeat -LogDir (Join-Path $Root 'log') -Slot $Slot -Pass ([string](Get-PqValue $WorkerState 'pass' '')) -Repo $repo -Ticket ([string](Get-PqValue $WorkerState 'ticket' '')) -Since $since
+    if ($null -eq $last -and $repo) {
+        try {
+            $lock = Join-Path (Join-Path $Root 'run') "repo-$repo.lock"
+            if ([IO.File]::Exists($lock) -and (Get-PqValue (Read-PqState $lock) 'pid' 0) -eq (Get-PqValue $WorkerState 'pid' -1)) {
+                $last = [DateTimeOffset]::new([IO.File]::GetLastWriteTimeUtc($lock), [TimeSpan]::Zero)
+            }
+        }
+        catch { }
+    }
+    if ($null -eq $since) { $since = if ($null -ne $last) { $last } else { $Now } }
+    if ($null -eq $last -or $last -lt $since) { $last = $since }
+    if ($last -gt $Now) { $last = $Now }
+    return @{ start = $since; last = $last }
+}
+
 function Reclaim-PqDeadWorker($WorkerState, [int]$Slot, [string]$Root) {
     try {
         $repo = [string]$WorkerState.repository
         $ticket = [string]$WorkerState.ticket
         $agent = [string]$WorkerState.agent
-        $since = [string]$WorkerState.since
-        $elapsedSec = 0.0
-        if ($since) {
-            try {
-                $dt = [DateTimeOffset]::Parse($since)
-                $elapsedSec = [Math]::Round(([DateTimeOffset]::UtcNow - $dt).TotalSeconds, 1)
-            } catch { }
-        }
+        $run = [string](Get-PqValue $WorkerState 'run' '')
+        if (-not $run) { $run = 'R-orphaned' }
+        $pass = [string](Get-PqValue $WorkerState 'pass' '')
+        if (-not $pass) { $pass = "P-orphaned-w$Slot" }
+        $model = [string](Get-PqValue $WorkerState 'model' '')
+        $now = [DateTimeOffset]::UtcNow
+        $times = Get-PqDeadPassTimes -WorkerState $WorkerState -Slot $Slot -Root $Root -Now $now
+        $elapsedSec = [Math]::Round(($times.last - $times.start).TotalSeconds, 1)
         $orphanRow = [ordered]@{
-            run = 'R-orphaned'
-            pass = "P-orphaned-w$Slot"
+            run = $run
+            pass = $pass
             repo = $repo
             id = $ticket
             agent = $agent
-            model = ''
+            model = $model
             complexity = ''
-            statusBefore = ''
+            statusBefore = [string](Get-PqValue $WorkerState 'statusBefore' '')
             statusAfter = ''
             moved = $false
             outcome = 'orphaned'
             exitCode = -1
             minutes = [Math]::Round($elapsedSec / 60, 2)
             seconds = $elapsedSec
-            finishedAt = Get-PqRunRowTime
+            finishedAt = Get-PqRunRowTime $times.last.LocalDateTime
+            detectedAfterMinutes = [Math]::Round(($now - $times.last).TotalSeconds / 60, 2)
             canon = ''
             plugin = ''
             registryHash = ''
@@ -336,11 +406,12 @@ function Reclaim-PqDeadWorker($WorkerState, [int]$Slot, [string]$Root) {
         $runsJsonl = Join-Path $Root 'runs.jsonl'
         [IO.File]::AppendAllText($runsJsonl, (($orphanRow | ConvertTo-Json -Compress) + "`n"), [Text.Encoding]::UTF8)
 
-        $orphanLog = Open-PqLog -Writer "w$Slot" -Run 'R-orphaned'
+        $orphanLog = Open-PqLog -Writer "w$Slot" -Run $run
         try {
-            $null = Write-PqEvent -Log $orphanLog -Ev 'pass.end' -Repo $repo -Id $ticket -Worker $Slot -Agent $agent -D ([ordered]@{
+            $null = Write-PqEvent -Log $orphanLog -Ev 'pass.end' -Run $run -Repo $repo -Id $ticket -Pass $pass -Worker $Slot -Agent $agent -Model $model -D ([ordered]@{
                 exit = -1
                 outcome = 'orphaned'
+                statusBefore = $orphanRow.statusBefore
                 moved = $false
                 elapsed = $elapsedSec
             })
@@ -422,6 +493,103 @@ function Set-PqWorkerState([int]$Slot, [string]$Repo = $null, [string]$Ticket = 
         [IO.File]::WriteAllText($tmp, (($obj | ConvertTo-Json -Compress)), [Text.Encoding]::UTF8)
         [IO.File]::Move($tmp, $wf, $true)
     }
+}
+
+# What the recovery of a dead worker needs of the pass in flight (TASK-FLOW 0.51 item C), added to this process's own
+# worker state when the pass starts. Set-PqWorkerState rewrites the whole state, so the next assignment drops it.
+function Set-PqWorkerPass([int]$Slot, [string]$Run, [string]$Pass, [string]$StatusBefore, [string]$Model) {
+    Invoke-PqStateLock {
+        $wf = Join-Path (Join-Path (Get-PqRoot) 'run') "worker-$Slot.json"
+        $state = Read-PqState $wf
+        if ($null -eq $state -or (Get-PqValue $state 'pid' 0) -ne $PID) { return }
+        $facts = [ordered]@{ run = $Run; pass = $Pass; passSince = [DateTimeOffset]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ss.fffZ'); statusBefore = $StatusBefore; model = $Model }
+        foreach ($k in $facts.Keys) { $state | Add-Member -NotePropertyName $k -NotePropertyValue $facts[$k] -Force }
+        $tmp = "$wf.$PID.tmp"
+        [IO.File]::WriteAllText($tmp, ($state | ConvertTo-Json -Compress), [Text.Encoding]::UTF8)
+        [IO.File]::Move($tmp, $wf, $true)
+    }
+}
+
+# Rule 58, TASK-FLOW 0.51 item E: what the log last said under a key, shared by the workers and kept across restarts in
+# run\<Record>.json, so an unchanged result is not written again. Request-PqSay is $true when -Signature is news and
+# remembers it; with -Prefix a remembered signature that begins with -Signature is not news. Clear-PqSaid forgets the key
+# and returns what was remembered, or $null. The newest 500 keys are kept. A record that cannot be read or written says
+# every result: one told twice is better than one never told.
+function Read-PqSaid([string]$File) {
+    $map = [ordered]@{}
+    if ([IO.File]::Exists($File)) {
+        $state = Read-PqState $File
+        if ($null -ne $state) { foreach ($p in $state.PSObject.Properties) { $map[$p.Name] = [string]$p.Value } }
+    }
+    return $map
+}
+function Write-PqSaid([string]$File, $Map) {
+    $null = [IO.Directory]::CreateDirectory((Split-Path -Parent $File))
+    while ($Map.Count -gt 500) { $Map.RemoveAt(0) }
+    $tmp = "$File.$PID.tmp"
+    [IO.File]::WriteAllText($tmp, (ConvertTo-Json -InputObject $Map -Compress), [Text.UTF8Encoding]::new($false))
+    [IO.File]::Move($tmp, $File, $true)
+}
+function Request-PqSay([string]$Record, [string]$Key, [string]$Signature, [switch]$Prefix) {
+    try {
+        return [bool](Invoke-PqStateLock {
+                $file = Join-Path (Join-Path (Get-PqRoot) 'run') "$Record.json"
+                $map = Read-PqSaid $file
+                if ($map.Contains($Key)) {
+                    $old = [string]$map[$Key]
+                    if ($old -ceq $Signature -or ($Prefix -and $old.StartsWith($Signature, [StringComparison]::Ordinal))) { return $false }
+                    $map.Remove($Key)
+                }
+                $map[$Key] = $Signature
+                Write-PqSaid $file $map
+                return $true
+            })
+    }
+    catch { return $true }
+}
+function Clear-PqSaid([string]$Record, [string]$Key) {
+    try {
+        return (Invoke-PqStateLock {
+                $file = Join-Path (Join-Path (Get-PqRoot) 'run') "$Record.json"
+                $map = Read-PqSaid $file
+                if (-not $map.Contains($Key)) { return $null }
+                $old = [string]$map[$Key]
+                $map.Remove($Key)
+                Write-PqSaid $file $map
+                return $old
+            })
+    }
+    catch { return $null }
+}
+
+# The two events that end a blocker's hold on a ticket, written once however many workers saw it: only when the log
+# last said the ticket was blocked.
+function Write-PqUnblocked {
+    param($Log, [string]$Run, [string]$Repo, [string]$Id, [int]$Worker)
+    $key = "$Repo`:$Id"
+    $said = Clear-PqSaid 'xrepo-said' $key
+    if (-not $said) { return $false }
+    $blocker = ($said -split '\|')[0]
+    $null = Write-PqEvent -Log $Log -Ev 'xrepo.resolve' -Run $Run -Repo $Repo -Id $Id -Worker $Worker -D ([ordered]@{ blocked = $key; blocker = $blocker; state = 'released' })
+    $null = Write-PqEvent -Log $Log -Ev 'ticket.unblocked' -Run $Run -Repo $Repo -Id $Id -Worker $Worker -D ([ordered]@{ blocker = $blocker })
+    return $true
+}
+
+# What makes a blocked ticket's result a new one (rule 58): the blocker, its state and status, and with a chain the
+# root, its status and what became of the lift. -Head is the part a look without the chain knows.
+function Get-PqXrepoSignature($D, [switch]$Head) {
+    $names = @('blocker', 'state', 'blockerStatus')
+    if (-not $Head) { $names += @('root', 'rootStatus', 'lift', 'liftWhy') }
+    return ((@($names | ForEach-Object { [string](Get-PqValue $D $_ '') }) -join '|') + '|')
+}
+
+# pass.beat is written at most once per five minutes of one pass (TASK-FLOW 0.51, EVENTS 3.4); the worker's `seen`
+# stamp is still refreshed at every beat of the loop. -State is a hashtable of the pass.
+$script:PqBeatSeconds = 300
+function Test-PqBeatDue([hashtable]$State, [double]$Elapsed) {
+    if ($State.ContainsKey('last') -and ($Elapsed - $State.last) -lt $script:PqBeatSeconds) { return $false }
+    $State.last = $Elapsed
+    return $true
 }
 
 # Reserve the repository and ticket together with the worker state. Ranking is only a snapshot: another
@@ -577,7 +745,7 @@ function Invoke-PqPassChild {
         # Called about every second; returns the stop that applies to this pass (Get-PqApplicableStop) or $null. Without
         # it only the whole-portfolio STOP is read, as before levels existed.
         [scriptblock]$StopWatcher,
-        # Called about once a minute on the beat loop; emits pass.beat event and refreshes worker seen timestamp.
+        # Called about once a minute on the beat loop; refreshes the worker's seen timestamp and writes pass.beat when due.
         [scriptblock]$OnBeat,
         # Print what the agent does while the pass runs (console.ps1, the built-in `pq tail`): 'claude' reads the session
         # transcript (the z.ai agent is the same CLI), 'codex' the rollout file Codex writes. Empty = no view; an agent with
@@ -739,6 +907,8 @@ function Read-PqPassOutcome {
         $outcome = 'child-failed'
     }
     elseif (-not $outcome -or $outcome -ceq 'ok') { $outcome = if ($moved) { 'ok' } else { 'no-progress' } }
+    # A runner older than TASK-FLOW 0.51 spells an unmoved run the old way; a new portfolio row says no-progress.
+    elseif ($outcome -ceq 'no-progress-or-claim-lost') { $outcome = 'no-progress' }
     $fold = Merge-PqPassUsage -Rows $rows
     return [ordered]@{
         model = [string](Get-PqValue $journalRow 'model' '')
@@ -751,13 +921,13 @@ function Read-PqPassOutcome {
         limits = $limits
         usage = $fold.usage
         costUsd = $fold.costUsd
-        priceAsOf = $fold.priceAsOf
     }
 }
 
-# TASK-FLOW 0.20 rule 46 (S0037): rule 23's optional usage / costUsd / priceAsOf folded over every launch of a pass
-# (an old row's built field, withdrawn in 0.36, is ignored). Usage summed, a launch whose usage.session repeats counted once,
-# complete=false when any launch has none; costUsd only when every launch has one, priceAsOf the oldest. $null = absent.
+# TASK-FLOW 0.20 rule 46 (S0037): rule 23's optional usage / costUsd folded over every launch of a pass (an old row's
+# built field, withdrawn in 0.36, is ignored). Usage summed, a launch whose usage.session repeats counted once,
+# complete=false when any launch has none; costUsd only when every launch has one. $null = absent. The price date stays on
+# the repository's own journal row (0.51).
 function Merge-PqPassUsage($Rows) {
     $sum = [ordered]@{ model = ''; input = [int64]0; output = [int64]0; cacheRead = [int64]0; cacheWrite = [int64]0; requests = 0; complete = $true }
     $models = [Collections.Generic.List[string]]::new()
@@ -765,7 +935,6 @@ function Merge-PqPassUsage($Rows) {
     $any = $false
     $cost = 0.0
     $costKnown = $true
-    $priceAsOf = $null
     foreach ($row in @($Rows)) {
         if ($null -eq $row) { continue }
         $u = Get-PqValue $row 'usage' $null
@@ -778,17 +947,12 @@ function Merge-PqPassUsage($Rows) {
         if (-not [bool](Get-PqValue $u 'complete' $false)) { $sum.complete = $false }
         foreach ($m in @(([string](Get-PqValue $u 'model' '')) -split '\+')) { if ($m -and -not $models.Contains($m)) { $models.Add($m) } }
         $c = Get-PqValue $row 'costUsd' $null
-        $asOf = [string](Get-PqValue $row 'priceAsOf' '')
         if ($null -eq $c) { $costKnown = $false }
-        else {
-            $cost += [double]$c
-            if ($asOf -and (-not $priceAsOf -or [string]::CompareOrdinal($asOf, $priceAsOf) -lt 0)) { $priceAsOf = $asOf }
-        }
+        else { $cost += [double]$c }
     }
-    if (-not $any) { return [ordered]@{ usage = $null; costUsd = $null; priceAsOf = $null } }
+    if (-not $any) { return [ordered]@{ usage = $null; costUsd = $null } }
     $sum.model = $models -join '+'
-    if (-not $costKnown) { $priceAsOf = $null }
-    return [ordered]@{ usage = $sum; costUsd = $(if ($costKnown) { [Math]::Round($cost, 4) } else { $null }); priceAsOf = $priceAsOf }
+    return [ordered]@{ usage = $sum; costUsd = $(if ($costKnown) { [Math]::Round($cost, 4) } else { $null }) }
 }
 
 # The drop of rule 43 (S0016 R31): a ticket that came back unmoved stays out of the rank until its status, its `updated`
@@ -1314,8 +1478,8 @@ function Start-PqLoop {
     $quietPolls = 0
     $pollStats = New-PqPollStats
     $waitSaid = ''
-    $lifts = @{}
-    $thrashUntil = @{}
+    # The UTC day the old event files were last looked at (TASK-FLOW 0.51 item F).
+    $archivedDay = ''
     # S0105: an open-ended worker the supervisor started again after a code change (run.end exit 75) goes on with the
     # drops of the run it continues (rule 43: a drop stays until the ticket changes), read back from this writer's own
     # ticket.dropped events; the first turn's lift check below offers again every one whose mark changed since.
@@ -1394,6 +1558,14 @@ function Start-PqLoop {
                         Write-Host "  $pe" -ForegroundColor Yellow
                     }
                 }
+            }
+
+            # Event files older than 14 days are zipped at the start and at each new UTC day (TASK-FLOW 0.51 item F).
+            $utcDay = [DateTime]::UtcNow.ToString('yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture)
+            if ($utcDay -cne $archivedDay) {
+                $archivedDay = $utcDay
+                $zipped = Invoke-PqLogArchive -Root $root
+                if ($zipped.files -gt 0) { Write-Host "log: archived $($zipped.files) event file(s) of $($zipped.days) day(s) older than 14 days into log\archive" }
             }
 
             $turnRepo = $null
@@ -1522,16 +1694,6 @@ function Start-PqLoop {
                             if ($null -eq $snaps[$drop.repo]) { continue }
                             $changed = Get-PqDropChange $drop.mark (Get-PqDropMark -RepoPath ([string]$dropRepo.path) -TicketId $drop.id -Snapshot $snaps[$drop.repo])
                             if (-not $changed) { continue }
-                            # Thrash (S0016 R31): a ticket lifted three times within an hour keeps coming back unmoved, so
-                            # something rewrites its row after every pass. It stays dropped for an hour, then is tried again.
-                            if ($thrashUntil.ContainsKey($dk) -and $thrashUntil[$dk] -gt [DateTime]::UtcNow) { continue }
-                            $lift = Register-PqLift -Lifts $lifts -Key $dk -Now ([DateTime]::UtcNow)
-                            if ($lift.thrash) {
-                                $thrashUntil[$dk] = [DateTime]::UtcNow.AddMinutes(60)
-                                $null = Write-PqEvent -Log $log -Ev 'ticket.thrash' -Run $runId -Repo $drop.repo -Id $drop.id -Worker $slot -D ([ordered]@{ passes = $lift.count; window = 60; statuses = @([string]$drop.mark.status) })
-                                Write-Host "ticket $dk came back unmoved $($lift.count) times within an hour - held back for an hour"
-                                continue
-                            }
                             $drops.Remove($dk)
                             [void]$exclude.Remove($dk)
                             $null = Write-PqEvent -Log $log -Ev 'ticket.dropLifted' -Run $runId -Repo $drop.repo -Id $drop.id -Worker $slot -D ([ordered]@{ changed = $changed })
@@ -1546,8 +1708,7 @@ function Start-PqLoop {
                         if ($null -ne $still) { continue }
                         $xblocked.Remove($bk)
                         [void]$exclude.Remove($bk)
-                        $null = Write-PqEvent -Log $log -Ev 'xrepo.resolve' -Run $runId -Repo $held.repo -Id $held.id -Worker $slot -D ([ordered]@{ blocked = $bk; blocker = $held.blocker; state = 'released' })
-                        $null = Write-PqEvent -Log $log -Ev 'ticket.unblocked' -Run $runId -Repo $held.repo -Id $held.id -Worker $slot -D ([ordered]@{ blocker = $held.blocker })
+                        $null = Write-PqUnblocked -Log $log -Run $runId -Repo $held.repo -Id $held.id -Worker $slot
                         Write-Host "ticket $bk - blocker $($held.blocker) released, offered again"
                     }
 
@@ -1636,7 +1797,9 @@ function Start-PqLoop {
                     # ends; of a repository, agent or ticket stop the stop is honoured and the worker takes other work.
                     $dc = $drainCarry -split ':', 2
                     $drec = $byKey[$dc[0]]
-                    $dh = if ($null -ne $drec) { Get-PqPickerHead -RepoPath ([string]$drec.path) -HarnessRoot $harness -ForceId $dc[1] } else { $null }
+                    # A carried ticket that has come back to where it started three times is not offered either (0.51).
+                    $carryHeld = @(Get-PqThrashHeld $Registry | Where-Object { $_.key -ceq $drainCarry }).Count -gt 0
+                    $dh = if ($null -ne $drec -and -not $carryHeld) { Get-PqPickerHead -RepoPath ([string]$drec.path) -HarnessRoot $harness -ForceId $dc[1] } else { $null }
                     $drainCarry = $null
                     $drainCarryAgent = ''
                     Set-PqWorkerState -Slot $slot
@@ -1702,12 +1865,22 @@ function Start-PqLoop {
                             if (-not $lf.offered) { $xd.liftWhy = [string]$lf.why }
                             $liftTail = "; root $($lf.root) ($($lf.status)): " + $(if ($lf.offered) { 'offered first' } else { "not worked ($($lf.why))" })
                         }
-                        $null = Write-PqEvent -Log $log -Ev 'xrepo.resolve' -Run $runId -Repo $hr.repo -Id $hr.id -Worker $slot -D $xd
-                        if ($xb.state -ceq 'cycle') { $null = Write-PqEvent -Log $log -Ev 'xrepo.cycle' -Run $runId -Worker $slot -D ([ordered]@{ members = @($xbKey, $xb.blocker) }) }
-                        $null = Write-PqEvent -Log $log -Ev 'ticket.blocked' -Run $runId -Repo $hr.repo -Id $hr.id -Worker $slot -D ([ordered]@{ status = [string]$hr.status; why = (ConvertTo-PqCut $xb.why 80); blocker = $xb.blocker })
+                        # Written when the result is news to the log, whichever worker saw it (TASK-FLOW 0.51 item E).
+                        if (Request-PqSay 'xrepo-said' $xbKey (Get-PqXrepoSignature $xd)) {
+                            $null = Write-PqEvent -Log $log -Ev 'xrepo.resolve' -Run $runId -Repo $hr.repo -Id $hr.id -Worker $slot -D $xd
+                            if ($xb.state -ceq 'cycle') { $null = Write-PqEvent -Log $log -Ev 'xrepo.cycle' -Run $runId -Worker $slot -D ([ordered]@{ members = @($xbKey, $xb.blocker) }) }
+                            $null = Write-PqEvent -Log $log -Ev 'ticket.blocked' -Run $runId -Repo $hr.repo -Id $hr.id -Worker $slot -D ([ordered]@{ status = [string]$hr.status; why = (ConvertTo-PqCut $xb.why 80); blocker = $xb.blocker })
+                        }
                         Write-Host "ticket $xbKey waits on $($xb.blocker) ($($xb.state): $($xb.why))$liftTail"
                     }
                 }
+                # TASK-FLOW 0.51 item D: the hold of a ticket that advances nothing is written once per newest counted run.
+                foreach ($th in @(Get-PqValue $rank 'thrashHeld' @())) {
+                    if (-not (Request-PqSay 'thrash-said' $th.key ([string]$th.newest))) { continue }
+                    $null = Write-PqEvent -Log $log -Ev 'ticket.thrash' -Run $runId -Repo $th.repo -Id $th.id -Worker $slot -D ([ordered]@{ passes = $th.passes; window = $script:PqOfferHours * 60; statuses = @($th.statuses) })
+                    Write-Host "ticket $($th.key) came back to where it started in $($th.passes) offers of the last $($script:PqOfferHours) h - held until they age out or its spec is edited"
+                }
+
                 # Rule 58 (S0082): every rank is one picker call of the hour's poll.summary; a drain carry ranks nothing.
                 $rankMs = Get-PqValue $rank 'ms'
                 if ($null -ne $rankMs) { Add-PqPickerStat -Stats $pollStats -Log $log -Ms ([double]$rankMs) }
@@ -1774,7 +1947,7 @@ function Start-PqLoop {
                     # owner's occupancy window), and every poll while the loop itself holds something back for a moment.
                     $poll = if ($PollSeconds -gt 0) { $PollSeconds } else { [int]$Registry.pollSeconds }
                     $nowUtc = [DateTime]::UtcNow
-                    $whyCounts = Get-PqWaitReasons -Rank $rank -Dropped $drops.Count -Xrepo $xblocked.Count -Transient $transient
+                    $whyCounts = Get-PqWaitReasons -Rank $rank -Dropped $drops.Count -Xrepo $xblocked.Count -Transient $transient -Thrash @(Get-PqValue $rank 'thrashHeld' @()).Count
                     if ($occupiedMarks.Count -gt 0 -and -not $whyCounts.Contains('occupied')) { $whyCounts['occupied'] = $occupiedMarks.Count; [void]$whyCounts.Remove('none') }
                     # The console line speaks the owner's words (held, frozen, disabled); the event below keeps $whyCounts.
                     $waitWords = Get-PqWaitWords -Rank $rank -Why $whyCounts
@@ -1868,13 +2041,19 @@ function Start-PqLoop {
                     $xbKey = "$repoKey`:$ticketId"
                     $exclude.Add($xbKey)
                     $xblocked[$xbKey] = @{ repo = $repoKey; id = $ticketId; blocker = $xb.blocker }
-                    $null = Write-PqEvent -Log $log -Ev 'xrepo.resolve' -Run $runId -Repo $repoKey -Id $ticketId -Worker $slot -D ([ordered]@{ blocked = $xbKey; blocker = $xb.blocker; state = $xb.state; blockerStatus = $xb.status })
-                    if ($xb.state -ceq 'cycle') { $null = Write-PqEvent -Log $log -Ev 'xrepo.cycle' -Run $runId -Worker $slot -D ([ordered]@{ members = @($xbKey, $xb.blocker) }) }
-                    $null = Write-PqEvent -Log $log -Ev 'ticket.blocked' -Run $runId -Repo $repoKey -Id $ticketId -Worker $slot -D ([ordered]@{ status = [string]$cand.status; why = (ConvertTo-PqCut $xb.why 80); blocker = $xb.blocker })
+                    $xd = [ordered]@{ blocked = $xbKey; blocker = $xb.blocker; state = $xb.state; blockerStatus = $xb.status }
+                    # This look knows no chain root, so a result already said with one is no news.
+                    if (Request-PqSay 'xrepo-said' $xbKey (Get-PqXrepoSignature $xd -Head) -Prefix) {
+                        $null = Write-PqEvent -Log $log -Ev 'xrepo.resolve' -Run $runId -Repo $repoKey -Id $ticketId -Worker $slot -D $xd
+                        if ($xb.state -ceq 'cycle') { $null = Write-PqEvent -Log $log -Ev 'xrepo.cycle' -Run $runId -Worker $slot -D ([ordered]@{ members = @($xbKey, $xb.blocker) }) }
+                        $null = Write-PqEvent -Log $log -Ev 'ticket.blocked' -Run $runId -Repo $repoKey -Id $ticketId -Worker $slot -D ([ordered]@{ status = [string]$cand.status; why = (ConvertTo-PqCut $xb.why 80); blocker = $xb.blocker })
+                    }
                     Write-Host "ticket $xbKey waits on $($xb.blocker) ($($xb.state): $($xb.why))"
                     $rerankAfterSkip = $true
                     continue
                 }
+                # A ticket the log last called blocked is offered now: its release is written, whoever held it before.
+                $null = Write-PqUnblocked -Log $log -Run $runId -Repo $repoKey -Id $ticketId -Worker $slot
 
                 # Rule 61: the robot yields to the owner. A live manual session (a transcript written within
                 # occupiedMinutes, a live lease no pass holds) means no pass is launched; the repository is looked
@@ -1943,8 +2122,9 @@ function Start-PqLoop {
                 $ticketLevel = [string]$levelInfo.level
                 $ticketScore = [int]$levelInfo.score
                 $pick = Select-PqAgent -Registry $Registry -RepoPath $repoPath -Level $(if ($ticketLevel) { $ticketLevel } else { 'medium' }) -Skip $stopAgents -Score $ticketScore
-                foreach ($fb in @($pick.fallbacks)) {
-                    if (-not (Test-PqFallbackWhy ([string]$fb.why))) { continue }
+                # A pass-over is one event per ranking for every reason but a limit, which is written when its hold starts
+                # and ends (TASK-FLOW 0.50).
+                foreach ($fb in @(Get-PqRankingFallbacks $pick)) {
                     $null = Write-PqEvent -Log $log -Ev 'agent.fallback' -Run $runId -Repo $repoKey -Id $ticketId -Worker $slot -D ([ordered]@{ from = $fb.from; to = $pick.agent; repo = $repoKey; id = $ticketId; why = $fb.why })
                 }
                 if (-not $pick.agent) {
@@ -2092,6 +2272,7 @@ function Start-PqLoop {
                     if ($pickParallel) { $launchD.parallel = $pickParallel }
                     $null = Write-PqEvent -Log $log -Ev 'pass.launch' -Run $runId -Repo $repoKey -Id $ticketId -Pass $passId -Worker $slot -Agent $agentName -Model $pickModel -Cx $passCx.cx -D $launchD
                     if ($currentRepoLock) { Set-PqRepoLockPass -LockFile $currentRepoLock -PassPid $childPid }
+                    Set-PqWorkerPass -Slot $slot -Run $runId -Pass $passId -StatusBefore $statusBefore -Model ([string]$pickModel)
                 }
 
                 $actualRunner = if ($RunnerScript) { $RunnerScript } elseif ($env:SZA_PQ_RUNNER_SCRIPT) { $env:SZA_PQ_RUNNER_SCRIPT } else { Join-Path $harness 'batch\run-spec-queue.ps1' }
@@ -2131,12 +2312,15 @@ function Start-PqLoop {
                     if ($sid -and (Test-PqLeaseIsPass $l $null)) { [void]$pqPassSessions.Add($sid) }
                 }
                 $stopWatcher = { Get-PqApplicableStop -Stops @(Get-PqStopFiles) -Slot $pqSlot -Repo $pqRepo -Agent $pqAgent -Ticket $pqTicket }
+                $beatState = @{}
                 $onBeat = {
                     param($sec)
-                    $null = Write-PqEvent -Log $log -Ev 'pass.beat' -Run $runId -Repo $repoKey -Id $ticketId -Pass $passId -Worker $slot -Agent $agentName -D ([ordered]@{
-                        elapsed = $sec
-                        liveness = 'working'
-                    })
+                    if (Test-PqBeatDue $beatState $sec) {
+                        $null = Write-PqEvent -Log $log -Ev 'pass.beat' -Run $runId -Repo $repoKey -Id $ticketId -Pass $passId -Worker $slot -Agent $agentName -D ([ordered]@{
+                            elapsed = $sec
+                            liveness = 'working'
+                        })
+                    }
                     Update-PqWorkerSeen -Slot $slot
                 }
 
@@ -2188,7 +2372,7 @@ function Start-PqLoop {
                 $agentExitValue = Get-PqRunRowAgentExit $outcomeRes.exitCode
                 if ($null -ne $agentExitValue) { $runRow.agentExit = $agentExitValue }
                 if ($null -ne $outcomeRes.usage) { $runRow.usage = $outcomeRes.usage }
-                if ($null -ne $outcomeRes.costUsd) { $runRow.costUsd = $outcomeRes.costUsd; $runRow.priceAsOf = $outcomeRes.priceAsOf }
+                if ($null -ne $outcomeRes.costUsd) { $runRow.costUsd = $outcomeRes.costUsd }
                 $runsJsonl = Join-Path $root 'runs.jsonl'
                 Invoke-PqStateLock {
                     [IO.File]::AppendAllText($runsJsonl, (($runRow | ConvertTo-Json -Compress) + "`n"), [Text.Encoding]::UTF8)
@@ -2315,13 +2499,19 @@ function Start-PqLoop {
                 if (-not $childRes.killed -and -not $childRes.failed) {
                     if ($outcomeRes.limits -gt 0) {
                         $heldUntil = Get-PqRunnerLimitUntil -RepoPath $repoPath -Agent $agentName
+                        # Where the time came from (TASK-FLOW 0.50): the runner's hold file carries a time the runner read itself.
+                        $resetSource = if ($heldUntil) { 'log' } else { 'guessed' }
                         # The runner times only a limit it reads from a Claude transcript; another provider's message may still
                         # say when it lifts, in the pass's own log.
-                        if (-not $heldUntil -and $agentName -cne 'claude') { $heldUntil = Get-PqLogLimitUntil -RepoPath $repoPath -TicketId $ticketId -Record $pick.record }
-                        Set-PqAgentHold -Name $agentName -Pass $passId -Source 'log' -Detector $detectorStatus -Until $heldUntil
+                        if (-not $heldUntil -and $agentName -cne 'claude') {
+                            $logReset = Get-PqLogLimitReset -RepoPath $repoPath -TicketId $ticketId -Record $pick.record
+                            if ($logReset) { $heldUntil = [string](Get-PqValue $logReset 'until'); $resetSource = [string](Get-PqValue $logReset 'resetSource') }
+                        }
+                        # The hold with its events: agent.hold, and once per hold the start of its agent.fallback (TASK-FLOW 0.50).
+                        $holdWrite = Set-PqAgentHoldFromPass -Log $log -Name $agentName -Pass $passId -Detector $detectorStatus -Until $heldUntil -ResetSource $resetSource -Record $pick.record `
+                            -Run $runId -Repo $repoKey -Id $ticketId -Worker $slot
                         $agentHeldNow = $true
-                        $holdData = [ordered]@{ agent = $agentName; until = $heldUntil; source = 'log'; detector = $detectorStatus }
-                        $null = Write-PqEvent -Log $log -Ev 'agent.hold' -Run $runId -Repo $repoKey -Id $ticketId -Pass $passId -Worker $slot -Agent $agentName -D $holdData
+                        $heldUntil = $holdWrite.until
                         $poll = [int](Get-PqValue $pick.record 'limitPollMinutes' 30)
                         $when = if ($heldUntil) { "until $(([DateTimeOffset]::Parse($heldUntil)).LocalDateTime.ToString('yyyy-MM-dd HH:mm'))" } else { "no reset time given, probed again in $poll min" }
                         Write-Host "provider $agentName has spent its usage limit - held $when; the ticket goes to the next provider of the order"
@@ -2331,9 +2521,9 @@ function Start-PqLoop {
                         $oldUntil = Get-PqValue $oldHold 'until'
                         $stillFuture = $false
                         if ($oldUntil) { try { $stillFuture = [DateTimeOffset]::Parse([string]$oldUntil) -gt [DateTimeOffset]::UtcNow } catch { } }
-                        if (-not $stillFuture -and (Remove-PqAgentHold -Name $agentName)) {
-                            $resume = Get-PqHoldResume $oldHold
-                            $null = Write-PqEvent -Log $log -Ev 'agent.resume' -Run $runId -Worker $slot -Agent $agentName -D ([ordered]@{ agent = $agentName; heldFor = $resume.heldFor; by = $resume.by })
+                        # The cleared hold with its events: agent.resume and the end of its agent.fallback (TASK-FLOW 0.50).
+                        if (-not $stillFuture) {
+                            $null = Remove-PqAgentHoldAfterPass -Log $log -Name $agentName -Run $runId -Repo $repoKey -Id $ticketId -Pass $passId -Worker $slot
                         }
                         if ($agentName -cne 'claude' -and -not $outcomeRes.moved -and $elapsedSec -lt $script:PqFastFailureSeconds -and $outcomeRes.outcome -cin @('child-failed', 'launch-failed')) {
                             Write-Host "provider $agentName failed fast (${elapsedSec}s, $($outcomeRes.outcome)) and no usage-limit text was found in its output - not taken for a limit, so the order does not move on; if it was one, extend limitDetector.pattern of the '$agentName' record (the pass's output is in the repository's runs folder, $(if ($agentName) { "$ticketId.$agentName.log" } else { "$ticketId.log" }))"

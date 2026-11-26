@@ -3,7 +3,10 @@ param(
     [Parameter(Mandatory)][string] $Id,
     [Parameter(Mandatory)]
     [ValidateSet('Verified','Archived')]
-    [string] $Status
+    [string] $Status,
+    # TASK-FLOW 0.52: the one-line reason an archived ticket keeps in statusNote; required with -Status Archived.
+    [Alias('StatusNote')]
+    [string] $Reason
 )
 
 . (Join-Path $PSScriptRoot '..\_profile.ps1')
@@ -46,7 +49,8 @@ if ($oldStatus -match '^Block') {
 # Closing gates run here, before anything is written. This is the path /spec-check uses
 # (close-and-log.ps1 -> close.ps1), so a gate wired only into update.ps1 would never fire
 # on the way tickets are actually closed. Archived is filtered out inside the function.
-Assert-ClosingGates -Id $Id -OldStatus $oldStatus -NewStatus $Status
+Assert-ClosingGates -Id $Id -OldStatus $oldStatus -NewStatus $Status `
+    -StatusNote ([string]$Reason) -NoteSupplied ($PSBoundParameters.ContainsKey('Reason'))
 
 $today = Get-Today
 $now   = Get-Now
@@ -59,16 +63,20 @@ $updated = [pscustomobject]@{
     file     = [string]$old.file
     created  = [string]$old.created
     updated  = $now
-    closed_at = $today
 }
 if ($old.PSObject.Properties.Name -contains 'tier' -and $null -ne $old.tier -and "$($old.tier)" -ne '') {
     $updated | Add-Member -NotePropertyName 'tier' -NotePropertyValue ([int]$old.tier)
 }
-$fixedKeys = @('id','name','status','priority','tier','file','created','updated','closed_at')
+$fixedKeys = @('id','name','status','priority','tier','file','created','updated')
 foreach ($prop in $old.PSObject.Properties) {
     if ($fixedKeys -notcontains $prop.Name -and -not ($updated.PSObject.Properties.Name -contains $prop.Name)) {
         $updated | Add-Member -NotePropertyName $prop.Name -NotePropertyValue $prop.Value
     }
+}
+$headerNote = $null
+if ($Status -eq 'Archived') {
+    Set-PlanProp -Record $updated -Name 'statusNote' -Value $Reason
+    $headerNote = $Reason
 }
 
 Assert-Record -Record $updated
@@ -96,7 +104,7 @@ if ($Status -eq 'Archived') {
 # the same status skipped the header and left a divergence with no CLI cure. This is the closing
 # path, so the transitions it skipped were the latest and most expensive ones a ticket makes.
 $headerWrote = $false
-if ((Sync-SpecHeaderStatus -PathRef $updated.file -Status $Status -Wrote ([ref]$headerWrote)) -and $headerWrote) {
+if ((Sync-SpecHeaderStatus -PathRef $updated.file -Status $Status -StatusNote $headerNote -Wrote ([ref]$headerWrote)) -and $headerWrote) {
     Write-Host ("  header synced -> {0}" -f $Status) -ForegroundColor DarkGray
 }
 

@@ -706,3 +706,13 @@ WINDOWS_PACKAGING and the winget reference carry the proposed shared packaging g
   Windows-packaging notes across FileDO's WiX-vs-Inno + portable-winget and this repo's winget failure list
   keep growing, a shared `WINDOWS_PACKAGING.md` appendix would consolidate them - same conclusion FileDO
   reached; still not warranted.)
+
+## Canon adoption 26-11-26 (FMSWIN-0417)
+
+- Re-sync from canon `2026.10.26.1` to `2026.11.26.6`: `.sza-canon.json` rewritten from `check-compliance.ps1 -PrintDigest -Json` (version, coreDigest, docDigests for 20 rule documents, `reconciledOn` 2026-11-26; `adoptedOn` unchanged). Every rule document re-read (the old stamp had no `docDigests`). Compliance gate before: 2 warnings (`SZA-CANON03`, `SZA-VER04`), 0 errors; after: exit 0, 0 errors, 1 warning (`SZA-VER04`).
+- Reconciled: citations of the old invariant numbers 16 and 17 in agent rules and guides repointed to `DOCUMENTATION_CONCEPT` sections 1 and 5; the rule file `canon-overlay` now records the release package plan as in use (it said skipped) and the "ask when unclear" owner decision as a divergence.
+- Filed in the canon: CANONR-0229 (`SZA-VER04` warns on a release-manifest-rendered link), CANONR-0230 (the `og:locale` map omits `it_IT`).
+- The open question about the committed Share worker is answered (the rules file and `.gitignore` agree) and removed from the facts file.
+- Same ticket: `release.yml` proves the rebuilt artifacts before publication (version read-back and smoke run); the local ticket corpus got a document registry and `tools/Test-LocalDocRegistry.ps1`; the contract registry rows of this product were updated.
+- Day 0 stands: `spec_catalog/validate` exit 0 (11 OK, 1 WARN, 0 FAIL), `r0.ps1 -DryRun` exit 0 (12 open tickets listed).
+- `CONTRACTS.md` could be among the changed documents (unnamed without `docDigests`): the contract catch-up of the same day (FMSWIN-0415) had re-read all 81 registry rows of this product, so no second `contract-sync` run.
