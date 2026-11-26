@@ -10,7 +10,11 @@
      5. -StopAfter 1 stays one candidate: the lifted root, not the refused ticket's repository's next head.
      6. A named start lifts nothing; a lift whose root is the refused ticket itself, and a hook that throws, change nothing.
      7. Get-PqLiftTarget: the root of the chain, why 'status' for a status no robot works, $null for a refusal that is not an
-        open blocker or a chain that cycles, and one chain walk per blocker through -Memo.
+        open blocker or a chain that cycles, and one chain walk per blocker through -Memo; a BlockByOtherTask root is
+        askable (CANONR-0196 O2).
+     8. A bare row of a repository that also has ticket rows comes after them (0.35 rule 44, CANONR-0196 C-G1).
+     9. Get-PqInboxLocalHold reads the statusNote and legacy id shapes (CANONR-0196 C-G9, C-G10).
+    10. The loop's once-only key of the lift report carries the outcome (static; CANONR-0196 C-G11).
   Stub provider, filter and lift hooks and a stubbed chain walk: no registry, queue file, ledger or repository is read, no
   process is spawned, nothing is written. #>
 [CmdletBinding()]
@@ -167,6 +171,9 @@ Test-Case 'Get-PqLiftTarget: the root, why status, no lift for a non-open refusa
     Assert-That ((Get-PqLiftTarget -Registry $reg -Refusal $open).why -ceq 'status') 'Verified is not a status a robot works'
     $script:TicketStatus = 'Approved'
     Assert-That ((Get-PqLiftTarget -Registry $reg -Refusal $open).why -ceq '') 'Approved should be askable'
+    # CANONR-0196 O2: a root's blockers are released, and rule 18 (0.42) offers BlockByOtherTask once they are.
+    $script:TicketStatus = 'BlockByOtherTask'
+    Assert-That ((Get-PqLiftTarget -Registry $reg -Refusal $open).why -ceq '') 'a BlockByOtherTask root with released blockers should be askable'
     foreach ($bad in @('cycle', 'unknownKey', 'unreadable')) {
         Assert-That ($null -eq (Get-PqLiftTarget -Registry $reg -Refusal @{ blocker = 'b:S2'; state = $bad; why = 'w' })) "a '$bad' refusal was lifted"
     }
@@ -178,6 +185,53 @@ Test-Case 'Get-PqLiftTarget: the root, why status, no lift for a non-open refusa
     $null = Get-PqLiftTarget -Registry $reg -Refusal $open -Memo $memo
     $null = Get-PqLiftTarget -Registry $reg -Refusal $open -Memo $memo
     Assert-That ($script:Walks -eq 1) "the chain was walked $($script:Walks) times for one blocker"
+}
+
+Test-Case 'C-G1: a bare row of a repository with ticket rows comes after them (TASK-FLOW 0.35 rule 44)' {
+    $asked = [Collections.Generic.List[string]]::new()
+    $provider = {
+        param($Repo, $Ids, $ForceId)
+        if ($ForceId) { $asked.Add("force:$ForceId"); return @{ ok = $true; head = @{ id = $ForceId; status = 'Draft'; priority = 50; title = "t $ForceId" }; payload = $null; why = $null } }
+        $asked.Add('head')
+        return @{ ok = $true; head = @{ id = 'S1'; status = 'Draft'; priority = 50; title = 't S1' }; payload = $null; why = $null }
+    }.GetNewClosure()
+    $q = [pscustomobject]@{ rows = @(
+            [pscustomobject]@{ repo = 'a'; kind = 'head'; id = $null; line = 1; package = $null; text = 'a' },
+            [pscustomobject]@{ repo = 'a'; kind = 'ticket'; id = 'S100'; line = 2; package = $null; text = 'a:S100' }); held = @(); bad = @() }
+    $r = Get-PqRank -Registry (New-Registry) -Queue $q -HeadProvider $provider -Slots 1 -StopAfter 1
+    Assert-That (@($r.candidates).Count -eq 1 -and $r.candidates[0].id -ceq 'S100') "candidate is $($r.candidates | ForEach-Object { $_.repo + ':' + $_.id })"
+    Assert-That ($asked[0] -ceq 'force:S100') "the picker was asked first for '$($asked[0])'"
+    # A repository named by a bare key only keeps its head.
+    $q2 = [pscustomobject]@{ rows = @([pscustomobject]@{ repo = 'a'; kind = 'head'; id = $null; line = 1; package = $null; text = 'a' }); held = @(); bad = @() }
+    $r2 = Get-PqRank -Registry (New-Registry) -Queue $q2 -HeadProvider $provider -Slots 1 -StopAfter 1
+    Assert-That ($r2.candidates[0].id -ceq 'S1') "bare-key repository candidate is $($r2.candidates[0].id)"
+}
+
+Test-Case 'C-G9/C-G10: the chain walk reads local tokens of the statusNote, in the current and a legacy id shape' {
+    $tmp = Join-Path ([IO.Path]::GetTempPath()) ('pq-lift-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+    $null = [IO.Directory]::CreateDirectory($tmp)
+    try {
+        [IO.File]::WriteAllText((Join-Path $tmp '.sza-profile.json'), '{"grammar":{"ticketIdPattern":"NEWPRE-\\d{4}","legacyTicketIdPatterns":["S\\d{4}"]}}')
+        $script:Tickets = @{
+            'NEWPRE-0001' = @{ status = 'BlockByOtherTask'; file = ''; statusNote = 'waits. Blocker: S0007' }
+            'S0007' = @{ status = 'Draft'; file = ''; statusNote = '' }
+            'NEWPRE-0002' = @{ status = 'BlockByOtherTask'; file = ''; statusNote = 'Blocker: NEWPRE-0003' }
+            'NEWPRE-0003' = @{ status = 'Verified'; file = ''; statusNote = '' }
+        }
+        function Get-PqXrepoTicket { param($Rec, $Id, $Cache) return $script:Tickets[[string]$Id] }
+        function Read-PqSpecText { param([string]$File) return '' }
+        $byKey = @{ a = [pscustomobject]@{ key = 'a'; path = $tmp } }
+        $h = Get-PqInboxLocalHold $byKey @{} 'a' 'NEWPRE-0001'
+        Assert-That ($h -ceq 'a:S0007') "a legacy-shaped local token of the statusNote should hold, got '$h'"
+        $h2 = Get-PqInboxLocalHold $byKey @{} 'a' 'NEWPRE-0002'
+        Assert-That ($null -eq $h2) "a released blocker should not hold, got '$h2'"
+    }
+    finally { Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+Test-Case 'C-G11: the loop reports a changed lift outcome (the outcome is part of the once-only key)' {
+    $loop = [IO.File]::ReadAllText((Join-Path $lib 'loop.ps1'))
+    Assert-That ($loop.Contains('[string]$xblocked[$xbKey].lift -ceq $liftKey')) 'the dedupe key of the lift report carries no outcome'
 }
 
 Write-Host ''

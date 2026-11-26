@@ -50,9 +50,9 @@ function ConvertFrom-SzaComplexityValue([string]$Value) {
         return $r
     }
     $words = @(
-        @{ level = 'light'; pattern = '^(light|лёгкий|легкий)\b' },
-        @{ level = 'medium'; pattern = '^(medium|средний)\b' },
-        @{ level = 'hard'; pattern = '^(hard|сложный)\b' }
+        @{ level = 'light'; pattern = '^(light|\u043B\u0451\u0433\u043A\u0438\u0439|\u043B\u0435\u0433\u043A\u0438\u0439)\b' },
+        @{ level = 'medium'; pattern = '^(medium|\u0441\u0440\u0435\u0434\u043D\u0438\u0439)\b' },
+        @{ level = 'hard'; pattern = '^(hard|\u0441\u043B\u043E\u0436\u043D\u044B\u0439)\b' }
     )
     foreach ($w in $words) {
         $wm = [regex]::Match($v, $w.pattern + '(?<rest>.*)$', 'IgnoreCase')

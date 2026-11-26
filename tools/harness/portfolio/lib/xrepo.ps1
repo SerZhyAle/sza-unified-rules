@@ -22,7 +22,7 @@
 $script:PqStatusSets = New-Module -ArgumentList (Join-Path $PSScriptRoot '..\..\spec_catalog\_status-sets.ps1') -ScriptBlock {
     param($StatusSets)
     . $StatusSets
-    Export-ModuleMember -Function Test-BlockerReleased
+    Export-ModuleMember -Function Test-BlockerReleased, Test-AcceptsImplemented
 }
 
 # The lookbehind is the closing gate's (spec_catalog/_blocker-links.ps1): a token right after a backtick or an angle
@@ -97,13 +97,17 @@ function Get-PqXrepoBlock {
     $snaps = if ($null -ne $Snapshots) { $Snapshots } else { @{} }
     $self = Get-PqXrepoTicket $byKey[$RepoKey] $TicketId $snaps
     if ($null -eq $self) { return $null }
-    foreach ($pair in @(Get-PqXrepoBlockers (Read-PqSpecText $self.file) $self.statusNote)) {
+    $spec = Read-PqSpecText $self.file
+    foreach ($pair in @(Get-PqXrepoBlockers $spec $self.statusNote)) {
         $bKey, $bId = $pair -split ':', 2
-        if ($bKey -ceq $RepoKey) { continue }
+        if ($bKey -ceq $RepoKey -and $bId -ceq $TicketId) { continue }
         if (-not $byKey.ContainsKey($bKey)) { return @{ blocker = $pair; state = 'unknownKey'; status = $null; why = "no registered repository '$bKey'" } }
         $b = Get-PqXrepoTicket $byKey[$bKey] $bId $snaps
         if ($null -eq $b) { return @{ blocker = $pair; state = 'unreadable'; status = $null; why = "$pair is not in its ledger or archive, or the ledger cannot be read" } }
-        $released = & $script:PqStatusSets { param($s, $i, $f) Test-BlockerReleased -Status $s -Id $i -File $f } $b.status $bId $b.file
+        $released = & $script:PqStatusSets {
+            param($s, $i, $f, $text, $ref)
+            Test-BlockerReleased -Status $s -Id $i -File $f -DependentSpec $text -BlockerRef $ref
+        } $b.status $bId $b.file $spec $pair
         if ($released) { continue }
         # A cycle never releases either way; it is named so the owner sees why. Followed through qualified tokens only,
         # at most ten hops.
@@ -125,7 +129,10 @@ function Get-PqXrepoBlock {
             }
             $at = $next
         }
-        $planNote = if ($b.status -cin @('Implemented', 'Verified', 'BlockNeedUserTest')) { ', its plan is not finished' } else { '' }
+        $planNote = if ($b.status -eq 'Implemented' -and
+            -not (& $script:PqStatusSets { param($text, $ref) Test-AcceptsImplemented -SpecText $text -Ref $ref } $spec $pair)) {
+            ', the dependent has not accepted Implemented'
+        } elseif ($b.status -cin @('Implemented', 'Verified', 'BlockNeedUserTest')) { ', its plan is not finished' } else { '' }
         return @{ blocker = $pair; state = 'open'; status = $b.status; why = "$pair is $($b.status)$planNote" }
     }
     return $null

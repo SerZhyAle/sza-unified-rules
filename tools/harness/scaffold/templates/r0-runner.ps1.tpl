@@ -44,8 +44,8 @@
     (`& .\r0.ps1 -ChildArgs @(..)`) or edit the default.
 
 .PARAMETER WorkStatuses
-    The statuses that still have work left. Block* statuses, Verified and Archived are not in it, so a
-    parked or finished ticket is never picked.
+    The statuses that still have work left. Block* statuses, Implemented, Verified and Archived are not
+    in it, so a parked or finished ticket is never picked.
 
 .PARAMETER ClearOnStart
     Directories whose CONTENTS are removed once at start. Pass an empty array when the project keeps none.

@@ -66,6 +66,7 @@ $ErrorActionPreference = 'Stop'
 
 # The ledger reader is shared with pq inbox (lib/inbox.ps1), which also loads registry.ps1 and ledger-watch.ps1.
 . (Join-Path $PSScriptRoot 'lib/inbox.ps1')
+. (Join-Path $PSScriptRoot '../spec_catalog/_quiz-questions.ps1')
 
 function Stop-Quiz([int] $Code, [string] $Message) {
     [Console]::Error.WriteLine("quiz-list: $Message")
@@ -95,10 +96,6 @@ function Test-IdMatch([string] $RowId, [string] $Wanted) {
 # question line, compared after trimming and collapsing runs of white space. Everything else (no block, no spec
 # file, another version, a block that does not parse, only answered blocks) reads as "ask the pre-0.23 way":
 # research, then ask. The comparison never rewrites a line; the block is the writer's record to keep.
-function ConvertTo-QuizFlatText([string] $Text) {
-    return [regex]::Replace([string]$Text, '\s+', ' ').Trim()
-}
-
 function Get-QuizQuestionBlock([string] $SpecPath, [string] $Note, [string] $Updated) {
     $res = [ordered]@{ state = 'none'; version = ''; date = ''; answered = $false; questions = @(); reason = 'no question block' }
     if ([string]::IsNullOrWhiteSpace($SpecPath) -or -not (Test-Path -LiteralPath $SpecPath -PathType Leaf)) {
@@ -106,23 +103,7 @@ function Get-QuizQuestionBlock([string] $SpecPath, [string] $Note, [string] $Upd
     }
     $lines = @()
     try { $lines = [IO.File]::ReadAllLines($SpecPath) } catch { $res.reason = 'the spec file cannot be read'; return [pscustomobject]$res }
-    $heading = [regex]'^### Questions \((v\d+), (\d{4}-\d{2}-\d{2})\)(.*)$'   # '### Questions (v1, 2026-11-12)'
-    $edge = [regex]'^(#{1,3}(\s|$))'                                        # a heading of level 3 or above ends it
-    $qText = [regex]'^-\s+Q:\s*(.+?)\s*$'                                   # '- Q: <question>?'
-    $blocks = [Collections.Generic.List[object]]::new()
-    $open = $null
-    foreach ($line in $lines) {
-        $m = $heading.Match($line)
-        if ($m.Success) {
-            $open = [pscustomobject]@{ version = $m.Groups[1].Value; date = $m.Groups[2].Value; answered = [bool]($m.Groups[3].Value -match '-\s+answered\s+\d{4}-\d{2}-\d{2}'); questions = [Collections.Generic.List[string]]::new() }
-            $blocks.Add($open)
-            continue
-        }
-        if ($null -ne $open -and $edge.IsMatch($line)) { $open = $null; continue }
-        if ($null -eq $open) { continue }
-        $q = $qText.Match($line)
-        if ($q.Success) { $open.questions.Add($q.Groups[1].Value) }
-    }
+    $blocks = @(Get-QuizQuestionBlocks -Lines $lines)
     if ($blocks.Count -eq 0) { return [pscustomobject]$res }
     $freshest = @($blocks | Where-Object { -not $_.answered } | Sort-Object -Property date) | Select-Object -Last 1
     if (-not $freshest) {
@@ -133,15 +114,14 @@ function Get-QuizQuestionBlock([string] $SpecPath, [string] $Note, [string] $Upd
     if ($freshest.version -cne 'v1') {
         $res.reason = ("version {0} is not v1" -f $freshest.version); return [pscustomobject]$res
     }
-    $day = [regex]::Match($Updated, '(\d{4}-\d{2}-\d{2})')
-    if ($day.Success -and [string]$freshest.date -lt $day.Groups[1].Value) {
+    $day = Get-QuizEntryDay $Updated
+    if ($day -and $freshest.date -lt $day) {
         $res.state = 'stale'; $res.version = $freshest.version; $res.date = $freshest.date
-        $res.reason = ("dated {0}, older than the block entry {1}" -f $freshest.date, $day.Groups[1].Value)
+        $res.reason = ("dated {0}, older than the block entry {1}" -f $freshest.date, $day)
         return [pscustomobject]$res
     }
     $flatQs = @($freshest.questions | ForEach-Object { ConvertTo-QuizFlatText $_ })
-    foreach ($m in [regex]::Matches($Note, '(?<![A-Za-z0-9])Q:\s*([^?]*\?)')) {
-        $wanted = ConvertTo-QuizFlatText $m.Groups[1].Value
+    foreach ($wanted in (Get-QuizNoteQuestions $Note)) {
         if ($flatQs -cnotcontains $wanted) {
             $res.state = 'stale'; $res.version = $freshest.version; $res.date = $freshest.date
             $res.reason = ("missing the note's Q: '{0}'" -f $wanted)

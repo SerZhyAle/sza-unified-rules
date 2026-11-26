@@ -40,9 +40,16 @@ Active lifecycle:
 Block states (any active spec may transition into one of these and back):
 
 - `BlockByOtherTask`  - depends on another spec (local `**Depends on:** Sxxxx` / `Blocker: Sxxxx`, or cross-repository `Blocker: <repoKey>:<id>` in a registered sibling repository, S0042); the entry gate (`check-block-note.ps1`) requires at least one directional blocker in the spec or `statusNote`. On entry the status tool writes a back-link `- Blocks: <ref> | was: <status> | since: <date>` under `## Blocked tickets` in each blocker's spec, and every later status move of a blocker returns each waiting ticket whose blockers are all released to its `was` status (`block-links.ps1`, TASK-FLOW rule 69).
-- `BlockNeedUserTest` - implementation done and audited, awaiting the owner's hands-on device verification.
+- `BlockNeedUserTest` - implementation done and audited, awaiting a device or GUI step only the owner can perform.
+  A new entry requires a non-empty `**Device check:**` line naming the step and why no project command covers it
+  (TASK-FLOW 0.45 section 21). A project command deferred to release is recorded on a `**Release gate:**` line
+  under `Implemented` when it is the only remaining check.
 - `BlockQuestions`    - awaiting an owner answer or a pre-implementation owner action (device, desk, or outside-console account step needed before code can be written, S0042). Entered only with a note that carries either the question itself as a literal `Q: ..?` token (S0039) or the pre-implementation action as a literal `DO: <action>` token paired with `- **DO:** <action>` in `### 3.3 Owner inputs (Approval gate)` (S0042). Left only through `/sq` (`spec-quiz`) or `spec-to-audit` Quiz mode: answers or action results written into the ticket first, then a restore to the inferred pre-block status.
 - `BlockExternal`     - waiting on an external party outside the portfolio (third-party vendor, upstream library maintainer, store review, hardware shipment). Work owned by another registered repository in the portfolio is filed there and waited on via `BlockByOtherTask` with `Blocker: <repoKey>:<id>`, never `BlockExternal` (S0042).
+
+Use `list-blockneedusertest.ps1 -Checklist` to print the current project's recorded device checks by ticket.
+Use `sweep-bnut.ps1 -Root <repo>` to preview legacy rows without a device check. After reviewing a row and
+recording its deferred command on a `**Release gate:**` line, `-Apply` reclassifies it through `update.ps1`.
 
 Terminal:
 

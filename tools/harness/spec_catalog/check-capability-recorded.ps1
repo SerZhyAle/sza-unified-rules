@@ -51,6 +51,7 @@ function Stop-CannotVerify([string]$why) {
 
 if (-not (Test-SzaTicketId $Id)) { Stop-CannotVerify "invalid id" }
 
+$Id = Resolve-CatalogId -Id $Id  # TASK-FLOW 0.37 former id (CANONR-0195 G5)
 $records = Read-Catalog
 $record = $records | Where-Object { $_.id -eq $Id } | Select-Object -First 1
 if (-not $record) { Stop-CannotVerify "no catalog record" }

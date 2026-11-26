@@ -83,8 +83,11 @@ compile-only -> targeted tests -> minified release variant -> device) lives in
   their own research: dedup by symptom first, capture the symptom/evidence in a fresh draft ticket,
   report it, and resume the original task. Never switch the active ticket for a parked finding. Trivial
   in-scope fixes are done on the spot.
-- **A "needs device/user test" state (`BlockNeedUserTest`) is an explicit post-implementation status**, and a
-  temporary debug probe may be bound to it: a probe log line exists in code *iff* the ticket sits in that
+- **`BlockNeedUserTest` is for a device or GUI step only the owner can perform after implementation and
+  audit**. Write `**Device check:**` with the step and why no project command covers it on the same line.
+  When the only remaining check is a project command deferred by the 5 s limit, set `Implemented` and name
+  it on a `**Release gate:** <suite or command>` line. A temporary debug probe may be bound to the owner-test
+  status: a probe log line exists in code *iff* the ticket sits in that
   status - inserted at the changed-flow entry before the test build, deleted the moment the ticket leaves it,
   and never present in a permanent or shipped log (a fail-closed gate keeps ticket ids out of permanent logs).
   The probe cannot ship, because its lifetime is the status, not the developer's memory. An owner action on a

@@ -123,6 +123,11 @@ prints recent events across writers in timestamp order. Both support `-Json`; `l
 `-Repo <key>` and `-Ev <name>`. One row per pass goes to the portfolio's `runs.jsonl`, alongside the
 repository runner's own `runs-pq<slot>.jsonl`. Dispatcher code never writes ticket status directly.
 
+For canon lifecycle passes, the repository runner prepares the ticket context after reserving the
+lease. The agent reads that context and records its change summary and file list for the runner.
+The agent updates the ticket through the catalog tool, then the runner logs any status move and
+releases the lease after the agent exits. Repository-specific pipelines keep their own workflow.
+
 The operator steers two plain text files: `PORTFOLIO_QUEUE.md` in the portfolio root orders the projects
 (`pq queue` opens it), and each repository's own `PLAN/RELEASE_QUEUE.md` orders its tickets
 (`pq tickets <key>` opens it). The operator's instruction is [portfolio/README.md](portfolio/README.md).

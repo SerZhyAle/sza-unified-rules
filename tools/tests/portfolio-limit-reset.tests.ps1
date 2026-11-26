@@ -389,8 +389,42 @@ try {
     if ($pqAt -ne $expectAt) { throw "Expected $($expectAt.ToString('o')) (the time + the minute's margin), got $($pqAt.ToString('o'))" }
     Write-Host " PASS" -ForegroundColor Green
 
+    # -----------------------------------------------------------------------------------------
+    # Case 9: a robot ticket filed into another repository is seen by the pass and announced once (rule 41, CANONR-0197)
+    # -----------------------------------------------------------------------------------------
+    Write-Host "Case 9: robot-filed rows seen across repositories and announced by the first worker..." -NoNewline
+    $lookRepos = @(foreach ($k in 'alpha', 'beta', 'gamma') {
+            $dir = Join-Path $scratch "look-$k"
+            $null = [IO.Directory]::CreateDirectory((Join-Path $dir 'PLAN'))
+            [IO.File]::WriteAllText((Join-Path $dir '.sza-profile.json'), '{}', [Text.UTF8Encoding]::new($false))
+            [IO.File]::WriteAllText((Join-Path $dir 'PLAN/spec-catalog.jsonl'), ((& $capRow 'S0001' $(if ($k -ceq 'alpha') { 'owner' } else { 'robot' })) + "`n"), [Text.UTF8Encoding]::new($false))
+            [pscustomobject]@{ key = $k; path = $dir; enabled = $true }
+        })
+    # gamma cannot be read at the first look, so none of its rows may count as new.
+    $lock = [IO.File]::Open((Join-Path $lookRepos[2].path 'PLAN/spec-catalog.jsonl'), [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::None)
+    try { $before = Get-PqRobotLook -Repos $lookRepos -Days '2026-11-18' -Cap 1 } finally { $lock.Dispose() }
+    if ($before.repos.Contains('gamma') -or -not $before.repos.Contains('beta')) { throw 'Expected the unreadable repository, and it alone, to be left out of the look' }
+    [IO.File]::AppendAllText((Join-Path $lookRepos[0].path 'PLAN/spec-catalog.jsonl'), ((& $capRow 'S0002' 'robot') + "`n" + (& $capRow 'S0003' 'owner') + "`n"))
+    [IO.File]::AppendAllText((Join-Path $lookRepos[1].path 'PLAN/spec-catalog.jsonl'), ((& $capRow 'S0002' 'robot') + "`n"))
+    $after = Get-PqRobotLook -Repos $lookRepos -Days @('2026-11-18', '2026-11-18') -Cap 1
+    $new = @(Get-PqRobotNew $before $after)
+    $seen = (@($new | ForEach-Object { "$($_.repo):$($_.id):$($_.count):$($_.capped)" }) -join ',')
+    if ($seen -cne 'alpha:S0002:1:False,beta:S0002:2:True') { throw "Expected the two new robot rows with their place of the day, got '$seen'" }
+    $keys = [string[]]@($new | ForEach-Object { "$($_.repo):$($_.id)" })
+    $first = @(Request-PqIntakeAnnounce $keys)
+    if (($first -join ',') -cne 'alpha:S0002,beta:S0002') { throw "Expected the first worker to announce both, got '$($first -join ',')'" }
+    if (@(Request-PqIntakeAnnounce $keys).Count -ne 0) { throw 'Expected a second worker to announce nothing' }
+    $late = @(Request-PqIntakeAnnounce ([string[]]@('beta:S0002', 'beta:S0004')))
+    if (($late -join ',') -cne 'beta:S0004') { throw "Expected only the unseen key, got '$($late -join ',')'" }
+    if (@(Request-PqIntakeAnnounce @()).Count -ne 0) { throw 'Expected no key from no key' }
+    $loopSrc = [IO.File]::ReadAllText((Join-Path $pqLib 'loop.ps1'))
+    foreach ($need in '$robotBefore = Get-PqRobotLook -Repos $robotRepos', '$robotNew = @(Get-PqRobotNew $robotBefore $robotAfter)', '$robotFirst = @(Request-PqIntakeAnnounce', '-Repo $filedRow.repo -Id $filedRow.id') {
+        if (-not $loopSrc.Contains($need)) { throw "loop.ps1 lost '$need'" }
+    }
+    Write-Host " PASS" -ForegroundColor Green
+
     Write-Host ""
-    Write-Host "All 8 test cases passed successfully." -ForegroundColor Green
+    Write-Host "All 9 test cases passed successfully." -ForegroundColor Green
 }
 finally {
     $env:SZA_PORTFOLIO_ROOT = $origEnv

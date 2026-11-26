@@ -30,6 +30,8 @@
 # the record's `gate` field; empty writes no gate. It is passed through to all_features/add.ps1, which
 # alone validates the names and rejects repeats - this script keeps no second validator (S2937).
 # Pass -StatusOnly to update only the journal status without close.ps1 (keeps no closed_at).
+# Pass -PostStatus when the caller already moved the ticket. The current status is checked
+# before running the logging and post-close steps.
 #
 # S1063 - two invariants keep a bad call from half-closing a ticket:
 #   * PositionalBinding is OFF. Passing a multi-element array to -DevLogs through `pwsh -File`
@@ -77,7 +79,8 @@ param(
     [switch]$FeatNoLegal,
     [switch]$SkipCatalogSync,
     [switch]$SkipFuncLog,
-    [switch]$StatusOnly
+    [switch]$StatusOnly,
+    [switch]$PostStatus
 )
 
 . (Join-Path $PSScriptRoot '..\_profile.ps1')
@@ -100,6 +103,7 @@ function Reject([string]$msg) {
 }
 
 if (-not (Test-SzaTicketId $Id)) { Reject "Invalid -Id '$Id' (must match $(Get-SzaTicketIdDisplay))" }
+if ($StatusOnly -and $PostStatus) { Reject '-StatusOnly and -PostStatus are mutually exclusive.' }
 
 # Cross-process transport form: `pwsh -File` binds only the FIRST element of a multi-element
 # array argument, so callers from another process pass one string holding a JSON ARRAY.
@@ -209,7 +213,13 @@ Write-Host "close-and-log: $Id -> $Status" -ForegroundColor Yellow
 # 1. Status update (close.ps1 stamps closed_at on Verified/Archived; update.ps1 otherwise).
 $useClose = (-not $StatusOnly) -and ($Status -in @('Verified', 'Archived'))
 Step "status" -Fatal {
-    if ($useClose) {
+    if ($PostStatus) {
+        $record = & { . (Join-Path $PSScriptRoot '_lib.ps1'); Find-Record -Id $Id }
+        if ($null -eq $record -or $record.status -ne $Status) {
+            throw "Expected $Id at $Status before post-status bookkeeping."
+        }
+    }
+    elseif ($useClose) {
         $closePath = Join-Path $PSScriptRoot 'close.ps1'
         & $pwshExe -File $closePath -Id $Id -Status $Status
         if ($LASTEXITCODE -ne 0) { throw "close.ps1 exited $LASTEXITCODE" }

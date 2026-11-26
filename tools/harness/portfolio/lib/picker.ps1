@@ -321,6 +321,14 @@ function Get-PqLedgerStatuses {
             if ($snap.complete -and $snap.ledgerRead) {
                 $map = [hashtable]::new([StringComparer]::Ordinal)
                 foreach ($id in @($snap.tickets.Keys)) { $map[[string]$id] = [string]$snap.tickets[$id].status }
+                # TASK-FLOW 0.37: a queue row by an old id reads its ticket's status, not unknownTicket (CANONR-0195 G3).
+                $al = $snap.PSObject.Properties['aliases']
+                if ($al -and $al.Value -is [Collections.IDictionary]) {
+                    foreach ($f in @($al.Value.Keys)) {
+                        $t = $snap.tickets[[string]$al.Value[$f]]
+                        if ($null -ne $t -and -not $map.ContainsKey([string]$f)) { $map[[string]$f] = [string]$t.status }
+                    }
+                }
                 return $map
             }
         }

@@ -284,6 +284,7 @@ param(
 . (Join-Path $PSScriptRoot '_idle-runs.ps1')
 . (Join-Path $PSScriptRoot '_limit-hold.ps1')
 . (Join-Path $PSScriptRoot '_pass-usage.ps1')
+. (Join-Path $PSScriptRoot '_pass-bookkeeping.ps1')
 . (Join-Path $PSScriptRoot '_context-handoff.ps1')
 . (Join-Path $PSScriptRoot '_instance-settings.ps1')
 . (Join-Path $PSScriptRoot '..\spec_catalog\lib\complexity-grade.ps1')
@@ -1149,7 +1150,8 @@ function Undo-ChildLeaseClaim {
     param([string] $Id, $Lease)
     if (-not (Test-Path -LiteralPath $leaseScript)) { return }
     $relArgs = @('-NoProfile', '-File', $leaseScript, '-Verb', 'Release', '-Id', $Id)
-    if ($Lease -and $Lease.handoff_path) { $relArgs += @('-Handoff', [string]$Lease.handoff_path) } else { $relArgs += '-Force' }
+    if ($Lease.session_id) { $relArgs += @('-ExpectedSessionId', [string]$Lease.session_id) }
+    if ($Lease.handoff_path) { $relArgs += @('-Handoff', [string]$Lease.handoff_path) } else { $relArgs += '-Force' }
     & pwsh @relArgs *> $null
     if ($LASTEXITCODE -ne 0) {
         Write-Host ("  run-spec-queue: could not release the reservation on {0} - it expires on its own." -f $Id) -ForegroundColor DarkYellow
@@ -1495,6 +1497,7 @@ while ($true) {
         $id = $explicit[$explicitIndex]
         $explicitIndex++
         $ticket = Get-TicketRecord -Id $id
+        if ($ticket -and $ticket.id) { $id = [string]$ticket.id }
     } else {
         $ticket = Get-NextQueuedTicket -Exclude $processed.ToArray() -ClaimAs $plannedSessionId
         if ($ticket -eq 'PARSE_ERROR') { break }
@@ -1609,148 +1612,161 @@ while ($true) {
     Write-Host ('=' * 78) -ForegroundColor DarkGray
     try { $host.UI.RawUI.WindowTitle = "$id$titleSuffix | run-spec-queue ($Instance)" } catch { }
 
-    # --- run it in its own process --------------------------------------------------------
-    $ticketRec = if ($ticket -and $ticket.file) { $ticket } else { Get-TicketRecord -Id $id }
-    $specPath = if ($ticketRec -and $ticketRec.file) { [string]$ticketRec.file } else { '' }
-    $updateRel = if (-not [string]::IsNullOrWhiteSpace($update)) {
-        if ($update.StartsWith($RepoRoot, [StringComparison]::OrdinalIgnoreCase)) {
-            $update.Substring($RepoRoot.Length).TrimStart('\', '/').Replace('\', '/')
+    $pass = $null
+    $proc = $null
+    $canRelease = $true
+    $exitCode = $null
+    $outcome = 'ok'
+    $logBody = ''
+    $statusAfter = $statusBefore
+    try {
+        # --- run it in its own process --------------------------------------------------------
+        $ticketRec = if ($ticket -and $ticket.file) { $ticket } else { Get-TicketRecord -Id $id }
+        $specPath = if ($ticketRec -and $ticketRec.file) { [string]$ticketRec.file } else { '' }
+        $updateRel = if (-not [string]::IsNullOrWhiteSpace($update)) {
+            if ($update.StartsWith($RepoRoot, [StringComparison]::OrdinalIgnoreCase)) {
+                $update.Substring($RepoRoot.Length).TrimStart('\', '/').Replace('\', '/')
+            } else {
+                $update.Replace('\', '/')
+            }
         } else {
-            $update.Replace('\', '/')
+            'tools/harness/spec_catalog/update.ps1'
         }
-    } else {
-        'tools/harness/spec_catalog/update.ps1'
-    }
-    $prompt = $PromptTemplate
-    $prompt = $prompt.Replace('{id}', $id).Replace('{Id}', $id).Replace('<id>', $id)
-    $prompt = $prompt.Replace('{specPath}', $specPath).Replace('{specpath}', $specPath).Replace('<spec path>', $specPath)
-    $prompt = $prompt.Replace('{repoRoot}', $RepoRoot).Replace('{reporoot}', $RepoRoot).Replace('<repo root>', $RepoRoot)
-    $prompt = $prompt.Replace('{updatePath}', $updateRel).Replace('{updatepath}', $updateRel).Replace('<update.ps1 path>', $updateRel)
-    $childArgs = @(Expand-ChildArgs -Template $runnerArgsTemplate -Prompt $prompt `
-            -Mode $PermissionMode -Model $childModel -Effort (Resolve-ChildEffort -RecordEffort $recordEffort -Model $childModel))
+        $prompt = $PromptTemplate
+        $prompt = $prompt.Replace('{id}', $id).Replace('{Id}', $id).Replace('<id>', $id)
+        $prompt = $prompt.Replace('{specPath}', $specPath).Replace('{specpath}', $specPath).Replace('<spec path>', $specPath)
+        $prompt = $prompt.Replace('{repoRoot}', $RepoRoot).Replace('{reporoot}', $RepoRoot).Replace('<repo root>', $RepoRoot)
+        $prompt = $prompt.Replace('{updatePath}', $updateRel).Replace('{updatepath}', $updateRel).Replace('<update.ps1 path>', $updateRel)
+        $managedSkill = Get-ManagedPassSkill -Prompt $PromptTemplate
+        if ($managedSkill -and $reservation) {
+            $pass = Initialize-PassBookkeeping -Id $id -Root $RepoRoot -TempDir $tempDir
+            $prompt = Add-PassBookkeepingPrompt -Prompt $prompt -Skill $managedSkill -Pass $pass
+        }
+        $childArgs = @(Expand-ChildArgs -Template $runnerArgsTemplate -Prompt $prompt `
+                -Mode $PermissionMode -Model $childModel -Effort (Resolve-ChildEffort -RecordEffort $recordEffort -Model $childModel))
 
-    # S4265: the child runs under a session id the runner chose, so that if it ends on the usage
-    # limit its transcript is found by that name and never by guessing the CLI's project directory.
-    # Appended AFTER the template is expanded, so every runner.instances.*.argsTemplate stays as its
-    # owner wrote it. Not added when the template already names a session, or resumes one (the CLI
-    # refuses --session-id beside --resume), or when the CLI does not list the flag in its --help.
-    # The id itself was chosen before the pick (Get-PlannedChildSessionId), because the reservation
-    # above was made in its name.
-    $sessionId = $plannedSessionId
-    if ($sessionId -and (Test-ChildTakesSessionId) -and [array]::IndexOf($childArgs, '--session-id') -lt 0) {
-        $childArgs += @('--session-id', $sessionId)
-    }
+        # S4265: the child runs under a session id the runner chose, so that if it ends on the usage
+        # limit its transcript is found by that name and never by guessing the CLI's project directory.
+        # Appended AFTER the template is expanded, so every runner.instances.*.argsTemplate stays as its
+        # owner wrote it. Not added when the template already names a session, or resumes one (the CLI
+        # refuses --session-id beside --resume), or when the CLI does not list the flag in its --help.
+        # The id itself was chosen before the pick (Get-PlannedChildSessionId), because the reservation
+        # above was made in its name.
+        $sessionId = $plannedSessionId
+        if ($sessionId -and (Test-ChildTakesSessionId) -and [array]::IndexOf($childArgs, '--session-id') -lt 0) {
+            $childArgs += @('--session-id', $sessionId)
+        }
 
-    # Claude in Chrome: an interactive session turns it on from the user's claudeInChromeDefaultEnabled setting,
-    # but a print-mode child (-p) never does - measured 2026-11-20 on CLI 2.1.329: 0 chrome tools without the flag,
-    # 20 and the claude-in-chrome server connected with it. A robot gets what the owner's session has, so every child
-    # started through the Claude Code CLI (Claude itself, or a provider reached through it) asks for it, unless its
-    # template already names --chrome or --no-chrome, or the CLI's --help does not list the flag.
-    $isClaudeCli = $isClaudeChild -or ([IO.Path]::GetFileNameWithoutExtension([string]$claude) -ieq 'claude')
-    if ($isClaudeCli -and [array]::IndexOf($childArgs, '--chrome') -lt 0 -and [array]::IndexOf($childArgs, '--no-chrome') -lt 0 -and (Test-ChildHelpLists '--chrome')) {
-        $childArgs += '--chrome'
-    }
+        # Claude in Chrome: an interactive session turns it on from the user's claudeInChromeDefaultEnabled setting,
+        # but a print-mode child (-p) never does - measured 2026-11-20 on CLI 2.1.329: 0 chrome tools without the flag,
+        # 20 and the claude-in-chrome server connected with it. A robot gets what the owner's session has, so every child
+        # started through the Claude Code CLI (Claude itself, or a provider reached through it) asks for it, unless its
+        # template already names --chrome or --no-chrome, or the CLI's --help does not list the flag.
+        $isClaudeCli = $isClaudeChild -or ([IO.Path]::GetFileNameWithoutExtension([string]$claude) -ieq 'claude')
+        if ($isClaudeCli -and [array]::IndexOf($childArgs, '--chrome') -lt 0 -and [array]::IndexOf($childArgs, '--no-chrome') -lt 0 -and (Test-ChildHelpLists '--chrome')) {
+            $childArgs += '--chrome'
+        }
 
-    # S0041's context trial, appended after the template like the session id above, and only on a
-    # Claude child whose own --help names the flag. --strict-mcp-config with the
-    # repository's .mcp.json beside it keeps the one MCP configuration the repository declared and
-    # drops the user-scope servers whose tool definitions bloat every session start; a repository
-    # that declares none launches with none. The disallowed tools are the three whose instructions
-    # the study measured at 12.4k of every session start.
-    if ($trialContext -and $isClaudeChild) {
-        if (Test-ChildHelpLists '--strict-mcp-config') {
-            $childArgs += '--strict-mcp-config'
-            $mcpFile = Join-Path $RepoRoot '.mcp.json'
-            if ((Test-Path -LiteralPath $mcpFile -PathType Leaf) -and [array]::IndexOf($childArgs, '--mcp-config') -lt 0) {
-                $childArgs += @('--mcp-config', $mcpFile)
+        # S0041's context trial, appended after the template like the session id above, and only on a
+        # Claude child whose own --help names the flag. --strict-mcp-config with the
+        # repository's .mcp.json beside it keeps the one MCP configuration the repository declared and
+        # drops the user-scope servers whose tool definitions bloat every session start; a repository
+        # that declares none launches with none. The disallowed tools are the three whose instructions
+        # the study measured at 12.4k of every session start.
+        if ($trialContext -and $isClaudeChild) {
+            if (Test-ChildHelpLists '--strict-mcp-config') {
+                $childArgs += '--strict-mcp-config'
+                $mcpFile = Join-Path $RepoRoot '.mcp.json'
+                if ((Test-Path -LiteralPath $mcpFile -PathType Leaf) -and [array]::IndexOf($childArgs, '--mcp-config') -lt 0) {
+                    $childArgs += @('--mcp-config', $mcpFile)
+                }
+            }
+            if (Test-ChildHelpLists '--disallowedTools') {
+                $denied = if ($Parallel) { @('ScheduleWakeup', 'ReportFindings') } else { @('Workflow', 'ScheduleWakeup', 'ReportFindings') }
+                $childArgs += @('--disallowedTools') + $denied
             }
         }
-        if (Test-ChildHelpLists '--disallowedTools') {
-            $denied = if ($Parallel) { @('ScheduleWakeup', 'ReportFindings') } else { @('Workflow', 'ScheduleWakeup', 'ReportFindings') }
-            $childArgs += @('--disallowedTools') + $denied
-        }
-    }
 
-    # S0140: what the runner adds to a Claude child - the opt-in of a parallel pass, and the request to grade an
-    # ungraded ticket - rides in the system prompt, never in the prompt: words after `/spec-all <id>` reach the
-    # command as part of its argument and the resolver reads it as an idea (proof run 2026-11-18, canon:S0140
-    # section 3.5).
-    $optIn = if ($Parallel -and $isClaudeChild) { Get-ParallelOptIn $Parallel } else { '' }
-    $gradeAsk = if ($isClaudeChild -and $ModelPolicy -eq 'shape' -and -not $childComplexity) {
-        'Before other ticket work, research the ticket and write its **Complexity:** line as a grade 0-9 (0-3 light, 4-6 medium, 7-9 hard) with the reason for your assessment.'
-    } else { '' }
-    if ($optIn -or $gradeAsk) {
-        # A template that names the flag says the CLI takes it; otherwise the CLI's own --help does.
-        if (@($childArgs -cmatch '^--append-system-prompt(=|$)').Count -gt 0 -or (Test-ChildHelpLists '--append-system-prompt')) {
-            $childArgs = @(Add-ChildSystemPrompt -ChildArgs $childArgs -Lead $optIn -Tail $gradeAsk)
+        # S0140: what the runner adds to a Claude child - the opt-in of a parallel pass, and the request to grade an
+        # ungraded ticket - rides in the system prompt, never in the prompt: words after `/spec-all <id>` reach the
+        # command as part of its argument and the resolver reads it as an idea (proof run 2026-11-18, canon:S0140
+        # section 3.5).
+        $optIn = if ($Parallel -and $isClaudeChild) { Get-ParallelOptIn $Parallel } else { '' }
+        $gradeAsk = if ($isClaudeChild -and $ModelPolicy -eq 'shape' -and -not $childComplexity) {
+            'Before other ticket work, research the ticket and write its **Complexity:** line as a grade 0-9 (0-3 light, 4-6 medium, 7-9 hard) with the reason for your assessment.'
+        } else { '' }
+        if ($optIn -or $gradeAsk) {
+            # A template that names the flag says the CLI takes it; otherwise the CLI's own --help does.
+            if (@($childArgs -cmatch '^--append-system-prompt(=|$)').Count -gt 0 -or (Test-ChildHelpLists '--append-system-prompt')) {
+                $childArgs = @(Add-ChildSystemPrompt -ChildArgs $childArgs -Lead $optIn -Tail $gradeAsk)
+            }
+            else {
+                if ($optIn) { Write-Host "  parallel       : $Parallel asked, but the CLI's --help does not list --append-system-prompt; the pass runs single" -ForegroundColor Yellow }
+                if ($gradeAsk) { Write-Host "  complexity     : no grade declared, and the CLI's --help does not list --append-system-prompt; the pass is not asked for one" -ForegroundColor Yellow }
+            }
         }
-        else {
-            if ($optIn) { Write-Host "  parallel       : $Parallel asked, but the CLI's --help does not list --append-system-prompt; the pass runs single" -ForegroundColor Yellow }
-            if ($gradeAsk) { Write-Host "  complexity     : no grade declared, and the CLI's --help does not list --append-system-prompt; the pass is not asked for one" -ForegroundColor Yellow }
+
+        # ProcessStartInfo.ArgumentList, never Start-Process -ArgumentList. Start-Process joins the array
+        # into one command line WITHOUT quoting, so an element containing a space is split at the space:
+        # '/spec-all S1949' reached the CLI as '-p /spec-all' plus a stray 'S1949', and every child then
+        # aborted with "no argument" after a minute of Opus. .NET's ArgumentList escapes each element.
+        # Measured 2026-08-25, three tickets in a row lost this way.
+        $psi = [System.Diagnostics.ProcessStartInfo]::new()
+        $psi.FileName = $claude
+        foreach ($a in $childArgs) { $psi.ArgumentList.Add([string]$a) }
+        $psi.WorkingDirectory = $RepoRoot
+        $psi.UseShellExecute = $false
+        # A provider that is reached through another CLI's environment (z.ai through Claude Code: base URL and token)
+        # declares it in its record. A value may name a variable as %NAME%, so the secret stays in the owner's
+        # environment and never reaches the registry or an argument list.
+        if ($null -ne $script:AgentRecord -and (Test-SzaHasProperty -Object $script:AgentRecord -Name 'env') -and $null -ne $script:AgentRecord.env) {
+            foreach ($pair in $script:AgentRecord.env.PSObject.Properties) {
+                # This process first, then the owner's user and machine values: a key set after this runner's parent started
+                # is in the registry but not in the environment it handed down.
+                $psi.Environment[[string]$pair.Name] = [regex]::Replace([string]$pair.Value, '%([A-Za-z0-9_]+)%', {
+                        param($m)
+                        $n = $m.Groups[1].Value
+                        $v = [Environment]::GetEnvironmentVariable($n)
+                        if (-not $v) { $v = [Environment]::GetEnvironmentVariable($n, 'User') }
+                        if (-not $v) { $v = [Environment]::GetEnvironmentVariable($n, 'Machine') }
+                        [string]$v
+                    })
+            }
         }
-    }
-
-    # ProcessStartInfo.ArgumentList, never Start-Process -ArgumentList. Start-Process joins the array
-    # into one command line WITHOUT quoting, so an element containing a space is split at the space:
-    # '/spec-all S1949' reached the CLI as '-p /spec-all' plus a stray 'S1949', and every child then
-    # aborted with "no argument" after a minute of Opus. .NET's ArgumentList escapes each element.
-    # Measured 2026-08-25, three tickets in a row lost this way.
-    $psi = [System.Diagnostics.ProcessStartInfo]::new()
-    $psi.FileName = $claude
-    foreach ($a in $childArgs) { $psi.ArgumentList.Add([string]$a) }
-    $psi.WorkingDirectory = $RepoRoot
-    $psi.UseShellExecute = $false
-    # A provider that is reached through another CLI's environment (z.ai through Claude Code: base URL and token)
-    # declares it in its record. A value may name a variable as %NAME%, so the secret stays in the owner's
-    # environment and never reaches the registry or an argument list.
-    if ($null -ne $script:AgentRecord -and (Test-SzaHasProperty -Object $script:AgentRecord -Name 'env') -and $null -ne $script:AgentRecord.env) {
-        foreach ($pair in $script:AgentRecord.env.PSObject.Properties) {
-            # This process first, then the owner's user and machine values: a key set after this runner's parent started
-            # is in the registry but not in the environment it handed down.
-            $psi.Environment[[string]$pair.Name] = [regex]::Replace([string]$pair.Value, '%([A-Za-z0-9_]+)%', {
-                    param($m)
-                    $n = $m.Groups[1].Value
-                    $v = [Environment]::GetEnvironmentVariable($n)
-                    if (-not $v) { $v = [Environment]::GetEnvironmentVariable($n, 'User') }
-                    if (-not $v) { $v = [Environment]::GetEnvironmentVariable($n, 'Machine') }
-                    [string]$v
-                })
+        if ($sessionId) {
+            # The identity chain reads <envPrefix>_AGENT_ID before the runtime's own session id, so this
+            # pins the child - and every subagent it starts - to the id the reservation was made for.
+            # It also stops an id leaked into this runner's environment from making every child one
+            # agent.
+            $psi.Environment[(Get-SzaEnvName 'AGENT_ID')] = $sessionId
+        } elseif ($psi.Environment.ContainsKey((Get-SzaEnvName 'AGENT_ID'))) {
+            $psi.Environment.Remove((Get-SzaEnvName 'AGENT_ID'))
         }
-    }
-    if ($sessionId) {
-        # The identity chain reads <envPrefix>_AGENT_ID before the runtime's own session id, so this
-        # pins the child - and every subagent it starts - to the id the reservation was made for.
-        # It also stops an id leaked into this runner's environment from making every child one
-        # agent.
-        $psi.Environment[(Get-SzaEnvName 'AGENT_ID')] = $sessionId
-    } elseif ($psi.Environment.ContainsKey((Get-SzaEnvName 'AGENT_ID'))) {
-        $psi.Environment.Remove((Get-SzaEnvName 'AGENT_ID'))
-    }
-    <# TASK-FLOW rule 3: a ticket this child files is born inside an unattended pass, and insert.ps1 writes
-       source `robot` for it. Set for the child alone - never in this runner's own environment. #>
-    $psi.Environment['SZA_TICKET_SOURCE'] = 'robot'
-    if ($trialContext -and $isClaudeChild -and (Test-ChildHelpLists '--strict-mcp-config')) {
-        # The third trial control, and the only one that is an environment variable: five-minute
-        # prompt caching, set into the CHILD's environment alone - never a repository's settings
-        # file, which the owner's interactive sessions share. Gated on the same probe as the flag,
-        # because it is a Claude Code variable and no other CLI reads it.
-        $psi.Environment['FORCE_PROMPT_CACHING_5M'] = '1'
-    }
+        <# TASK-FLOW rule 3: a ticket this child files is born inside an unattended pass, and insert.ps1 writes
+           source `robot` for it. Set for the child alone - never in this runner's own environment. #>
+        $psi.Environment['SZA_TICKET_SOURCE'] = 'robot'
+        [void]$psi.Environment.Remove('SZA_PASS_PREAMBLE')
+        [void]$psi.Environment.Remove('SZA_PASS_RESULT')
+        if ($pass) {
+            $psi.Environment['SZA_PASS_PREAMBLE'] = $pass.preamble
+            $psi.Environment['SZA_PASS_RESULT'] = $pass.result
+        }
+        if ($trialContext -and $isClaudeChild -and (Test-ChildHelpLists '--strict-mcp-config')) {
+            # The third trial control, and the only one that is an environment variable: five-minute
+            # prompt caching, set into the CHILD's environment alone - never a repository's settings
+            # file, which the owner's interactive sessions share. Gated on the same probe as the flag,
+            # because it is a Claude Code variable and no other CLI reads it.
+            $psi.Environment['FORCE_PROMPT_CACHING_5M'] = '1'
+        }
 
-    $logFile = $null
-    if ($Quiet) {
-        $logFile = Join-Path $runDir $(if ($agentScope) { "{0}.{1}.log" -f $id, $agentScope } else { "{0}.log" -f $id })
-        $psi.RedirectStandardOutput = $true
-        $psi.RedirectStandardError = $true
-        Write-Host ("  output -> {0}" -f $logFile) -ForegroundColor DarkGray
-    }
+        $logFile = $null
+        if ($Quiet) {
+            $logFile = Join-Path $runDir $(if ($agentScope) { "{0}.{1}.log" -f $id, $agentScope } else { "{0}.log" -f $id })
+            $psi.RedirectStandardOutput = $true
+            $psi.RedirectStandardError = $true
+            Write-Host ("  output -> {0}" -f $logFile) -ForegroundColor DarkGray
+        }
 
-    $outcome = 'ok'
-    $exitCode = $null
-    # What -Quiet captured of the child's own output, kept for the usage-limit check below: it is
-    # the only record of the limit message when no transcript can be found.
-    $logBody = ''
-    try {
         $proc = [System.Diagnostics.Process]::Start($psi)
         $childStartTicks = 0
         try { $childStartTicks = $proc.StartTime.Ticks } catch { $childStartTicks = 0 }
@@ -1901,7 +1917,6 @@ while ($true) {
                             Write-Host ''
                             Write-Host ("  run-spec-queue: {0}{2} moved to {1} and remained running for {3} min - stopping the process tree (recorded ok)." -f $id, $currentStatus, $titleSuffix, $StatusGraceMinutes) -ForegroundColor DarkCyan
                             Stop-ProcessTree -ProcessId $proc.Id
-                            & pwsh -NoProfile -File (Get-SzaHarnessScript 'locks/ticket-lease.ps1') -Verb Release -Id $id 2>&1 | Out-Null
                             $stoppedAfterStatus = $true
                             $outcome = 'ok'
                             $exitCode = 0
@@ -1959,8 +1974,6 @@ while ($true) {
                 Write-Host ''
                 Write-Host ("  run-spec-queue: {0}{3} exceeded {1} min - killing the process tree. {2}." -f $id, $TimeoutMinutes, $progress, $titleSuffix) -ForegroundColor Red
                 Stop-ProcessTree -ProcessId $proc.Id
-                # A killed child cannot release its ticket lease; drop it so a later run is not refused.
-                & pwsh -NoProfile -File (Get-SzaHarnessScript 'locks/ticket-lease.ps1') -Verb Release -Id $id 2>&1 | Out-Null
             } elseif ($stoppedAfterStatus) {
                 $outcome = 'ok'
                 $exitCode = 0
@@ -2015,116 +2028,80 @@ while ($true) {
                 Write-Host ("  run-spec-queue: could not set timeout status note for {0} - {1}" -f $id, $_.Exception.Message) -ForegroundColor DarkYellow
             }
         }
+        if (-not $proc.WaitForExit(5000)) { throw "Child process $($proc.Id) is still running." }
+
+        $recAfter = Get-TicketRecord -Id $id
+        $statusAfter = [string]$recAfter.status
+
+        # S0029: reconcile a hand-edited status line from the spec header.
+        # When the spec header's first **Status:** differs from the ledger, call update.ps1 -Status <header value>
+        # (the gates still judge it) and log "status reconciled from the spec header"; a refused move is recorded
+        # as outcome status-drift, not no-progress.
+        if ($null -ne $recAfter -and -not [string]::IsNullOrWhiteSpace([string]$recAfter.file)) {
+            $specFileAfter = Join-Path $RepoRoot ([string]$recAfter.file)
+            if (Test-Path -LiteralPath $specFileAfter -PathType Leaf) {
+                $specText = [IO.File]::ReadAllText($specFileAfter)
+                $rxStatus = [regex]'(?m)^\*\*Status:\*\*\s*(?<status>[^\r\n]+)(?:\r?\n\*\*Status note:\*\*\s*(?<note>[^\r\n]*))?'
+                $mStatus = $rxStatus.Match($specText)
+                if ($mStatus.Success) {
+                    $rawHeaderStatus = $mStatus.Groups['status'].Value.Trim()
+                    $vocab = @(Get-SzaProfileValue 'grammar.statusVocabulary') | Sort-Object { $_.Length } -Descending
+                    $headerStatus = $null
+                    foreach ($w in $vocab) {
+                        if ($rawHeaderStatus -ceq $w -or $rawHeaderStatus.StartsWith("$w ", [StringComparison]::Ordinal)) {
+                            $headerStatus = $w
+                            break
+                        }
+                    }
+                    if ($null -ne $headerStatus -and $headerStatus -ne $statusAfter) {
+                        $headerNote = if ($mStatus.Groups['note'].Success -and -not [string]::IsNullOrWhiteSpace($mStatus.Groups['note'].Value)) {
+                            $mStatus.Groups['note'].Value.Trim()
+                        } else { $null }
+
+                        $updateArgs = @('-NoProfile', '-File', $update, '-Id', $id, '-Status', $headerStatus)
+                        if ($null -ne $headerNote) {
+                            $updateArgs += @('-StatusNote', $headerNote)
+                        }
+                        $updateOutput = & pwsh @updateArgs 2>&1
+                        if ($LASTEXITCODE -eq 0) {
+                            Write-Host ("  run-spec-queue: {0} status reconciled from the spec header ({1} -> {2})" -f $id, $statusAfter, $headerStatus) -ForegroundColor DarkCyan
+                            $statusAfter = $headerStatus
+                            if ($pass) { $recAfter = Get-TicketRecord -Id $id }
+                        } else {
+                            Write-Host ("  run-spec-queue: {0} status reconciliation from spec header refused by gates: {1}" -f $id, ($updateOutput | Out-String).Trim()) -ForegroundColor DarkYellow
+                            $outcome = 'status-drift'
+                        }
+                    }
+                }
+            }
+        }
+        if ($pass -and $statusAfter) {
+            $resultPath = Join-Path $RepoRoot $pass.result
+            $closed = Complete-PassBookkeeping -Id $id -StatusBefore $statusBefore -Record $recAfter -ResultPath $resultPath
+            if ($closed -ne 0) {
+                Write-Warning "run-spec-queue: post-status bookkeeping failed for $id (exit $closed). Result path: $resultPath"
+            } elseif ($outcome -eq 'ok' -and $exitCode -eq 0) {
+                Clear-PassBookkeeping -Root $RepoRoot -Pass $pass
+            }
+        }
     } catch {
         $outcome = 'launch-failed'
-        Write-Host ("  run-spec-queue: could not launch the child for {0}{2} - {1}" -f $id, $_.Exception.Message, $titleSuffix) -ForegroundColor Red
+        Write-Host ("  run-spec-queue: could not complete the pass for {0}{2} - {1}" -f $id, $_.Exception.Message, $titleSuffix) -ForegroundColor Red
     } finally {
-        if (Test-Path -LiteralPath $activeChildFile) {
+        if ($proc -and -not $proc.HasExited) {
+            $canRelease = $false
+            try {
+                Stop-ProcessTree -ProcessId $proc.Id
+                $canRelease = $proc.WaitForExit(5000)
+            } catch {
+                Write-Warning "run-spec-queue: could not stop child $($proc.Id): $($_.Exception.Message)"
+            }
+        }
+        if ($canRelease -and $proc -and (Test-Path -LiteralPath $activeChildFile)) {
             Remove-Item -LiteralPath $activeChildFile -Force -ErrorAction SilentlyContinue
         }
-    }
-
-    # Release the lease the child claimed, now that its process is gone. /spec-all asks the child to do
-    # this itself before its final report, and the child does not reliably get there: S1884 claimed twice,
-    # re-claimed at a phase boundary and never released, finishing 'ok' with the lease still held. A
-    # cleanup step written in prose at the end of a 25-minute pipeline is not a finally block - this is.
-    #
-    # It has to be forced. The lease judges liveness by the write time of the owner's transcript, so one
-    # that stopped a minute ago still reads as live for another 45 minutes. The parent knows better: it
-    # started that process and watched it exit. The cost of leaving it is not cosmetic - the preflight
-    # ranker skips a leased ticket, so the ticket that just advanced (the one most ready to continue) is
-    # exactly the one locked out; measured with S1884 first in its package and passed over for the fourth.
-    #
-    # Never on a lost claim. That lease is the sibling's, won fairly seconds before this child was
-    # killed for losing it, and forcing it open here would hand the ticket straight to the next
-    # ranker while its real owner is still working - the exact outcome the two checks above exist
-    # to prevent.
-    if ($outcome -ne 'claim-lost' -and (Test-Path -LiteralPath $leaseScript)) {
-        try {
-            & pwsh -NoProfile -File $leaseScript -Verb Release -Id $id -Force *> $null
-            if ($LASTEXITCODE -ne 0) {
-                Write-Host ("  run-spec-queue: could not release the lease for {0} - it expires on its own." -f $id) -ForegroundColor DarkYellow
-            }
-            else {
-                # The plan file renders `[taken ..]` on a row from the lease store, but only when the ledger is
-                # written - and releasing a lease is not a ledger write. The pass wrote its last status while it
-                # still held the lease, so without this the row kept the marker until some later write in this
-                # repository: a ticket waiting for the owner's answer read as taken by a robot for hours. A missing
-                # plan file exits 2 there and changes nothing, which is fine.
-                #
-                # Only when the row still shows the marker, and in its own try: the reconcile is one more child process
-                # in the pass tail, so it is kept to the one case that needs it instead of running after every pass;
-                # a failure here is not a failed lease release. It takes the catalog lock every mutator holds (S0138:
-                # release-queue.ps1 -Reconcile reads the catalog and rewrites both plan files under it, then refreshes
-                # the portfolio projection after releasing it), so a sibling instance's write cannot be overwritten by
-                # this older snapshot; a busy catalog makes it wait up to 30 s and then exit 1, which the line below
-                # reports. Measured 2026-11-18 on this repository (8 queue rows): 0.83 s for the reconcile and 2.22 s
-                # with the projection - that is the cost this branch adds to a pass tail.
-                try {
-                    $planFile = Get-SzaPath 'releaseQueue'
-                    $rowTaken = $false
-                    if ($planFile -and [IO.File]::Exists($planFile)) {
-                        foreach ($planLine in [IO.File]::ReadAllLines($planFile)) {
-                            if ($planLine.StartsWith($id) -and $planLine.Contains('[taken')) { $rowTaken = $true; break }
-                        }
-                    }
-                    if ($rowTaken) {
-                        & pwsh -NoProfile -File (Get-SzaHarnessScript 'spec_catalog/release-queue.ps1') -Reconcile *> $null
-                        if ($LASTEXITCODE -eq 1) {
-                            Write-Host ("  run-spec-queue: the plan file still shows {0} as taken - run release-queue.ps1 -Reconcile." -f $id) -ForegroundColor DarkYellow
-                        }
-                    }
-                } catch {
-                    Write-Host ("  run-spec-queue: plan file not re-rendered after the lease release for {0} - {1}" -f $id, $_.Exception.Message) -ForegroundColor DarkYellow
-                }
-            }
-        } catch {
-            Write-Host ("  run-spec-queue: lease release for {0} failed - {1}" -f $id, $_.Exception.Message) -ForegroundColor DarkYellow
-        }
-    }
-
-    $statusAfter = Get-TicketStatus -Id $id
-
-    # S0029: reconcile a hand-edited status line from the spec header.
-    # When the spec header's first **Status:** differs from the ledger, call update.ps1 -Status <header value>
-    # (the gates still judge it) and log "status reconciled from the spec header"; a refused move is recorded
-    # as outcome status-drift, not no-progress.
-    $recAfter = Get-TicketRecord -Id $id
-    if ($null -ne $recAfter -and -not [string]::IsNullOrWhiteSpace([string]$recAfter.file)) {
-        $specFileAfter = Join-Path $RepoRoot ([string]$recAfter.file)
-        if (Test-Path -LiteralPath $specFileAfter -PathType Leaf) {
-            $specText = [IO.File]::ReadAllText($specFileAfter)
-            $rxStatus = [regex]'(?m)^\*\*Status:\*\*\s*(?<status>[^\r\n]+)(?:\r?\n\*\*Status note:\*\*\s*(?<note>[^\r\n]*))?'
-            $mStatus = $rxStatus.Match($specText)
-            if ($mStatus.Success) {
-                $rawHeaderStatus = $mStatus.Groups['status'].Value.Trim()
-                $vocab = @(Get-SzaProfileValue 'grammar.statusVocabulary') | Sort-Object { $_.Length } -Descending
-                $headerStatus = $null
-                foreach ($w in $vocab) {
-                    if ($rawHeaderStatus -ceq $w -or $rawHeaderStatus.StartsWith("$w ", [StringComparison]::Ordinal)) {
-                        $headerStatus = $w
-                        break
-                    }
-                }
-                if ($null -ne $headerStatus -and $headerStatus -ne $statusAfter) {
-                    $headerNote = if ($mStatus.Groups['note'].Success -and -not [string]::IsNullOrWhiteSpace($mStatus.Groups['note'].Value)) {
-                        $mStatus.Groups['note'].Value.Trim()
-                    } else { $null }
-
-                    $updateArgs = @('-NoProfile', '-File', $update, '-Id', $id, '-Status', $headerStatus)
-                    if ($null -ne $headerNote) {
-                        $updateArgs += @('-StatusNote', $headerNote)
-                    }
-                    $updateOutput = & pwsh @updateArgs 2>&1
-                    if ($LASTEXITCODE -eq 0) {
-                        Write-Host ("  run-spec-queue: {0} status reconciled from the spec header ({1} -> {2})" -f $id, $statusAfter, $headerStatus) -ForegroundColor DarkCyan
-                        $statusAfter = $headerStatus
-                    } else {
-                        Write-Host ("  run-spec-queue: {0} status reconciliation from spec header refused by gates: {1}" -f $id, ($updateOutput | Out-String).Trim()) -ForegroundColor DarkYellow
-                        $outcome = 'status-drift'
-                    }
-                }
-            }
+        if ($canRelease -and ($reservation -or ($proc -and $outcome -ne 'claim-lost'))) {
+            Release-PassLease -Id $id -LeaseScript $leaseScript -Reservation $reservation
         }
     }
     $elapsedSeconds = [int]((Get-Date) - $started).TotalSeconds

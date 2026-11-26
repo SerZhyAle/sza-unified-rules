@@ -11,6 +11,7 @@
     The back-link is one line per waiting ticket under a `## Blocked tickets` heading of the BLOCKER's spec:
 
         - Blocks: <ref> | was: <status> | since: <yyyy-MM-dd>
+        - Blocks: <local-id> | was: <status> | since: <yyyy-MM-dd> | at: <blocker status>
         - Blocks: <ref> | was: <status> | since: <yyyy-MM-dd> | released: <yyyy-MM-dd> -> <status>
 
     <ref> is the waiting ticket's id when both tickets live in one repository, else <repoKey>:<id>. `was` is the
@@ -51,6 +52,9 @@ param(
     [switch] $Sweep,
     [string] $Id,
     [string] $Was,
+    [switch] $RecordStatusAt,
+    [switch] $StatusMoved,
+    [switch] $RespectLocalPark,
     [switch] $AllRepos,
     [switch] $DryRun,
     [switch] $Help
@@ -185,22 +189,25 @@ function Read-BlText([string] $File) {
 }
 
 # The blockers a waiting ticket names, resolved: @{ ref; key; id; root; record; released; why }.
-function Get-BlBlockersOf($Record) {
+function Get-BlBlockersOf($Record, [switch] $IgnoreLocalPark) {
     $spec = Read-BlText $Record.file
+    $localDependent = if (-not $IgnoreLocalPark) { $Record.id }
     $out = @()
     foreach ($b in @(Get-BlockerLinks -SpecText $spec -StatusNote $Record.statusNote -SelfId $Record.id)) {
         $rec = Read-BlLocalRecord $b
-        $rel = if ($rec) { Test-BlockerReleased -Status $rec.status -Id $b -File $rec.file } else { $false }
+        $rel = if ($rec) {
+            Test-BlockerReleased -Status $rec.status -Id $b -File $rec.file -DependentSpec $spec -LocalDependentId $localDependent
+        } else { $false }
         $out += [pscustomobject]@{ ref = $b; key = $script:SelfKey; id = $b; root = $script:SelfRoot; record = $rec; released = [bool]$rel
             why = $(if ($rec) { "$b is $($rec.status)" } else { "$b is in neither the ledger nor the archive" }) }
     }
     foreach ($pair in @(Get-QualifiedBlockerLinks -SpecText $spec -StatusNote $Record.statusNote)) {
         $k, $i = $pair -split ':', 2
         if ($script:SelfKey -and $k -ceq $script:SelfKey) {
-            if (@($out | Where-Object { $_.id -ceq $i }).Count -gt 0) { continue }
+            if ($i -ceq $Record.id) { continue }
             $rec = Read-BlLocalRecord $i
-            $rel = if ($rec) { Test-BlockerReleased -Status $rec.status -Id $i -File $rec.file } else { $false }
-            $out += [pscustomobject]@{ ref = $i; key = $k; id = $i; root = $script:SelfRoot; record = $rec; released = [bool]$rel
+            $rel = if ($rec) { Test-BlockerReleased -Status $rec.status -Id $i -File $rec.file -DependentSpec $spec -BlockerRef $pair } else { $false }
+            $out += [pscustomobject]@{ ref = $pair; key = $k; id = $i; root = $script:SelfRoot; record = $rec; released = [bool]$rel
                 why = $(if ($rec) { "$i is $($rec.status)" } else { "$i is in neither the ledger nor the archive" }) }
             continue
         }
@@ -211,7 +218,7 @@ function Get-BlBlockersOf($Record) {
         }
         $rec = Read-BlForeignRecord $root $i
         # Test-BlockerReleased resolves a relative plan path against THIS project; the foreign file is absolute.
-        $rel = if ($rec) { Test-BlockerReleased -Status $rec.status -Id $i -File $rec.file } else { $false }
+        $rel = if ($rec) { Test-BlockerReleased -Status $rec.status -Id $i -File $rec.file -DependentSpec $spec -BlockerRef $pair } else { $false }
         $out += [pscustomobject]@{ ref = $pair; key = $k; id = $i; root = $root; record = $rec; released = [bool]$rel
             why = $(if ($rec) { "$pair is $($rec.status)" } else { "$pair is in neither its ledger nor its archive" }) }
     }
@@ -266,7 +273,7 @@ function ConvertFrom-BlLine([string] $Line) {
         $kv = [regex]::Match($part, '^[ \t]*(?<k>[a-z]+)[ \t]*:[ \t]*(?<v>.*?)[ \t]*$')
         if ($kv.Success) { $fields[$kv.Groups['k'].Value] = $kv.Groups['v'].Value }
     }
-    return [pscustomobject]@{ ref = $m.Groups['ref'].Value; was = $fields['was']; since = $fields['since']; released = $fields['released'] }
+    return [pscustomobject]@{ ref = $m.Groups['ref'].Value; was = $fields['was']; since = $fields['since']; at = $fields['at']; released = $fields['released'] }
 }
 
 # The open (not released) lines of a blocker's spec.
@@ -285,7 +292,7 @@ function Get-BlOpenLines([string] $File) {
 }
 
 # Add or refresh the open line of $Ref in $File. A known `was` on the old line survives a refresh without one.
-function Set-BlBackLink([string] $File, [string] $Ref, [string] $WasStatus) {
+function Set-BlBackLink([string] $File, [string] $Ref, [string] $WasStatus, [string] $BlockerStatus) {
     $doc = Read-BlFile $File
     $lines = [Collections.Generic.List[string]]::new([string[]]($doc.text -split '\r?\n'))
     $range = Get-BlSectionRange $lines.ToArray()
@@ -299,6 +306,7 @@ function Set-BlBackLink([string] $File, [string] $Ref, [string] $WasStatus) {
                 $at = $i
                 if (-not $keepWas -and $l.was) { $keepWas = $l.was }
                 if ($l.since) { $since = $l.since }
+                if (-not $BlockerStatus) { $BlockerStatus = $l.at }
                 break
             }
         }
@@ -306,6 +314,7 @@ function Set-BlBackLink([string] $File, [string] $Ref, [string] $WasStatus) {
     $new = "- Blocks: $Ref"
     if ($keepWas) { $new += " | was: $keepWas" }
     $new += " | since: $since"
+    if ($BlockerStatus) { $new += " | at: $BlockerStatus" }
     if ($at -ge 0) {
         if ($lines[$at] -ceq $new) { return 'unchanged' }
         $lines[$at] = $new
@@ -360,6 +369,22 @@ function Close-BlBackLink([string] $File, [string] $Ref, [string] $Result) {
     return $changed
 }
 
+function Clear-BlParkStatuses([string] $File) {
+    $doc = Read-BlFile $File
+    $lines = $doc.text -split '\r?\n'
+    $range = Get-BlSectionRange $lines
+    if (-not $range) { return }
+    $changed = $false
+    for ($i = $range.start + 1; $i -lt $range.end; $i++) {
+        $line = ConvertFrom-BlLine $lines[$i]
+        if ($line -and $line.at -and -not $line.released) {
+            $lines[$i] = $lines[$i] -replace '[ \t]*\|[ \t]*at:[^|]*', ''
+            $changed = $true
+        }
+    }
+    if ($changed -and -not $DryRun) { Write-BlFile $File $doc ($lines -join $doc.nl) }
+}
+
 # ---------------------------------------------------------------- the modes
 
 function Invoke-BlLink([string] $TicketId, [string] $WasStatus) {
@@ -376,7 +401,8 @@ function Invoke-BlLink([string] $TicketId, [string] $WasStatus) {
         elseif ($script:SelfKey) { $ref = "$($script:SelfKey):$TicketId" }
         else { Write-BlLine "$TicketId -> $($b.ref): this repository is not in the portfolio registry, so the other repository cannot name it; no back-link." 'Yellow'; continue }
         try {
-            $r = Set-BlBackLink $b.record.file $ref $WasStatus
+            $blockerStatus = if ($RecordStatusAt -and $local -and -not $b.ref.Contains(':')) { $b.record.status }
+            $r = Set-BlBackLink $b.record.file $ref $WasStatus $blockerStatus
             Write-BlLine "$($b.ref) <- Blocks: $ref ($r)"
         } catch {
             Write-BlLine "$($b.ref): cannot write the back-link into $($b.record.file): $($_.Exception.Message)" 'Yellow'
@@ -403,11 +429,11 @@ function Get-BlFallbackStatus($Record) {
 
 # Release one waiting ticket of THIS repository if nothing holds it. -> @{ state; status; heldBy; message }
 #   state: released | held | not-blocked | refused | missing
-function Invoke-BlCheck([string] $TicketId, [string] $WasStatus) {
+function Invoke-BlCheck([string] $TicketId, [string] $WasStatus, [switch] $IgnoreLocalPark) {
     $rec = Read-BlLocalRecord $TicketId
     if (-not $rec) { return [pscustomobject]@{ state = 'missing'; status = ''; heldBy = @(); message = "$TicketId is not in this repository's ledger or archive" } }
     if ($rec.status -cne 'BlockByOtherTask') { return [pscustomobject]@{ state = 'not-blocked'; status = $rec.status; heldBy = @(); message = "$TicketId is $($rec.status)" } }
-    $blockers = @(Get-BlBlockersOf $rec)
+    $blockers = @(Get-BlBlockersOf $rec -IgnoreLocalPark:$IgnoreLocalPark)
     $holding = @($blockers | Where-Object { -not $_.released })
     if ($holding.Count -gt 0) {
         return [pscustomobject]@{ state = 'held'; status = $rec.status; heldBy = @($holding | ForEach-Object { $_.ref }); message = (($holding | ForEach-Object { $_.why }) -join '; ') }
@@ -442,6 +468,7 @@ function Invoke-BlRelease([string] $TicketId) {
     if (-not $rec) { Write-BlLine "$TicketId is not in this repository's ledger." 'Red'; return 2 }
     $open = @(Get-BlOpenLines $rec.file)
     if ($open.Count -eq 0) { return 0 }
+    if ($StatusMoved) { Clear-BlParkStatuses $rec.file }
     $rc = 0
     foreach ($l in $open) {
         $k = $null; $i = $l.ref
@@ -453,7 +480,7 @@ function Invoke-BlRelease([string] $TicketId) {
         else {
             $root = Get-BlRepoPath $k
             if (-not $root) { Write-BlLine "$($l.ref): no registered repository '$k'; line left open." 'Yellow'; $rc = 1; continue }
-            $argv = @('-NoProfile', '-File', $PSCommandPath, '-Check', '-Id', $i)
+            $argv = @('-NoProfile', '-File', $PSCommandPath, '-Check', '-Id', $i, '-RespectLocalPark')
             if ($l.was) { $argv += @('-Was', $l.was) }
             if ($DryRun) { $argv += '-DryRun' }
             $saved = $env:SZA_PROJECT_ROOT; $savedProfile = $env:SZA_PROFILE_PATH
@@ -534,7 +561,7 @@ if ($Link) { exit (Invoke-BlLink $Id $Was) }
 if ($Release) { exit (Invoke-BlRelease $Id) }
 if ($Sweep) { exit (Invoke-BlSweep) }
 if ($Check) {
-    $res = Invoke-BlCheck $Id $Was
+    $res = Invoke-BlCheck $Id $Was -IgnoreLocalPark:(-not $RespectLocalPark)
     $color = switch ($res.state) { 'released' { 'Green' } 'held' { 'Gray' } 'not-blocked' { 'Gray' } default { 'Yellow' } }
     Write-BlLine "$($res.state): $($res.message)" $color
     Write-Output ('BLOCKLINKS-RESULT ' + ($res | ConvertTo-Json -Compress -Depth 4))

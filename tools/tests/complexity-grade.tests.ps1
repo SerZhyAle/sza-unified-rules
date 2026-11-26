@@ -64,6 +64,40 @@ try {
         Assert-Eq (Format-SzaComplexityLine -Score 4 -Reason "a`nb" -Pinned) '**Complexity:** 4 pinned - a b' 'format'
     }
 
+    Test-Case '1a Windows PowerShell 5.1 loads the ASCII reader and parses Russian words' {
+        $readerPath = Join-Path $harness 'spec_catalog/lib/complexity-grade.ps1'
+        $readerBytes = [IO.File]::ReadAllBytes($readerPath)
+        if ($readerBytes | Where-Object { $_ -gt 127 }) { throw 'the reader source contains non-ASCII bytes' }
+        if ($readerBytes.Length -ge 3 -and $readerBytes[0] -eq 0xEF -and $readerBytes[1] -eq 0xBB -and $readerBytes[2] -eq 0xBF) {
+            throw 'the reader unexpectedly has a UTF-8 BOM'
+        }
+
+        $legacyHost = Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
+        if (-not (Test-Path -LiteralPath $legacyHost)) { throw "Windows PowerShell 5.1 was not found at $legacyHost" }
+        $probePath = Join-Path $scratch 'complexity-reader-ps51.ps1'
+        $quotedReader = $readerPath.Replace("'", "''")
+        $probe = @"
+`$ErrorActionPreference = 'Stop'
+. '$quotedReader'
+`$cases = @(
+    @{ Value = ([char[]](0x043B,0x0451,0x0433,0x043A,0x0438,0x0439) -join ''); Level = 'light' },
+    @{ Value = ([char[]](0x0441,0x0440,0x0435,0x0434,0x043D,0x0438,0x0439) -join ''); Level = 'medium' },
+    @{ Value = ([char[]](0x0441,0x043B,0x043E,0x0436,0x043D,0x044B,0x0439) -join ''); Level = 'hard' }
+)
+foreach (`$case in `$cases) {
+    `$result = ConvertFrom-SzaComplexityValue `$case.Value
+    if (-not `$result.recognised -or `$result.level -cne `$case.Level) { throw "Expected `$(`$case.Level), got `$(`$result.level)" }
+}
+Write-Output 'PS51 complexity reader: PASS'
+"@
+        [IO.File]::WriteAllText($probePath, $probe, [Text.Encoding]::ASCII)
+        $output = @(& $legacyHost -NoProfile -File $probePath 2>&1)
+        $exitCode = $LASTEXITCODE
+        if ($exitCode -ne 0 -or $output -notcontains 'PS51 complexity reader: PASS') {
+            throw "Windows PowerShell 5.1 probe exited ${exitCode}: $($output -join ' | ')"
+        }
+    }
+
     Test-Case '2 capture regex' {
         foreach ($f in @('spec_catalog/capture-draft.ps1', 'portfolio/spec-draft.ps1')) {
             $src = [IO.File]::ReadAllText((Join-Path $harness $f))

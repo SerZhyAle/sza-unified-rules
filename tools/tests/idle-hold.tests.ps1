@@ -7,7 +7,9 @@
     process, no git; nothing outside the scratch directory is written. Cases: 1 two counted unmoved runs hold and a
     moved run ends the series; 2 limit-hit, claim-lost-before-launch and launch-failed neither count nor end a series;
     3 a spec file written more than 60 s after the newest counted run lifts the hold; 4 every doubt keeps the hold;
-    5 one edit earns one pass; 6 the picker, the plan-file marker and the back-link writer are wired (read as text).
+    5 one edit earns one pass; 6 the picker, the plan-file marker and the back-link writer are wired (read as text);
+    7 the panel's walk applies the same lift (read as text); 8 this repository's R0 and the scaffold leave Implemented
+    out (read as text).
 #>
 [CmdletBinding()]
 param()
@@ -28,8 +30,8 @@ $proj = Join-Path $scratch 'proj'
 $journal = Join-Path $proj 'temp\spec-queue\runs-a.jsonl'
 New-Item -ItemType Directory -Path (Join-Path $proj 'PLAN'), (Split-Path -Parent $journal) | Out-Null
 $utf8 = New-Object System.Text.UTF8Encoding($false)
-function Row([string] $Id, [string] $At, [string] $Outcome, [bool] $Moved = $false) {
-    return ('{{"id":"{0}","statusBefore":"Draft","statusAfter":"Draft","moved":{1},"outcome":"{2}","finishedAt":"{3}"}}' -f $Id, $Moved.ToString().ToLowerInvariant(), $Outcome, $At)
+function Row([string] $Id, [string] $At, [string] $Outcome, [bool] $Moved = $false, [string] $Before = 'Draft', [string] $After = 'Draft') {
+    return ('{{"id":"{0}","statusBefore":"{4}","statusAfter":"{5}","moved":{1},"outcome":"{2}","finishedAt":"{3}"}}' -f $Id, $Moved.ToString().ToLowerInvariant(), $Outcome, $At, $Before, $After)
 }
 function New-Spec([string] $Name, [string] $WrittenAt) {
     $path = Join-Path $proj "PLAN\$Name.md"
@@ -87,6 +89,39 @@ try {
         Assert-That ($lib -match 'Test-IdleRunHeld -Id \(\[string\] \$series\.Id\) -SpecPath \$specPath') 'the marker does not ask Test-IdleRunHeld'
         Assert-That ($links -match 'SetLastWriteTimeUtc\(\$Path, \$stamp\)') 'the back-link writer does not keep the file time'
         Assert-That ($pre -notmatch 'held until the status moves;' -and $runner -notmatch 'pass it over until the status moves\.') 'a message still says only a status move ends the hold'
+    }
+    Run-Case '7. the panel''s copy of the walk lifts the hold with the same grace (read as text; the panel is built at a release)' {
+        $vb = Get-Content -LiteralPath (Join-Path $root 'portfolio\gui\src\PortfolioState.vb') -Raw
+        $lib = Get-Content -LiteralPath (Join-Path $root 'batch\_idle-runs.ps1') -Raw
+        Assert-That ($lib -match '\$script:IdleRunLiftGraceSeconds = 60' -and $vb -match 'Const IdleLiftGraceSeconds As Double = 60') 'the two copies name different grace periods'
+        Assert-That ($vb.Contains('If count = 0 Then newest = run.At')) 'the panel does not keep the newest counted run'
+        Assert-That ($vb.Contains('If Not IsIdleLifted(repoPath, specFile, kv.Value) Then result.Add(kv.Key)')) 'the panel does not apply the lift'
+        Assert-That ($vb.Contains('File.GetLastWriteTime(full) > finished.AddSeconds(IdleLiftGraceSeconds)')) 'the panel does not compare the spec file time'
+    }
+    Run-Case '8. R0, which has no idle hold, ranks no Implemented ticket: this repository''s launcher and the scaffold' {
+        $r0 = Get-Content -LiteralPath (Join-Path $root '..\..\r0.ps1') -Raw
+        $default = [regex]::Match($r0, '(?m)^\s*\[string\[\]\]\s+\$WorkStatuses\s*=\s*@\((?<v>[^)]*)\)')
+        Assert-That ($default.Success -and $default.Groups['v'].Value -match "'Draft'" -and $default.Groups['v'].Value -notmatch 'Implemented') 'r0.ps1 still ranks Implemented'
+        $scaffold = Get-Content -LiteralPath (Join-Path $root 'scaffold\init-task-flow.ps1') -Raw
+        $filter = [regex]::Match($scaffold, '(?m)^\$workStatuses = .*$')
+        Assert-That ($filter.Success -and $filter.Value.Contains("-notin @('Implemented', 'Verified', 'Archived')")) 'the scaffold still renders Implemented into R0'
+    }
+    Run-Case '9. alternating work and parks hold on the second repeat; forward moves reset' {
+        foreach ($status in @('BlockQuestions', 'BlockExternal', 'BlockByOtherTask')) {
+            [IO.File]::AppendAllLines($journal, [string[]]@(
+                '{"id":"Old","moved":true,"outcome":"ok","finishedAt":"2026-11-12T09:00:00"}',
+                (Row $status '2026-11-12T10:00:00' 'ok' $false 'In Progress' 'In Progress'),
+                (Row $status '2026-11-12T11:00:00' 'ok' $true 'In Progress' $status),
+                (Row $status '2026-11-12T12:00:00' 'limit-hit' $false $status $status),
+                (Row $status '2026-11-12T13:00:00' 'launch-failed' $true 'In Progress' $status),
+                (Row $status '2026-11-12T14:00:00' 'limit-hit' $false $status $status),
+                (Row $status '2026-11-12T15:00:00' 'limit-hit' $true 'In Progress' $status)
+            ), $utf8)
+            Assert-That (Test-IdleRunHeld -Id $status -Refresh) "second repeat park at $status must hold"
+            Assert-That ((Get-IdleRunSeries -Id $status).Count -eq 2) 'only the repeat parks count'
+            [IO.File]::AppendAllLines($journal, [string[]]@(Row $status '2026-11-12T16:00:00' 'ok' $true 'In Progress' 'Implemented'), $utf8)
+            Assert-That ((Get-IdleRunSeries -Id $status -Refresh).Count -eq 0) 'a forward move must reset'
+        }
     }
 }
 finally {

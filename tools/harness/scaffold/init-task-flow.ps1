@@ -235,7 +235,8 @@ Use-File (Join-Path $specsDir 'TICKET_TEMPLATE.md') ([IO.File]::ReadAllText((Joi
 
 # --- the R0 launcher, rendered from the profile
 $statusVocabulary = @(Get-SzaProfileValue 'grammar.statusVocabulary')
-$workStatuses = @($statusVocabulary | Where-Object { $_ -notlike 'Block*' -and $_ -notin @('Verified', 'Archived') })
+# TASK-FLOW rule 18: no ranking offers an `Implemented` ticket, R0's included (rule 33).
+$workStatuses = @($statusVocabulary | Where-Object { $_ -notlike 'Block*' -and $_ -notin @('Implemented', 'Verified', 'Archived') })
 $runnerFull = Join-Path $Root $RunnerPath
 $rootRelative = [IO.Path]::GetRelativePath((Split-Path -Parent $runnerFull), $Root).Replace('\', '/')
 $render = [ordered]@{

@@ -153,7 +153,10 @@ Follow Quiz mode steps 2-8. The parts a project-independent skill must pin down:
   - <question> -> <chosen answer> (<one-line reason>)
   ```
   The owner's own typed text goes in verbatim, in its language, inside quotes. A question block the sitting
-  asked from is stamped by appending ` - answered <date>` to its heading - never deleted, its lines untouched
+  asked from is stamped by appending ` - answered <date>` to its heading once all its items are settled. If
+  the sitting had no current question block, write a new block for the questions settled and stamp it
+  the same way. Keep earlier blocks and their lines. Mark each settled owner-input action with
+  ` - done <yyyy-MM-dd>` or ` - dropped <yyyy-MM-dd>`, optionally followed by `: <result or reason>`
   (TASK-FLOW rule 7). Section 0 (the owner's capture) and
   every unrelated section stay untouched. Do not edit the ledger or the `**Status:**` line by hand.
 - **Restore one level** through the project's ticket tool, which also rewrites the spec's status line and clears the
@@ -161,7 +164,8 @@ Follow Quiz mode steps 2-8. The parts a project-independent skill must pin down:
   ```powershell
   pwsh -NoProfile -WorkingDirectory "<project root>" -File "<root>/tools/harness/spec_catalog/update.ps1" -Id <id> -Status <restored>
   ```
-  A restore to `Approved` first passes the owner-inputs gate (`check-owner-inputs.ps1 -Id <id>`, exit 0); on
+  The status writer refuses the restore while it finds an unanswered `Q:` or an unmarked `DO:`.
+  A restore to `Approved` also passes the owner-inputs gate (`check-owner-inputs.ps1 -Id <id>`, exit 0); on
   exit 1 the residue it names is either one more round of questions or the ticket stays blocked with the note
   narrowed (step 7). The restored status is inferred from what exists (step 6); two equally plausible are one more
   question.

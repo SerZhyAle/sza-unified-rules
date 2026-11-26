@@ -70,6 +70,16 @@ function Add-AutoSkipCatalogRecords {
         if (-not $id -or $Catalog.Index.ContainsKey($id)) { continue }
         $Catalog.Index[$id] = $r
     }
+    # TASK-FLOW 0.37: an old id a prefix migration replaced is a name of its ticket (CANONR-0195 G2). Indexed after
+    # every current id, so a former id never shadows a live record that carries it as its id.
+    foreach ($r in @($Records)) {
+        if ($null -eq $r) { continue }
+        foreach ($f in @(Get-AutoSkipField $r 'formerIds')) {
+            $fid = [string]$f
+            if (-not $fid -or $Catalog.Index.ContainsKey($fid)) { continue }
+            $Catalog.Index[$fid] = $r
+        }
+    }
 }
 
 function Find-AutoSkipRecord {
@@ -188,8 +198,12 @@ function Get-SpecAutoSkip {
     $autoSkip = $null
     $autoSkipReason = $null
     $tierVal = if ($Frontmatter['Tier']) { $Frontmatter['Tier'] } else { '' }
+    $localDependentId = if ((Get-AutoSkipField $Record 'status') -eq 'BlockByOtherTask') {
+        [string](Get-AutoSkipField $Record 'id')
+    }
     $unverifiedBlockers = @($dependsOn | Where-Object {
-            -not (Test-BlockerReleased -Status ([string]$_.status) -Id ([string]$_.id) -File ([string]$_.file))
+            -not (Test-BlockerReleased -Status ([string]$_.status) -Id ([string]$_.id) -File ([string]$_.file) `
+                -DependentSpec $SpecText -LocalDependentId $localDependentId)
         })
     if ($tierVal -match '^\s*5') {
         $autoSkip = 'tier-5-epic'

@@ -213,10 +213,17 @@ $oldIdRegex = [regex]::new('^' + [regex]::Escape($old.prefix) + '(?<n>\d{' + $ol
 
 $portfolioRoot = if ($env:SZA_PORTFOLIO_ROOT) { $env:SZA_PORTFOLIO_ROOT } else { Join-Path $env:USERPROFILE '.sza\portfolio' }
 $registry = @()
+$pqOverride = $null
 $regFile = Join-Path $portfolioRoot 'repos.json'
 if (Test-Path -LiteralPath $regFile -PathType Leaf) {
     try {
-        foreach ($r in @((Get-Content -LiteralPath $regFile -Raw | ConvertFrom-Json).repos)) {
+        $regDoc = Get-Content -LiteralPath $regFile -Raw | ConvertFrom-Json
+        # TASK-FLOW 0.37 B(3): the queue file of rule 44 honours registry paths.portfolioQueue (CANONR-0195 G7).
+        $pathsProp = $regDoc.PSObject.Properties['paths']
+        if ($pathsProp -and $pathsProp.Value -and $pathsProp.Value.PSObject.Properties['portfolioQueue']) {
+            $pqOverride = [string]$pathsProp.Value.portfolioQueue
+        }
+        foreach ($r in @($regDoc.repos)) {
             if ($r.key -and $r.path) { $registry += [pscustomobject]@{ key = [string]$r.key; path = [string]$r.path } }
         }
     } catch { Write-Rp "the portfolio registry $regFile cannot be read: $($_.Exception.Message)" 'Yellow' }
@@ -226,6 +233,35 @@ function ConvertTo-RpPathKey([string] $Path) {
 }
 $selfKey = $null
 foreach ($r in $registry) { if ((ConvertTo-RpPathKey $r.path) -eq (ConvertTo-RpPathKey $root)) { $selfKey = $r.key } }
+
+# TASK-FLOW 0.37 A / 0.39 A: the prefix is unique across the registry of rule 41, current and former prefixes of
+# every other registered repository included (CANONR-0195 G6).
+function Get-RpRepoPrefixes([string] $RepoPath) {
+    $out = @()
+    $prof = Join-Path $RepoPath '.sza-profile.json'
+    if (-not (Test-Path -LiteralPath $prof -PathType Leaf)) { return $out }
+    try { $doc = Get-Content -LiteralPath $prof -Raw | ConvertFrom-Json } catch { return $out }
+    $g = $doc.PSObject.Properties['grammar']
+    if (-not $g -or -not $g.Value) { return $out }
+    $pats = @()
+    if ($g.Value.PSObject.Properties['ticketIdPattern']) { $pats += [string]$g.Value.ticketIdPattern }
+    if ($g.Value.PSObject.Properties['legacyTicketIdPatterns']) {
+        foreach ($l in @($g.Value.legacyTicketIdPatterns)) {
+            if ($l -is [string]) { $pats += $l } elseif ($l -and $l.PSObject.Properties['pattern']) { $pats += [string]$l.pattern }
+        }
+    }
+    foreach ($p in $pats) {
+        $m = [regex]::Match($p, '^\^?(?<p>[A-Za-z][A-Za-z0-9]*-?)(?:\\d|\[0-9\])')
+        if ($m.Success) { $out += $m.Groups['p'].Value }
+    }
+    return $out
+}
+foreach ($r in $registry) {
+    if ((ConvertTo-RpPathKey $r.path) -eq (ConvertTo-RpPathKey $root)) { continue }
+    foreach ($taken in @(Get-RpRepoPrefixes $r.path)) {
+        if ($taken -ieq $newPrefix) { Stop-Rename "the prefix $newPrefix is already used by the registered repository '$($r.key)' ($($r.path)); prefixes are unique across the registry (TASK-FLOW section 15 item A)." }
+    }
+}
 
 # ---------------------------------------------------------------- the plan
 
@@ -274,10 +310,13 @@ foreach ($x in $renames) { Write-Rp ("  {0} -> {1}  ({2})" -f $x.oldId, $x.newId
 
 # ---------------------------------------------------------------- text rewriting
 
-$tokenLine = [regex]::new('(?im)^.*(?:Blocker|Блокер|Carrier|Blocks)\s*:.*$')
 function Convert-RpIdsInTokenLines([string] $Text, [string] $Qualifier) {
-    # Rewrites old ids inside the token lines only - an id in prose is a mention and stays as written.
-    $q = if ($Qualifier) { [regex]::Escape($Qualifier) + ':' } else { '(?<![A-Za-z0-9_:-])' }
+    # Rewrites old ids inside the literal tokens only - the id list right after `Blocker:`/`Блокер:`/`Carrier:`/
+    # `Blocks:`, with or without a space (readers take `\s*`). An id later on the same line is prose, a mention,
+    # and stays as written (TASK-FLOW 0.37 B(3); CANONR-0195 G8).
+    $q = if ($Qualifier) { [regex]::Escape($Qualifier) + ':' } else { '' }
+    $one = $q + [regex]::Escape($old.prefix) + '\d{' + $old.width + '}(?![A-Za-z0-9])'
+    $tokenLine = [regex]::new('(?i)(?<![A-Za-z])(?:Blocker|Блокер|Carrier|Blocks)\s*:\s*\**\s*' + $one + '(?:\s*(?:,|;|\+|&|and)\s*' + $one + ')*')
     $idRe = [regex]::new($q + '(?<id>' + [regex]::Escape($old.prefix) + '\d{' + $old.width + '})(?![A-Za-z0-9])', 'IgnoreCase')
     return $tokenLine.Replace($Text, {
             param($line)
@@ -367,7 +406,9 @@ foreach ($p in @((Get-ReleaseQueuePath), (Get-ReleaseReadyPath), (Get-ReleaseQue
     if ($p -and (Test-Path -LiteralPath $p -PathType Leaf)) { Update-RpFile $p { param($t) Convert-RpBaseNames $t } }
 }
 # this repository's rows of the portfolio queue file
-$pqFile = Join-Path $portfolioRoot 'PORTFOLIO_QUEUE.md'
+$pqFile = if (-not $pqOverride) { Join-Path $portfolioRoot 'PORTFOLIO_QUEUE.md' }
+          elseif ([IO.Path]::IsPathFullyQualified($pqOverride)) { $pqOverride }
+          else { Join-Path $portfolioRoot $pqOverride }
 if ($selfKey -and (Test-Path -LiteralPath $pqFile -PathType Leaf)) {
     Update-RpFile $pqFile {
         param($t)

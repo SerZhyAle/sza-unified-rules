@@ -274,6 +274,11 @@ function Resolve-DraftParent([string] $Pair, $Repos) {
     $snap = $null
     try { $snap = Get-PqLedgerSnapshot -RepoPath ([string]$rec.path) }
     catch { Stop-Draft 2 "-Parent: the ledger of $($rec.key) could not be read: $($_.Exception.Message)" }
+    # TASK-FLOW 0.37: an old id names its ticket (CANONR-0195 G4); the blocker is written with the current id.
+    if ($snap.ledgerRead -and -not $snap.tickets.Contains($id)) {
+        $cur = Resolve-PqSnapshotTicketId $snap $id
+        if ($cur) { $id = $cur }
+    }
     if (-not $snap.ledgerRead -or -not $snap.tickets.Contains($id)) { Stop-Draft 2 "-Parent: $($rec.key) has no ticket $id in its ledger" }
     if ([string]$snap.tickets[$id].status -ceq 'Archived') { Stop-Draft 2 "-Parent: $($rec.key):$id is archived and cannot wait for anything" }
     $rel = [string]$snap.tickets[$id].file
@@ -391,10 +396,13 @@ else {
     if ($WhatIfPreference) { $childArgs += '-WhatIf' }
     $rows = [Collections.Generic.List[object]]::new()
     $failed = [Collections.Generic.List[string]]::new()
-    # The catalog writer refreshes the portfolio projection after every insert unless SZA_PQ_IN_SYNC is 1 (its guard
-    # against a nested sync); the one `pq sync` below does that for all targets together.
-    $savedInSync = $env:SZA_PQ_IN_SYNC
-    $env:SZA_PQ_IN_SYNC = '1'
+    # The catalog writer refreshes the portfolio projection after every insert unless SZA_PQ_NO_PROJECTION is 1; the one
+    # `pq sync` below does that for all targets together. The rows are born `campaign` (TASK-FLOW section 10) unless the
+    # caller already names a source - a pass keeps `robot`, which the robot-filed cap counts.
+    $savedNoProjection = $env:SZA_PQ_NO_PROJECTION
+    $savedSource = $env:SZA_TICKET_SOURCE
+    $env:SZA_PQ_NO_PROJECTION = '1'
+    if (-not $env:SZA_TICKET_SOURCE) { $env:SZA_TICKET_SOURCE = 'campaign' }
     try {
         foreach ($k in $targets) {
             $out = & $pwshExe @childArgs '-Project' $k 2>&1
@@ -409,7 +417,7 @@ else {
             elseif (-not $WhatIfPreference) { $failed.Add("$k (no drafted line)") }
         }
     }
-    finally { $env:SZA_PQ_IN_SYNC = $savedInSync }
+    finally { $env:SZA_PQ_NO_PROJECTION = $savedNoProjection; $env:SZA_TICKET_SOURCE = $savedSource }
     if ($WhatIfPreference) {
         Write-Host "spec-draft: -WhatIf - $($targets.Count) target(s) checked ($($targets -join ', ')); nothing was created"
         exit $(if ($failed.Count) { 1 } else { 0 })

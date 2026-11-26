@@ -24,13 +24,18 @@
 .PARAMETER MinPriority
     Optional: only list tickets with priority >= this value.
 
+.PARAMETER Checklist
+    Print each recorded device check with its ticket id for the current project.
+    A spec that cannot be read is reported and gives exit 2.
+
 .EXAMPLE
     pwsh -NoProfile -File scripts/spec_catalog/list-blockneedusertest.ps1
     pwsh -NoProfile -File scripts/spec_catalog/list-blockneedusertest.ps1 -MinPriority 90
 #>
 [CmdletBinding()]
 param(
-    [int]$MinPriority = 0
+    [int]$MinPriority = 0,
+    [switch] $Checklist
 )
 
 . (Join-Path $PSScriptRoot '..\_profile.ps1')
@@ -58,6 +63,29 @@ foreach ($line in Get-Content -LiteralPath $catalog) {
 }
 
 $sorted = $rows | Sort-Object -Property @{Expression = 'Priority'; Descending = $true }, @{Expression = 'Id'; Descending = $false }
+if ($Checklist) {
+    . (Join-Path $PSScriptRoot 'lib/device-check.ps1')
+    Write-Output ("Device checklist - {0}" -f (Get-SzaProjectRoot))
+    $count = 0
+    $unreadable = $false
+    foreach ($r in $sorted) {
+        try {
+            $deviceChecks = @(Get-SpecDeviceCheck -Path (Resolve-SpecPath -PathRef $r.File))
+        } catch {
+            Write-Error ("Cannot read the spec for {0}: {1}" -f $r.Id, $_.Exception.Message) -ErrorAction Continue
+            $unreadable = $true
+            continue
+        }
+        foreach ($deviceCheck in $deviceChecks) {
+            Write-Output ("- {0}: {1}" -f $r.Id, $deviceCheck)
+            $count++
+        }
+    }
+    Write-Output "Device checks: $count"
+    if ($unreadable) { exit 2 }
+    exit 0
+}
+
 Write-Host ("{0,-4}  {1,-6}  {2,-16}  {3}" -f 'PRI', 'ID', 'UPDATED', 'FILE')
 foreach ($r in $sorted) {
     Write-Host ("{0,-4}  {1,-6}  {2,-16}  {3}" -f $r.Priority, $r.Id, $r.Updated, $r.File)

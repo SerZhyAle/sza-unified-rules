@@ -16,8 +16,9 @@
                             ("no such ticket in <key>") and NEVER looked up in the current project.
                             A near-miss is refused too, never captured as an idea: a registered key in another case, a
                             registered key with a space after the colon / words after the token / no id, and an
-                            unregistered key whose id part is ticket-shaped (digits, letters+digits, or the current
-                            project's id pattern). Any other text with a colon ("note: ..", "see:docs") is an idea.
+                            unregistered key whose id part is ticket-shaped (digits, letters+digits, the current
+                            project's id pattern, or an id and a slug judged by its id part). Any other text with a
+                            colon ("note: ..", "see:docs") is an idea.
       2. a bare token equal to a registered key, no other words
                          -> kind project-next (the next eligible ticket of that project, then stop). When the same
                             token is also the id shape or a slug of the current project, it is ambiguous: refused.
@@ -32,7 +33,8 @@
       4. a slug of the current project's ledger (the whole name)                          -> kind local-slug
       5. anything else                                                                    -> kind idea
          (a lower-case token with a hyphen or underscore that names no slug is refused as an unknown slug, and a
-         token shaped like a ticket reference that no project claims is refused too)
+         token shaped like a ticket reference that no project claims is refused too: a bare word by the usual id shape,
+         an id and a slug by its id part - a letter-run that holds a digit, a mistyped id included)
     Next mode (/spec-next, /sn): no argument -> project-next in the current project; a bare registered key ->
     project-next there; "<key>:<id>" -> refused (next takes no ticket); anything else -> refused.
 
@@ -146,6 +148,14 @@ function Split-Stem([string] $Token) {
     return [pscustomobject]@{ id = $Matches[1]; slug = $Matches[2]; stem = $stem }
 }
 
+# Whether the id part of an id and a slug is shaped like a ticket id: it starts with a letter and holds a digit, or has the
+# current project's id shape. Loose on purpose - a mistyped number, or a letter typed for a digit, still names a ticket and
+# is never free text.
+function Test-StemIdShaped([string] $Id) {
+    if ($Id -match '^[A-Za-z][A-Za-z0-9-]*\d') { return $true }
+    return ($hereRoot -and (Test-IdShape $hereRoot $Id))
+}
+
 function Read-Rows([string] $Root) {
     if (-not (Test-Path -LiteralPath $Root -PathType Container)) { return $null }
     try { return @(Read-PqLedgerRows $Root) } catch { return $null }
@@ -153,6 +163,14 @@ function Read-Rows([string] $Root) {
 
 function Find-Slug($Rows, [string] $Token) {
     return (@($Rows | Where-Object { $_.Name -ieq $Token }) | Select-Object -First 1)
+}
+
+# The row whose id is the one asked for, else the row that lists it among its former ids (TASK-FLOW 0.37: an old id
+# is a name of its ticket; CANONR-0195 G4).
+function Find-IdRow($Rows, [string] $Id) {
+    $row = @($Rows | Where-Object { $_.Id -ieq $Id }) | Select-Object -First 1
+    if ($row) { return $row }
+    return (@($Rows | Where-Object { $_.PSObject.Properties['FormerIds'] -and @($_.FormerIds) -icontains $Id }) | Select-Object -First 1)
 }
 
 function Find-Number($Rows, [string] $Digits) {
@@ -164,7 +182,7 @@ function Find-Number($Rows, [string] $Digits) {
 function Out-LedgerTicket([string] $Kind, [string] $Key, [string] $Root, [string] $Id, $Stem) {
     $rows = Read-Rows $Root
     if ($null -eq $rows) { Out-Reading 'refused' $Key $Root $null $null "project $Key is registered but its folder or ledger cannot be read ($Root)" }
-    $row = @($rows | Where-Object { $_.Id -ieq $Id }) | Select-Object -First 1
+    $row = Find-IdRow $rows $Id
     if (-not $row) { Out-Reading 'refused' $Key $Root $null $null "no such ticket in ${Key}: '$Id' is not in its ledger (a ticket in the archive journal is named by its bare id)" }
     if ($Stem -and $row.Name -ine $Stem.slug -and (($row.File -split '[\\/]')[-1] -replace '\.md$', '') -ine $Stem.stem) {
         Out-Reading 'refused' $Key $Root $null $null "no such ticket in ${Key}: $($row.Id) is '$($row.Name)', not '$($Stem.slug)'"
@@ -205,7 +223,7 @@ if ($isToken -and $text -match '^([a-z][a-z0-9-]*):(\S+)$') {
         if ($stem -and (Test-IdShape $root $stem.id)) { Out-LedgerTicket 'ticket' $key $root $stem.id $stem }
         $rows = Read-Rows $root
         if ($null -eq $rows) { Out-Reading 'refused' $key $root $null $null "project $key is registered but its folder or ledger cannot be read ($root)" }
-        $hits = @($rows | Where-Object { $_.Id -ieq $want })
+        $hits = @(Find-IdRow $rows $want)
         if ($hits.Count -eq 0 -and $want -match '^\d+$') { $hits = @(Find-Number $rows $want) }
         if ($hits.Count -eq 0) { Out-Reading 'refused' $key $root $null $null "no such ticket in ${key}: '$want' is not in its ledger" }
         if ($hits.Count -gt 1) { Out-Reading 'ambiguous' $key $root $null $null "'$want' matches several tickets in ${key} ($(@($hits | ForEach-Object { $_.Id }) -join ', ')); use the full id" }
@@ -228,7 +246,11 @@ if ($firstWord -match '^([A-Za-z][A-Za-z0-9_-]*):(.*)$') {
     if ($caseHit) {
         Out-Reading 'refused' ([string]$caseHit.key) $null $null $null "project keys are case-sensitive: '$nmKey' is not registered, '$($caseHit.key)' is - write $($caseHit.key):<id>"
     }
-    if ($isToken -and $nmRest.Length -gt 0 -and ($nmRest -match '^\d+$' -or $nmRest -match '^[A-Za-z]{1,8}-?\d+$' -or ($hereRoot -and (Test-IdShape $hereRoot $nmRest)))) {
+    # An id and a slug after the colon ("<key>:<id>_<slug>", its file name or path) is judged by its id part, and before the
+    # path is split below: the split keeps the last folder only, which dropped the key and answered with a ticket of the
+    # current project (CANONR-0199). A drive letter is not a key - one letter before the colon, nothing is read after "P:\".
+    $nmStem = if ($nmKey.Length -eq 1 -and $nmRest -match '^[\\/]') { $null } else { Split-Stem $nmRest }
+    if ($isToken -and $nmRest.Length -gt 0 -and ($nmRest -match '^\d+$' -or $nmRest -match '^[A-Za-z]{1,8}-?\d+$' -or ($hereRoot -and (Test-IdShape $hereRoot $nmRest)) -or ($nmStem -and (Test-StemIdShaped $nmStem.id)))) {
         Out-Reading 'refused' $null $null $null $null "unknown project '$nmKey' in '$text' (registered: $(Get-Keys)); nothing was captured and no ticket of the current project was touched"
     }
 }
@@ -280,7 +302,7 @@ if ($text -match '^-(\d{1,9})$') {
 
 if ($isToken -and (Test-IdShape $hereRoot $text)) {
     $rows = Read-Rows $hereRoot
-    $row = if ($null -ne $rows) { @($rows | Where-Object { $_.Id -ieq $text }) | Select-Object -First 1 } else { $null }
+    $row = if ($null -ne $rows) { Find-IdRow $rows $text } else { $null }
     $id = if ($row) { $row.Id } else { $text }
     $why = if ($row) { "ticket $id of the current project $hereKey" } else { "id shape of $hereKey; the ledger does not hold it yet (spec-preamble reports exit 2)" }
     Out-Reading 'local-id' $hereKey $hereRoot $id $(if ($row) { $row.Name } else { $null }) $why
@@ -295,8 +317,10 @@ if ($isToken) {
     if ($text -cmatch '^[a-z0-9]+([-_][a-z0-9]+)+$') {
         Out-Reading 'refused' $hereKey $hereRoot $null $null "unknown slug '$text' in $hereKey (a partial word is not searched; free text is an idea - put it in words)"
     }
-    # One word shaped like a ticket reference that no project claims is a mistyped ticket, never an idea.
-    if ($(if ($stem) { $stem.stem } else { $text }) -match '^[A-Za-z]{1,8}-?\d{4,}(_\S*)?$') {
+    # One word shaped like a ticket reference that no project claims is a mistyped ticket, never an idea. With an id and a slug
+    # the id part alone decides, loosely: a mistyped id is a ticket reference too (CANONR-0199).
+    $shaped = if ($stem) { Test-StemIdShaped $stem.id } else { $text -match '^[A-Za-z]{1,8}-?\d{4,}(_\S*)?$' }
+    if ($shaped) {
         Out-Reading 'refused' $hereKey $hereRoot $null $null "no such ticket: '$text' is shaped like a ticket reference and neither $hereKey nor a registered project claims it"
     }
 }

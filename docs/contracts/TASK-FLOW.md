@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Contract | `TASK-FLOW` |
-| Version | 0.44, draft |
+| Version | 0.46, draft |
 | Home | the shared contracts catalog, domain `task-flow/` (the path is in [CLAUDE.md](../../CLAUDE.md)) |
 | Role | **shared implementation, partial**: `tools/harness/` supplies the ticket tools, repository runner and day-0 scaffold; `tools/harness/portfolio/` supplies the dispatcher, registry, queue, rank and event log. The open differences are the dated exceptions of the registry. The owner is `shared`, so this repository edits the contract only through the canon session |
 
@@ -40,8 +40,17 @@
   the text, with the reference R0, were accepted the same day as 0.44 (CANONR-0198). The release-tier suites that cover
   the amendments have not run. No rule asks the plan tool to re-lay a repository's own queue file in the portfolio
   order (rule 15 forbids a script to reorder its rows), so that is no gap.
-- The rendered R0 launcher (`scaffold/templates/r0-runner.ps1.tpl`, filled by `init-task-flow.ps1`) and this
-  repository's `r0.ps1` still rank `Implemented` (gap G11, CANONR-0197); the catalog's reference does not from 0.44.
+- 0.46 (2026-11-26, CANONR-0203, section 22: a repeat park, an `Implemented` blocker, an unchanged blocker and the
+  return from `BlockQuestions`) is ahead of the harness; the dated exception stands in the registry until that ticket
+  closes it.
+- The CANONR-0197 exception and gap G11 are closed (2026-11-26): the rendered R0 launcher
+  (`scaffold/templates/r0-runner.ps1.tpl`, filled by `init-task-flow.ps1`) and this repository's `r0.ps1` no longer
+  rank `Implemented`; the campaign form of `portfolio/spec-draft.ps1` records `campaign` or the inherited `robot`
+  (it holds the projection back by `SZA_PQ_NO_PROJECTION`, and `SZA_PQ_IN_SYNC` stays the queue sync's mark alone);
+  `portfolio/lib/loop.ps1` looks at every enabled repository around a pass, and the first worker to see a robot-filed
+  row announces it (`run/intake-announced.json`); PQShell's idle walk applies the lift (source edit, built with the
+  next panel build). Covered by `ticket-source`, `idle-hold`, `portfolio-limit-reset` and `catalog-lock-order`
+  (fast, run); `batch-runner.tests.ps1` and the day-0 rehearsal were not run.
 - S0011 re-read section 5 and the partial adoption row without advancing its 2026-10-07 verification.
   S0012 (closed 2026-10-26) handed remaining harness/runtime evidence to S0013. Reader and completion tests
   certify no live-agent flow; S0013 recorded one real-agent step of one ticket and nothing more.
@@ -133,20 +142,22 @@
   unmoved runs hold a ticket, `limit-hit`, `claim-lost-before-launch` and `launch-failed` are stepped over, and a spec
   file written more than 60 seconds after the newest counted run lifts the hold for one pass.
   `spec_catalog/block-links.ps1` keeps a blocker's spec file time when it writes a back-link. Covered by
-  `tools/tests/idle-hold.tests.ps1` (6 cases, fast); PQShell's own copy of the walk does not apply the lift
-  (CANONR-0197).
+  `tools/tests/idle-hold.tests.ps1` (8 cases, fast); PQShell's own copy of the walk applies the lift too
+  (`portfolio/gui/src/PortfolioState.vb`, CANONR-0197).
 - 0.30 (2026-11-18, S0108): a ledger row records how the ticket was born (README section 10, `EVENTS.md` section 6).
   `spec_catalog/insert.ps1` writes the optional field `source` (`owner`, `robot`, `import`, `inbox`, `campaign`), resolved
   by `spec_catalog/_ticket-source.ps1`: its `-Source`, else `import` for the queue sync's own child, else the variable
   `SZA_TICKET_SOURCE` (`batch/run-spec-queue.ps1` sets `robot` for the child of a pass, `portfolio/lib/inbox-ingest.ps1`
-  sets `inbox`), else `owner`. `validate.ps1` warns on a value outside the list. The dispatcher does not read the field
+  sets `inbox`, the campaign form of `portfolio/spec-draft.ps1` sets `campaign` when none is set), else `owner`.
+  `validate.ps1` warns on a value outside the list. The dispatcher does not read the field
   for `ticket.created` yet. Covered by `tools/tests/ticket-source.tests.ps1` and one assertion in
   `taskflow-ledger-conformance.tests.ps1`.
 - 0.31 (2026-11-18): the cap on robot-filed tickets (rule 41, `robotDraftCap`) is counted per repository per local day
   from the ledger (README section 11, canon ticket S0109). `Get-PqRobotFiled` in `portfolio/lib/ledger-watch.ps1`
   reads the rows with `source` `robot` created on the day; `Get-PqIntakeCapped` in `portfolio/lib/loop.ps1` gives the
-  `Draft` rows past the cap to every rank as excluded, so no worker keeps a count. Covered by the robot-filed cap case
-  of `tools/tests/portfolio-limit-reset.tests.ps1` (fast).
+  `Draft` rows past the cap to every rank as excluded, so no worker keeps a count. The notice looks at every enabled
+  repository around a pass (`Get-PqRobotLook`, `Request-PqIntakeAnnounce` of the same file, CANONR-0197). Covered by
+  the two robot-filed cases of `tools/tests/portfolio-limit-reset.tests.ps1` (fast).
 - 0.32 (2026-11-18, S0139): the grade 0-9 and the routes by grade (README section 12, `EVENTS.md` section 8). One parser
   of the line, `spec_catalog/lib/complexity-grade.ps1`, serves the runner (`Get-TicketComplexity`), the dispatcher
   (`Get-PqTicketLevelInfo`) and the regex of both capture tools. `portfolio/lib/agents.ps1` reads `routes`

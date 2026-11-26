@@ -30,6 +30,7 @@ if (-not (Test-SzaTicketId $Id)) { throw "Invalid -Id '$Id' (must match $(Get-Sz
 $records = [System.Collections.Generic.List[object]]::new()
 # S1437: read -> mutate -> write is one critical section. The early-exit paths below leave the
 # lock held until the process ends, which releases it - these scripts exit immediately after.
+$Id = Resolve-CatalogId -Id $Id  # TASK-FLOW 0.37 former id (CANONR-0195 G5)
 Enter-CatalogLock
 foreach ($r in (Read-Catalog)) { $records.Add($r) }
 

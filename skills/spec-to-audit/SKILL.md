@@ -280,6 +280,9 @@ that fact written into its rules file, not a slow run. The owner is never asked 
 the reference study measured seven repos asking that question back and getting the same answer every time
 (S0039): an unattended pass records the skipped rung as a `RELEASE` item and moves on.
 
+When a project command deferred to release is the only remaining check, set `Implemented` and record
+`**Release gate:** <suite or command>` in the spec.
+
 **One exception (S0040, owner decision 2026-11-11): the declared compile check in an unattended pass.** A
 pass that edited compiled source runs the repository's declared compile-only command once, in the
 foreground, before it sets `Implemented` or `BlockNeedUserTest`. The command is
@@ -322,6 +325,8 @@ Two rules give "Verified" its meaning, and both are **refusals**, not advice:
   user-visible behaviour already works end to end**. Created classes, wired contracts and a passing compile
   are milestones, not deliverables. Never invite a human to test while the advertised action still logs,
   shows a placeholder, or no-ops.
+- **A new `BlockNeedUserTest` entry requires a `**Device check:**` line.** On the same line, name the step
+  only the owner can perform on a device or in the GUI and why no project command covers it.
 - **The status move relocates the spec file (TASK-FLOW rule 70, S0076).** Setting `Implemented`, `Verified` or
   `BlockNeedUserTest` through the status tool moves the spec file and its folder into the project's archive
   directory (`PLAN/DONE` or `PLAN/archive`); reopening moves them back. So every edit of the spec - the
@@ -415,6 +420,16 @@ Load [references/audit-campaign.md](references/audit-campaign.md) for the method
 
 An unattended pass runs without human interaction in a headless queue session.
 
+- **Managed bookkeeping**: when `SZA_TICKET_SOURCE=robot` and both `SZA_PASS_PREAMBLE` and
+  `SZA_PASS_RESULT` are set, read the runner's prepared context once and use its status, spec path and
+  drift verdict. The runner already claimed the lease for this pass and will release it and run the
+  closure facade after a status move. Skip lease calls, the preamble script, ticket-cost mapping and
+  the closure facade in the child. Apply the documentation-context loop only when the ticket changes
+  files under `docs/`; otherwise skip the document-registry skill and its queries. Audit and validate
+  changed documentation at the usual evidence rung. If you changed files, write
+  `{"summary":"One English line describing the change","files":["repo-relative/path"]}` to the result
+  file before the final status move. Use the status tool below for every status move. A pass without
+  the prepared context follows the usual workflow.
 - **The ticket and tool are named up front**: the ticket is `<spec path>` in `<repo root>`; change its status only with `<update.ps1 path> -Id <id> -Status <s>`, never by editing the `**Status:**` line.
 - **Repository scope**: work within this repository. For a cross-repository blocker, follow the
   filing and waiting-status procedure in Stage 1.

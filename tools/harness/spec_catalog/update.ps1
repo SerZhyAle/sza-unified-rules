@@ -19,6 +19,7 @@ param(
     [int]    $Priority = -1,
     [string] $Title,               # the optional `title` of the row (TASK-FLOW rule 3): a short display name, 80 characters at most; '' removes it; omitted: preserved
     [string] $StatusNote = $null,  # non-empty: set note; empty '': clear note; $null/omit: preserve - except that a status change to a non-Block* status clears it (S2796)
+    [string] $ExpectedStatus,     # optional guard for callers acting on a prior catalog snapshot
     [switch] $Help
 )
 
@@ -101,6 +102,10 @@ if ($idx -ge 0) {
 if ($null -eq $old) { throw "Record '$Id' not found." }
 
 $oldStatus = $old.status
+if ($PSBoundParameters.ContainsKey('ExpectedStatus') -and $oldStatus -ne $ExpectedStatus) {
+    Exit-CatalogLock
+    throw "Cannot update '$Id': expected status '$ExpectedStatus', found '$oldStatus'."
+}
 
 # Build mutable copy preserving all current fields.
 $updated = [pscustomobject]@{

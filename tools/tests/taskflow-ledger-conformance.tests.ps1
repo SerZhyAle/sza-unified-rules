@@ -11,10 +11,13 @@
     rule 9  - the qualified token is read in the spec file and in the note, and a quoted example is not read
     rule 7  - the Q: and DO: tokens of a BlockQuestions note are literal: "need to do: x" and a lowercase "q:" are
               prose and refused; `Q: ..?` and `DO: <action>` pass (check-block-note.ps1 as a child process)
+    rule 7  - the status writer refuses a quiz restore with an open question or action, even with a replacement note
     rule 3  - update.ps1 -Title writes the optional `title` of a row, trimmed, and changes neither name nor status
     rule 9  - the BlockByOtherTask refusal names the channels of the canon ticket form: the note for a local
               token, the note or the spec file for a qualified one, and no "section 10" (a text match on
               check-block-note.ps1)
+    rule 8  - a blank Device check refuses a new owner-test entry, a concrete check passes, and a standing row
+              without the line can reaffirm its status
     rule 66 - a start that finds no free worker slot is a valid start that did not run: the loop returns 3, not 2
     rule 65 - a file '<id>_<slug>.md' in the specs directory with no row is listed with its header status (else
               Draft) and a lowercase-hyphen name; a file whose id is in the journal, the archive or the burned list,
@@ -122,6 +125,41 @@ try {
         Assert-Equal (Test-QuestionsNote 'q: which package number?') 1 'lowercase "q:" is prose'
     }
 
+    Run-Case 'rule 7: quiz restore requires current answers and completed owner actions' {
+        $root = Join-Path $scratch 'quiz-restore'
+        Write-Utf8 (Join-Path $root '.sza-profile.json') '{}'
+        $ledger = Join-Path $root 'PLAN/spec-catalog.jsonl'
+        $file = Join-Path $root 'PLAN/S0001_quiz.md'
+        $row = New-Row 'S0001' 'quiz' 'PLAN/S0001_quiz.md' 'BlockQuestions' | ConvertFrom-Json
+        $row | Add-Member -NotePropertyName statusNote -NotePropertyValue 'Q: Which  package? DO: Check the device'
+        $before = $row | ConvertTo-Json -Compress
+        Write-Utf8 $ledger "$before`n"
+        $header = "# S0001_quiz`n`n**Status:** BlockQuestions`n**Status note:** $($row.statusNote)`n"
+        $owner = "`n### 3.3 Owner inputs (Approval gate)`n- **DO:** Check the device"
+        $stale = "`n### Questions (v1, 2026-11-14) - answered 2026-11-14`n- Q: Which package?`n"
+        $current = "`n### Questions (v1, 2026-11-15)`n- Q: Which package?`n"
+        Write-Utf8 $file ($header + $owner + "`n" + $stale + $current)
+        $updater = Join-Path $Harness 'spec_catalog/update.ps1'
+        $savedInSync = $env:SZA_PQ_IN_SYNC
+        $env:SZA_PQ_IN_SYNC = '1'
+        try {
+            $refused = Invoke-Tool $root $updater @('-Id', 'S0001', '-Status', 'In Progress', '-StatusNote', 'replacement')
+            Assert-Equal $refused.code 1 "open quiz items: $($refused.out)"
+            Assert-That ($refused.out -match 'Q: Which package\?' -and $refused.out -match 'DO: Check the device') "the refusal did not name both items: $($refused.out)"
+            Assert-Equal ([IO.File]::ReadAllText($ledger).Trim()) $before 'the ledger and its note stay blocked'
+            Assert-That ([IO.File]::ReadAllText($file).StartsWith($header)) 'the mirrored status and note stay blocked'
+            $answered = $current.Replace('2026-11-15)', '2026-11-15) - answered 2026-11-15')
+            Write-Utf8 $file ($header + $owner + " - done 2026-11-15: observed the expected value`n" + $stale + $answered)
+            $accepted = Invoke-Tool $root $updater @('-Id', 'S0001', '-Status', 'In Progress')
+            Assert-Equal $accepted.code 0 "recorded quiz answers: $($accepted.out)"
+            $row = Get-Content -Raw -LiteralPath $ledger | ConvertFrom-Json
+            Assert-Equal $row.status 'In Progress' 'the ticket is restored'
+            Assert-That (-not $row.PSObject.Properties['statusNote']) 'the block reason is cleared'
+        } finally {
+            $env:SZA_PQ_IN_SYNC = $savedInSync
+        }
+    }
+
     Run-Case 'rule 9: the BlockByOtherTask refusal names the note and the spec file, not a section 10' {
         $text = [IO.File]::ReadAllText($gate)
         Assert-That ($text -match 'records no blocker in a directional channel') 'the refusal headline is gone'
@@ -142,6 +180,37 @@ try {
         Assert-Equal $row.title 'Gate fixture ticket' 'the title, trimmed'
         Assert-Equal $row.name 'gate' 'the name is untouched'
         Assert-Equal $row.status 'Draft' 'the status is untouched'
+    }
+
+    # ------------------------------------------------------------------ rule 8
+    Run-Case 'rule 8: owner-test entry needs a device check, but reaffirmation does not' {
+        Write-Utf8 (Join-Path $gateRoot '.sza-profile.json') '{"probes":{"enabled":false}}'
+        $specPath = Join-Path $gateRoot 'PLAN\S0001_gate.md'
+        $body = "# S0001_gate`n`n**Status:** Draft`n`n## Last Audit`n`nImplementation checked.`n"
+        $update = Join-Path $Harness 'spec_catalog\update.ps1'
+        $ledger = Join-Path $gateRoot 'PLAN\spec-catalog.jsonl'
+        $argsForStatus = @('-Id', 'S0001', '-Status', 'BlockNeedUserTest', '-StatusNote', 'Confirm touch feedback on the device.')
+        $savedInSync = $env:SZA_PQ_IN_SYNC
+        $env:SZA_PQ_IN_SYNC = '1'
+        try {
+            Write-Utf8 $specPath ($body + "**Device check:**   `nNext paragraph.`n")
+            $refused = Invoke-Tool $gateRoot $update $argsForStatus
+            Assert-Equal $refused.code 1 "blank check: $($refused.out)"
+            Assert-That ($refused.out.Contains('needs a non-empty ''**Device check:**'' line')) 'the refusal did not name the missing line'
+            Assert-Equal (Get-Content -Raw -LiteralPath $ledger | ConvertFrom-Json).status 'Draft' 'refused entry keeps the prior status'
+
+            Write-Utf8 $specPath ($body + "**Device check:** Tap Apply on the device and feel the vibration. No profile command observes touch feedback.`n")
+            $accepted = Invoke-Tool $gateRoot $update $argsForStatus
+            Assert-Equal $accepted.code 0 "concrete check: $($accepted.out)"
+            $row = Get-Content -Raw -LiteralPath $ledger | ConvertFrom-Json
+            Assert-Equal $row.status 'BlockNeedUserTest' 'accepted transition records owner-test status'
+
+            Write-Utf8 (Join-Path $gateRoot $row.file) ($body.Replace('Status:** Draft', 'Status:** BlockNeedUserTest'))
+            $reaffirmed = Invoke-Tool $gateRoot $update $argsForStatus
+            Assert-Equal $reaffirmed.code 0 "legacy same-status write: $($reaffirmed.out)"
+        } finally {
+            $env:SZA_PQ_IN_SYNC = $savedInSync
+        }
     }
 
     # ------------------------------------------------------------------ rule 66

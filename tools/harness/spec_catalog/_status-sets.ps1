@@ -122,10 +122,39 @@ function Test-BlockerReleased {
     param(
         [Parameter(Mandatory)][string] $Status,
         [Parameter(Mandatory)][string] $Id,
-        [string] $File
+        [string] $File,
+        [string] $DependentSpec,
+        [string] $BlockerRef = $Id,
+        [string] $LocalDependentId
     )
 
     if ($Status -eq 'Archived') { return $true }
     if (-not (Test-ReleaseReadyStatus -Status $Status)) { return $false }
+    if ($Status -eq 'Implemented' -and -not (Test-AcceptsImplemented -SpecText $DependentSpec -Ref $BlockerRef)) {
+        return $false
+    }
+    if ($LocalDependentId -and (Test-LocalBlockerUnchanged -File $File -Id $LocalDependentId -Status $Status)) {
+        return $false
+    }
     return (Test-BlockerPlanComplete -Id $Id -File $File)
+}
+
+function Test-AcceptsImplemented {
+    param([string] $SpecText, [string] $Ref)
+    foreach ($line in [regex]::Matches($SpecText, '(?m)^\*\*Accepts Implemented:\*\*[ \t]*([^\r\n]*)')) {
+        $refs = $line.Groups[1].Value.Split(',').Trim()
+        if ($refs -contains $Ref) { return $true }
+    }
+    return $false
+}
+
+function Test-LocalBlockerUnchanged {
+    param([string] $File, [string] $Id, [string] $Status)
+    if (-not $File) { return $false }
+    if (-not [IO.Path]::IsPathRooted($File)) { $File = Join-Path (Get-SzaProjectRoot) $File }
+    try { $text = [IO.File]::ReadAllText($File) } catch { return $false }
+    $section = [regex]::Match($text, '(?ms)^##[ \t]+Blocked tickets[ \t]*\r?\n(.*?)(?=^#{1,2}[ \t]|\z)')
+    $line = '(?m)^[ \t]*-[ \t]+Blocks:[ \t]*{0}(?=[ \t]*\|)(?![^\r\n]*\|[ \t]*released:)[^\r\n]*\|[ \t]*at:[ \t]*{1}[ \t]*(?:\||\r?$)' -f
+        [regex]::Escape($Id), [regex]::Escape($Status)
+    return $section.Success -and $section.Groups[1].Value -match $line
 }

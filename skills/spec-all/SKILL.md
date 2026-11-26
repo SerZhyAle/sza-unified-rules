@@ -15,6 +15,12 @@ the lease back. One ticket, one pass, then stop - a loop over the queue is the p
 A project that ships its own `.claude/commands/spec-all.md` (FastMediaSorter_mob_v2) has its own pipeline with its
 own stages, paths and flags (`-m`); in that project that file is the command and this skill is not used.
 
+When `SZA_TICKET_SOURCE=robot` and both `SZA_PASS_PREAMBLE` and `SZA_PASS_RESULT` are set, follow the
+[managed unattended pass](../spec-to-audit/SKILL.md#unattended-pass---headless-queue-runs). Use the
+prepared context in place of Step 2, including its drift verdict, continue at Step 3, then report.
+The runner owns the lease and post-status bookkeeping, including on an error. Use the status tool
+in Step 3 and record any changed files in the result file before the final status move.
+
 ## Usage
 
 ```text
@@ -133,7 +139,7 @@ files and continue.
 
 Status moves go through `spec_catalog/update.ps1 -Id <id> -Status <word>` (it rewrites the spec's status line and
 the ledger together), never by hand. Closing the ticket at the end of the audit goes through the project's closure
-facade (spec-to-audit slot 5).
+facade (spec-to-audit slot 5) in attended sessions and robot passes without a prepared context.
 
 **Between releases nothing above 5 seconds runs** ([TESTING_AND_QA.md](../../rules/TESTING_AND_QA.md) section 2): a
 build or suite with no fast form is recorded in the audit as a `RELEASE` item and the report says "not built, not

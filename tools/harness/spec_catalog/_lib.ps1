@@ -15,6 +15,7 @@ $script:RepoRoot = $repoRoot
 # Get-SpecSectionLines / Get-OpenStatusPattern / Get-ResearchSectionHeadingPattern is
 # untouched by the move.
 . (Join-Path $libDir '_research-items.ps1')
+. (Join-Path $libDir '_quiz-questions.ps1')
 
 # S1864: the lifecycle-status sets live in their own leaf file for the same reason, so
 # preview.ps1's auto-skip verdict and this library's release-file routing answer from one
@@ -749,7 +750,9 @@ function Sync-PortfolioProjection {
     # The catalog remains authoritative. A failed portfolio projection must not undo a status write.
     # A child of the queue sync itself (rule 65 insert, rule 68 relink) carries SZA_PQ_IN_SYNC: that sync refreshes
     # the projection after its children, and a nested one would start the next child again, one level deeper each row.
-    if ($env:SZA_PQ_IN_SYNC -eq '1') { return }
+    # SZA_PQ_NO_PROJECTION says only that the caller runs the sync itself (the campaign form of spec-draft.ps1). It is
+    # a variable of its own because SZA_PQ_IN_SYNC also records a new row as `import` (_ticket-source.ps1).
+    if ($env:SZA_PQ_IN_SYNC -eq '1' -or $env:SZA_PQ_NO_PROJECTION -eq '1') { return }
     # S0144: the projection is a `pq sync` child that may start insert.ps1 or update.ps1 (rules 65 and 68), and both
     # take the catalog mutex. A process cannot win a lock its own parent holds, so every such grandchild waited the
     # full 30 s of Enter-CatalogLock and failed. While this process holds the lock the request is only noted;
@@ -1898,6 +1901,16 @@ function Assert-ClosingGates {
     }
 
     $isBlockEntry = $NewStatus -like 'Block*'
+    if ($OldStatus -eq 'BlockQuestions' -and -not $isBlockEntry -and $NewStatus -ne 'Archived') {
+        $record = Find-Record -Id $Id
+        $note = $record.PSObject.Properties['statusNote']
+        $path = Resolve-SpecPath -PathRef $record.file
+        $lines = if (Test-Path -LiteralPath $path -PathType Leaf) { [IO.File]::ReadAllLines($path) }
+        $items = @(Get-OpenQuizItems -Note $(if ($note) { $note.Value }) -Updated $record.updated -Lines $lines)
+        if ($items.Count -gt 0) {
+            throw ("Cannot move '{0}' from BlockQuestions to {1}. Open owner items:`n- {2}" -f $Id, $NewStatus, ($items -join "`n- "))
+        }
+    }
     if ($gatedStatuses -notcontains $NewStatus -and -not $isBlockEntry) { return }
 
     # S2656 - a re-affirmation (the same status written again, typically to replace a -StatusNote)

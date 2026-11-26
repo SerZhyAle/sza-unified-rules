@@ -65,8 +65,7 @@ param(
 # Exit codes: 0 = a reason was supplied (and, for BlockByOtherTask, a directional blocker
 #                 resolves; for BlockQuestions, the note carries the Q: question), or the status
 #                 is not a Block* one.
-#             1 = no reason, a BlockQuestions note without the Q: token, or no directional
-#                 blocker - the transition must not proceed.
+#             1 = missing reason, question or action token, device check, or directional blocker.
 #             2 = bad invocation (malformed id, or an id no record carries), or the spec file
 #                 needed to resolve the blocker cannot be read. Kept distinct from 1 because
 #                 "could not look" and "found nothing" call for opposite reactions: exit 1
@@ -104,7 +103,8 @@ if (-not $NoteSupplied -or [string]::IsNullOrWhiteSpace($note)) {
     Write-Output ("  update.ps1 -Id {0} -Status {1} -StatusNote '<what blocks it, and what resolves it>'" -f $Id, $NewStatus)
     Write-Output ""
     if ($NewStatus -eq 'BlockNeedUserTest') {
-        Write-Output "For BlockNeedUserTest the reason is what the human must observe on the device."
+        Write-Output "For BlockNeedUserTest, name what the owner must observe on the device or in the UI."
+        Write-Output "For a project command deferred to release, use Implemented and record '**Release gate:** <suite or command>' in the spec."
     }
     elseif ($NewStatus -eq 'BlockQuestions') {
         Write-Output "For BlockQuestions the reason is the question itself: a literal 'Q:' token whose"
@@ -152,6 +152,23 @@ if ($NewStatus -eq 'BlockQuestions' -and $note -notmatch '(?-i)(?<![A-Za-z])(?:Q
     Write-Output "'### Assumed (unattended, <date>)' in the ticket, with the alternative and 'owner may"
     Write-Output "overrule' (S0039). Questions stay for one-way and outward steps, contract changes,"
     Write-Output "scope, money, and facts only the owner knows."
+    exit 1
+}
+
+if ($NewStatus -eq 'BlockNeedUserTest') {
+    . (Join-Path $PSScriptRoot 'lib/device-check.ps1')
+    try {
+        $deviceChecks = @(Get-SpecDeviceCheck -Path (Resolve-SpecPath -PathRef $record.file))
+    } catch {
+        Write-Error ("Cannot read the spec file for {0}: {1}" -f $Id, $_.Exception.Message) -ErrorAction Continue
+        exit 2
+    }
+    if ($deviceChecks.Count -gt 0) { exit 0 }
+
+    Write-Output "FAIL $Id -> BlockNeedUserTest"
+    Write-Output "- $($record.file) needs a non-empty '**Device check:**' line."
+    Write-Output "Name the step the owner must perform on a device or in the UI and why no project command covers it."
+    Write-Output "For a project command deferred to release, use Implemented and record '**Release gate:** <suite or command>' in the spec."
     exit 1
 }
 

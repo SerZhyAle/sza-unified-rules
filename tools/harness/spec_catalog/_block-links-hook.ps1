@@ -25,6 +25,7 @@ function Invoke-BlockLinksHook {
         $moved = ($OldStatus -cne $NewStatus)
         if ($NewStatus -ceq 'BlockByOtherTask' -and ($moved -or $NoteChanged)) {
             $argv = @('-NoProfile', '-File', $tool, '-Link', '-Id', $Id)
+            if ($moved) { $argv += '-RecordStatusAt' }
             if ($OldStatus -and $OldStatus -notlike 'Block*' -and $OldStatus -cne 'Archived') { $argv += @('-Was', $OldStatus) }
             & $exe @argv | ForEach-Object { Write-Host $_ }
         }
@@ -39,7 +40,7 @@ function Invoke-BlockLinksHook {
             # Cheap pre-check: an open line is a `- Blocks:` line without `released:` under the section heading.
             if ($text -notmatch '(?m)^##[ \t]+Blocked tickets[ \t]*\r?$') { return }
             if ($text -notmatch '(?m)^[ \t]*-[ \t]+Blocks:(?![^\r\n]*\|[ \t]*released:)') { return }
-            & $exe -NoProfile -File $tool -Release -Id $Id | ForEach-Object { Write-Host $_ }
+            & $exe -NoProfile -File $tool -Release -Id $Id -StatusMoved | ForEach-Object { Write-Host $_ }
         }
     }
     catch {

@@ -9,6 +9,8 @@
         count is 0 and a reason is given, so a runner finds nothing to do instead of an idle audit pass.
      4. An explicit id is not ranking: spec-preamble.ps1 -Id of an Implemented ticket resolves it and claims its lease.
      5. The script no longer adds a status to the eligible set from the environment.
+     6. Local blocker opt-in and unchanged-park hold, including legacy lines and Archived.
+     7. The qualified resolver requires an opt-in for the exact reference.
     Throwaway projects built by hand and four child processes started together; no real repository, registry, queue file
     or lease is touched, and no environment variable of this process is changed. -KeepScratch leaves the folder. #>
 [CmdletBinding()]
@@ -82,13 +84,37 @@ try {
         [pscustomobject]@{ id = 'S0001'; status = 'Implemented' }, [pscustomobject]@{ id = 'S0002'; status = 'Verified' },
         [pscustomobject]@{ id = 'S0003'; status = 'BlockNeedUserTest' })
     $named = New-Project 'named' @([pscustomobject]@{ id = 'S0001'; status = 'Implemented' })
+    $dependencies = New-Project 'dependencies' @(
+        [pscustomobject]@{ id = 'S0001'; status = 'Implemented' },
+        [pscustomobject]@{ id = 'S0002'; status = 'BlockByOtherTask' },
+        [pscustomobject]@{ id = 'S0003'; status = 'BlockByOtherTask' },
+        [pscustomobject]@{ id = 'S0004'; status = 'BlockByOtherTask' },
+        [pscustomobject]@{ id = 'S0005'; status = 'BlockByOtherTask' },
+        [pscustomobject]@{ id = 'S0006'; status = 'Archived' },
+        [pscustomobject]@{ id = 'S0007'; status = 'BlockByOtherTask' })
+    $links = @'
 
-    # One wave of four children keeps the suite inside the five-second line.
+## Blocked tickets
+- Blocks: S0002 | was: Draft | since: 2026-11-24 | at: Implemented
+- Blocks: S0004 | was: Draft | since: 2026-11-24
+- Blocks: S0005 | was: Draft | since: 2026-11-24 | at: Verified
+'@
+    Add-Content (Join-Path $dependencies 'PLAN/S0001_implemented.md') $links
+    Add-Content (Join-Path $dependencies 'PLAN/S0006_archived.md') "`n## Blocked tickets`n- Blocks: S0007 | since: 2026-11-24 | at: Archived"
+    foreach ($id in 'S0002', 'S0003', 'S0004', 'S0005', 'S0007') {
+        $blocker = if ($id -eq 'S0007') { 'S0006' } else { 'S0001' }
+        $path = Join-Path $dependencies "PLAN/${id}_blockbyothertask.md"
+        Add-Content $path "**Depends on:** $blocker"
+        if ($id -ne 'S0003') { Add-Content $path "**Accepts Implemented:** other:S0010, $blocker" }
+    }
+
+    # One wave keeps the suite inside the five-second line.
     $wave = [ordered]@{
         attended = Start-Tool $mixed $preflight @('-NoDrift', '-Format', 'json')
         picker   = Start-Tool $mixed $preflight @('-NoDrift', '-Format', 'json') '1'
         finished = Start-Tool $finished $preflight @('-NoDrift', '-Format', 'json')
         named    = Start-Tool $named $preamble @('-Id', 'S0001', '-Reason', 'picker-eligibility')
+        dependencies = Start-Tool $dependencies $preflight @('-NoDrift', '-Format', 'json') '1'
     }
     $got = [ordered]@{}
     foreach ($k in $wave.Keys) { $got[$k] = Wait-Tool $wave[$k] }
@@ -121,6 +147,26 @@ try {
         $src = Get-Content -LiteralPath $preflight -Raw
         Assert-That ($src -notmatch '\$eligibleStatuses\s*\+=') 'the script appends to the eligible set'
         Assert-That ($src -notmatch '(?s)if \(\$env:SZA_PQ_PICKER[^{]*\{[^}]*\$eligibleStatuses') 'the picker variable still feeds the eligible set'
+    }
+    Test-Case 'local picker withholds unchanged and unaccepted blockers; old links still resolve' {
+        $p = Read-Payload $got.dependencies
+        Assert-That $p.scan_complete 'every candidate must have a verdict'
+        $held = @($p.auto_skipped | Where-Object reason -eq 'blocker-not-verified' | ForEach-Object { $_.id } | Sort-Object)
+        Assert-That (($held -join ',') -ceq 'S0002,S0003') "expected the unchanged and unaccepted blockers to hold; held $($held -join ',')"
+        Assert-That ($p.selected.id -ceq 'S0004') "expected to select the legacy-link candidate; selected $($p.selected.id)"
+    }
+    Test-Case 'qualified resolver requires the exact Implemented opt-in' {
+        $lib = Join-Path $harness 'portfolio/lib'
+        . (Join-Path $lib 'registry.ps1')
+        . (Join-Path $lib 'ledger-watch.ps1')
+        . (Join-Path $lib 'xrepo.ps1')
+        $reg = @{ repos = @(@{ key = 'mixed'; path = $mixed }, @{ key = 'finished'; path = $finished }) }
+        $path = Join-Path $mixed 'PLAN/S0007_blockbyothertask.md'
+        Add-Content $path "Blocker: finished:S0001`n**Accepts Implemented:** S0001, other:S0001"
+        $held = Get-PqXrepoBlock -Registry $reg -RepoKey mixed -TicketId S0007
+        Assert-That ($held.blocker -eq 'finished:S0001' -and $held.why -match 'has not accepted Implemented') 'the qualified blocker was released or the refusal had the wrong reason'
+        Add-Content $path '**Accepts Implemented:** finished:S0001'
+        Assert-That ($null -eq (Get-PqXrepoBlock -Registry $reg -RepoKey mixed -TicketId S0007)) 'the exact qualified opt-in should release'
     }
 } finally {
     if (-not $KeepScratch) { Remove-Item -LiteralPath $scratch -Recurse -Force -ErrorAction SilentlyContinue }

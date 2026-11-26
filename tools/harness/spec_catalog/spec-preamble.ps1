@@ -69,6 +69,8 @@ if ($null -eq $record) {
     Write-Host "spec-preamble: $Id is in neither journal." -ForegroundColor Red
     exit 2
 }
+# TASK-FLOW 0.37: a former id found its record; the lease and drift-check act on the current id (CANONR-0195 G5).
+$Id = [string]$record.id
 $specPath = Resolve-SpecPath -PathRef ([string]$record.file)
 $specExists = Test-Path -LiteralPath $specPath -PathType Leaf
 $lastAudit = $false

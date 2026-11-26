@@ -371,8 +371,10 @@ empty: wait, see Waiting
   `repository <key> is named at start`); a live ticket lease of yours still holds a ticket, and the registry's and the
   queue file's hold still keep the repository out. Such a worker ranks only that repository, so it reads no transcript of
   another one. The pool (`pq start`) and `-Ticket` yield as above. The passes' own sessions are told apart by the session id the pass runs under,
-  kept in `run\pass-sessions.json`. Not seen: an agent that writes no Claude transcript (Codex, Gemini), and a build or
-  code lock whose holder has neither a transcript nor a lease.
+  kept in `run\pass-sessions.json`. A live code or build lock of the repository whose holder is not a pass occupies it as
+  well, in a `-Repo` worker's repository too (a pass's own lock is told apart by its process tree and the pass's time
+  span; in a `concurrent` repository only a lock of the ticket itself counts). Not seen: an agent that writes no Claude
+  transcript (Codex, Gemini) and holds no lease or lock.
 - **Shared resources.** A ticket's `**Verify:** <level> - <why>` line names what proves it: `edit` takes nothing, `build`
   one `build` token, `emulator` a `build` and the `emulator` token, `device` takes no token and is worked like any other
   level: the robot does the work and parks the ticket in `BlockNeedUserTest` (the hardware check is yours). No line, or a word outside the four, is `build`. The caps are `resources.build` (3) and `resources.emulator`
@@ -390,7 +392,9 @@ empty: wait, see Waiting
   like any other; each `Draft` beyond is kept out of the rank until the day ends or until you move it off `Draft`, and
   a console line tells you (`pq report` counts them, and `PQ-SAFE02` appears in `pq problems`). The count is read from
   the ledger at every rank, so every worker gives the same answer and a restart changes nothing; a ticket you file
-  yourself is never counted, and `pq start -Ticket` runs a held one at once.
+  yourself is never counted, and `pq start -Ticket` runs a held one at once. After each pass the worker looks at every
+  enabled repository, so a ticket filed into another project is announced too; a ticket two passes both saw is
+  announced by the first of them (`run/intake-announced.json`).
 
 - For Claude the model is not chosen by `pq`. The runner reads the ticket's `**Complexity:** <light|medium|hard> - <why>`
   line at every launch: `light` is haiku, `medium` sonnet, `hard` opus. A spec without the line keeps the runner's earlier
@@ -895,7 +899,7 @@ environment values or keys.
 | `TicketQueueMissing` from `pq tickets` | there is no ticket queue file at the path the message prints; restore it, or point the profile's `paths.releaseQueue` at the right file |
 | a worker window was closed by force | its state files stay; the next start reclaims files whose process is gone. If only the worker process ended and its runner ran on, the repository stays `occupied` until that pass ends |
 | `skip <key> - stopped`, `frozen` in the worker's wait line, a `Frozen:` line of `pq status`, or `repository <key> is stopped` in the worker's console | that repository's own queue stop file exists (its `rs`, or a release freeze) - see Stopping. A freeze that expired while nobody opened the repository leaves its stop in place for good, because the freeze clears itself only when something reads it and a skipped repository is never read: run the repository's own freeze Status (FMS_A: `scripts/utils/release-freeze.ps1 -Verb Status -Scope wear`, or `-Scope phone`), which removes the expired marker and the stop it asked for, or delete the file |
-| `repository <key> is occupied` | a session of yours wrote a transcript there within `occupiedMinutes`, or holds a live lease: the robot goes past it to the next repository and looks again when the window can have run out (never sooner than half a minute); a session that ended is seen as gone after the window. A `pq start -Repo <key>` worker never prints it for transcripts of `<key>` - start the worker that way when you work in the repository yourself |
+| `repository <key> is occupied` | a session of yours wrote a transcript there within `occupiedMinutes`, or holds a live lease or a live code or build lock: the robot goes past it to the next repository and looks again when the window can have run out (never sooner than half a minute); a session that ended is seen as gone after the window. A `pq start -Repo <key>` worker never prints it for transcripts of `<key>` - start the worker that way when you work in the repository yourself |
 | `waits for the build resource` | `resources.build` tokens are all held (or `emulator`); the ticket is skipped for a minute. A `Verify: device` ticket takes no token, so it never waits here |
 | `waits for the emulator resource (1 of 1 held)` | an `emulator` token is held, or a live session of yours holds an emulator lease (`pq status` lists the `Device leases`); the ticket is skipped for a minute and goes on when the lease is released or its session has been quiet long enough to be swept |
 | `pq stop` says `no worker is running` | exit 3, nothing is written; a worker window may have been closed by force, see its state files in `run\` |
@@ -928,8 +932,7 @@ move is excluded for the rest of that run and the log says so.
 ## Not in this version
 
 Day 0 written into a repository that joins, the finding lifecycle events and the `from-telemetry` tickets, a daily digest,
-the live monitor page and a polite interrupt for `halt` are not part of `pq`. The code and build locks of a manual session
-are not read for occupancy (its transcript and lease are). It is a loop, a rank, a few agents, a console and a log.
+the live monitor page and a polite interrupt for `halt` are not part of `pq`. It is a loop, a rank, a few agents, a console and a log.
 
 ## Checking the tool itself
 

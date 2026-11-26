@@ -70,6 +70,8 @@ function Read-PqLedgerRows([string] $RepoPath) {
             Updated  = [string](Get-PqRowProp $row 'updated' '')
             File     = [string](Get-PqRowProp $row 'file' '')
             Note     = $note
+            # TASK-FLOW 0.37: the old ids a prefix migration replaced (CANONR-0195 G4).
+            FormerIds = [string[]]@(@(Get-PqRowProp $row 'formerIds' @()) | Where-Object { $_ } | ForEach-Object { [string]$_ })
         })
     }
     return $rows.ToArray()
@@ -131,7 +133,7 @@ function Get-PqInboxCounts($Rows) {
     return $counts
 }
 
-# The first local (same-repository) `Blocker: <id>` token of the ticket's spec whose blocker is not released - the
+# The first local (same-repository) `Blocker: <id>` token of the ticket's spec or statusNote whose blocker is not released - the
 # picker's release test, the one xrepo.ps1 runs for qualified blockers - as "key:id", else $null. A blocker that
 # cannot be read holds, like xrepo.ps1's 'unreadable'. Only the repository's ticket-id grammar distinguishes a
 # local token from prose; the profile is read per repository, not through the single-project profile cache.
@@ -140,9 +142,15 @@ function Get-PqInboxLocalHold($ByKey, $Snaps, [string] $RepoKey, [string] $Id) {
     if (-not $ByKey.ContainsKey($RepoKey)) { return $null }
     $t = Get-PqXrepoTicket $ByKey[$RepoKey] $Id $Snaps
     if ($null -eq $t) { return $null }
-    $spec = Read-PqSpecText $t.file
-    if (-not $spec) { return $null }
+    # The spec and the statusNote both carry tokens (TASK-FLOW 0.38 section 16 A; CANONR-0196 C-G9): the note is the usual
+    # place of a BlockByOtherTask blocker, so a spec without one is no reason to stop.
+    $spec = [string](Read-PqSpecText $t.file)
+    $note = [string]$t.statusNote
+    $text = if ($note) { "$spec`n$note" } else { $spec }
+    if (-not $text.Trim()) { return $null }
     $pattern = [string]$script:PqRepoDefaults.grammar.ticketIdPattern
+    # A legacy id shape still validates (0.37 D; C-G10): the current pattern and every grammar.legacyTicketIdPatterns entry.
+    $patterns = [Collections.Generic.List[string]]::new()
     $profileFile = Join-Path ([string]$ByKey[$RepoKey].path) '.sza-profile.json'
     if ([IO.File]::Exists($profileFile)) {
         try {
@@ -150,12 +158,17 @@ function Get-PqInboxLocalHold($ByKey, $Snaps, [string] $RepoKey, [string] $Id) {
             $grammar = Get-PqLwField $profile 'grammar'
             $configured = Get-PqLwText $grammar 'ticketIdPattern'
             if ($configured) { $pattern = $configured }
+            # -NoEnumerate keeps the JSON array as one element: the pipeline unrolls it.
+            foreach ($lp in @(Get-PqLwField $grammar 'legacyTicketIdPatterns' | ForEach-Object { $_ })) {
+                if ($lp -is [string] -and $lp) { $patterns.Add($lp) }
+            }
         } catch { return $null }
     }
-    try { $idRegex = [regex]::new('\A(?:' + $pattern + ')\z', [Text.RegularExpressions.RegexOptions]::IgnoreCase) }
+    $patterns.Insert(0, $pattern)
+    try { $idRegex = [regex]::new('\A(?:' + (@($patterns | ForEach-Object { "(?:$_)" }) -join '|') + ')\z', [Text.RegularExpressions.RegexOptions]::IgnoreCase) }
     catch { return $null }
     $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
-    foreach ($m in [regex]::Matches($spec, '(?i)(?:Blocker|Блокер)\s*:\s*\**\s*([A-Za-z][A-Za-z0-9_-]*(?:\s*:\s*[A-Za-z][A-Za-z0-9_-]*)?)')) {
+    foreach ($m in [regex]::Matches($text, '(?i)(?:Blocker|Блокер)\s*:\s*\**\s*([A-Za-z][A-Za-z0-9_-]*(?:\s*:\s*[A-Za-z][A-Za-z0-9_-]*)?)')) {
         $val = $m.Groups[1].Value -replace '\s*:\s*', ':'
         if ($val.Contains(':')) { continue }   # a qualified token: xrepo.ps1's own walk owns it
         if (-not $idRegex.IsMatch($val)) { continue }
@@ -163,7 +176,10 @@ function Get-PqInboxLocalHold($ByKey, $Snaps, [string] $RepoKey, [string] $Id) {
         if (-not $seen.Add($val)) { continue }
         $b = Get-PqXrepoTicket $ByKey[$RepoKey] $val $Snaps
         if ($null -eq $b) { return "$RepoKey`:$val" }
-        $released = & $script:PqStatusSets { param($s, $i, $f) Test-BlockerReleased -Status $s -Id $i -File $f } $b.status $val $b.file
+        $released = & $script:PqStatusSets {
+            param($s, $i, $f, $text, $dependent)
+            Test-BlockerReleased -Status $s -Id $i -File $f -DependentSpec $text -LocalDependentId $dependent
+        } $b.status $val $b.file $spec $Id
         if (-not $released) { return "$RepoKey`:$val" }
     }
     return $null
@@ -219,7 +235,10 @@ function Get-PqLiftTarget {
                 $t = Get-PqXrepoTicket $byKey[$rKey] $rId $snaps
                 if ($null -ne $t) {
                     $st = [string]$t.status
-                    $why = if ($st -like 'Block*' -or $st -ceq 'Verified' -or $st -ceq 'Archived') { 'status' } else { '' }
+                    # A root's own blockers are released (the walk stopped there), and rule 18 as amended by 0.42 offers a
+                    # BlockByOtherTask ticket once they are; every other Block* status, Verified and Archived stay refused
+                    # (CANONR-0196 O2: the later amendment over 0.38 section 16 B).
+                    $why = if (($st -like 'Block*' -and $st -cne 'BlockByOtherTask') -or $st -ceq 'Verified' -or $st -ceq 'Archived') { 'status' } else { '' }
                     $target = @{ repo = $rKey; id = $rId; status = $st; why = $why }
                 }
             }

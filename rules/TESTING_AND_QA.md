@@ -110,6 +110,11 @@ builds were re-run after every small edit while the owner waited.
   the touched area that are fast on their own, expose them as a fast filter rather than calling the whole
   suite; a slow test is moved to the release tier, never deleted to meet the line.
 
+When the only open verification is a project command deferred by the 5 s limit, use `Implemented` and
+record `**Release gate:** <suite or command>` in the spec. Use `BlockNeedUserTest` after implementation and
+audit only for a device or GUI check that requires the owner, with a `**Device check:**` line naming the
+step and why no project command covers it.
+
 **One exception, for unattended passes only (owner decision, 2026-11-11).** A headless queue pass that
 edited compiled source runs the repository's **declared compile-only command once**, in the foreground,
 before it sets `Implemented` or `BlockNeedUserTest`. The command is declared in the repository's profile

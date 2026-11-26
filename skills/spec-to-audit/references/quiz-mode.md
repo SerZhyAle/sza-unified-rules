@@ -53,13 +53,16 @@ any project and carries the mechanics; the procedure below is its authority.
 5. **Write back before any status move.** Each answer goes into the ticket's own record - the input
    filled, the research item resolved - plus a dated decisions block: question, chosen answer, one-line
    reason. A block that was asked from is stamped by appending ` - answered <yyyy-MM-dd>` to its heading,
-   never deleted (TASK-FLOW rule 7). The order is the point: an interrupted sitting then leaves answered tickets still blocked,
+   never deleted, once its items are settled. If the sitting had no current block, write and stamp a new
+   block for the settled questions. Mark each settled owner-input action ` - done <yyyy-MM-dd>` or
+   ` - dropped <yyyy-MM-dd>`, optionally followed by `: <result or reason>` (TASK-FLOW rule 7).
+   An interrupted sitting can then leave answered tickets still blocked,
    never moved tickets whose answers exist nowhere.
 6. **Restore one level.** The ticket returns to the status it would have had without the block, inferred
    from what exists: a plan with progress -> `In Progress`; a plan without progress -> `Tactical`; settled
    owner inputs and no plan -> `Approved`; otherwise `Draft`. Two equally plausible -> ask one more
    question. The move goes through the ticket's tool and runs whatever gate guards the restored status; a
-   refusal keeps the block and names the residue. Then stop - continuing the pipeline is a separate,
+   refusal keeps the block and names the residue, including any open `Q:` and `DO:` items. Then stop - continuing the pipeline is a separate,
    explicit request, and a quiz writes no code and runs no build.
 7. **A skipped answer is never invented.** The input stays unfilled, the gate that needs it stays closed,
    the ticket stays in `BlockQuestions` with its reason note narrowed to what is still open. The answers

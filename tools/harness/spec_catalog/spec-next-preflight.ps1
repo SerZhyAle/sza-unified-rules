@@ -137,8 +137,10 @@ $skipCachePath = Join-Path $PSScriptRoot 'skip-cache.ps1'
 # implementation and Stage 5 self-audit already ran before `Implemented` was set, and what remains is release-tier
 # verification > 5 s), so offering it only burns idle audit passes until the idle hold parks each one, and shows the
 # owner runners working tickets that are not in the queue file. Verified, BlockNeedUserTest and the other Block*
-# statuses are not here either. An explicit id is not ranking: `/spec-all <id>` (spec-preamble.ps1), `pq start -Ticket`
-# and an id list given to the runner never pass through this script, so a named `Implemented` ticket is still worked.
+# statuses are not here either. An explicit id is not ranking: `/spec-all <id>` (spec-preamble.ps1) and an id list
+# given to the runner never pass through this script, so a named `Implemented` ticket is still worked there.
+# `pq start -Ticket` does pass through it - the dispatcher asks its picker for the named ticket, whose gates stay (rule
+# 66) - so it does not start an `Implemented` ticket.
 $eligibleStatuses = @(
     'Draft', 'Approved', 'Tactical', 'In Progress',
     'Partial', 'Broken', 'BlockByOtherTask'

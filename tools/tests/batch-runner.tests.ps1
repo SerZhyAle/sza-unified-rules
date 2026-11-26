@@ -544,12 +544,12 @@ try {
         Assert-That ($status -eq 'In Progress') "the status the child wrote before it was killed was lost: $status"
         Assert-That ($bResult.seconds -lt 200) "the run took $([int]$bResult.seconds) s; the kill did not fire near the ceiling"
     }
-    Test-Case 'batch: a child that failed but moved is offered again; the run that no longer moves it drops it (rule 24)' {
+    Test-Case 'batch: a child that failed but moved is offered again; an unmoved ticket and an Implemented one are not (rules 24, 18)' {
         $rows = Read-Jsonl (Join-Path $bMain 'temp/spec-queue/runs-a.jsonl')
-        Assert-That ((Get-Launches $bMain 'S0001') -ge 2) 'S0001 moved (Draft to In Progress) and was not offered again'
-        Assert-That ((Get-Launches $bMain 'S0002') -ge 2) 'S0002 failed but moved and was not offered again'
+        Assert-That ((Get-Launches $bMain 'S0001') -eq 2) "S0001 launched $((Get-Launches $bMain 'S0001'))x: expected Draft and In Progress, never Implemented"
+        Assert-That ((Get-Launches $bMain 'S0002') -eq 2) "S0002 launched $((Get-Launches $bMain 'S0002'))x: expected one more offer after the failed move, none at Implemented"
         $lastS2 = @($rows | Where-Object { $_.id -eq 'S0002' })[-1]
-        Assert-That (-not $lastS2.moved) 'the last S0002 run still moved, so the loop ended before it was dropped'
+        Assert-That ($lastS2.statusAfter -eq 'Implemented') "the last S0002 run ended at $($lastS2.statusAfter)"
         Assert-That ((Get-Launches $bMain 'S0003') -eq 1) 'S0003 did not move and was launched again'
     }
     Test-Case 'batch: -MaxTickets counts finished picks, a moved ticket offered again included (rule 24)' {
@@ -568,12 +568,12 @@ try {
         Assert-That ($rows.Count -ge 5) "only $($rows.Count) journal rows"
         $rows | ForEach-Object { Assert-RunRow $_ }
     }
-    Test-Case 'R0 rendered: a child that failed but moved is offered again; an unmoved one is dropped (rule 24)' {
+    Test-Case 'R0 rendered: a child that failed but moved is offered again; an unmoved ticket and an Implemented one are not (rules 24, 18)' {
         $rows = Read-Jsonl (Join-Path $rMain 'temp/spec-queue/runs-mono.jsonl')
-        Assert-That ((Get-Launches $rMain 'S0002') -ge 2) 'S0002 failed but moved and was not offered again'
+        Assert-That ((Get-Launches $rMain 'S0002') -eq 2) "S0002 launched $((Get-Launches $rMain 'S0002'))x: expected one more offer after the failed move, none at Implemented"
         Assert-That ((Get-Launches $rMain 'S0003') -eq 1) 'S0003 did not move and was launched again'
         $lastS2 = @($rows | Where-Object { $_.id -eq 'S0002' })[-1]
-        Assert-That (-not $lastS2.moved) 'the last S0002 run still moved, so the loop ended before it was dropped'
+        Assert-That ($lastS2.statusAfter -eq 'Implemented') "the last S0002 run ended at $($lastS2.statusAfter)"
     }
     Test-Case 'R0 rendered: on a timeout the child dies with its whole tree, the row says timeout, and the loop goes on' {
         $rows = Read-Jsonl (Join-Path $rMain 'temp/spec-queue/runs-mono.jsonl')

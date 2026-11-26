@@ -96,7 +96,7 @@ $script:PqRepoPathMap = [ordered]@{
     Ready       = 'releaseReady'
     Done        = 'releaseQueueDone'
     LeasesDir   = 'leasesDir'
-    RunsDir     = 'queueRunsDir'
+    RunsDir   = 'queueRunsDir'
     SpecsDir    = 'specsDir'
     TempDir     = 'tempDir'
     CommandsDir = 'commandsDir'
@@ -306,6 +306,21 @@ function Resolve-PqSnapshotTicketId($Snap, [string]$Id) {
         if ($hits.Count -eq 1) { return $hits[0] }
     }
     return ''
+}
+
+function Resolve-PqCurrentTicketId {
+    # The current id of <Repo>:<Id> when Id is an old id a prefix migration replaced (TASK-FLOW 0.37, CANONR-0195 G3);
+    # any other id - current, unknown, unreadable ledger, unregistered key - comes back as given, so the caller's own
+    # refusal still names what was asked for.
+    param($Registry, [string]$Repo, [string]$Id)
+    if (-not $Id -or -not $Repo -or $null -eq $Registry) { return $Id }
+    $rec = @(@($Registry.repos) | Where-Object { $_ -and [string]$_.key -ieq $Repo }) | Select-Object -First 1
+    if (-not $rec -or -not $rec.path) { return $Id }
+    try { $snap = Get-PqLedgerSnapshot -RepoPath ([string]$rec.path) } catch { return $Id }
+    if ($null -eq $snap -or -not $snap.ledgerRead -or $snap.tickets.Contains($Id)) { return $Id }
+    $aliases = Get-PqLwField $snap 'aliases'
+    if ($aliases -is [Collections.IDictionary] -and ([Collections.IDictionary]$aliases).Contains($Id)) { return [string]$aliases[$Id] }
+    return $Id
 }
 
 function Get-PqLedgerSnapshot {

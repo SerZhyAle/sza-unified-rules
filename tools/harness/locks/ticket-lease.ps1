@@ -122,6 +122,9 @@ param(
 
     [string]$Handoff,
 
+    # Release only the runner's reservation, including after another session has reclaimed the id.
+    [string]$ExpectedSessionId,
+
     [switch]$Json,
 
     # Release only: drop the lease even though its owner still looks live. Liveness here is the write
@@ -777,6 +780,10 @@ switch ($Verb) {
         }
 
         $lease = Read-Lease -Path $path
+        if ($ExpectedSessionId -and ($null -eq $lease -or [string]$lease.sessionId -ne $ExpectedSessionId)) {
+            Write-Host "ticket-lease: release refused for $Id - reservation owner changed."
+            exit 4
+        }
         $liveness = if ($null -ne $lease) { Get-LeaseLiveness -Lease $lease } else { 'foreign-stale' }
         # S2404: a handoff naming this lease's owner is proof the caller succeeded the claiming
         # invocation - stronger than the liveness guess and weaker than -Force, which asserts a

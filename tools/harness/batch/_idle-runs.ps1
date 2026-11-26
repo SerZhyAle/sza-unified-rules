@@ -5,8 +5,9 @@
 #
 # WHY IT IS DERIVED AND NOT STORED. A stored counter would have to be zeroed on a status move,
 # which means catching that event in every catalog mutator; the run journals already record both
-# the outcome and whether the status moved, so the series is a walk from the end of the journal to
-# the first record that moved. That gives the reset for free, and it spans instances because every
+# the outcome and whether the status moved. Walk back to the first move other than a repeat park:
+# entering the same parked status seen on either side of any of the preceding three rows for
+# this ticket counts, regardless of outcome (TASK-FLOW 0.46 rule 24). The walk spans instances because every
 # runs-*.jsonl is read - which is the half a per-process $processed list can never cover. The
 # skip cache is not an option: the runner wipes it at every start by design, so a mark left there
 # would not survive one launch.
@@ -135,16 +136,30 @@ function Get-IdleRunMap {
             $record = $ordered[$i]
             $moved = $false
             try { $moved = [bool] $record.moved } catch { $moved = $false }
-            # A move ends the series even on a neutral row: a ticket that advanced before the limit
-            # arrived did advance, and what came before that move is a different series.
-            if ($moved) { break }
+            $repeatPark = $false
+            if ($moved) {
+                $after = $record.PSObject.Properties['statusAfter']
+                if ($after -and $after.Value -in @('BlockQuestions', 'BlockExternal', 'BlockByOtherTask')) {
+                    for ($j = $i - 1; $j -ge [Math]::Max(0, $i - 3); $j--) {
+                        $prior = $ordered[$j]
+                        $priorBefore = $prior.PSObject.Properties['statusBefore']
+                        $priorAfter = $prior.PSObject.Properties['statusAfter']
+                        if (($priorBefore -and $priorBefore.Value -eq $after.Value) -or
+                            ($priorAfter -and $priorAfter.Value -eq $after.Value)) {
+                            $repeatPark = $true
+                            break
+                        }
+                    }
+                }
+                if (-not $repeatPark) { break }
+            }
             $outcome = ''
             try { $outcome = [string] $record.outcome } catch { $outcome = '' }
-            if ($script:IdleRunNeutralOutcomes -contains $outcome) { continue }
+            if (-not $repeatPark -and $script:IdleRunNeutralOutcomes -contains $outcome) { continue }
             # An outcome the project does not call idle ends the series rather than being skipped
             # over: the series claims CONSECUTIVE idle runs, and stepping past a record that is not
             # one would join two separate series into a count no run ever produced.
-            if ($policy.Outcomes -notcontains $outcome) { break }
+            if (-not $repeatPark -and $policy.Outcomes -notcontains $outcome) { break }
             if ($count -eq 0) {
                 $lastOutcome = $outcome
                 try { $lastFinishedAt = Format-IdleRunDate $record.finishedAt } catch { $lastFinishedAt = '' }

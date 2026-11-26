@@ -189,6 +189,10 @@ function Get-PqRank {
         $namedMode = $true
         $namedRepo = $nt.repo
         $namedId = $nt.id
+        # TASK-FLOW 0.37: a named start by an old id runs the ticket that carries it (CANONR-0195 G3).
+        if (Get-Command Resolve-PqCurrentTicketId -ErrorAction SilentlyContinue) {
+            $namedId = Resolve-PqCurrentTicketId -Registry $Registry -Repo $namedRepo -Id $namedId
+        }
     }
     $onlyKey = if ($namedMode) { $namedRepo } else { $OnlyRepo }
     $heldBypassed = $false
@@ -327,7 +331,18 @@ function Get-PqRank {
             $entries.Add(@{ repo = $k; kind = 'ticket'; id = $namedId; source = 'queueFile'; rule = 'queueFile'; score = 0
                     package = $null; row = $null })
         }
-        elseif ($rowsOf.ContainsKey($k)) { foreach ($x in $rowsOf[$k]) { $entries.Add($x) } }
+        elseif ($rowsOf.ContainsKey($k)) {
+            # TASK-FLOW 0.35 rule 44 (CANONR-0196 C-G1): where a repository has <repoKey>:<id> rows, their line order is the
+            # one order of its tickets, so a bare row of the same repository (its picker's head, ordered by the plan
+            # files) comes after them and decides only among the tickets they do not name.
+            $own = $rowsOf[$k]
+            $hasTicketRows = @($own | Where-Object { $_.kind -ceq 'ticket' }).Count -gt 0
+            if ($hasTicketRows) {
+                foreach ($x in $own) { if ($x.kind -ceq 'ticket') { $entries.Add($x) } }
+                foreach ($x in $own) { if ($x.kind -cne 'ticket') { $entries.Add($x) } }
+            }
+            else { foreach ($x in $own) { $entries.Add($x) } }
+        }
         elseif (-not $mentioned.Contains($k)) {
             $entries.Add(@{ repo = $k; kind = 'head'; id = $null; source = 'repoOrder'; rule = 'repoRank'; score = $repos[$k].rank
                     package = $null; row = $null; unlisted = $true })

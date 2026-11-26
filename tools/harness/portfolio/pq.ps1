@@ -303,6 +303,13 @@ function Invoke-PqQueueWriter([string]$Which) {
     $known = Get-PqKnownKeys $read.registry
     $qp = Get-PqQueuePath $read.registry
     $null = Open-PqLog -Writer cli
+    # TASK-FLOW 0.37: a pin or hold by an old id is written with the current id, so it holds the ticket and survives
+    # the sync (CANONR-0195 G3).
+    $tq = ConvertTo-PqQueueTarget $Target
+    if ($null -ne $tq -and $tq.id -and $Which -in @('pin', 'hold', 'release')) {
+        $cur = Resolve-PqCurrentTicketId -Registry $read.registry -Repo $tq.repo -Id $tq.id
+        if ($cur -and $cur -cne $tq.id) { $Target = "$($tq.repo):$cur" }
+    }
     $r = switch ($Which) {
         'pin' { Add-PqQueuePin -Path $qp -Ticket $Target -KnownRepos $known -Log }
         'hold' { Set-PqQueueHold -Path $qp -Target $Target -KnownRepos $known -Log }
@@ -1063,7 +1070,8 @@ function Invoke-PqStatus {
         "Passes today: $($parts -join ', ')"
     }
     if ($deviceLeases.Count -gt 0) {
-        'Device leases (a live one on an emulator holds the emulator resource):'
+        # TASK-FLOW 0.41 section 19 D names the header; a live lease on an emulator holds the emulator resource.
+        'Device leases:'
         foreach ($l in $deviceLeases) {
             $seenPart = if ($null -ne $l.lastSeenMinutes) { "seen $($l.lastSeenMinutes) min ago" } else { 'last activity unknown' }
             "  {0}  {1}  {2}  {3}" -f $l.id, $(if ($l.project) { $l.project } else { 'unknown project' }), $seenPart, $l.reason

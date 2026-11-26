@@ -65,7 +65,7 @@ function Invoke-Tool([string] $Root, [string] $Script, [string[]] $Arguments) {
     $psi.RedirectStandardError = $true
     $psi.WorkingDirectory = $Root
     $psi.Environment['SZA_PROJECT_ROOT'] = $Root
-    foreach ($n in 'SZA_PROFILE_PATH', 'SZA_SPEC_CATALOG_DIR', 'SZA_PQ_IN_SYNC', 'SZA_SKIP_RELEASE_QUEUE') { [void]$psi.Environment.Remove($n) }
+    foreach ($n in 'SZA_PROFILE_PATH', 'SZA_SPEC_CATALOG_DIR', 'SZA_PQ_IN_SYNC', 'SZA_PQ_NO_PROJECTION', 'SZA_SKIP_RELEASE_QUEUE') { [void]$psi.Environment.Remove($n) }
     $p = [Diagnostics.Process]::Start($psi)
     $o = $p.StandardOutput.ReadToEndAsync(); $e = $p.StandardError.ReadToEndAsync()
     if (-not $p.WaitForExit(60000)) { try { $p.Kill($true) } catch { } ; throw "$Script timed out" }
@@ -115,6 +115,13 @@ $records = Read-Catalog
 Write-Catalog -Records $records
 Exit-CatalogLock
 $steps['in-sync-child'] = $script:calls.Count
+$env:SZA_PQ_IN_SYNC = $null
+$env:SZA_PQ_NO_PROJECTION = '1'
+Enter-CatalogLock
+$records = Read-Catalog
+Write-Catalog -Records $records
+Exit-CatalogLock
+$steps['no-projection-child'] = $script:calls.Count
 foreach ($k in $steps.Keys) { Write-Output ('{0}={1}' -f $k, $steps[$k]) }
 '@
         $r = Invoke-Tool $repo $probe @((Join-Path $Harness 'spec_catalog\_lib.ps1'))
@@ -128,6 +135,7 @@ foreach ($k in $steps.Keys) { Write-Output ('{0}={1}' -f $k, $steps[$k]) }
         Assert-Equal $got['write-under-lock'] '2' 'Write-Catalog under the lock starts no projection'
         Assert-Equal $got['write-after-exit'] '3' 'the write''s projection runs when the lock is released'
         Assert-Equal $got['in-sync-child'] '3' 'a child of the queue sync (SZA_PQ_IN_SYNC=1) refreshes no projection'
+        Assert-Equal $got['no-projection-child'] '3' 'a child of a campaign (SZA_PQ_NO_PROJECTION=1) refreshes no projection'
     }
 
     Run-Case 'ship: a missing and a one-line DONE file ship a block (S0145)' {

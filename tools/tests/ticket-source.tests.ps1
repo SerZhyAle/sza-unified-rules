@@ -57,6 +57,18 @@ try {
     Run-Case 'resolve: the queue sync child is import whatever variable it inherited' {
         Assert-Equal (Resolve-With '' $null '1') 'import' 'no variable'; Assert-Equal (Resolve-With '' 'robot' '1') 'import' 'a sync started from inside a pass'
     }
+    Run-Case 'resolve: the projection guard of a campaign leaves the variable to name the source' {
+        $savedGuard = $env:SZA_PQ_NO_PROJECTION
+        try {
+            $env:SZA_PQ_NO_PROJECTION = '1'
+            foreach ($v in 'campaign', 'robot', 'inbox') { Assert-Equal (Resolve-With '' $v $null) $v "a campaign child under '$v'" }
+        }
+        finally { $env:SZA_PQ_NO_PROJECTION = $savedGuard }
+        $draft = [IO.File]::ReadAllText((Join-Path $Harness 'portfolio\spec-draft.ps1'))
+        Assert-Equal ($draft -match '\$env:SZA_PQ_IN_SYNC\s*=') 'False' 'spec-draft.ps1 must not mark its children as the queue sync''s'
+        Assert-Equal ($draft.Contains('$env:SZA_PQ_NO_PROJECTION = ''1''')) 'True' 'spec-draft.ps1 holds the projection back by its own variable'
+        Assert-Equal ($draft.Contains('if (-not $env:SZA_TICKET_SOURCE) { $env:SZA_TICKET_SOURCE = ''campaign'' }')) 'True' 'the campaign form names its source when nothing else does'
+    }
     Run-Case 'resolve: a value outside the list throws and names the list (case-sensitive)' {
         foreach ($bad in @(@('capture', $null), @('', 'Robot'))) {
             $msg = ''

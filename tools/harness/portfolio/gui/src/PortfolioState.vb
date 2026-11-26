@@ -555,11 +555,12 @@ Public Class PortfolioState
 
     ' Outcomes that count as idle when the repository's profile (runner.idleOutcomes) does not say, and the three that
     ' are neutral: a run that ended on the account's usage limit, a claim lost before the launch and a failed launch say
-    ' nothing about the ticket, so the walk steps over them (TASK-FLOW rule 24). The picker also lifts a hold when the
-    ' spec file was edited after the newest counted run (_idle-runs.ps1 Test-IdleRunLifted); this copy does not apply
-    ' that lift yet, so a ticket can still show as held here after the picker offers it again.
+    ' nothing about the ticket, so the walk steps over them (TASK-FLOW rule 24).
     Private Shared ReadOnly IdleDefaultOutcomes As String() = {"ok", "timeout", "claim-lost", "no-progress-or-claim-lost"}
     Private Shared ReadOnly IdleNeutralOutcomes As String() = {"limit-hit", "claim-lost-before-launch", "launch-failed"}
+    ' The lift (_idle-runs.ps1 Test-IdleRunLifted): a spec file written more than this long after the newest counted run
+    ' ended was edited since, and its ticket is not held.
+    Private Const IdleLiftGraceSeconds As Double = 60
 
     Private Class IdleRun
         Public At As DateTime
@@ -567,18 +568,28 @@ Public Class PortfolioState
         Public Outcome As String
     End Class
 
-    Private Shared ReadOnly IdleCache As New Dictionary(Of String, KeyValuePair(Of String, HashSet(Of String)))(StringComparer.OrdinalIgnoreCase)
+    ' What the journals alone say: every ticket at or past the threshold, with the finishedAt of its newest counted run.
+    Private Class IdleSeries
+        Public Signature As String = ""
+        Public Held As New Dictionary(Of String, DateTime)(StringComparer.OrdinalIgnoreCase)
+    End Class
+
+    Private Shared ReadOnly IdleCache As New Dictionary(Of String, IdleSeries)(StringComparer.OrdinalIgnoreCase)
+    ' ledger file -> (its length and write time, ticket id -> the row's `file`)
+    Private Shared ReadOnly LedgerFileCache As New Dictionary(Of String, KeyValuePair(Of String, Dictionary(Of String, String)))(StringComparer.OrdinalIgnoreCase)
 
     ' The tickets of one repository the pickers pass over automatically (spec-next-preflight 'idle-hold'): the last
-    ' runner.idleRunThreshold runs of the ticket (2 unless the profile says) all ended without moving its status. The series is
-    ' derived, never stored: from the end of the repository's own runs-*.jsonl, oldest first by finishedAt, back to the first
-    ' run that moved the status. Only a run that moves it ends the series - a status edited by hand does not. Cached
-    ' per repository until a journal or the profile changes. Empty for a repository without journals.
+    ' runner.idleRunThreshold runs of the ticket (2 unless the profile says) all ended without moving its status, and its
+    ' spec file was not edited since. The series is derived, never stored: from the end of the repository's own
+    ' runs-*.jsonl, oldest first by finishedAt, back to the first run that moved the status; it is cached until a journal
+    ' or the profile changes. The lift is asked on every call, because an edit of a spec file changes neither. Empty for
+    ' a repository without journals.
     Public Shared Function GetIdleHeldIds(repoPath As String) As HashSet(Of String)
         Dim result As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
         If String.IsNullOrWhiteSpace(repoPath) Then Return result
         Try
             Dim runsRel = "temp/spec-queue"
+            Dim ledgerRel = "PLAN/spec-catalog.jsonl"
             Dim threshold = 2
             Dim outcomes As String() = IdleDefaultOutcomes
             Dim profileFile = Path.Combine(repoPath, ".sza-profile.json")
@@ -589,6 +600,8 @@ Public Class PortfolioState
                         If doc.RootElement.TryGetProperty("paths", paths) Then
                             Dim rel = Str(paths, "queueRunsDir")
                             If Not String.IsNullOrWhiteSpace(rel) Then runsRel = rel
+                            Dim journal = Str(paths, "journal")
+                            If Not String.IsNullOrWhiteSpace(journal) Then ledgerRel = journal
                         End If
                         Dim runner As JsonElement
                         If doc.RootElement.TryGetProperty("runner", runner) AndAlso runner.ValueKind = JsonValueKind.Object Then
@@ -618,57 +631,112 @@ Public Class PortfolioState
                 sig.Append("|"c).Append(f).Append(":"c).Append(fi.Length).Append(":"c).Append(fi.LastWriteTimeUtc.Ticks)
             Next
             Dim signature = sig.ToString()
+            Dim series As IdleSeries = Nothing
             SyncLock IdleCache
-                Dim hit As KeyValuePair(Of String, HashSet(Of String))
-                If IdleCache.TryGetValue(repoPath, hit) AndAlso hit.Key = signature Then Return hit.Value
+                Dim hit As IdleSeries = Nothing
+                If IdleCache.TryGetValue(repoPath, hit) AndAlso hit.Signature = signature Then series = hit
             End SyncLock
 
-            Dim byId As New Dictionary(Of String, List(Of IdleRun))(StringComparer.OrdinalIgnoreCase)
-            For Each f In files
-                Dim lines As String()
-                Try
-                    lines = ReadAllTextShared(f).Split({vbCrLf, vbLf}, StringSplitOptions.RemoveEmptyEntries)
-                Catch
-                    Continue For
-                End Try
-                For Each line In lines
-                    ' A half-written last line is normal while a run appends; one unreadable record can only shorten a series.
+            If series Is Nothing Then
+                series = New IdleSeries With {.Signature = signature}
+                Dim byId As New Dictionary(Of String, List(Of IdleRun))(StringComparer.OrdinalIgnoreCase)
+                For Each f In files
+                    Dim lines As String()
                     Try
-                        Using doc = JsonDocument.Parse(line)
-                            Dim id = Str(doc.RootElement, "id")
-                            If String.IsNullOrWhiteSpace(id) Then Continue For
-                            Dim at = DateTime.MinValue
-                            If Not DateTime.TryParse(Str(doc.RootElement, "finishedAt"), CultureInfo.InvariantCulture, DateTimeStyles.None, at) Then at = DateTime.MinValue
-                            Dim runs As List(Of IdleRun) = Nothing
-                            If Not byId.TryGetValue(id, runs) Then
-                                runs = New List(Of IdleRun)()
-                                byId(id) = runs
-                            End If
-                            runs.Add(New IdleRun With {.At = at, .Moved = Bool(doc.RootElement, "moved", False), .Outcome = Str(doc.RootElement, "outcome")})
-                        End Using
+                        lines = ReadAllTextShared(f).Split({vbCrLf, vbLf}, StringSplitOptions.RemoveEmptyEntries)
                     Catch
+                        Continue For
                     End Try
+                    For Each line In lines
+                        ' A half-written last line is normal while a run appends; one unreadable record can only shorten a series.
+                        Try
+                            Using doc = JsonDocument.Parse(line)
+                                Dim id = Str(doc.RootElement, "id")
+                                If String.IsNullOrWhiteSpace(id) Then Continue For
+                                Dim at = DateTime.MinValue
+                                If Not DateTime.TryParse(Str(doc.RootElement, "finishedAt"), CultureInfo.InvariantCulture, DateTimeStyles.None, at) Then at = DateTime.MinValue
+                                Dim runs As List(Of IdleRun) = Nothing
+                                If Not byId.TryGetValue(id, runs) Then
+                                    runs = New List(Of IdleRun)()
+                                    byId(id) = runs
+                                End If
+                                runs.Add(New IdleRun With {.At = at, .Moved = Bool(doc.RootElement, "moved", False), .Outcome = Str(doc.RootElement, "outcome")})
+                            End Using
+                        Catch
+                        End Try
+                    Next
                 Next
-            Next
 
-            For Each kv In byId
-                Dim ordered = kv.Value.OrderBy(Function(x) x.At).ToList()
-                Dim count = 0
-                For i = ordered.Count - 1 To 0 Step -1
-                    Dim run = ordered(i)
-                    If run.Moved Then Exit For
-                    If IdleNeutralOutcomes.Contains(run.Outcome, StringComparer.OrdinalIgnoreCase) Then Continue For
-                    If Not outcomes.Contains(run.Outcome, StringComparer.OrdinalIgnoreCase) Then Exit For
-                    count += 1
+                For Each kv In byId
+                    Dim ordered = kv.Value.OrderBy(Function(x) x.At).ToList()
+                    Dim count = 0
+                    Dim newest = DateTime.MinValue
+                    For i = ordered.Count - 1 To 0 Step -1
+                        Dim run = ordered(i)
+                        If run.Moved Then Exit For
+                        If IdleNeutralOutcomes.Contains(run.Outcome, StringComparer.OrdinalIgnoreCase) Then Continue For
+                        If Not outcomes.Contains(run.Outcome, StringComparer.OrdinalIgnoreCase) Then Exit For
+                        If count = 0 Then newest = run.At
+                        count += 1
+                    Next
+                    If count >= threshold Then series.Held(kv.Key) = newest
                 Next
-                If count >= threshold Then result.Add(kv.Key)
+                SyncLock IdleCache
+                    IdleCache(repoPath) = series
+                End SyncLock
+            End If
+
+            If series.Held.Count = 0 Then Return result
+            Dim ledgerFile = If(Path.IsPathFullyQualified(ledgerRel), ledgerRel, Path.Combine(repoPath, ledgerRel))
+            Dim specFiles = GetLedgerSpecFiles(ledgerFile)
+            For Each kv In series.Held
+                Dim specFile As String = Nothing
+                specFiles.TryGetValue(kv.Key, specFile)
+                If Not IsIdleLifted(repoPath, specFile, kv.Value) Then result.Add(kv.Key)
             Next
-            SyncLock IdleCache
-                IdleCache(repoPath) = New KeyValuePair(Of String, HashSet(Of String))(signature, result)
-            End SyncLock
         Catch
         End Try
         Return result
+    End Function
+
+    ' Ticket id -> the `file` of its row in the active ledger, the rows the pickers rank. Read again only when the ledger
+    ' file changes; empty when it cannot be read, which keeps every hold.
+    Private Shared Function GetLedgerSpecFiles(ledgerFile As String) As Dictionary(Of String, String)
+        Dim map As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
+        Try
+            Dim info As New FileInfo(ledgerFile)
+            If Not info.Exists Then Return map
+            Dim stamp = String.Concat(info.Length.ToString(CultureInfo.InvariantCulture), ":", info.LastWriteTimeUtc.Ticks.ToString(CultureInfo.InvariantCulture))
+            SyncLock LedgerFileCache
+                Dim hit As KeyValuePair(Of String, Dictionary(Of String, String)) = Nothing
+                If LedgerFileCache.TryGetValue(ledgerFile, hit) AndAlso hit.Key = stamp Then Return hit.Value
+            End SyncLock
+            For Each line In ReadAllTextShared(ledgerFile).Split({vbCrLf, vbLf}, StringSplitOptions.RemoveEmptyEntries)
+                Try
+                    Using row = JsonDocument.Parse(line)
+                        Dim id = Str(row.RootElement, "id")
+                        If id <> "" Then map(id) = Str(row.RootElement, "file")
+                    End Using
+                Catch
+                End Try
+            Next
+            SyncLock LedgerFileCache
+                LedgerFileCache(ledgerFile) = New KeyValuePair(Of String, Dictionary(Of String, String))(stamp, map)
+            End SyncLock
+        Catch
+        End Try
+        Return map
+    End Function
+
+    ' Every doubt keeps the hold: no file named, a missing file, an unreadable finishedAt.
+    Private Shared Function IsIdleLifted(repoPath As String, specFile As String, finished As DateTime) As Boolean
+        If finished = DateTime.MinValue OrElse String.IsNullOrWhiteSpace(specFile) Then Return False
+        Try
+            Dim full = If(Path.IsPathFullyQualified(specFile), specFile, Path.Combine(repoPath, specFile))
+            Return File.Exists(full) AndAlso File.GetLastWriteTime(full) > finished.AddSeconds(IdleLiftGraceSeconds)
+        Catch
+            Return False
+        End Try
     End Function
 
     ' ---- registry ----

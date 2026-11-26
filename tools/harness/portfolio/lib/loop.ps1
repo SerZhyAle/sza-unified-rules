@@ -161,6 +161,73 @@ function Get-PqIntakeCapped($Registry, [string]$Day = '') {
     return [string[]]@($keys)
 }
 
+function Get-PqRobotLook($Repos, [string[]]$Days, [int]$Cap = 20) {
+    # One look at the robot-filed rows of several repositories (TASK-FLOW rule 41; CANONR-0197): a pass in one
+    # repository may file a ticket into another (the blocker of rule 52), so a pass stands between two of these looks.
+    # repos = the keys whose ledgers were read in full for every day; rows = 'key:id' -> @{ repo; id; day; count;
+    # capped }, count the place of the ticket among the robot-filed rows of its repository and day, from 1.
+    $read = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    $rows = [ordered]@{}
+    foreach ($r in @($Repos)) {
+        $key = [string](Get-PqValue $r 'key' '')
+        if (-not $key -or $read.Contains($key)) { continue }
+        try {
+            $mine = [ordered]@{}
+            $whole = $true
+            foreach ($day in @($Days | Select-Object -Unique)) {
+                $filed = Get-PqRobotFiled -RepoPath ([string]$r.path) -Day $day -Cap $Cap
+                if (-not $filed.ok) { $whole = $false; break }
+                for ($i = 0; $i -lt $filed.counted.Length; $i++) {
+                    $id = $filed.counted[$i]
+                    $mine["$key`:$id"] = [pscustomobject]@{ repo = $key; id = $id; day = $day; count = ($i + 1); capped = ($filed.capped -ccontains $id) }
+                }
+            }
+            if (-not $whole) { continue }
+            foreach ($k in @($mine.Keys)) { $rows[$k] = $mine[$k] }
+            [void]$read.Add($key)
+        }
+        catch { }
+    }
+    return [pscustomobject]@{ repos = $read; rows = $rows }
+}
+
+function Get-PqRobotNew($Before, $After) {
+    # The rows of the second look that the first did not hold. A repository the first look could not read gives none:
+    # every row of it would otherwise look new.
+    foreach ($k in @($After.rows.Keys)) {
+        $row = $After.rows[$k]
+        if ($Before.repos.Contains($row.repo) -and -not $Before.rows.Contains($k)) { $row }
+    }
+}
+
+function Request-PqIntakeAnnounce([string[]]$Keys) {
+    # Which of these 'key:id' no worker has announced yet; from now on they are. Two passes running side by side see the
+    # same new row and the ledger does not say which of them filed it, so the first to see it announces it. The record
+    # is run/intake-announced.json of the portfolio root, the newest 500. A record that cannot be written gives every
+    # key back: a ticket told twice is better than one never told.
+    $want = [string[]]@(@($Keys) | Where-Object { $_ } | Select-Object -Unique)
+    if ($want.Count -eq 0) { return [string[]]@() }
+    try {
+        $first = Invoke-PqStateLock {
+            $record = Join-Path (Join-Path (Get-PqRoot) 'run') 'intake-announced.json'
+            $null = [IO.Directory]::CreateDirectory((Split-Path -Parent $record))
+            $told = [Collections.Generic.List[string]]::new()
+            if ([IO.File]::Exists($record)) { foreach ($t in @(Read-PqState $record)) { if ($t) { $told.Add([string]$t) } } }
+            $unseen = [string[]]@($want | Where-Object { -not $told.Contains($_) })
+            if ($unseen.Count -gt 0) {
+                $told.AddRange($unseen)
+                if ($told.Count -gt 500) { $told.RemoveRange(0, $told.Count - 500) }
+                $tmp = "$record.$PID.tmp"
+                [IO.File]::WriteAllText($tmp, (ConvertTo-Json -InputObject @($told) -Compress), [Text.UTF8Encoding]::new($false))
+                [IO.File]::Move($tmp, $record, $true)
+            }
+            $unseen
+        }
+        return [string[]]@($first | Where-Object { $_ })
+    }
+    catch { return $want }
+}
+
 # Serialize short state-file transactions across terminals; a dead process releases the mutex.
 function Invoke-PqStateLock([scriptblock]$Body) {
     $bytes = [Text.Encoding]::UTF8.GetBytes((Get-PqRoot).ToLowerInvariant())
@@ -1616,11 +1683,14 @@ function Start-PqLoop {
                         $xbKey = "$($hr.repo):$($hr.id)"
                         $lf = if ($liftRows.ContainsKey($xbKey)) { $liftRows[$xbKey] } else { $null }
                         $rootKey = if ($null -ne $lf) { [string]$lf.root } else { '' }
+                        # What became of the root is part of the key (CANONR-0196 C-G11): a root first offered and later
+                        # refused by a gate (idle-hold, a status) is reported again with the gate's word (0.38 section 16).
+                        $liftKey = if ($null -eq $lf) { '' } elseif ($lf.offered) { 'offered' } else { "notOffered:$([string]$lf.why)" }
                         # Not added to $exclude: keeping the refused ticket in the walk lets -HeadFilter and -HeadLift offer
                         # its chain root on every turn while the blocker holds; $xblocked keeps the notice and event once per
-                        # (blocker, root).
-                        if ($xblocked.ContainsKey($xbKey) -and $xblocked[$xbKey].blocker -ceq $xb.blocker -and [string]$xblocked[$xbKey].root -ceq $rootKey) { continue }
-                        $xblocked[$xbKey] = @{ repo = [string]$hr.repo; id = [string]$hr.id; blocker = $xb.blocker; root = $rootKey }
+                        # (blocker, root, outcome).
+                        if ($xblocked.ContainsKey($xbKey) -and $xblocked[$xbKey].blocker -ceq $xb.blocker -and [string]$xblocked[$xbKey].root -ceq $rootKey -and [string]$xblocked[$xbKey].lift -ceq $liftKey) { continue }
+                        $xblocked[$xbKey] = @{ repo = [string]$hr.repo; id = [string]$hr.id; blocker = $xb.blocker; root = $rootKey; lift = $liftKey }
                         # The root of the chain and what became of it (TASK-FLOW 0.38 section 16): optional keys of the event
                         # and a tail of the printed line, so the owner sees what the waiting ticket is really waiting for.
                         $xd = [ordered]@{ blocked = $xbKey; blocker = $xb.blocker; state = $xb.state; blockerStatus = $xb.status }
@@ -1810,7 +1880,7 @@ function Start-PqLoop {
                 # occupiedMinutes, a live lease no pass holds) means no pass is launched; the repository is looked
                 # at again in half a minute, and the next repository of the rank is tried meanwhile.
                 $namedRepo = [bool]$OnlyRepo -and $repoKey -ieq $OnlyRepo
-                $occ = Get-PqRepoOccupancy -Repo $repoRec -Registry $Registry -HarnessRoot $harness -SkipTranscript:$namedRepo
+                $occ = Get-PqRepoOccupancy -Repo $repoRec -Registry $Registry -HarnessRoot $harness -SkipTranscript:$namedRepo -TicketId $ticketId
                 if ($occ.occupied) {
                     $occupiedMarks[$repoKey] = @{ until = [DateTime]::UtcNow.AddSeconds([Math]::Max(30, [int](Get-PqValue $occ 'freeInSeconds' 0))); why = 'occupied' }
                     if (-not $occupancyState.ContainsKey($repoKey)) {
@@ -2045,6 +2115,10 @@ function Start-PqLoop {
                 # pass runs under is read from the lease the runner took for it, so its own transcript is never taken for the
                 # owner's (rule 61); the stop files that name this pass are read every second (rule 47).
                 $idsBefore = Get-PqTicketIds $repoPath
+                # The robot-filed rows of every enabled repository, the pass's own included: a pass may file into another.
+                $robotRepos = @(@($Registry.repos) | Where-Object { (Get-PqValue $_ 'enabled' $false) -eq $true }) + @([pscustomobject]@{ key = $repoKey; path = $repoPath })
+                $robotDayBefore = Get-PqLocalDay
+                $robotBefore = Get-PqRobotLook -Repos $robotRepos -Days $robotDayBefore -Cap ([int](Get-PqValue $Registry 'robotDraftCap' 20))
                 $pqPassSessions = [Collections.Generic.HashSet[string]]::new()
                 $pqLeaseFile = Join-Path $paths.LeasesDir "$ticketId.json"
                 $pqSlot = $slot
@@ -2183,34 +2257,35 @@ function Start-PqLoop {
                 }
 
                 # D5 (TASK-FLOW rule 41, robotDraftCap): a ticket the pass filed carries `source` robot on its ledger row,
-                # and the count is the ledger's own - the robot-filed rows of the repository created on this local day
-                # (Get-PqRobotFiled). No worker remembers it, so it is the same after a restart and for every worker, and
-                # a ticket the owner or a desk session filed while the pass ran is never counted. The ones past the cap
-                # are kept out of every rank until the day ends (Get-PqIntakeCapped in Get-PqNextRank); the owner is told.
+                # and the count is the ledger's own - the robot-filed rows of a repository created on one local day
+                # (Get-PqRobotFiled). No worker keeps a count, so it is the same after a restart and for every worker, and
+                # a ticket the owner or a desk session filed while the pass ran is never counted. The rows are looked at in
+                # every enabled repository, and a row two passes both saw is announced by the first (CANONR-0197). The ones
+                # past the cap are kept out of every rank until the day ends (Get-PqIntakeCapped in Get-PqNextRank); the
+                # owner is told.
+                $draftCap = [int](Get-PqValue $Registry 'robotDraftCap' 20)
                 $newIds = @(Get-PqNewTicketIds $idsBefore (Get-PqTicketIds $repoPath))
+                $robotDayNow = Get-PqLocalDay
+                $robotAfter = Get-PqRobotLook -Repos $robotRepos -Days @($robotDayBefore, $robotDayNow) -Cap $draftCap
+                $robotNew = @(Get-PqRobotNew $robotBefore $robotAfter)
+                $robotFirst = @(Request-PqIntakeAnnounce @($robotNew | ForEach-Object { "$($_.repo)`:$($_.id)" }))
+                $robotNew = @($robotNew | Where-Object { $robotFirst -ccontains "$($_.repo)`:$($_.id)" })
+                foreach ($filedRow in $robotNew) {
+                    $null = Write-PqEvent -Log $log -Ev 'intake.robotDraft' -Run $runId -Repo $filedRow.repo -Id $filedRow.id -Pass $passId -Worker $slot -D ([ordered]@{ count = $filedRow.count; cap = $draftCap; capped = $filedRow.capped })
+                    if ($filedRow.capped) {
+                        $null = Write-PqEvent -Log $log -Ev 'dispatch.skip' -Run $runId -Repo $filedRow.repo -Id $filedRow.id -Worker $slot -D ([ordered]@{ why = 'intakeCap' })
+                    }
+                }
+                $robotToday = @($robotAfter.rows.Values | Where-Object { $_.day -ceq $robotDayNow })
                 if ($newIds.Count -gt 0) {
-                    $draftCap = [int](Get-PqValue $Registry 'robotDraftCap' 20)
-                    $robotToday = [string[]]@()
-                    $cappedToday = [string[]]@()
-                    try {
-                        $filed = Get-PqRobotFiled -RepoPath $repoPath -Day (Get-PqLocalDay) -Cap $draftCap
-                        $robotToday = [string[]]@($filed.counted)
-                        $cappedToday = [string[]]@($filed.capped)
+                    Write-Host "pass $passNum left $($newIds.Count) new ticket(s) in ${repoKey}: $($newIds -join ', ') (robot-filed today: $(@($robotToday | Where-Object { $_.repo -ceq $repoKey }).Count) of $draftCap)"
+                }
+                foreach ($filedIn in @($robotNew | Group-Object -Property repo)) {
+                    if ($filedIn.Name -cne $repoKey) {
+                        Write-Host "pass $passNum saw $($filedIn.Count) new robot-filed ticket(s) in $($filedIn.Name): $(@($filedIn.Group | ForEach-Object { $_.id }) -join ', ') (robot-filed today: $(@($robotToday | Where-Object { $_.repo -ceq $filedIn.Name }).Count) of $draftCap)"
                     }
-                    catch { }
-                    $beyond = 0
-                    foreach ($nid in $newIds) {
-                        $at = [Array]::IndexOf($robotToday, [string]$nid)
-                        if ($at -lt 0) { continue }
-                        $capped = ($cappedToday -ccontains $nid)
-                        $null = Write-PqEvent -Log $log -Ev 'intake.robotDraft' -Run $runId -Repo $repoKey -Id $nid -Pass $passId -Worker $slot -D ([ordered]@{ count = ($at + 1); cap = $draftCap; capped = $capped })
-                        if ($capped) {
-                            $beyond++
-                            $null = Write-PqEvent -Log $log -Ev 'dispatch.skip' -Run $runId -Repo $repoKey -Id $nid -Worker $slot -D ([ordered]@{ why = 'intakeCap' })
-                        }
-                    }
-                    Write-Host "pass $passNum left $($newIds.Count) new ticket(s) in ${repoKey}: $($newIds -join ', ') (robot-filed today: $($robotToday.Length) of $draftCap)"
-                    if ($beyond -gt 0) { Write-Host "the cap of $draftCap robot-filed tickets a day in $repoKey is reached - the $beyond beyond it wait for tomorrow or for the owner" }
+                    $beyond = @($filedIn.Group | Where-Object { $_.capped }).Count
+                    if ($beyond -gt 0) { Write-Host "the cap of $draftCap robot-filed tickets a day in $($filedIn.Name) is reached - the $beyond beyond it wait for tomorrow or for the owner" }
                 }
 
                 $detectorStatus = [string](Get-PqValue (Get-PqValue $pick.record 'limitDetector') 'status' 'unproven')

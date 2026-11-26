@@ -1,6 +1,7 @@
 #requires -Version 7.0
 # Tests for S0034: occupancy robot vs owner classification, flat pass-sessions, robot transcript detection, and concurrent repo occupancy
 # Case 6 (TASK-FLOW 0.40): a `pq start -Repo` worker skips the transcript evidence in the repository it names.
+# Case 7 (TASK-FLOW rule 61, CANONR-0196 C-G13): a live lock whose holder is not a dispatcher pass occupies the repository.
 $ErrorActionPreference = 'Stop'
 $lib = Join-Path (Split-Path $PSScriptRoot -Parent) 'harness/portfolio/lib'
 . (Join-Path $lib 'paths.ps1')
@@ -193,7 +194,52 @@ try {
     }
     Write-Host " PASS" -ForegroundColor Green
 
-    Write-Host "`nAll 6 test cases passed successfully." -ForegroundColor Green
+    # Case 7: a live lock whose holder is not a dispatcher pass occupies the repository (TASK-FLOW rule 61; CANONR-0196 C-G13)
+    Write-Host "Case 7: lock evidence - live, stale, a pass's own, a concurrent repository..." -NoNewline
+    $lockRepo = Join-Path $scratch 'lock-repo'
+    $lockDir = Join-Path $lockRepo 'temp'
+    $null = [IO.Directory]::CreateDirectory($lockDir)
+    $lockFile = Join-Path $lockDir 'CODE.LOCK'
+    $writeLock = {
+        param([long]$AgeSeconds, [string]$Reason)
+        $acq = [DateTimeOffset]::UtcNow.AddSeconds(-$AgeSeconds).ToUnixTimeMilliseconds()
+        $obj = [ordered]@{ lockType = 'Code'; pid = 999999; procStart = 1; acquiredAt = $acq; reason = $Reason; host = 'x' }
+        [IO.File]::WriteAllText($lockFile, ($obj | ConvertTo-Json -Compress), [Text.UTF8Encoding]::new($false))
+    }
+    $lockReg = @{ occupiedMinutes = 3; repos = @() }
+    $lockRec = @{ key = 'lockdemo'; path = $lockRepo; enabled = $true }
+    & $writeLock 20 'edit by the owner'
+    $o = Get-PqRepoOccupancy -Repo $lockRec -Registry $lockReg -NoLease -SkipTranscript
+    if (-not $o.occupied -or $o.by -cne 'lock' -or $o.freeInSeconds -lt 150) { throw "a 20 s old lock of a dead process should occupy for about 160 s: $($o | ConvertTo-Json -Compress)" }
+    $o = Get-PqRepoOccupancy -Repo $lockRec -Registry $lockReg -NoLease -SkipTranscript -NoLock
+    if ($o.occupied) { throw "-NoLock should drop the lock kind: $($o | ConvertTo-Json -Compress)" }
+    & $writeLock 400 'edit by the owner'
+    $o = Get-PqRepoOccupancy -Repo $lockRec -Registry $lockReg -NoLease -SkipTranscript
+    if ($o.occupied) { throw "a lock older than occupiedMinutes whose process is gone is not live: $($o | ConvertTo-Json -Compress)" }
+    # A live process (this one) holds it however old the lock is.
+    $me = Get-Process -Id $PID
+    $acqOld = [DateTimeOffset]::UtcNow.AddSeconds(-4000).ToUnixTimeMilliseconds()
+    [IO.File]::WriteAllText($lockFile, ([ordered]@{ lockType = 'Build'; pid = $PID; procStart = $me.StartTime.Ticks; acquiredAt = $acqOld; reason = 'build' } | ConvertTo-Json -Compress), [Text.UTF8Encoding]::new($false))
+    $o = Get-PqRepoOccupancy -Repo $lockRec -Registry $lockReg -NoLease -SkipTranscript
+    if (-not $o.occupied -or $o.freeInSeconds -ne 0) { throw "a lock of a live process should occupy: $($o | ConvertTo-Json -Compress)" }
+    # A lock taken inside a finished pass of the repository (runs.jsonl, widened by 60 s) is the pass's own.
+    & $writeLock 30 'edit by a pass'
+    $fin = [DateTime]::Now.AddSeconds(-10).ToString('yyyy-MM-ddTHH:mm:ss')
+    [IO.File]::WriteAllText((Join-Path $scratch 'runs.jsonl'), ('{"repo":"lockdemo","id":"S1","seconds":60,"finishedAt":"' + $fin + '"}' + "`n"), [Text.UTF8Encoding]::new($false))
+    $o = Get-PqRepoOccupancy -Repo $lockRec -Registry $lockReg -NoLease -SkipTranscript
+    if ($o.occupied) { throw "a lock acquired inside a pass interval is the pass's own: $($o | ConvertTo-Json -Compress)" }
+    Remove-Item -LiteralPath (Join-Path $scratch 'runs.jsonl') -Force
+    # A concurrent repository counts only a lock of the ticket itself.
+    $concRec = @{ key = 'lockdemo'; path = $lockRepo; enabled = $true; concurrent = $true }
+    & $writeLock 20 'S0002 edit'
+    $o = Get-PqRepoOccupancy -Repo $concRec -Registry $lockReg -NoLease -SkipTranscript -TicketId 'S0001'
+    if ($o.occupied) { throw "a concurrent repository's lock of another ticket does not occupy: $($o | ConvertTo-Json -Compress)" }
+    & $writeLock 20 'S0001 edit'
+    $o = Get-PqRepoOccupancy -Repo $concRec -Registry $lockReg -NoLease -SkipTranscript -TicketId 'S0001'
+    if (-not $o.occupied -or $o.by -cne 'lock') { throw "a concurrent repository's lock of the ticket itself occupies: $($o | ConvertTo-Json -Compress)" }
+    Write-Host " PASS" -ForegroundColor Green
+
+    Write-Host "`nAll 7 test cases passed successfully." -ForegroundColor Green
 }
 finally {
     $env:SZA_PORTFOLIO_ROOT = $origEnv

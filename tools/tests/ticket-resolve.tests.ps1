@@ -13,8 +13,8 @@
       1. <key>:<id> resolves to the named project's ticket, from the other project's folder.
       2. The same id in both projects resolves to the NAMED one; a bare number is the id's trailing digits.
       3. A registered key with an id the project does not hold is refused and never falls back to the current project.
-      4. A near-miss of <key>:<id> (unknown key with a ticket-shaped id, other case, a space, extra words, no id) is
-         refused; plain text with a colon stays an idea. Never a lookup in the current project.
+      4. A near-miss of <key>:<id> (unknown key with a ticket-shaped id or an id and a slug, other case, a space, extra
+         words, no id) is refused; plain text with a colon stays an idea. Never a lookup in the current project.
       5. A bare registered key is the next ticket of that project (project-next).
       6. A bare key that is also a local slug, or the local id shape, is refused as ambiguous, naming both readings.
       7. The current project's id shape, a slug, an unknown hyphenated slug, free text and an empty argument.
@@ -23,6 +23,8 @@
      10. "<id>_<slug>" (bare, .md, a path, <key>:..) is that ticket; a wrong slug or id is refused, never an idea.
      11. "-<number>" is the current project's ticket; the full id of a project with its own id shape (delta) works from
          any folder; a ticket-shaped word nobody claims is refused.
+     12. A mistyped id with a slug (three digits, a letter for a digit) is refused, never an idea; an underscore word whose
+         id part holds no digit stays an idea.
 #>
 [CmdletBinding()]
 param([switch] $KeepScratch)
@@ -128,6 +130,13 @@ try {
         Assert-That ($r.code -eq 2 -and $r.kind -eq 'refused' -and $r.reason -like 'malformed project reference*') "extra words, got $($r | ConvertTo-Json -Compress)"
         $r = Resolve-It 'beta:'
         Assert-That ($r.code -eq 2 -and $r.kind -eq 'refused' -and $r.reason -like 'malformed project reference*') "no id, got $($r | ConvertTo-Json -Compress)"
+        # An unregistered key before an id and a slug (bare, the file name, a path, a rooted path) is refused the same way,
+        # before the path is split - the split keeps the last folder only and used to answer with a ticket of the current
+        # project (CANONR-0199). One letter before the colon is a drive letter, never a key (case 10 reads such a path).
+        foreach ($arg in 'zeta:S0021_alpha-own-21', 'zeta:S0021_alpha-own-21.md', 'zeta:PLAN/S0021_alpha-own-21.md', 'zeta:\PLAN\S0021_alpha-own-21.md') {
+            $r = Resolve-It $arg
+            Assert-That ($r.code -eq 2 -and $r.kind -eq 'refused' -and $r.reason -like "unknown project 'zeta'*") "$arg, got $($r | ConvertTo-Json -Compress)"
+        }
         # Text that merely contains a colon is still an idea.
         $r = Resolve-It 'note: the crash on rotate'
         Assert-That ($r.code -eq 0 -and $r.kind -eq 'idea' -and $r.project -eq 'alpha') "note:, got $($r | ConvertTo-Json -Compress)"
@@ -185,7 +194,7 @@ try {
     }
 
     Run-Case '10. <id>_<slug> is that ticket; a wrong slug or id is refused, never an idea' {
-        foreach ($arg in 'S0030_beta-notes', 'S0030_beta-notes.md', 'PLAN/S0030_beta-notes.md', (Join-Path $alpha 'PLAN\S0030_beta-notes.md')) {
+        foreach ($arg in 'S0030_beta-notes', 'S0030_beta-notes.md', 'PLAN/S0030_beta-notes.md', (Join-Path $alpha 'PLAN\S0030_beta-notes.md'), 'Z:\anywhere\PLAN\S0030_beta-notes.md') {
             $r = Resolve-It $arg
             Assert-That ($r.code -eq 0 -and $r.kind -eq 'local-id' -and $r.project -eq 'alpha' -and $r.id -eq 'S0030' -and $r.slug -eq 'beta-notes') "$arg, got $($r | ConvertTo-Json -Compress)"
         }
@@ -214,6 +223,18 @@ try {
         foreach ($arg in 'DELTA-0010', 'ZZZ-0001') {
             $r = Resolve-It $arg
             Assert-That ($r.code -eq 2 -and $r.kind -eq 'refused' -and $r.reason -like 'no such ticket*') "$arg, got $($r | ConvertTo-Json -Compress)"
+        }
+    }
+    Run-Case '12. a mistyped id with a slug is refused, never an idea; an underscore word with no digit in its id part is an idea' {
+        foreach ($arg in 'S219_alpha-own-21', 'S0O21_alpha-own-21', 'PLAN/S219_alpha-own-21.md') {
+            $r = Resolve-It $arg
+            Assert-That ($r.code -eq 2 -and $r.kind -eq 'refused' -and $r.reason -like 'no such ticket*') "$arg, got $($r | ConvertTo-Json -Compress)"
+        }
+        $r = Resolve-It 'S219_alpha-own-21' $outside
+        Assert-That ($r.code -eq 2 -and $r.kind -eq 'refused' -and $r.reason -like 'no project here*') "outside, got $($r | ConvertTo-Json -Compress)"
+        foreach ($arg in 'README_v2', 'TODO_list') {
+            $r = Resolve-It $arg
+            Assert-That ($r.code -eq 0 -and $r.kind -eq 'idea' -and $r.project -eq 'alpha') "$arg, got $($r | ConvertTo-Json -Compress)"
         }
     }
 
