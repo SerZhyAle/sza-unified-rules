@@ -62,6 +62,12 @@ listing copies with the resolution still half-applied.
 
 ## Gates before anything public
 
+Use the owner's go in the session or its ticket for the named product, version and channel. It covers every
+step in that release. Run the console commands and handle terminal input yourself without per-step
+confirmation. Ask for approval again only if the version, channel or product changes. The owner handles UAC
+elevation, a new sign-in or consent screen, and hardware interaction.
+See [RELEASE_AND_DISTRIBUTION.md](../../rules/RELEASE_AND_DISTRIBUTION.md) §1.
+
 Print a visible verdict; refuse to proceed on red, never merely warn.
 
 1. **Pre-flight** PASS/FAIL - clean install, resources, defaults, core scenario.
@@ -197,7 +203,8 @@ Distinct from an update and easy to get wrong:
    a stream player, a web view, a remote-media file opener. Answer honestly.
 7. Use Partner Center for the first publication. For updates, the owner may configure the read-only machine
    preflight using the [machine channel reference](references/store-machine-channel.md); the Store step is
-   manual by default and submission commit is the owner's act.
+   manual by default. For a machine submission, follow WINDOWS-STORE rule 22 and amendment E for the
+   commit switch and owner confirmation.
 
 An Android product takes Leg 4 instead of these seven steps: its frozen anchor is set earlier than a first upload, when
 the Play Console create-app form binds the package name to the account.

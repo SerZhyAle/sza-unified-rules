@@ -152,6 +152,12 @@ sessions write there at once, and one session's command can stage or discard the
 
 ## Which product is behind, and the spec that catches it up
 
+For a portfolio-wide catch-up, use the [spec-draft tracking campaign](../spec-draft/SKILL.md).
+Keep one checklist in the canon with `-Tracking`. Use `-NeedsWork` for repos that need code changes
+or use a bounded `-Check` script whose exit 1 identifies code work. A registry or pointer check can close
+its row directly with `-TrackingTicket` when it passes. The product still owns its registry updates and
+exception decisions.
+
 The registry is the ledger of which version each product is synchronized with. From the canon repo:
 
 - `pwsh -File tools/contract-lag.ps1` lists every adoption row that is **behind** its contract, `partial`,

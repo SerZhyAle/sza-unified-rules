@@ -178,6 +178,7 @@ $Script:SzaProfileDefaults = [ordered]@{
         moduleCatalogSync = ''
     }
     runner      = [ordered]@{
+        passCeiling = [ordered]@{ minutes = 45; usd = 15 }
         command          = 'claude'
         # What a queue child is told when the project names nothing, or names a command it does not
         # have (Resolve-SzaPromptTemplate). The plugin's lifecycle skill runs in every repository that
@@ -490,6 +491,23 @@ function Get-SzaProfile {
             throw "sza-profile: '$path' is not valid JSON - $($_.Exception.Message)"
         }
         Assert-SzaSchemaCarrier $json 'version' 'HARNESS-PROFILE'
+        if ((Test-SzaHasProperty $json 'runner') -and (Test-SzaHasProperty $json.runner 'passCeiling')) {
+            $ceiling = $json.runner.passCeiling
+            if ($null -ne $ceiling -and $ceiling -isnot [pscustomobject]) {
+                if ($ceiling -isnot [ValueType] -or $ceiling -is [bool] -or $ceiling -ne 0) {
+                    throw 'sza-profile: runner.passCeiling requires an object, zero or null.'
+                }
+            } elseif ($null -ne $ceiling) {
+                foreach ($key in @('minutes', 'usd')) {
+                    if (-not (Test-SzaHasProperty $ceiling $key)) { continue }
+                    $value = $ceiling.$key
+                    if ($null -ne $value -and ($value -isnot [ValueType] -or $value -is [bool] -or
+                        $value -lt 0 -or -not [double]::IsFinite([double]$value))) {
+                        throw "sza-profile: runner.passCeiling.$key requires a positive number, zero or null."
+                    }
+                }
+            }
+        }
         $merged = Merge-SzaProfileNode -Default $merged -Override $json
         Add-SzaDerivedDefaults -Merged $merged -Declared $json   # no profile file: nothing to do, the shipped tree derives to itself
     }

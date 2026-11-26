@@ -1267,10 +1267,10 @@ function Resolve-RunOutcome {
     )
 
     $resolved = $Outcome
-    if ($LimitHit -and ($resolved -eq 'ok' -or $resolved -eq 'timeout')) {
+    if ($LimitHit -and $resolved -in @('ok', 'timeout', 'context-handoff')) {
         $resolved = 'limit-hit'
     }
-    if ($ProviderErrorHit -and ($resolved -eq 'ok' -or $resolved -eq 'timeout' -or $resolved -eq 'child-failed')) {
+    if ($ProviderErrorHit -and $resolved -in @('ok', 'timeout', 'child-failed', 'context-handoff')) {
         $resolved = 'provider-error'
     }
     if ($resolved -eq 'ok') {
@@ -1452,6 +1452,7 @@ $relaunchId = $null
 $handoffCounts = @{}
 $providerErrorStreaks = @{}
 $handoffCap = 6
+$passCeiling = Get-SzaProfileValue 'runner.passCeiling'
 
 while ($true) {
 
@@ -1619,6 +1620,7 @@ while ($true) {
     $outcome = 'ok'
     $logBody = ''
     $statusAfter = $statusBefore
+    $ceilingBoundary = $null
     try {
         # --- run it in its own process --------------------------------------------------------
         $ticketRec = if ($ticket -and $ticket.file) { $ticket } else { Get-TicketRecord -Id $id }
@@ -1637,6 +1639,7 @@ while ($true) {
         $prompt = $prompt.Replace('{specPath}', $specPath).Replace('{specpath}', $specPath).Replace('<spec path>', $specPath)
         $prompt = $prompt.Replace('{repoRoot}', $RepoRoot).Replace('{reporoot}', $RepoRoot).Replace('<repo root>', $RepoRoot)
         $prompt = $prompt.Replace('{updatePath}', $updateRel).Replace('{updatepath}', $updateRel).Replace('<update.ps1 path>', $updateRel)
+        $prompt += ' Final message: at most 10 lines; state the status reached, what ran with exit codes, and what remains.'
         $managedSkill = Get-ManagedPassSkill -Prompt $PromptTemplate
         if ($managedSkill -and $reservation) {
             $pass = Initialize-PassBookkeeping -Id $id -Root $RepoRoot -TempDir $tempDir
@@ -1863,6 +1866,11 @@ while ($true) {
             $childTranscriptPath = $null
             $statusMovedAt = $null
             $stoppedAfterStatus = $false
+            $launchStart = if ($childStartTicks) { [datetime]::new($childStartTicks) } else { $started }
+            $costProbeAt = $launchStart
+            $runningUsd = $null
+            $ceilingEnabled = $null -ne $passCeiling -and $passCeiling -ne 0
+            $priceLaunch = $ceilingEnabled -and $providerLabel -in @('claude', 'claude-api') -and $sessionId -and $passCeiling.usd -gt 0
 
             while ($true) {
                 $remainingMs = [int](($deadline - (Get-Date)).TotalMilliseconds)
@@ -1893,10 +1901,42 @@ while ($true) {
                     break
                 }
 
+                $observedAt = Get-Date
+                if ($priceLaunch -and $observedAt -ge $costProbeAt) {
+                    $costProbeAt = $observedAt.AddSeconds(60)
+                    $runningUsd = $null
+                    try {
+                        if (-not $childTranscriptPath) { $childTranscriptPath = Find-ChildTranscript -SessionId $sessionId }
+                        $usage = Get-PassUsage -TranscriptPath $childTranscriptPath -SessionId $sessionId
+                        if ($null -ne $usage -and $usage.priceAsOf) { $runningUsd = $usage.costUsd }
+                    } catch {
+                        $runningUsd = $null
+                    }
+                }
+                $launchMinutes = ($observedAt - $launchStart).TotalMinutes
+                $reached = Test-PassCeiling -Minutes $launchMinutes -Usd $runningUsd -Ceiling $passCeiling
+                if ($proc.HasExited) { break }
+                if ($reached) {
+                    $costText = if ($null -eq $runningUsd) { 'unknown' } else { '{0:0.0000}' -f $runningUsd }
+                    $ceilingBoundary = '{0} ceiling reached at {1:0.00} minutes, USD {2}' -f $reached, $launchMinutes, $costText
+                    Write-CeilingHandoffMarker -Directory (Join-Path $tempDir $id) -Id $id -Since $launchStart -Boundary $ceilingBoundary
+                    Write-Host ("  {0}: {1}. Waiting up to 60 seconds for the child to exit." -f $id, $ceilingBoundary)
+                    if (-not $proc.WaitForExit(60000)) {
+                        Stop-ProcessTree -ProcessId $proc.Id
+                        if (-not $proc.WaitForExit(5000)) { throw "Child process $($proc.Id) is still running." }
+                    }
+                    $exitCode = $proc.ExitCode
+                    break
+                }
+
                 # S0031: Wake every 60 s also when the ticket has no tactical folder, to poll ledger status.
                 # When StatusGraceMinutes is configured shorter (e.g. in targeted tests), poll at that interval.
                 $pollIntervalMs = [Math]::Min(60000, [Math]::Max(1000, [int]([TimeSpan]::FromMinutes($StatusGraceMinutes).TotalMilliseconds)))
                 $sliceMs = [Math]::Min($remainingMs, $pollIntervalMs)
+                if ($ceilingEnabled -and $passCeiling.minutes -gt 0) {
+                    $ceilingRemainingMs = ($passCeiling.minutes - $launchMinutes) * 60000
+                    $sliceMs = [Math]::Max(1, [Math]::Min($sliceMs, [Math]::Ceiling($ceilingRemainingMs)))
+                }
                 if ($null -ne $statusMovedAt) {
                     $statusRemainingMs = [int](([TimeSpan]::FromMinutes($StatusGraceMinutes) - ((Get-Date) - $statusMovedAt)).TotalMilliseconds)
                     if ($statusRemainingMs -gt 0) {
@@ -1974,6 +2014,9 @@ while ($true) {
                 Write-Host ''
                 Write-Host ("  run-spec-queue: {0}{3} exceeded {1} min - killing the process tree. {2}." -f $id, $TimeoutMinutes, $progress, $titleSuffix) -ForegroundColor Red
                 Stop-ProcessTree -ProcessId $proc.Id
+            } elseif ($ceilingBoundary) {
+                # The final transcript or a stop request can take precedence over the ceiling.
+                $outcome = 'context-handoff'
             } elseif ($stoppedAfterStatus) {
                 $outcome = 'ok'
                 $exitCode = 0
@@ -2113,7 +2156,7 @@ while ($true) {
     # comes from the child's transcript, found by the session id it was given; the -Quiet log is the
     # fallback when no transcript exists. A failure to ask is no answer, never a failed runner.
     $limitSignal = $null
-    if ($outcome -eq 'ok' -or $outcome -eq 'timeout') {
+    if ($outcome -in @('ok', 'timeout', 'context-handoff')) {
         try {
             $transcript = if ($sessionId) { Find-ChildTranscript -SessionId $sessionId } else { $null }
             $limitSignal = Get-LimitSignal -TranscriptPath $transcript -LogBody $logBody -ExitCode $exitCode -Pattern $agentLimitPattern
@@ -2123,7 +2166,7 @@ while ($true) {
     }
 
     $providerErrorSignal = $null
-    if ($outcome -eq 'ok' -or $outcome -eq 'timeout' -or ($null -ne $exitCode -and [int]$exitCode -ne 0)) {
+    if ($outcome -in @('ok', 'timeout', 'context-handoff') -or ($null -ne $exitCode -and [int]$exitCode -ne 0)) {
         try {
             $transcript = if ($sessionId) { Find-ChildTranscript -SessionId $sessionId } else { $null }
             $providerErrorSignal = Get-ProviderErrorSignal -TranscriptPath $transcript -LogBody $logBody -ExitCode $exitCode
@@ -2132,22 +2175,22 @@ while ($true) {
         }
     }
 
-    # A handoff is an outcome only for a child that ended on its own terms; a killed or failed child
-    # keeps its verdict, and its marker is still consumed so it cannot leak into the next run.
+    # Consume either marker so it cannot leak into the next launch. Only a successful child can
+    # initiate a handoff through a marker. Supervisor handoffs use the observed ceiling.
     $handoff = Read-ContextHandoff -Id $id -Since $started
     # A marker is a claim that the child's context is large. Without a token figure at or above the minimum
     # it is no handoff: the pass is judged like any other that ended with the status unchanged (an idle
     # outcome, dropped for the rest of this run), not relaunched. One ticket handed back five times in six
     # minutes at `tokens: 0` (2026-11-20), each pass ~50k tokens and ending at a planning phase boundary.
     $handoffRejected = $null
-    if ($null -ne $handoff) {
+    if ($null -ne $handoff -and -not $ceilingBoundary) {
         $handoffClaim = Test-ContextHandoffClaim -Handoff $handoff
         if (-not $handoffClaim.Valid) {
             $handoffRejected = $handoffClaim.Reason
             $handoff = $null
         }
     }
-    if ($null -ne $handoff -and $outcome -eq 'ok' -and ($null -eq $exitCode -or [int]$exitCode -eq 0)) {
+    if (-not $ceilingBoundary -and $null -ne $handoff -and $outcome -eq 'ok' -and ($null -eq $exitCode -or [int]$exitCode -eq 0)) {
         $outcome = 'context-handoff'
     }
 
@@ -2167,9 +2210,10 @@ while ($true) {
     $moved = $verdict.Moved
     $ranAny = $true
     $relaunch = $false
+    $handoffClosed = $moved -and ($statusAfter -in @('Implemented', 'Verified', 'Archived') -or $statusAfter -like 'Block*')
     if ($outcome -eq 'context-handoff') {
         $handoffCounts[$id] = 1 + [int]$handoffCounts[$id]
-        $relaunch = $handoffCounts[$id] -le $handoffCap
+        $relaunch = $handoffCounts[$id] -le $handoffCap -and -not $handoffClosed
     }
     $limitHold = $null
     if ($outcome -eq 'limit-hit') {
@@ -2203,7 +2247,7 @@ while ($true) {
         $relaunchId = $id
     } else {
         $handled++
-        if (-not $moved) { $processed.Add($id) }
+        if (-not $moved -or $outcome -eq 'context-handoff') { $processed.Add($id) }
     }
 
     # What the child's session used (S0037). Read once, after the child is gone; a failure to read is no
@@ -2235,8 +2279,11 @@ while ($true) {
         Write-Host ("  {0} left a context-handoff marker, but {1} - not a handoff: no relaunch, the pass counts as it ended." -f $id, $handoffRejected) -ForegroundColor DarkYellow
     }
     if ($relaunch) {
-        Write-Host ("  {0} handed back at {1} tokens ({2}) - relaunching with a fresh context, handoff {3} of {4}." -f `
-                $id, $handoff.tokens, $handoff.boundary, $handoffCounts[$id], $handoffCap) -ForegroundColor DarkCyan
+        $boundary = if ($ceilingBoundary) { $ceilingBoundary } else { '{0} tokens ({1})' -f $handoff.tokens, $handoff.boundary }
+        Write-Host ("  {0} handed back at {1} - relaunching with a fresh context, handoff {2} of {3}." -f `
+                $id, $boundary, $handoffCounts[$id], $handoffCap) -ForegroundColor DarkCyan
+    } elseif ($outcome -eq 'context-handoff' -and $handoffClosed) {
+        Write-Host ("  {0} handed back after moving to {1}." -f $id, $statusAfter) -ForegroundColor DarkCyan
     } elseif ($outcome -eq 'context-handoff') {
         Write-Host ("  {0} handed back {1} times in this run - dropped for the rest of it." -f $id, $handoffCounts[$id]) -ForegroundColor DarkYellow
     } elseif ($outcome -eq 'limit-hit') {

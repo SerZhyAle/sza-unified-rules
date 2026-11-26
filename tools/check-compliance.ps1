@@ -11,6 +11,7 @@ Groups:
   RULES  the agent-rules file: canon pointer, no restatement, no self-declared fork
   MEM    a committed agent-memory index stays within the 200 lines that are loaded (MEM01, advisory)
   CI     workflows holding a write token or a secret pin third-party actions by commit (CI01, advisory)
+  REL    release scripts with console-input markers (REL01, advisory)
   HOOK   the enforcement layer: every registered hook is in the inventory table
   LAY    layout and ledger
   FLOW   the task flow stands: profile, ledger, launcher (FLOW01-FLOW03, advisory, off unless -CheckTaskFlow;
@@ -711,6 +712,21 @@ try {
                 Add-Finding -Id 'SZA-CI01' -Severity 'warn' -Path $f -Line $loose[0] `
                     -Message "$($loose.Count) third-party action(s) pinned by a moving tag in a workflow that holds contents: write or a secret, line(s) $(Format-Lines $loose)" `
                     -Fix 'Pin each to the full 40-hex commit with the version in a trailing comment (uses: owner/action@<sha> # v3.0.3). Where a tag is deliberate, add a canon-ok comment on that line or the line above.'
+            }
+        }
+    }
+
+    # --------------------------------------------------------- group REL
+
+    if ($isGit -and (Test-Enabled 'SZA-REL01')) {
+        foreach ($f in ($tracked | Where-Object { $_ -match '^scripts/release/.*\.(ps1|psm1|cmd|bat|sh|py)$' })) {
+            $path = Join-RepoPath $f
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { continue }
+            $hit = Select-String -LiteralPath $path -Pattern '(?<![\w-])(?:CONIN\$|Read-Host)(?![\w-])' | Select-Object -First 1
+            if ($hit) {
+                Add-Finding -Id 'SZA-REL01' -Severity 'warn' -Path $f -Line $hit.LineNumber `
+                    -Message "release script contains a console-input marker: $($hit.Matches[0].Value)" `
+                    -Fix 'Provide a non-interactive path for an owner-approved release while preserving the release safety checks.'
             }
         }
     }

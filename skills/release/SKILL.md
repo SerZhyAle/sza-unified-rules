@@ -83,10 +83,11 @@ Name what is being asked: build, site publish, or release. State in one line wha
 this repo* (a `v*` tag push? a Play upload? an `ext-cws-v*` tag?). A multi-edition product fans out into
 several independent one-way ops on their own cadence - decide up front which are in scope for this run.
 
-**Autonomy**: read the repo's policy and obey it - the repos genuinely disagree. Some carry a standing owner
-instruction to run the whole flow without per-step permission, where saying "релиз" *is* the approval for the
-billable tag and a second confirmation round is unwanted. Others say never tag or publish unless explicitly
-asked. **Default when the repo is silent: ask once, immediately before the irreversible step, and never again.**
+Obtain the owner's go for the named release in the session or its ticket before the one-way step. That
+approval covers the whole release. Run the console commands and handle terminal input yourself without
+per-step confirmation. Ask for approval again only when the version, channel or product changes. Hand off
+UAC elevation, a new sign-in or consent screen, and hardware interaction to the owner.
+See [RELEASE_AND_DISTRIBUTION.md](../../rules/RELEASE_AND_DISTRIBUTION.md) §1.
 
 ## Phase 1 - Preconditions and the build/release wall
 
@@ -292,7 +293,8 @@ Release's asset URL and SHA256:
    generated file that may be committed after the tag: one scripted commit right after the publish, verified
    against the published `.sha256`.
 3. **Microsoft Store** - build the MSIX unsigned with the real Partner Center identity, then follow the
-   manual Partner Center upload and listing flow by default. Committing a submission is the owner's act.
+   manual Partner Center upload and listing flow by default. For a machine submission, follow
+   WINDOWS-STORE rule 22 and amendment E for the commit switch and owner confirmation.
    After the tag, a Store channel failure is reported and never fails the release or stops other channels.
    The preflight's sanitized JSON result omits identifiers and raw responses; the future submission
    evidence format remains part of the pending proposal (see the machine channel page in `store-publish`).

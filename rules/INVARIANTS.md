@@ -17,7 +17,9 @@ Ordered by cost of violation. The pointer after each line is the doc that expand
 3. Never commit a **secret or signing material**; tokens stay ambient to the runner, certs stay outside the
    repo or the store re-signs. ([REPOSITORY_LAYOUT](REPOSITORY_LAYOUT.md), [SECURITY_AND_PRIVACY](SECURITY_AND_PRIVACY.md) §1)
 4. Treat every release as **one-way** and never trigger one - a `v*` tag push, a store upload, a marketplace
-   publish - unless the owner asked for that exact release. ([RELEASE_AND_DISTRIBUTION](RELEASE_AND_DISTRIBUTION.md) §1)
+   publish - unless the owner asked for that exact release. The owner's go for a named release, given in
+   the session or in its ticket, covers every step of that release; ask again only when the version, channel
+   or product changes. ([RELEASE_AND_DISTRIBUTION](RELEASE_AND_DISTRIBUTION.md) §1)
 5. **Block the release on a red - or missing - pre-flight**: the ship step takes a written PASS/FAIL naming
    the version it judged as its input, and a FAIL or no verdict at all stops it.
    ([TESTING_AND_QA](TESTING_AND_QA.md) §5, [RELEASE_AND_DISTRIBUTION](RELEASE_AND_DISTRIBUTION.md) §2)
@@ -76,7 +78,7 @@ Ordered by cost of violation. The pointer after each line is the doc that expand
 
 - **Between releases, no full build and no test longer than 5 seconds.** A technical piece, a point fix or a
   small improvement is checked by static inspection, the tests and gates that take 5 s or less, and a direct
-  call of what changed - and reported as "not built, not tested until the release". The full build and every
+  call of what changed. Report what ran with its exit code; anything not named was not run. The full build and every
   slower test run only before or during a release, or when the owner names that run.
   ([TESTING_AND_QA](TESTING_AND_QA.md) §2)
 

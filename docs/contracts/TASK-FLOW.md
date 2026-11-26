@@ -47,7 +47,7 @@
   `idle-hold`, `picker-eligibility` and `taskflow-ledger-conformance`. The PQShell build and the full
   back-link suite are release checks.
 - 0.47 (2026-11-26, CANONR-0204, section 23: a per-launch ceiling of the repository runner and its context handoff,
-  rules 25 and 46) is ahead of the harness; the dated exception stands in the registry until that ticket closes it.
+  rules 25 and 46) is implemented by the repository runner. The `pass-ceiling` suite exercises the threshold decision.
 - 0.48 (2026-11-26, CANONR-0202, section 24, rules 6 and 8): a new entry into `Verified` needs an executed-check line
   in the `## Last Audit` block and no open `RELEASE` item. `check-audit-recorded.ps1 -NewStatus Verified` applies it
   from `Assert-ClosingGates` (patterns in `_audit-evidence.ps1`), and `list-thin-verified.ps1` reports the rows that

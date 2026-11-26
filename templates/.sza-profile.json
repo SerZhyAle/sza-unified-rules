@@ -92,6 +92,8 @@
   "$comment_runner": "The batch queue runner: which CLI it starts, what it says to it, and which statuses earn the strong model. Status is read before tier. promptTemplate is left out on purpose: the default in tools/harness/_profile.ps1 is the unattended whole-ticket prompt and receives every later rule (assumed choices, the compile gate); a copy written here freezes the day it was copied. Set runner.promptTemplate only for a project with a pipeline command of its own.",
   "runner": {
     "command": "claude",
+    "$comment_passCeiling": "Per launch. Missing values use 45 minutes and USD 15. Zero or null disables either ceiling or the whole object. USD applies only to Claude launches with a readable transcript and known rates.",
+    "passCeiling": { "minutes": 45, "usd": 15 },
     "decisionStatuses": ["Draft", "Approved", "Tactical", "In Progress", "Partial", "Broken", "BlockQuestions"],
     "cheapStatuses": ["Implemented", "BlockNeedUserTest"],
     "cheapTierMax": 3

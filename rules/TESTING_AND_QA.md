@@ -93,9 +93,7 @@ push, pull request or save - unless the owner names that run. What remains is st
 and gates that finish in 5 s or less, and a direct call of the changed script or function. The full build,
 every test above 5 s, the release-variant proof and the device pass belong to the release: they run before
 or during it, against the exact candidate it names (§5), so the release workflow builds and tests the tag's
-own tree instead of relying on a branch-CI green that no longer covers them. §1 still holds: a change checked
-only by the fast rungs is reported as "not built, not tested until the release" - a stated fact, never a
-pass. A ticket's audit records each slow rung it skipped as a `RELEASE` item naming the command the release
+own tree instead of relying on a branch-CI green that no longer covers them. §1 still holds: report what ran with its exit code; anything not named was not run. A ticket's audit records each slow rung it skipped as a `RELEASE` item naming the command the release
 will run; such an item does not hold the ticket open, and the release's full build and full suite are what
 discharge it. The owner ordered it on 2026-10-28 in the canon repo, again on 2026-10-29 in
 Streams_Player, and the same day for the whole portfolio with the 5 s line, after minute-long suites and full

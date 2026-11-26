@@ -36,3 +36,5 @@ Moved verbatim from [CLAUDE.md](../../CLAUDE.md) on 2026-11-25. The always-on ru
 - [AGENTS.md](../../AGENTS.md) is the Codex entry point: a delegating stub that sends the agent to this file, plus the
   Codex-only routing bullets. It repeats no command, tier or style rule, so nothing here has a second copy to keep
   in step. `memory/` holds that agent's notes.
+
+- Reports never mention commit, tree or deploy state.

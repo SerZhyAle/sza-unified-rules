@@ -147,8 +147,10 @@ function Get-Ranked {
 
 try { $ledger = Read-Ledger } catch { Write-Host "r0: $($_.Exception.Message)" -ForegroundColor Red; exit 2 }
 
-$exe = Get-Command $Command -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
-if (-not $exe) { Write-Host "r0: command '$Command' not found" -ForegroundColor Red; exit 2 }
+if (-not $DryRun) {
+    $exe = Get-Command $Command -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $exe) { Write-Host "r0: command '$Command' not found" -ForegroundColor Red; exit 2 }
+}
 
 $ranked = Get-Ranked $ledger @()
 if ($ranked.Count -eq 0) { Write-Host 'r0: no open ticket.'; exit 3 }
@@ -156,7 +158,7 @@ if ($ranked.Count -eq 0) { Write-Host 'r0: no open ticket.'; exit 3 }
 if ($DryRun) {
     Write-Host "r0 (dry run) - $($ranked.Count) open ticket(s), in the order they would run:"
     $ranked | ForEach-Object { Write-Host ('  {0}  {1,-12} {2}' -f $_.id, $_.status, $_.name) }
-    Write-Host ("  child: {0} {1}" -f $exe.Source, ($ChildArgs -join ' '))
+    Write-Host ("  child: {0} {1}" -f $Command, ($ChildArgs -join ' '))
     exit 0
 }
 

@@ -407,6 +407,7 @@ The machinery that makes the hygiene rules (§9) and the parity gates (§12) run
   local (regenerate a derived file, register a new file) the closure performs it and says `REPAIRED`, while
   staying a pure check on the release path. A cached verdict's fingerprint covers everything the gate loads,
   including the libraries it dot-sources - else an edit to a library replays a stale PASS.
+- **Report what ran with its exit code; anything not named was not run.** Keep skipped release rungs in the ticket audit.
 - **The closure RUNS the ladder's rung when it fits the 5 s line, and RECORDS it when it does not.** When a
   change set carries an artifact class whose only proof is a link, render or compile step that nothing else
   performs, the facade runs that step, selected by artifact class, when the step takes 5 seconds or less. A

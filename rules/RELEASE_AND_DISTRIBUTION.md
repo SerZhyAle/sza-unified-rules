@@ -19,6 +19,15 @@ Three distinct operations - never blur them:
   several independent one-way ops - one per edition and per channel, each with its own trigger tag (`v*` for
   the app, `ext-<store>-v*` per extension store) and its own cadence; none blocks the others.
 
+### Approval for a named release
+
+The owner's go in the session or in its ticket covers every step of the named, one-way release. Ask for
+approval again only when the version, channel or product changes. The agent runs the console commands
+and handles terminal input for the approved release. The owner handles UAC elevation, a new sign-in or
+consent screen, and physical interaction with hardware. All release gates still apply.
+For a Microsoft Store machine submission, WINDOWS-STORE rule 22 and amendment E govern confirmation
+of the separate commit step.
+
 ### CI cost & safety levers (paid-minutes discipline)
 
 The boundary above is enforced cheaply with a handful of CI levers, worth carrying wherever paid runner

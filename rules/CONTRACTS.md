@@ -126,6 +126,11 @@ and until the owner accepts it the sealed text binds. Where the owner is `shared
 owner, working through the canon session. Sealed is not final - a draft may still change shape - and the
 registry is not sealed: a product still writes its own rows and its own exceptions.
 
+**Consolidation round.** Track a portfolio-wide decision once in the canon with a checklist row for each affected
+repository. Use the [spec-draft tracking campaign](../skills/spec-draft/SKILL.md) (`-Tracking`) and file child
+tickets only where code changes are needed. Re-run repository checks to close rows mechanically. The round's
+catalog record holds the decisions, reasons, and obligations.
+
 **Answering a sibling's question.** A question from another product about a shared contract is answered in
 a dated `RESPONSE` document. Contract facts cite the id and section; implementation facts cite code with
 the tree's date and say what was not run. Deviations found while answering become the answerer's own

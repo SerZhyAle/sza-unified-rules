@@ -33,7 +33,7 @@ function Write-Json([string]$Path, $Value) {
     $Value | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $Path -Encoding utf8
 }
 try {
-    $contractVersions = @{ 'REPO-STAMP' = '0.14'; 'HARNESS-PROFILE' = '0.22'; 'RULE-DELIVERY' = '0.13' }
+    $contractVersions = @{ 'REPO-STAMP' = '0.14'; 'HARNESS-PROFILE' = '0.23'; 'RULE-DELIVERY' = '0.13' }
     $lifecycleSkill = 'skills/spec-to-audit/SKILL.md'
     $sources = @('tools/check-compliance.ps1', 'tools/harness/_profile.ps1', 'tools/lib/schema-carrier.ps1',
         'tools/lib/registry-tables.ps1', 'tools/check-contracts.ps1', 'tools/contract-lag.ps1',
@@ -114,6 +114,12 @@ catch { Write-Output $_.Exception.Message; exit 2 }
             input = @{ future = 42; modules = @{ names = @() }; paths = @{ changelog = $null }; runner = @{ effortByModel = @{ sonnet = 'high' } } } })
         $cases.Add(@{ name = 'profile runner.effortByModel absent'; kind = 'profile'; accepted = $true; effortByModel = $false;
             input = @{ future = 42; modules = @{ names = @() }; paths = @{ changelog = $null } } })
+        $cases.Add(@{ name = 'profile runner.passCeiling partial override'; kind = 'profile'; accepted = $true; ceiling = 'partial';
+            input = @{ future = 42; modules = @{ names = @() }; paths = @{ changelog = $null }; runner = @{ passCeiling = @{ minutes = 2.5 } } } })
+        $cases.Add(@{ name = 'profile runner.passCeiling disabled'; kind = 'profile'; accepted = $true; ceiling = 'disabled';
+            input = @{ future = 42; modules = @{ names = @() }; paths = @{ changelog = $null }; runner = @{ passCeiling = $null } } })
+        $cases.Add(@{ name = 'profile runner.passCeiling malformed usd'; kind = 'profile'; accepted = $false; refusal = 'runner.passCeiling.usd';
+            input = @{ runner = @{ passCeiling = @{ usd = '15' } } } })
     }
     $observed = [System.Collections.Generic.List[object]]::new()
     foreach ($case in $cases) {
@@ -161,6 +167,11 @@ catch { Write-Output $_.Exception.Message; exit 2 }
                 Assert-That (($result.code -eq 0) -eq [bool]$case.accepted) $result.output
                 if ($case.accepted) {
                     $p = $result.output | ConvertFrom-Json
+                    switch ($case.ceiling) {
+                        'partial' { Assert-That ($p.runner.passCeiling.minutes -eq 2.5 -and $p.runner.passCeiling.usd -eq 15) 'Partial ceiling did not merge' }
+                        'disabled' { Assert-That ($null -eq $p.runner.passCeiling) 'Null ceiling did not disable both limits' }
+                        default { Assert-That ($p.runner.passCeiling.minutes -eq 45 -and $p.runner.passCeiling.usd -eq 15) 'Pass ceiling defaults changed' }
+                    }
                     Assert-That ($p.modules.names.Count -eq 0 -and $null -eq $p.paths.changelog -and $p.future -eq 42) 'Payload replacement changed'
                     Assert-That ([string]$p.runner.promptTemplate -match '^/sza:spec-to-audit .*"Unattended pass"') 'Default prompt no longer points to the unattended guidance'
                     if ($case.compileCheck) {
@@ -182,7 +193,10 @@ catch { Write-Output $_.Exception.Message; exit 2 }
                             [string]$p.runner.effortByModel.haiku -ceq 'xhigh' -and
                             [string]$p.runner.effortByModel.opus -ceq 'medium') 'the shipped effort default is wrong'
                     }
-                } else { Assert-That ($result.output -match '^HARNESS-PROFILE:.*update' -and $result.output -notmatch '"paths"') $result.output }
+                } else {
+                    $refusal = if ($case.refusal) { '^sza-profile: ' + [regex]::Escape($case.refusal) } else { '^HARNESS-PROFILE:.*update' }
+                    Assert-That ($result.output -match $refusal -and $result.output -notmatch '"paths"') $result.output
+                }
             }
             Assert-That (-not (Test-Path (Join-Path $root 'dev'))) 'Reader wrote data'
             $observed.Add(@{ name = $case.name; accepted = [bool]$case.accepted; result = 'PASS'; writes = 0 })

@@ -105,6 +105,20 @@ an unreleased ticket of another project (TASK-FLOW rule 52); move it to `BlockBy
 slug is not pinned), lifts no hold and enables nothing. It is a desk command: run it from a session the owner is in, not
 from an unattended robot pass.
 
+**For a portfolio-wide change, use one tracking ticket by default.** Add `-Tracking` to `-Projects` or
+`-AllEnabled` and pass one of these selectors:
+
+- `-NeedsWork <key1,key2,..>` lists the repos that need a child ticket. An empty string leaves all rows for checks.
+- `-Check <script.ps1>` runs a read-only PowerShell check from each selected repo root, with a five-second limit.
+  Use explicit exit codes. Exit 0 satisfies the row, exit 1 identifies work, and other codes leave the row open.
+
+For example, `spec-draft.ps1 -AllEnabled -Tracking -NeedsWork fms-a -Slug align-format -TextFile request.txt`
+captures one checklist in the registered canon and a child in `fms-a`. The `tracking <key>:<id> file=<path>`
+line identifies the checklist. Each selected repo has a row, including the child reference when one was filed.
+Run `spec-draft.ps1 -TrackingTicket <key>:<id> -Check <script.ps1>` to update the rows in place. The command
+prints PASS or FAIL per repo and exits 1 if any row fails. It allocates no tickets.
+If capture reports a missing child, file it separately and add its reference to the existing checklist.
+
 | Exit | Meaning | What to do |
 | --- | --- | --- |
 | 0 | the ticket exists | Step 4 |

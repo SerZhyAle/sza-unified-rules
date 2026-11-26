@@ -274,8 +274,8 @@ catching it at the end costs every intervening phase.
 No full build, no full suite, no single test, suite or gate whose recorded wall time is above 5 s, and none
 with no recorded time - unless the owner names that run, or this is the release itself. Use the fast tier,
 a fast filter of the touched area, static inspection and a direct call of what changed. Each rung skipped for
-this reason goes into the audit as a `RELEASE` item naming the command the release will run, and the report
-says "not built, not tested until the release". A project whose build or test command has no fast form gets
+this reason goes into the audit as a `RELEASE` item naming the command the release will run. Report what ran
+with its exit code; anything not named was not run. A project whose build or test command has no fast form gets
 that fact written into its rules file, not a slow run. The owner is never asked which slow run to name -
 the reference study measured seven repos asking that question back and getting the same answer every time
 (S0039): an unattended pass records the skipped rung as a `RELEASE` item and moves on.

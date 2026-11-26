@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Contract | `HARNESS-PROFILE` |
-| Version | 0.23, draft; source reader verified at 0.13; rules 9 to 12 and 14 to 16 implemented, rule 8 in part, rule 17 not yet |
+| Version | 0.23, draft; source reader verified at 0.13; rules 9 to 12 and 14 to 17 implemented, rule 8 in part |
 | Home | the shared contracts catalog, domain `rule-adoption/` (the path is in [CLAUDE.md](../../CLAUDE.md)) |
 | Role | **consumer**, and the schema's owner. Each repository running the harness writes its own profile |
 
@@ -83,4 +83,4 @@
   `Test-SzaTicketId`, `ConvertTo-SzaTicketNumber`, `Get-SzaTicketIdFragment` and the rule-15 derivation read it.
   Fast case: `tools/tests/rename-prefix.tests.ps1`. The reader vectors are regenerated at the next release.
 - 0.23 (2026-11-26, CANONR-0204, rule 17: the optional `runner.passCeiling`, a launch's `minutes` and `usd`) is
-  ahead of the harness; the dated exception stands in the registry until that ticket closes it.
+  validated by the profile reader and exercised by the `pass-ceiling` suite.

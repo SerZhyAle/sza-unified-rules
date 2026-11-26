@@ -123,6 +123,14 @@ prints recent events across writers in timestamp order. Both support `-Json`; `l
 `-Repo <key>` and `-Ev <name>`. One row per pass goes to the portfolio's `runs.jsonl`, alongside the
 repository runner's own `runs-pq<slot>.jsonl`. Dispatcher code never writes ticket status directly.
 
+Each launch has two optional ceilings under `runner.passCeiling`. The defaults are 45 minutes
+and USD 15 at list price. The cost ceiling applies to Claude launches when the runner can read
+the transcript and price every model it used. Other launches use elapsed time. Set a ceiling or
+the entire object to `0` or `null` to disable it. At a reached ceiling, the runner records the
+handoff and gives the child 60 seconds to exit before stopping its process tree. A ticket can
+relaunch with a fresh context up to six times per run across both kinds of handoff. A move to
+`Implemented`, `Verified`, `Archived` or a `Block*` status ends the relaunch sequence.
+
 For canon lifecycle passes, the repository runner prepares the ticket context after reserving the
 lease. The agent reads that context and records its change summary and file list for the runner.
 The agent updates the ticket through the catalog tool, then the runner logs any status move and

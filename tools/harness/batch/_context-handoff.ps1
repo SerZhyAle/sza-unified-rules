@@ -40,6 +40,14 @@ function ConvertTo-HandoffTokens {
     return [long][Math]::Floor($number)
 }
 
+function Test-PassCeiling {
+    <# The threshold reached for this launch, or no value while it may continue. #>
+    param([double] $Minutes, $Usd, $Ceiling)
+    if ($null -eq $Ceiling -or $Ceiling -eq 0) { return }
+    if ($Ceiling.minutes -gt 0 -and $Minutes -ge $Ceiling.minutes) { return 'minutes' }
+    if ($Ceiling.usd -gt 0 -and $null -ne $Usd -and $Usd -ge $Ceiling.usd) { return 'usd' }
+}
+
 function Test-ContextHandoffClaim {
     <#
         Does a marker deserve the relaunch? Valid only when its `tokens` is a figure at or above -MinTokens.
@@ -62,4 +70,28 @@ function Test-ContextHandoffClaim {
         return [pscustomobject]@{ Valid = $false; Tokens = $tokens; Reason = ('{0} tokens is below the {1} a handoff needs' -f $tokens, $MinTokens) }
     }
     return [pscustomobject]@{ Valid = $true; Tokens = $tokens; Reason = '' }
+}
+
+function Write-CeilingHandoffMarker {
+    param([string] $Directory, [string] $Id, [datetime] $Since, [string] $Boundary)
+    $marker = Join-Path $Directory 'context-handoff.json'
+    $pending = "$marker.$PID.pending"
+    try {
+        $item = Get-Item -LiteralPath $marker -ErrorAction SilentlyContinue
+        if ($item -and $item.LastWriteTime -ge $Since) { return }
+        [void][IO.Directory]::CreateDirectory($Directory)
+        @{ id = $Id; boundary = $Boundary } | ConvertTo-Json -Compress |
+            Set-Content -LiteralPath $pending -Encoding utf8 -ErrorAction Stop
+        if ($item) {
+            $item.Refresh()
+            if ($item.Exists -and $item.LastWriteTime -lt $Since) {
+                Remove-Item -LiteralPath $marker -ErrorAction Stop
+            }
+        }
+        [IO.File]::Move($pending, $marker)
+    } catch {
+        Write-Host ("  Could not write ceiling handoff marker: {0}" -f $_.Exception.Message) -ForegroundColor DarkYellow
+    } finally {
+        Remove-Item -LiteralPath $pending -ErrorAction SilentlyContinue
+    }
 }

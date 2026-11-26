@@ -107,6 +107,21 @@
     <key>:<id> of an existing ticket that waits for the campaign: one `Blocker: <key>:<id>` line per child is written
     into its spec file, before a closing Blocked-tickets or Last-Audit block. Its status is not changed.
 
+.PARAMETER Tracking
+    Create one campaign checklist in the registered canon and file children only for repositories with work.
+    Use with -Projects or -AllEnabled and exactly one of -NeedsWork or -Check.
+
+.PARAMETER NeedsWork
+    Comma-separated keys from the campaign targets. Pass an empty string for a campaign with no child tickets.
+
+.PARAMETER Check
+    Path to a PowerShell script to run from each target repository root, with a five-second timeout.
+    Exit 0 passes, exit 1 identifies work, other exit codes keep the row open without filing a child.
+
+.PARAMETER TrackingTicket
+    Recheck the existing canon checklist identified by <key>:<id>. Supply -Check again.
+    This updates checklist rows and exits 1 if any check fails. It never files tickets.
+
 .PARAMETER NoQueueReport
     Capture only: no sync, no queue check, the result line says pq=deferred. The campaign form passes it to its children.
 
@@ -142,6 +157,11 @@ param(
     [Alias('Skip')]
     [string] $SkipKeys = '',
     [string] $Parent = '',
+    [switch] $Tracking,
+    [AllowEmptyString()]
+    [string] $NeedsWork,
+    [string] $Check = '',
+    [string] $TrackingTicket = '',
     [switch] $NoQueueReport,
     [switch] $Help
 )
@@ -159,6 +179,7 @@ $harness = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $pwshExe = (Get-Process -Id $PID).Path
 . (Join-Path $PSScriptRoot 'lib/picker.ps1')
 . (Join-Path $PSScriptRoot 'lib/ledger-watch.ps1')
+. (Join-Path $PSScriptRoot 'lib/campaign-tracking.ps1')
 . (Join-Path $harness 'spec_catalog/attachment-capture.ps1')
 
 function Stop-Draft([int] $Code, [string] $Message) {
@@ -309,13 +330,22 @@ function Add-DraftParentBlockers([string] $File, [string[]] $Pairs, [string] $Na
 }
 
 # ---- 1. the invocation, checked before anything is created ----
-if (-not $TextFile -or -not (Test-Path -LiteralPath $TextFile -PathType Leaf)) {
-    Stop-Draft 2 "-TextFile '$TextFile' does not exist - write the owner's words to a UTF-8 file and pass it"
+$hasNeedsWork = $PSBoundParameters.ContainsKey('NeedsWork')
+if ($TrackingTicket) {
+    $unexpected = @($PSBoundParameters.Keys | Where-Object { $_ -notin @('TrackingTicket', 'Check', 'WhatIf') })
+    if (-not $Check -or $unexpected.Count) { Stop-Draft 2 '-TrackingTicket takes only -Check and optionally -WhatIf' }
 }
-$textFull = (Resolve-Path -LiteralPath $TextFile).Path
-$ownerText = [IO.File]::ReadAllText($textFull, [Text.Encoding]::UTF8)
-if ([string]::IsNullOrWhiteSpace($ownerText)) {
-    Stop-Draft 2 'the text is empty - a ticket with no words has nothing to be worked from'
+elseif ($Tracking) {
+    if (-not ($Projects -or $AllEnabled) -or ($hasNeedsWork -eq [bool]$Check)) {
+        Stop-Draft 2 '-Tracking requires campaign targets and exactly one of -NeedsWork or -Check'
+    }
+}
+elseif ($hasNeedsWork -or $Check) { Stop-Draft 2 '-NeedsWork and -Check require tracking mode' }
+if ($Check) {
+    if ([IO.Path]::GetExtension($Check) -ine '.ps1' -or -not (Test-Path -LiteralPath $Check -PathType Leaf)) {
+        Stop-Draft 2 "-Check '$Check' must name an existing PowerShell script"
+    }
+    $Check = (Resolve-Path -LiteralPath $Check).Path
 }
 $repos = @()   # the registry, read before the ticket is named: a derived name skips a registered key (section 2 uses it too)
 $registry = $null
@@ -326,6 +356,36 @@ if ($list.code -eq 0) {
         $repos = @(Get-Prop $registry 'repos' @())
     }
     catch { $registry = $null; $repos = @() }
+}
+if ($Tracking -or $TrackingTicket) {
+    $canon = @($repos | Where-Object { (Get-Prop $_ 'role') -ceq 'canon-home' })
+    if ($canon.Count -ne 1) { Stop-Draft 2 'tracking requires exactly one registered canon-home repository' }
+    $canon = $canon[0]
+}
+if ($TrackingTicket) {
+    if (($TrackingTicket -split ':', 2)[0] -ine $canon.key) { Stop-Draft 2 '-TrackingTicket must name a ticket in the canon' }
+    $trackingRef = Resolve-DraftParent $TrackingTicket $repos
+    try {
+        $checkBody = [IO.File]::ReadAllText($trackingRef.file)
+        $checklist = @(Read-CampaignTable $checkBody)
+    }
+    catch { Stop-Draft 2 $_.Exception.Message }
+    if ($WhatIfPreference) {
+        Write-Host "spec-draft: -WhatIf - would check $($checklist.Count) row(s) in $($trackingRef.pair)"
+        exit 0
+    }
+    $checkFailed = Update-CampaignChecks $checklist $repos $pwshExe $Check
+    try { Write-CampaignTable $trackingRef.file $checklist -ExpectedBody $checkBody }
+    catch { Stop-Draft 1 "could not write $($trackingRef.pair): $($_.Exception.Message)" }
+    exit $(if ($checkFailed) { 1 } else { 0 })
+}
+if (-not $TextFile -or -not (Test-Path -LiteralPath $TextFile -PathType Leaf)) {
+    Stop-Draft 2 "-TextFile '$TextFile' does not exist - write the owner's words to a UTF-8 file and pass it"
+}
+$textFull = (Resolve-Path -LiteralPath $TextFile).Path
+$ownerText = [IO.File]::ReadAllText($textFull, [Text.Encoding]::UTF8)
+if ([string]::IsNullOrWhiteSpace($ownerText)) {
+    Stop-Draft 2 'the text is empty - a ticket with no words has nothing to be worked from'
 }
 $keys = if ($repos.Count) { (@($repos | ForEach-Object { [string]$_.key }) -join ', ') } else { 'none registered' }
 # The New Specification dialog pre-fills the slug box with the type prefix and the owner types only the description, so
@@ -365,9 +425,6 @@ else {
     if ($NoQueueReport) { Stop-Draft 2 '-NoQueueReport is for a single target' }
     $attachFull = ''
     if ($Attach) { try { $attachFull = @(Resolve-DraftAttachments $Attach) -join ';' } catch { Stop-Draft 2 $_.Exception.Message } }
-    $list = Invoke-Pq @('list', '-Json')
-    $repos = @()
-    if ($list.code -eq 0) { try { $repos = @(Get-Prop (ConvertFrom-Json -InputObject $list.text -DateKind String) 'repos' @()) } catch { $repos = @() } }
     if ($repos.Count -eq 0) { Stop-Draft 2 'the portfolio registry could not be read or is empty - a campaign needs registered projects (pq list)' }
     $known = @($repos | ForEach-Object { [string]$_.key })
     $keysGiven = @($(if ($AllEnabled) { $SkipKeys } else { $Projects }) -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
@@ -396,6 +453,29 @@ else {
     if ($WhatIfPreference) { $childArgs += '-WhatIf' }
     $rows = [Collections.Generic.List[object]]::new()
     $failed = [Collections.Generic.List[string]]::new()
+    $captureTargets = $targets
+    $trackingRef = $null
+    if ($Tracking) {
+        $workKeys = @($NeedsWork -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+        $outside = @($workKeys | Where-Object { $targets -inotcontains $_ })
+        if ($outside.Count) { Stop-Draft 2 "work keys outside the campaign: $($outside -join ', ')" }
+        if ($WhatIfPreference) {
+            Write-Host "spec-draft: -WhatIf - would capture one checklist in $($canon.key) for $($targets -join ', ')"
+            exit 0
+        }
+        $checklist = @(foreach ($key in $targets) {
+            [pscustomobject]@{
+                key = $key
+                work = if ($Check) { 'unknown' } elseif ($workKeys -icontains $key) { 'yes' } else { 'no' }
+                check = 'pending'
+                done = 'no'
+            }
+        })
+        if ($Check) {
+            [void](Update-CampaignChecks $checklist $repos $pwshExe $Check)
+        }
+        $captureTargets = @($canon.key) + @($checklist | Where-Object work -eq 'yes' | ForEach-Object key)
+    }
     # The catalog writer refreshes the portfolio projection after every insert unless SZA_PQ_NO_PROJECTION is 1; the one
     # `pq sync` below does that for all targets together. The rows are born `campaign` (TASK-FLOW section 10) unless the
     # caller already names a source - a pass keeps `robot`, which the robot-filed cap counts.
@@ -404,16 +484,36 @@ else {
     $env:SZA_PQ_NO_PROJECTION = '1'
     if (-not $env:SZA_TICKET_SOURCE) { $env:SZA_TICKET_SOURCE = 'campaign' }
     try {
-        foreach ($k in $targets) {
-            $out = & $pwshExe @childArgs '-Project' $k 2>&1
+        for ($index = 0; $index -lt $captureTargets.Count; $index++) {
+            $k = $captureTargets[$index]
+            $isTrackingSpec = $Tracking -and $index -eq 0
+            $argsForTarget = $childArgs.Clone()
+            if ($isTrackingSpec) { $argsForTarget[4] = "$Slug-tracking" }
+            $out = & $pwshExe @argsForTarget '-Project' $k 2>&1
             $code = $LASTEXITCODE
             $hit = $null
             foreach ($l in @($out | ForEach-Object { "$_".TrimEnd() } | Where-Object { $_ })) {
                 $m = [regex]::Match($l, '^drafted\s+\S+?:(?<id>\S+)\s+file=(?<file>\S+)\s+priority=(?<pri>\S+)\s+pq=(?<pq>\S+)\s+position=\S+$')
                 if ($m.Success) { $hit = $m } else { Write-Host "[$k] $l" }
             }
+            if ($isTrackingSpec) {
+                if ($code -ne 0 -or -not $hit) { Stop-Draft 1 "the canon tracking capture returned exit $code and no usable ticket" }
+                $trackingRef = Resolve-DraftParent "${k}:$($hit.Groups['id'].Value)" $repos
+                Write-Host "tracking $($trackingRef.pair) file=$($hit.Groups['file'].Value)"
+                try { Write-CampaignTable $trackingRef.file $checklist -Create }
+                catch { Stop-Draft 1 "could not write the checklist for $($trackingRef.pair): $($_.Exception.Message)" }
+                continue
+            }
             if ($code -ne 0) { $failed.Add("$k (exit $code)"); continue }
-            if ($hit) { $rows.Add([pscustomobject]@{ key = $k; id = $hit.Groups['id'].Value; file = $hit.Groups['file'].Value; pri = $hit.Groups['pri'].Value; pq = $hit.Groups['pq'].Value }) }
+            if ($hit) {
+                $rows.Add([pscustomobject]@{ key = $k; id = $hit.Groups['id'].Value; file = $hit.Groups['file'].Value; pri = $hit.Groups['pri'].Value; pq = $hit.Groups['pq'].Value })
+                if ($trackingRef) {
+                    $row = $checklist | Where-Object key -ceq $k
+                    $row.done = "no (${k}:$($hit.Groups['id'].Value))"
+                    try { Write-CampaignTable $trackingRef.file $checklist }
+                    catch { Stop-Draft 1 "child ${k}:$($hit.Groups['id'].Value) exists; could not update $($trackingRef.pair): $($_.Exception.Message)" }
+                }
+            }
             elseif (-not $WhatIfPreference) { $failed.Add("$k (no drafted line)") }
         }
     }
@@ -423,7 +523,7 @@ else {
         exit $(if ($failed.Count) { 1 } else { 0 })
     }
     $queueWait = if ($PSBoundParameters.ContainsKey('QueueTimeoutSeconds')) { $QueueTimeoutSeconds } else { 60 }
-    if (@($rows | Where-Object { $_.pq -ceq 'deferred' }).Count) {
+    if ($trackingRef -or @($rows | Where-Object { $_.pq -ceq 'deferred' }).Count) {
         $sync = Invoke-Pq @('sync') -TimeoutSeconds $queueWait
         if ($sync.timedOut -or $sync.code -ne 0) { Write-Host "pq: the sync after the campaign reported a problem: $($sync.text.Trim()); repair with pq sync" }
         $dry = Invoke-Pq @('dry-run', '-Json') -TimeoutSeconds $queueWait
@@ -447,7 +547,11 @@ else {
     }
     foreach ($r in $rows) { Write-Host ("drafted {0}:{1} file={2} priority={3} pq={4} position=0/0" -f $r.key, $r.id, $r.file, $r.pri, $r.pq) }
     if ($Slug -like 'hotfix-*') { Write-Host 'pq: a campaign is not pinned - pq pin <key>:<id> puts one ticket first' }
-    if ($failed.Count) { Write-Host "spec-draft: NOT done - $($failed -join '; '); once fixed, rerun with -Projects naming only the keys that failed" -ForegroundColor Red }
+    if ($failed.Count) {
+        $retry = if ($trackingRef) { "file the missing children separately and record them in $($trackingRef.pair)" }
+            else { 'once fixed, rerun with -Projects naming only the keys that failed' }
+        Write-Host "spec-draft: NOT done - $($failed -join '; '); $retry" -ForegroundColor Red
+    }
     Write-Host ("campaign {0}: {1} drafted, {2} failed{3}" -f $Slug, $rows.Count, $failed.Count, $(if ($parentRef) { ", parent $($parentRef.pair)" } else { '' }))
     exit $(if ($failed.Count) { 1 } else { 0 })
 }

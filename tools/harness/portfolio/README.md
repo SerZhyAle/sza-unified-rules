@@ -313,6 +313,10 @@ A project with no task flow (no `.sza-profile.json`) is captured into too, as a 
 the way that project already numbers its tickets; no profile, ledger or queue row is written, and the report says
 `pq=no-task-flow`, because `pq` cannot work a ticket that has no ledger.
 
+For a cross-repository rollout, use the [tracking campaign](../../../skills/spec-draft/SKILL.md).
+`-Tracking` keeps one checklist in the canon and files child tickets only where work is needed.
+`-TrackingTicket <key>:<id> -Check <script.ps1>` updates the checklist from per-repository PASS and FAIL results.
+
 Screenshots and logs go with the ticket: `-Attach "<path;path>"`, or the **Attachments** list of the New Spec dialog,
 where **Add File..** picks files and **Paste Image** takes a screenshot (or files copied in Explorer) from the
 clipboard. Each file is copied byte for byte into `<ticket>/attachments/` beside the spec and linked in section 0 after
