@@ -84,9 +84,11 @@ $defaultOnly = ($statusList.Count -eq 1 -and $statusList[0] -ceq 'BlockQuestions
 
 function Test-IdMatch([string] $RowId, [string] $Wanted) {
     if ($RowId -ieq $Wanted) { return $true }
-    if ($Wanted -match '^\d+$') {
+    $number = $Wanted
+    if ($Wanted -match '^-(\d{1,9})$') { $number = $Matches[1] }
+    if ($number -match '^\d+$') {
         $m = [regex]::Match($RowId, '(\d+)$')
-        return $m.Success -and [int64]$m.Groups[1].Value -eq [int64]$Wanted
+        return $m.Success -and [int64]$m.Groups[1].Value -eq [int64]$number
     }
     return $false
 }

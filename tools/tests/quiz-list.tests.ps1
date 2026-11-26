@@ -108,6 +108,7 @@ $calls = [ordered]@{
     current = @{ a = @();                                  w = $alpha }
     idHere  = @{ a = @('-Id', 'S0021');                    w = $alpha }
     idBare  = @{ a = @('-Id', '21', '-Project', 'beta');   w = $alpha }
+    idShort = @{ a = @('-Id', '-21', '-Project', 'beta');  w = $alpha }
     idAbsent = @{ a = @('-Id', 'S0077');                   w = $alpha }
     all     = @{ a = @('-All');                            w = $delta }
     allGamma = @{ a = @('-All');                           w = $gamma }
@@ -164,6 +165,8 @@ try {
         Assert-That ($r.last -eq 'quiz-list: id S0021 here=alpha:S0021=Draft blockquestions=beta:S0021,gamma:S0021') "result line: $($r.last)"
         $r2 = Invoke-Quiz 'idBare'
         Assert-That ($r2.last -eq 'quiz-list: id 21 here=beta:S0021=BlockQuestions blockquestions=beta:S0021,gamma:S0021') "bare number: $($r2.last)"
+        $rShort = Invoke-Quiz 'idShort'
+        Assert-That ($rShort.code -eq 0 -and $rShort.last -eq 'quiz-list: id -21 here=beta:S0021=BlockQuestions blockquestions=beta:S0021,gamma:S0021') "short ticket number: $($rShort.code) $($rShort.last)"
         $r3 = Invoke-Quiz 'idAbsent'
         Assert-That ($r3.last -eq 'quiz-list: id S0077 here=alpha:S0077=absent blockquestions=none') "absent id: $($r3.last)"
     }

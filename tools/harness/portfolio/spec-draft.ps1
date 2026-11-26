@@ -5,7 +5,7 @@
 
 .DESCRIPTION
     The mechanical half of the spec-draft skill, in one call: resolve the project, capture the ticket with the
-    owner's words kept byte for byte, then look - read only - at what pq will do with it. The agent chooses the
+    owner's words kept byte for byte, then say whether pq works that project at all. The agent chooses the
     slug, the level and the priority; nothing else is left to hand-run.
 
     Project: -Project is a key from `pq list`, or a folder. Left out, the project is the nearest folder above the
@@ -30,10 +30,9 @@
     ledger; the order of the ticket queue file wins over it. A plain capture has no ledger to hold it and prints
     `priority=-`.
 
-    The portfolio projection is refreshed after capture, including for a project-owned capture tool. Visibility:
-      - registered? enabled? on hold in the registry or under `hold` in PORTFOLIO_QUEUE.md? (pq dry-run)
-      - the position of the new ticket in the project's own ranking (the picker pq itself asks), and how many
-        tickets run before it. pq works a project's head first, so a ticket at position 38 waits for 37.
+    The portfolio projection is refreshed after capture, including for a project-owned capture tool. Visibility is
+    read from the registry and the portfolio queue file alone: registered? enabled? on hold in the registry or under
+    `hold` in PORTFOLIO_QUEUE.md? No queue run and no picker is started, so the ticket's position is not computed.
     A hold, a disabled project or a missing registration is reported as it is. It is the owner's decision and this
     script does not undo it.
 
@@ -43,8 +42,7 @@
 
     The last line printed is the machine-readable result:
         drafted <key>:<id> file=<path> priority=<n> pq=<verdict> position=<p>/<total>
-    verdict: dispatchable, held-by-queue, held, disabled, unregistered, no-task-flow, not-offered, or the
-    picker's own reason.
+    verdict: dispatchable, held-by-queue, held, disabled, unregistered or no-task-flow. position is always 0/0.
 
 .PARAMETER Project
     A registered key or a folder. Default: the project holding the current folder.
@@ -87,16 +85,11 @@
 .PARAMETER NoPin
     Do not pin a hotfix- ticket; it stays at the end of its package.
 
-.PARAMETER QueueTimeoutSeconds
-    Overall deadline in seconds for post-capture portfolio preview (default 10). If the check
-    times out or fails, reports pq=unknown and refuses pinning.
-
 .PARAMETER Projects
     The campaign form: comma-separated registered keys (no folders). The same slug and text are captured into each,
-    in the order given; one `pq sync` and one `pq dry-run` follow the last capture; one `drafted` line is printed per
-    ticket (position=0/0 - not computed here) and the last line is `campaign <slug>: <n> drafted, <m> failed`. Exit 1
-    when a target was not filed. A campaign never pins (-Pin is refused, a hotfix- slug is not pinned), lifts no hold
-    and enables nothing. The queue wait is 60 seconds here unless -QueueTimeoutSeconds is given.
+    in the order given; one `pq sync` follows the last capture; one `drafted` line is printed per ticket and the last
+    line is `campaign <slug>: <n> drafted, <m> failed`. Exit 1 when a target was not filed. A campaign never pins
+    (-Pin is refused, a hotfix- slug is not pinned), lifts no hold and enables nothing.
 
 .PARAMETER AllEnabled
     The campaign form over every enabled project of the registry, in its order, except the keys in -Skip (comma-
@@ -123,7 +116,7 @@
     This updates checklist rows and exits 1 if any check fails. It never files tickets.
 
 .PARAMETER NoQueueReport
-    Capture only: no sync, no queue check, the result line says pq=deferred. The campaign form passes it to its children.
+    Capture only: no sync, no project verdict, the result line says pq=deferred. The campaign form passes it to its children.
 
 .PARAMETER Help
     Print this help.
@@ -150,8 +143,6 @@ param(
     [string] $Attach = '',
     [switch] $Pin,
     [switch] $NoPin,
-    [ValidateRange(1, 300)]
-    [int]    $QueueTimeoutSeconds = 10,
     [string] $Projects = '',
     [switch] $AllEnabled,
     [Alias('Skip')]
@@ -178,7 +169,7 @@ $ErrorActionPreference = 'Stop'
 $pq = if ($env:SZA_PQ_SCRIPT) { $env:SZA_PQ_SCRIPT } else { Join-Path $PSScriptRoot 'pq.ps1' }
 $harness = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $pwshExe = (Get-Process -Id $PID).Path
-. (Join-Path $PSScriptRoot 'lib/picker.ps1')
+. (Join-Path $PSScriptRoot 'lib/queue-file.ps1')
 . (Join-Path $PSScriptRoot 'lib/ledger-watch.ps1')
 . (Join-Path $PSScriptRoot 'lib/campaign-tracking.ps1')
 . (Join-Path $harness 'spec_catalog/attachment-capture.ps1')
@@ -274,16 +265,22 @@ function ConvertTo-SlugFromText([string] $Text, [string[]] $ProjectKeys = @()) {
     return ($kept -join '-')
 }
 
-function Get-DraftVerdict([string] $Reason) {
-    # The pq verdict for one project, from the reason the dry-run gave for skipping it ('' = not skipped).
-    switch ($Reason) {
-        ''            { return 'dispatchable' }
-        'occupied'    { return 'dispatchable' }
-        'heldByQueue' { return 'held-by-queue' }
-        'hold'        { return 'held' }
-        'disabled'    { return 'disabled' }
-        default       { return $Reason }
+# The whole-project rows under the queue file's hold heading; none when the file is absent or unreadable.
+function Get-DraftQueueHeldKeys($Registry) {
+    try {
+        $path = Get-PqPath -Kind queue -Override ([string](Get-Prop (Get-Prop $Registry 'paths') 'portfolioQueue' ''))
+        if (-not [IO.File]::Exists($path)) { return @() }
+        return @(@((Read-PqQueueFile -Path $path).held) | Where-Object { [string]$_.kind -ceq 'head' } | ForEach-Object { [string]$_.repo })
     }
+    catch { return @() }
+}
+
+# What pq does with a registered project, from its registry record and the queue file's hold rows - no process is started.
+function Get-DraftVerdict($Record, [string[]] $HeldKeys) {
+    if ((Get-Prop $Record 'enabled' $false) -ne $true) { return 'disabled' }
+    if ((Get-Prop $Record 'hold' $false) -eq $true) { return 'held' }
+    if ($HeldKeys -ccontains [string]$Record.key) { return 'held-by-queue' }
+    return 'dispatchable'
 }
 
 function Resolve-DraftParent([string] $Pair, $Repos) {
@@ -523,19 +520,14 @@ else {
         Write-Host "spec-draft: -WhatIf - $($targets.Count) target(s) checked ($($targets -join ', ')); nothing was created"
         exit $(if ($failed.Count) { 1 } else { 0 })
     }
-    $queueWait = if ($PSBoundParameters.ContainsKey('QueueTimeoutSeconds')) { $QueueTimeoutSeconds } else { 60 }
     if ($trackingRef -or @($rows | Where-Object { $_.pq -ceq 'deferred' }).Count) {
-        $sync = Invoke-Pq @('sync') -TimeoutSeconds $queueWait
+        $sync = Invoke-Pq @('sync') -TimeoutSeconds 60
         if ($sync.timedOut -or $sync.code -ne 0) { Write-Host "pq: the sync after the campaign reported a problem: $($sync.text.Trim()); repair with pq sync" }
-        $dry = Invoke-Pq @('dry-run', '-Json') -TimeoutSeconds $queueWait
-        $doc = $null
-        if (-not $dry.timedOut -and $dry.code -eq 0) { try { $doc = ConvertFrom-Json -InputObject $dry.text -DateKind String } catch { $doc = $null } }
-        if ($null -eq $doc) { Write-Host "pq: the queue check after the campaign failed or timed out (${queueWait}s); every verdict is unknown - run pq dry-run" }
+        $heldKeys = [string[]]@(Get-DraftQueueHeldKeys $registry)
         foreach ($r in $rows) {
             if ($r.pq -cne 'deferred') { continue }
-            if ($null -eq $doc) { $r.pq = 'unknown'; continue }
-            $skipRow = @(Get-Prop $doc 'skipped' @()) | Where-Object { [string]$_.repo -ceq $r.key } | Select-Object -First 1
-            $r.pq = Get-DraftVerdict $(if ($skipRow) { [string]$skipRow.why } else { '' })
+            $targetRec = @($repos | Where-Object { [string]$_.key -ceq $r.key }) | Select-Object -First 1
+            $r.pq = Get-DraftVerdict $targetRec $heldKeys
         }
     }
     if ($parentRef) {
@@ -751,7 +743,7 @@ if ($attachAfter) {
 }
 
 if ($NoQueueReport) {
-    # The campaign form asks pq once for all its targets; this child only captures.
+    # The campaign form syncs once for all its targets; this child only captures.
     $label = if ($rec) { [string]$rec.key } else { Split-Path -Leaf $root }
     Write-Host "spec-draft: captured ${label}:${id} ($fileShown), Draft, priority $Priority"
     Write-Host ("drafted {0}:{1} file={2} priority={3} pq=deferred position=0/0" -f $label, $id, $fileShown, $Priority)
@@ -760,7 +752,7 @@ if ($NoQueueReport) {
 
 # Project-owned capture tools may not use the shared catalog writer. Reconcile their result too.
 if ($rec) {
-    $sync = Invoke-Pq @('sync', '-Path', $root) -TimeoutSeconds $QueueTimeoutSeconds
+    $sync = Invoke-Pq @('sync', '-Path', $root) -TimeoutSeconds 60
     if ($sync.timedOut) {
         Write-Host "pq: sync timed out after capture; repair with pq sync -Path `"$root`""
     }
@@ -769,140 +761,39 @@ if ($rec) {
     }
 }
 
-# ---- 4. what pq will do with it (read only) ----
+# ---- 4. whether pq works this project (registry and queue file only) ----
 $label = if ($rec) { [string]$rec.key } else { Split-Path -Leaf $root }
 $verdict = 'unregistered'
-$position = 0
-$total = 0
 $notes = [Collections.Generic.List[string]]::new()
-$pinned = $false
 
 if (-not $rec) {
     $notes.Add("pq: NOT registered - $root is not in the portfolio registry, so pq never looks at it. Registering is the owner's call (it picks the permission mode): pwsh -NoProfile -File `"$pq`" register -Path `"$root`" -Enable -PermissionMode <mode>")
 }
 else {
-    $deadlineSw = [Diagnostics.Stopwatch]::StartNew()
-    function Get-PqRemainingSeconds([int]$LimitSec) {
-        $rem = ($LimitSec * 1000) - $deadlineSw.ElapsedMilliseconds
-        if ($rem -le 0) { return 0 }
-        return [Math]::Max(1, [int][Math]::Ceiling($rem / 1000.0))
-    }
-
-    $dryRem = Get-PqRemainingSeconds $QueueTimeoutSeconds
-    $dry = if ($dryRem -gt 0) {
-        Invoke-Pq @('dry-run', '-Json') -TimeoutSeconds $dryRem
-    } else {
-        [pscustomobject]@{ code = 124; text = 'timed out'; timedOut = $true }
-    }
-
-    if ($dry.timedOut) {
-        $verdict = 'unknown'
-        $notes.Add("pq: queue check timed out after ${QueueTimeoutSeconds}s; eligibility of $label could not be established - run pq dry-run or pq pin manually")
-    }
-    elseif ($dry.code -ne 0) {
-        $verdict = 'unknown'
-        $notes.Add("pq: dry-run failed (exit $($dry.code)); eligibility of $label could not be read: $($dry.text.Trim()) - run pq dry-run or pq pin manually")
-    }
-    else {
-        $skip = $null
-        try {
-            $dryDoc = ConvertFrom-Json -InputObject $dry.text -DateKind String
-            $skip = @(Get-Prop $dryDoc 'skipped' @()) | Where-Object { [string]$_.repo -ceq $label } | Select-Object -First 1
-        }
-        catch { $skip = $null; $dryDoc = $null }
-
-        if ($null -eq $dryDoc) {
-            $verdict = 'unknown'
-            $notes.Add("pq: dry-run returned invalid JSON; eligibility of $label could not be parsed - run pq dry-run or pq pin manually")
-        }
-        else {
-            $reason = if ($skip) { [string]$skip.why } else { '' }
-            $verdict = Get-DraftVerdict $reason
-            switch ($verdict) {
-                'held-by-queue' { $notes.Add("pq: NOT dispatched - $label sits under 'hold' in PORTFOLIO_QUEUE.md. The ticket waits; lifting the hold is the owner's call (pq release $label)") }
-                'held'          { $notes.Add("pq: NOT dispatched - $label is on hold in the registry (pq release $label clears it). The ticket waits; that is the owner's call") }
-                'disabled'      { $notes.Add("pq: NOT dispatched - $label is registered but not enabled (enabled=false in repos.json). Enabling is the owner's call") }
-                'dispatchable'  { if ($reason -ceq 'occupied') { $notes.Add("pq: a worker is in $label right now; the ticket is taken in a later pass") } }
-                default         { $notes.Add("pq: NOT dispatched - the rank skips $label ($reason)") }
-            }
-        }
+    $verdict = Get-DraftVerdict $rec ([string[]]@(Get-DraftQueueHeldKeys $registry))
+    switch ($verdict) {
+        'held-by-queue' { $notes.Add("pq: NOT dispatched - $label sits under 'hold' in PORTFOLIO_QUEUE.md. The ticket waits; lifting the hold is the owner's call (pq release $label)") }
+        'held'          { $notes.Add("pq: NOT dispatched - $label is on hold in the registry (pq release $label clears it). The ticket waits; that is the owner's call") }
+        'disabled'      { $notes.Add("pq: NOT dispatched - $label is registered but not enabled (enabled=false in repos.json). Enabling is the owner's call") }
     }
 
     $mode = [string](Get-Prop $rec 'permissionMode' ([string](Get-Prop $registry 'permissionMode' '')))
     if (-not $mode) { $notes.Add("pq: warning - $label has no permissionMode (on its record or at the top of repos.json); pq start refuses unattended work there until one is set") }
 
-    # Position in the project's own ranking: only query if queue check has not timed out or failed.
-    if ($verdict -ne 'unknown') {
-        $pickRem = Get-PqRemainingSeconds $QueueTimeoutSeconds
-        if ($pickRem -le 0) {
-            if ($verdict -ceq 'dispatchable') { $verdict = 'unknown' }
-            $notes.Add("pq: queue check timed out before reading position - run pq dry-run or pq pin manually")
-        }
-        else {
-            $pick = Invoke-PqPicker -RepoPath $root -TimeoutSeconds $pickRem
-            if ($pick.error -ceq 'PickerTimeout') {
-                if ($verdict -ceq 'dispatchable') { $verdict = 'unknown' }
-                $notes.Add("pq: the picker timed out after ${QueueTimeoutSeconds}s - run pq dry-run or pq pin manually")
-            }
-            elseif (-not $pick.ok) {
-                $notes.Add("pq: the picker failed for ${label}: $($pick.message)")
-                if ($verdict -ceq 'dispatchable') { $verdict = 'picker-failed' }
-            }
-            else {
-                $payload = $pick.payload
-                $ranked = @(Get-PqPayloadIds $payload.ranked)
-                $total = $ranked.Count
-                $at = [array]::IndexOf([string[]]$ranked, $id)
-                $head = if ($null -ne $payload.selected) { [string]$payload.selected.id } else { '' }
-                if ($at -ge 0) {
-                    $position = $at + 1
-                    $ahead = $at
-                    $note = if ($ahead -eq 0) { "pq: ${label}:${id} is first in its own queue" } else { "pq: ${label}:${id} is #$position of $total in its own queue; $ahead run before it (head: $head), because a new ticket lands at the end of the current package" }
-                    $notes.Add($note)
-                }
-                else {
-                    $why = if ((Get-PqPayloadIds $payload.leased_ids) -ccontains $id) { 'leased' }
-                    elseif ((Get-PqPayloadIds $payload.excluded_ids) -ccontains $id) { 'excluded' }
-                    elseif ((Get-PqPayloadIds $payload.malformed) -ccontains $id) { 'malformed' }
-                    else { Get-PqAutoSkipReason $payload $id }
-                    if (-not $why) { $why = 'not offered by the project picker' }
-                    $notes.Add("pq: ${label}:${id} is not ranked in its own queue ($why)")
-                    if ($verdict -ceq 'dispatchable') { $verdict = 'not-offered' }
-                }
-            }
-        }
-    }
-
     if ($Pin) {
         if ($verdict -ceq 'dispatchable') {
-            $pinRem = Get-PqRemainingSeconds $QueueTimeoutSeconds
-            if ($pinRem -le 0) {
-                $notes.Add("pq: pin refused - queue check timed out (pq=unknown); run pq dry-run or pq pin manually")
-            }
-            else {
-                $pinRun = Invoke-Pq @('pin', "${label}:${id}") -TimeoutSeconds $pinRem
-                if ($pinRun.code -eq 0) {
-                    $pinned = $true
-                    $notes.Add("pq: pinned - ${label}:${id} is first in the first numbered package of PORTFOLIO_QUEUE.md")
-                }
-                else {
-                    $notes.Add("pq: pin failed (exit $($pinRun.code)): $($pinRun.text.Trim())")
-                }
-            }
+            $pinRun = Invoke-Pq @('pin', "${label}:${id}") -TimeoutSeconds 60
+            if ($pinRun.code -eq 0) { $notes.Add("pq: pinned - ${label}:${id} is first in the first numbered package of PORTFOLIO_QUEUE.md") }
+            else { $notes.Add("pq: pin failed (exit $($pinRun.code)): $($pinRun.text.Trim())") }
         }
-        elseif ($verdict -ceq 'unknown') {
-            $notes.Add("pq: pin refused - queue check did not confirm dispatchability (pq=unknown); run pq dry-run or pq pin manually")
-        }
-        else {
-            $notes.Add("pq: pin refused - pq will not dispatch $label ($verdict); a pin would not be worked, and lifting that is the owner's call")
-        }
+        else { $notes.Add("pq: pin refused - pq will not dispatch $label ($verdict); a pin would not be worked, and lifting that is the owner's call") }
     }
-    elseif ($Slug -like 'hotfix-*' -and $position -gt 1 -and $verdict -ceq 'dispatchable') {
-        $notes.Add("pq: this hotfix is #$position (-NoPin left it in place) - pq pin ${label}:${id} puts it first")
+    elseif ($Slug -like 'hotfix-*' -and $verdict -ceq 'dispatchable') {
+        $notes.Add("pq: -NoPin left it in place - pq pin ${label}:${id} puts this hotfix first")
     }
 }
 
 Write-Host "spec-draft: captured ${label}:${id} ($fileShown), Draft, priority $Priority"
 foreach ($n in $notes) { Write-Host $n }
-Write-Host ("drafted {0}:{1} file={2} priority={3} pq={4} position={5}/{6}" -f $label, $id, $fileShown, $Priority, $verdict, $position, $total)
+Write-Host ("drafted {0}:{1} file={2} priority={3} pq={4} position=0/0" -f $label, $id, $fileShown, $Priority, $verdict)
 exit 0

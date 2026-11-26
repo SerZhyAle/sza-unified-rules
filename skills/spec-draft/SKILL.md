@@ -94,8 +94,8 @@ there too; `-DedupQuery` searches the ticket files' names and first lines.
 
 **One text for several projects is one call, not a loop.** In place of `-Project`, pass `-Projects <key1,key2,..>`
 (registered keys only) or `-AllEnabled [-Skip <key,..>]`: the same slug and text are captured into each target, then
-the portfolio queue is refreshed once and `pq` is asked once. The script prints one `drafted` line per ticket
-(`position=0/0` - the position is not computed in this form) and ends with `campaign <slug>: <n> drafted, <m> failed`.
+the portfolio queue is refreshed once. The script prints one `drafted` line per ticket
+and ends with `campaign <slug>: <n> drafted, <m> failed`.
 Exit 1 means at least one target was not filed; the line above the last names it, and a rerun takes `-Projects` with
 only those keys. `-AllEnabled` leaves out a project whose key contains `sandbox`; name it in `-Projects` to file
 there. Add `-Parent <key>:<id>` when an existing ticket must wait for all of them: one `Blocker: <key>:<id>` line per
@@ -132,16 +132,16 @@ owner and, unless they say otherwise, stop. A draft the owner asked for is other
 ## Step 4 - Report, in Russian, from the script's own lines
 
 The last line is the result: `drafted <key>:<id> file=<path> priority=<n> pq=<verdict> position=<p>/<total>`.
-Give the owner: the ticket id and file, the project, and what `pq` will do:
+`position` is always `0/0`: the capture runs no queue check, so quote no position and do not run `pq dry-run` to find
+one. Give the owner: the ticket id and file, the project, and what `pq` will do:
 
 | `pq=` | Say |
 | --- | --- |
-| `dispatchable` | pq takes it. Quote the position: it is **N of M in the project's own queue**, so N-1 tickets run before it (a new ticket goes to the end of the current package - the owner orders that file). A hotfix is already pinned: say it is first in the portfolio queue. For any other, offer `-Pin` when it is urgent |
+| `dispatchable` | pq takes it. A hotfix is already pinned: say it is first in the portfolio queue. For any other, offer `-Pin` when it is urgent |
 | `held-by-queue`, `held` | captured, but the project is on hold - `pq` will not touch it. Say that lifting a hold is the owner's call; **do not remove it** |
 | `disabled` | registered but not enabled - same: report, do not enable |
 | `unregistered` | `pq` does not know the project. Give the register command the script printed; registering needs the owner's choice of permission mode |
 | `no-task-flow` | the ticket is a plain file in the project's `PLAN/`; `pq` never sees it, and neither does a ledger. Say so, and that setting the flow up (task-flow-init) is the owner's call; **do not set it up yourself** |
-| `not-offered`, other | the project's own picker does not offer it; quote the reason the script printed |
 
 Do not summarise this as "queued" when the verdict is anything but `dispatchable`. Then **return to the task that
 was in flight** - a capture never switches the active ticket, and the ticket is not worked now.

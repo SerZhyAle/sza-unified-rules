@@ -144,8 +144,8 @@ shortcut per registered repository, on the Desktop and in the canon working tree
 them off).
 
 `portfolio/spec-draft.ps1` is the mechanical half of the `spec-draft` skill: it captures a task into any
-registered project and reports, read only, whether `pq` will work the ticket and at which position in the
-project's own queue (a hold, a disabled project or a missing registration is reported, never undone).
+registered project and reports whether `pq` works that project (a hold, a disabled project or a missing
+registration is reported, never undone).
 `-Attach "<path;path>"` copies screenshots and logs into `<ticket>/attachments/` beside the spec and links them in
 section 0, in every project; `spec_catalog/attachment-capture.ps1` holds the copy and the links for every capture path,
 and writes the request text once even when a template carries a second `{{TEXT}}` token.

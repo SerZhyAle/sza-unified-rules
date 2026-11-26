@@ -9,8 +9,8 @@
 
       1. The owner's words land in the spec file byte for byte (Cyrillic, `$`, `{{ID}}`, quotes, `...`), the
          ledger row and the ticket-queue row exist, the ledger validates, the result line is exact.
-      2. A second and a third ticket land behind the first: the reported position is the one the project's own
-         picker gives, and a hotfix behind others is pinned first without being asked (10 covers -NoPin).
+      2. A second and a third ticket land behind the first, and a hotfix is pinned first without being asked (10
+         covers -NoPin).
       3. -Pin writes the ticket into PORTFOLIO_QUEUE.md; under `hold` it is refused and nothing is written.
       4. A project under `hold` is still captured into, and reported as not dispatched; the file is untouched.
       5. An unregistered project is captured into and reported as unregistered; the registry is untouched.
@@ -30,8 +30,8 @@
          with a notice line, creates no project file besides the ticket, and a present project form still wins.
      16. A ticket template with no {{TEXT}} token refuses the capture before anything is created, with and
          without -Attach (S0099); a template given its token back captures as before.
-     17. The campaign form (S0107): -Projects files one text into each named project with one `pq sync` and one
-         `pq dry-run` for all of them and no pin; -Parent gets one Blocker line per child and keeps its status;
+     17. The campaign form (S0107): -Projects files one text into each named project with one `pq sync` for all of
+         them, no `pq dry-run` and no pin; -Parent gets one Blocker line per child and keeps its status;
          -AllEnabled leaves a sandbox out; an unknown key, -Pin, -Projects with -AllEnabled and a lone -Skip exit 2.
 
     -Only <regex> runs the cases whose name matches it (cases 2-4 build on case 1, so use it for 8 and 9 only).
@@ -154,7 +154,7 @@ try {
         $f = Write-Text 'owner1.txt' $tricky
         $r = Invoke-Draft @('-Project', 'repo-a', '-Slug', 'bugfix-grid-crash', '-TextFile', $f, '-Complexity', 'light - one crash site')
         Assert-That ($r.code -eq 0) "exit $($r.code): $($r.output)"
-        Assert-That ($r.last -ceq 'drafted repo-a:S0001 file=PLAN/S0001_bugfix-grid-crash.md priority=90 pq=dispatchable position=1/1') "result line: $($r.last)"
+        Assert-That ($r.last -ceq 'drafted repo-a:S0001 file=PLAN/S0001_bugfix-grid-crash.md priority=90 pq=dispatchable position=0/0') "result line: $($r.last)"
         $spec = [IO.File]::ReadAllText((Join-Path $repoA 'PLAN\S0001_bugfix-grid-crash.md'))
         Assert-That ($spec.Contains($tricky)) 'the owner text is not in the spec byte for byte'
         Assert-That ($spec -match '(?m)^\*\*Complexity:\*\* light - one crash site\r?$') 'the Complexity line is missing'
@@ -164,14 +164,13 @@ try {
         Assert-That ($v.code -eq 0) "validate.ps1 exit $($v.code): $($v.output)"
     }
 
-    Run-Case '2 later tickets land behind it; the position is the picker''s; a hotfix is pinned first by itself' {
+    Run-Case '2 later tickets land behind it; a hotfix is pinned first by itself; no queue check runs' {
         $f = Write-Text 'owner2.txt' 'Add CSV export to the list screen.'
         $r = Invoke-Draft @('-Project', 'repo-a', '-Slug', 'add-csv-export', '-TextFile', $f)
-        Assert-That ($r.code -eq 0 -and $r.last -ceq 'drafted repo-a:S0002 file=PLAN/S0002_add-csv-export.md priority=50 pq=dispatchable position=2/2') "second: $($r.last) | $($r.output)"
-        Assert-That ($r.stdout -match '#2 of 2 in its own queue; 1 run before it') "no position sentence: $($r.stdout)"
+        Assert-That ($r.code -eq 0 -and $r.last -ceq 'drafted repo-a:S0002 file=PLAN/S0002_add-csv-export.md priority=50 pq=dispatchable position=0/0') "second: $($r.last) | $($r.output)"
         $f = Write-Text 'owner3.txt' 'Boot loop on cold start.'
         $r = Invoke-Draft @('-Project', 'repo-a', '-Slug', 'hotfix-boot-loop', '-TextFile', $f)
-        Assert-That ($r.code -eq 0 -and $r.last -ceq 'drafted repo-a:S0003 file=PLAN/S0003_hotfix-boot-loop.md priority=95 pq=dispatchable position=3/3') "hotfix: $($r.last) | $($r.output)"
+        Assert-That ($r.code -eq 0 -and $r.last -ceq 'drafted repo-a:S0003 file=PLAN/S0003_hotfix-boot-loop.md priority=95 pq=dispatchable position=0/0') "hotfix: $($r.last) | $($r.output)"
         Assert-That ($r.stdout -match 'pq: pinned - repo-a:S0003') "a hotfix was not pinned by itself: $($r.stdout)"
         Assert-That ((Get-Content $queueFile -Raw) -match '(?m)^repo-a:S0003(?:_|\s|$)') 'no pin row for the hotfix in PORTFOLIO_QUEUE.md'
     }
@@ -405,50 +404,6 @@ exit 0
         Assert-That ($r.code -eq 2) "foo-: exit $($r.code): $($r.output)"
     }
 
-    Run-Case '12 queue check times out: pq=unknown, pin refused, position 0/0, operator advised' {
-        $slowPq = Join-Path $scratch 'slow-pq.ps1'
-        $escapedRealPq = $pqScript.Replace("'", "''")
-        $stub = @"
-if (`$args.Count -gt 0 -and `$args[0] -eq 'dry-run') {
-    Start-Sleep -Seconds 5
-    exit 0
-}
-& (Get-Process -Id `$PID).Path -NoProfile -File '$escapedRealPq' @args
-exit `$LASTEXITCODE
-"@
-        [IO.File]::WriteAllText($slowPq, $stub)
-        $f = Write-Text 'owner15.txt' 'Queue check stalls.'
-        $r = Invoke-Draft @('-Project', 'repo-a', '-Slug', 'hotfix-check-stalls', '-TextFile', $f, '-QueueTimeoutSeconds', '1') $scratch @{ SZA_PQ_SCRIPT = $slowPq }
-        Assert-That ($r.code -eq 0) "exit $($r.code): $($r.output)"
-        Assert-That ($r.last -match 'pq=unknown position=0/0') "result line did not report pq=unknown position=0/0: $($r.last)"
-        Assert-That ($r.stdout -match 'pq: queue check timed out') "timeout note missing: $($r.stdout)"
-        Assert-That ($r.stdout -match 'pin refused') "pin was not refused: $($r.stdout)"
-        Assert-That ($r.stdout -notmatch 'pq: pinned') "ticket was pinned despite timeout: $($r.stdout)"
-        Assert-That ($r.stdout -match 'pq dry-run or pq pin manually') "manual guidance missing: $($r.stdout)"
-    }
-
-    Run-Case '13 dry-run failure: pq=unknown, pin refused, position 0/0, operator advised' {
-        $failPq = Join-Path $scratch 'fail-pq.ps1'
-        $escapedRealPq = $pqScript.Replace("'", "''")
-        $stub = @"
-if (`$args.Count -gt 0 -and `$args[0] -eq 'dry-run') {
-    [Console]::Error.WriteLine("pq: state lock broken")
-    exit 2
-}
-& (Get-Process -Id `$PID).Path -NoProfile -File '$escapedRealPq' @args
-exit `$LASTEXITCODE
-"@
-        [IO.File]::WriteAllText($failPq, $stub)
-        $f = Write-Text 'owner16.txt' 'Dry run fails.'
-        $r = Invoke-Draft @('-Project', 'repo-a', '-Slug', 'bugfix-dryrun-fail', '-TextFile', $f, '-Pin') $scratch @{ SZA_PQ_SCRIPT = $failPq }
-        Assert-That ($r.code -eq 0) "exit $($r.code): $($r.output)"
-        Assert-That ($r.last -match 'pq=unknown position=0/0') "result line did not report pq=unknown position=0/0: $($r.last)"
-        Assert-That ($r.stdout -match 'pq: dry-run failed') "failure note missing: $($r.stdout)"
-        Assert-That ($r.stdout -match 'pin refused') "pin was not refused: $($r.stdout)"
-        Assert-That ($r.stdout -notmatch 'pq: pinned') "ticket was pinned despite failure: $($r.stdout)"
-        Assert-That ($r.stdout -match 'pq dry-run or pq pin manually') "manual guidance missing: $($r.stdout)"
-    }
-
     Run-Case '14 concurrent captures finish within deadline without hung processes' {
         $cRepo1 = New-Repo 'repo-conc-1'
         $reg1 = Invoke-PqCli @('register', '-Path', $cRepo1, '-Key', 'repo-conc-1', '-Enable', '-PermissionMode', 'bypassPermissions')
@@ -483,8 +438,6 @@ exit `$LASTEXITCODE
             $psi.ArgumentList.Add($t.slug)
             $psi.ArgumentList.Add('-TextFile')
             $psi.ArgumentList.Add($t.file)
-            $psi.ArgumentList.Add('-QueueTimeoutSeconds')
-            $psi.ArgumentList.Add('10')
             $psi.UseShellExecute = $false
             $psi.RedirectStandardOutput = $true
             $psi.RedirectStandardError = $true
@@ -563,7 +516,7 @@ exit 0
         & $check $plainAtt 'PLAN\S0001_plain-files.md'
     }
 
-    Run-Case '17 the campaign form: one text into several projects, one sync and one dry-run, Blocker lines in the parent' {
+    Run-Case '17 the campaign form: one text into several projects, one sync and no dry-run, Blocker lines in the parent' {
         foreach ($n in 'camp-one', 'camp-two', 'camp-sandbox', 'camp-parent') {
             $reg = Invoke-PqCli @('register', '-Path', (New-Repo $n), '-Key', $n, '-Enable', '-PermissionMode', 'bypassPermissions')
             Assert-That ($reg.code -eq 0) "register ${n}: $($reg.output)"
@@ -586,7 +539,7 @@ exit 0
         }
         Assert-That ($r.last -ceq 'campaign campaign-item: 2 drafted, 0 failed, parent camp-parent:S0001') "last line: $($r.last)"
         $verbs = @(Get-Content -LiteralPath $verbLog)
-        Assert-That (@($verbs -ceq 'sync').Count -eq 1 -and @($verbs -ceq 'dry-run').Count -eq 1 -and @($verbs -ceq 'pin').Count -eq 0) "pq verbs: $($verbs -join ' ')"
+        Assert-That (@($verbs -ceq 'sync').Count -eq 1 -and @($verbs -ceq 'dry-run').Count -eq 0 -and @($verbs -ceq 'pin').Count -eq 0) "pq verbs: $($verbs -join ' ')"
         $parentSpec = [IO.File]::ReadAllText((Join-Path $scratch 'camp-parent\PLAN\S0001_campaign-parent.md'))
         foreach ($k in 'camp-one', 'camp-two') { Assert-That ($parentSpec -match ('(?m)^Blocker:[ ]' + $k + ':S0001\r?$')) "the parent spec has no Blocker line for $k" }
         Assert-That ($parentSpec -match '(?m)^\*\*Status:\*\* Draft') 'the parent status changed'
