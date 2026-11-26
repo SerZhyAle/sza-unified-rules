@@ -12,8 +12,11 @@
 
     The lock file is temp/contracts-writer.lock in this checkout - never inside the catalog, whose snapshot
     commit would record it. Its owner is the agent identity of tools/harness/locks/agent-identity.ps1. A holder
-    is stale when its host-/pid- process is gone, or, for an identity that names no process (a session guid),
-    when the lock is older than -StaleHours.
+    is stale when its host-/pid- process is gone. An identity that names no process (a session guid) is paired
+    with the host process of the session that took the lock, recorded as hostId: the holder is stale when that
+    process is gone (a headless pass that ended on a usage limit, CANONR-0240), and in any case when the lock is
+    older than -StaleHours. A record without hostId (written before CANONR-0240, or with the host walk off)
+    falls back to the clock alone.
 
 .PARAMETER Acquire
     Take the lock for -Ticket. Re-entrant for the same owner.
@@ -60,7 +63,13 @@ function Test-HolderStale([object]$Holder) {
     if ($owner -match '^(host|pid)-') {
         return -not (Test-AgentIdentityProcessAlive -Id $owner -NotStartedAfter $since)
     }
-    return ((Get-Date) - $since).TotalHours -gt $StaleHours
+    if (((Get-Date) - $since).TotalHours -gt $StaleHours) { return $true }
+    $hostProp = $Holder.PSObject.Properties['hostId']
+    $hostId = if ($null -ne $hostProp) { [string]$hostProp.Value } else { '' }
+    if ($hostId -match '^(host|pid)-') {
+        return -not (Test-AgentIdentityProcessAlive -Id $hostId -NotStartedAfter $since)
+    }
+    return $false
 }
 
 function Format-Holder([object]$Holder) {
@@ -99,7 +108,13 @@ $record = [ordered]@{
     name   = $me.name
     ticket = $Ticket
     since  = (Get-Date).ToString('o')
-} | ConvertTo-Json -Compress
+}
+# A session guid names no process, so the session's host process is recorded beside it (CANONR-0240).
+if ([string]$me.id -notmatch '^(host|pid)-') {
+    $hostId = Get-AgentHostIdentityId
+    if (-not [string]::IsNullOrWhiteSpace($hostId)) { $record.hostId = $hostId }
+}
+$record = $record | ConvertTo-Json -Compress
 
 $dir = Split-Path -Parent $LockPath
 if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }

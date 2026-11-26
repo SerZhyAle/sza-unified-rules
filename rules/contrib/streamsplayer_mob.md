@@ -1,7 +1,7 @@
 ---
 # Contribution: streamsplayer_mob (overlay B, flavor shape, three packages, LIVE-BROADCAST producer) -> Unified_Rules
-Source repo: P:\ANDROID\StreamsPlayer_mob | Date: 2026-10-02, refreshed 2026-11-13 (S0059), re-synced 2026-11-25 (STRMOB-0209)
-Read: AI_USAGE, CHANNEL_MATRIX, NEW_PROJECT_CHECKLIST, PLATFORM_OVERLAYS, RELEASE_AND_DISTRIBUTION, TESTING_AND_QA (delta re-sync against canon 2026.11.25.5; prior full 20-doc re-sync 2026-11-20 against 2026.11.20.4); harness README and spec_catalog SCHEMA; the store-publish skill's Google Play reference; the repository's own stamp, profile, `.git/config`, `.github/workflows/pages.yml`, `docs/play/`, `docs/releases/` and `docs/contracts/`; deduped against: contrib/fastmediasorter_mob_v2.md, contrib/streams_player.md
+Source repo: P:\ANDROID\StreamsPlayer_mob | Date: 2026-10-02, refreshed 2026-11-13 (S0059), re-synced 2026-11-26 (STRMOB-0215)
+Read: AI_USAGE, CONTRACTS, DEVELOPMENT, DOCUMENTATION_CONCEPT, GITHUB_INTERACTION, INVARIANTS, LOCALIZATION, PLATFORM_OVERLAYS, RELEASE_AND_DISTRIBUTION, TESTING_AND_QA (delta re-sync against canon 2026.11.26.9; prior full 20-doc re-sync 2026-11-20 against 2026.11.20.4); harness README and spec_catalog SCHEMA; the store-publish skill's Google Play reference; the repository's own stamp, profile, `.git/config`, `.github/workflows/pages.yml`, `docs/play/`, `docs/releases/` and `docs/contracts/`; deduped against: contrib/fastmediasorter_mob_v2.md, contrib/streams_player.md
 ---
 
 > **Owner decision, 2026-11-16:** `PLAN/` and its archive are local and ignored (`CLAUDE.md` section 4 item 6, `.gitignore` `/PLAN/`, `git ls-files PLAN` is 0). Earlier statements below that the workspace was tracked or public describe the former 2026-11-13 snapshot.
@@ -130,24 +130,28 @@ Recorded as the owner's session reported it; what the canon session measured its
 
 ### AI_USAGE.md
 - CONFIRM: section 5 always-loaded rules budget (20,000 budget, 40,000 hard limit) and area-rule split hold (`CLAUDE.md` delegates area detail to 7 `.claude/rules/*.md` files with `paths:` frontmatter; `AGENTS.md` carries the area-rules paragraph).
-- DIVERGE / EXEMPT (`SZA-CTR04`): `docs/cli-commands.json` and `docs/cli-commands-wear.json` are `REMOTE-CONTROL` rule 6 remote-verb manifests (`STRMOB-0168`, `STRMOB-0200`) for an Android product with no local CLI executable, no `docs/CLI.md` and no `commands --json`; `.sza-canon.json` records a dated `SZA-CTR04` exemption on `CLAUDE.md` (`STRMOB-0209`).
 
 ### CONTRACTS.md
-- CONFIRM: the repo names the catalog in one file (`CLAUDE.md` line 3); 24 pointers in `docs/contracts/` covering 37
-  contract ids (`RULE-ADOPTION`, `PORT-LEDGER`, `FUNCTION-PARITY`, `CAPTURE-OUTPUT`, `STREAM-BANK`, `USER-PLAYLIST`,
-  `MEDIA-CLASSIFICATION`, `PACKAGE-VERSIONING`, `ICONOGRAPHY`, `INPUT-PARITY`, `LIVE-BROADCAST`, `DEVICE-EXCHANGE`,
-  `INSTALL-TRUST`, `DIAGNOSTIC-REPORT`, `PRODUCT-WEB-PAGES`, `TEST-LAB`, `PORTAL-DOCS`, `UNIFIED-UI`, `CONTEXT-HELP`,
-  `AUTOMATED-CHECKS`, `EXCHANGE-MARK`, `WAVE-PARTICLES`, `GOOGLE-PLAY`, `RELEASE-LEDGER`) and 31 adoption rows in
-  `_meta/REGISTRY.md` (`check-sync.ps1` PASS on 37 pointer versions; `contract-lag.ps1 -FailOnLag` exit 0 with 0 behind,
-  19 partial with dated reasons, 10 current, 1 n/a). `docs/BOOTSTRAP_HANDOFF.md` names the catalog path too: an origin
+- CONFIRM: the repo names the catalog in one file (`CLAUDE.md` line 3); 27 pointers in `docs/contracts/` covering 40
+  pointer versions (`RULE-ADOPTION`, `PORT-LEDGER`, `REMOTE-CONTROL`, `FUNCTION-PARITY`, `CAPTURE-OUTPUT`, `STREAM-BANK`,
+  `USER-PLAYLIST`, `MEDIA-CLASSIFICATION`, `PACKAGE-VERSIONING`, `ICONOGRAPHY`, `INPUT-PARITY`, `LIVE-BROADCAST`,
+  `DEVICE-EXCHANGE`, `INSTALL-TRUST`, `DIAGNOSTIC-REPORT`, `PRODUCT-WEB-PAGES`, `TEST-LAB`, `PORTAL-DOCS`, `UNIFIED-UI`,
+  `CONTEXT-HELP`, `AUTOMATED-CHECKS`, `EXCHANGE-MARK`, `WAVE-PARTICLES`, `GOOGLE-PLAY`, `RELEASE-LEDGER`,
+  `PRODUCT-IDENTITY`, `SOURCEFORGE-CHANNEL`) and 34 `streams-mob` adoption rows in `_meta/REGISTRY.md` (`check-sync.ps1`
+  PASS on 40 pointer versions; `contract-lag.ps1 -Product streams-mob -FailOnLag` exit 0 with 0 behind, 11 current,
+  22 partial with dated reasons, 1 n/a). `docs/BOOTSTRAP_HANDOFF.md` names the catalog path too: an origin
   record written and amended on 2026-10-02 by the FastMediaSorter session of its ticket S4053, not edited from this
   repository; it carries a dated SZA-CTR02 exemption in `.sza-canon.json`.
 
 ### RELEASE_AND_DISTRIBUTION.md sections 8 and 10
-- CONFIRM: the harness release package plan stands with all six decisions recorded in `CLAUDE.md` section 4 (`PLAN/RELEASE_QUEUE.md`,
-  `PLAN/RELEASE_READY.md`, `PLAN/RELEASE_QUEUE_DONE.md`, hooked into `Write-Catalog` -> `Sync-ReleaseQueue`; package number from
-  `current-next-release:` marker because this repo works on `main`; `PLAN/` local and gitignored since 2026-11-16). The release
-  ledger (`docs/releases/`, `RELEASE-LEDGER` 0.1) is initialized with 6 Play channel rows and hooked into `a.ps1` (S0154).
+- CONFIRM: the harness release package plan stands with all six decisions recorded in `CLAUDE.md` section 4 (the shared
+  harness writes only `PLAN/RELEASE_QUEUE.md` through `Write-Catalog` -> `Sync-ReleaseQueue`, renders ready and shipped
+  history views from the ledger via `release-queue -List -Ready` / `-Show Ready|Done`, and reads legacy
+  `PLAN/RELEASE_READY.md` and `PLAN/RELEASE_QUEUE_DONE.md` only to import prior rows; package number from
+  `current-next-release:` marker because this repo works on `main`; `PLAN/` local and gitignored since 2026-11-16). The
+  release ledger (`docs/releases/`, `RELEASE-LEDGER` 0.2) is initialized with 6 Play channel rows, hooked into `a.ps1`
+  (S0154), and records the 2026-11-21 `2.61.1210.302` pending production submissions and 2026-11-25 debug builds. Under
+  `GOOGLE-PLAY` 0.6 section 10 (rule 31), `docs/play/PLAY_RELEASE_RECORD.md` records Shape 1 (One salvo).
 
 ### TESTING_AND_QA.md section 2
 - CONFIRM: fast gates (5 s or less) are listed with measured wall times in `CLAUDE.md` section 5a; `.sza-profile.json`

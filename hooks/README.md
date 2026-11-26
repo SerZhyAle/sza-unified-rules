@@ -157,7 +157,9 @@ Two of its checks judge more than a name, so their allow side is written down:
 - **`python`, `python3`, `node`.** Every command head of a chain is judged. A script of that name in
   `~/bin` is read first and its `exec` target must resolve; with no such script the hook asks its own
   `PATH`, which can be longer than the one the Bash tool sees - a shim in `~/bin` is what makes the answer
-  exact.
+  exact. On Windows, pair every extensionless `~/bin/<name>` Bash shim with a sibling `~/bin/<name>.cmd`
+  wrapper (`@py -3 %*` for Python), because Git Bash prepends `~/bin` to `PATH` and a child `pwsh`
+  otherwise resolves the bare name to the extensionless script and opens Windows "Select an app".
 
 ## Cost
 

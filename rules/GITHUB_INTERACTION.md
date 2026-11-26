@@ -103,8 +103,11 @@ versioned op that may cost money or become public) has one home:
   cmd2 }"`; a bare `& { .. }` is refused by hook `guard-bash`, see [hooks/README.md](../hooks/README.md).
 - **No PowerShell cmdlet in Bash command-head position** - enforced by hook `guard-bash`, see
   [hooks/README.md](../hooks/README.md).
-- **An interpreter Bash cannot resolve is a dead command** (prefer a shim onto `PATH`) - enforced by hook
-  `guard-bash`, see [hooks/README.md](../hooks/README.md).
+- **An interpreter Bash cannot resolve is a dead command** (prefer a shim onto `PATH`, and on Windows pair
+  every extensionless `~/bin/<name>` Bash shim with a sibling `~/bin/<name>.cmd` wrapper - Git Bash's
+  `/etc/profile.d/env.sh` prepends `~/bin` to `PATH`, so a child `pwsh` or `ShellExecute` resolves an
+  unpaired extensionless file ahead of later `.exe` entries and pops a modal "Select an app" dialog) -
+  enforced by hook `guard-bash`, see [hooks/README.md](../hooks/README.md).
 - **A slash-command argument value is corrupted by MSYS** (`//name`, `MSYS2_ARG_CONV_EXCL='*'` or the
   PowerShell tool) - enforced by hook `guard-bash`, see [hooks/README.md](../hooks/README.md).
 - **Three more silent Windows traps, none of them caught by a shipped hook.** A device path (`/sdcard/..`,

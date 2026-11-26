@@ -7,7 +7,7 @@
     {"file":"CONTRACTS.md","bytes":18552,"date":"2026-11-26","reason":"CANONR-0225: unattended canon pass writes the catalog, one writer at a time"},
     {"file":"DEVELOPMENT.md","bytes":39599,"date":"2026-11-26","reason":"baseline (CANONR-0221)"},
     {"file":"DOCUMENTATION_CONCEPT.md","bytes":23513,"date":"2026-11-26","reason":"baseline (CANONR-0221)"},
-    {"file":"GITHUB_INTERACTION.md","bytes":11359,"date":"2026-11-26","reason":"baseline (CANONR-0221)"},
+    {"file":"GITHUB_INTERACTION.md","bytes":11684,"date":"2026-11-27","reason":"CANONR-0242: Windows ~/bin extensionless bash shim needs a sibling .cmd wrapper"},
     {"file":"INVARIANTS.md","bytes":6333,"date":"2026-11-26","reason":"baseline (CANONR-0221)"},
     {"file":"LOCALIZATION.md","bytes":5667,"date":"2026-11-26","reason":"baseline (CANONR-0221)"},
     {"file":"NEW_PROJECT_CHECKLIST.md","bytes":9161,"date":"2026-11-26","reason":"baseline (CANONR-0221)"},
