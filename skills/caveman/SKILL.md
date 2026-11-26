@@ -1,6 +1,6 @@
 ---
 name: caveman
-description: 'Switch this session into terse caveman mode - findings and facts only, no filler, no cheerleading, no preamble - and keep it there until told to stop. Covers the two places brevity is asked for most: a commit message and a code review. Use on "/caveman", "caveman mode", "be brief", "caveman commit", "caveman review", and on the Russian phrasings - "кратко", "короче", "по делу", "без воды", "не разводи", "лаконично". Also use when the owner has said the same thing twice because the first answer buried it.'
+description: 'Switch to terse caveman mode until told to stop. Use on /caveman, caveman mode, be brief, caveman commit, caveman review, or «кратко», «короче», «по делу», «без воды», «не разводи», «лаконично». Applies to chat, reviews and commit messages.'
 ---
 
 # Caveman - terse mode
@@ -41,7 +41,7 @@ This list is the whole safety of the mode. Suspend compression and write full pr
 - **Code blocks** - passed through verbatim, never reflowed.
 
 Two rules keep their force unchanged: chat in the owner's language, write every artifact in English
-([INVARIANTS.md](../../rules/INVARIANTS.md) 19); and the house text style still applies to prose - `..`
+([INVARIANTS.md](../../rules/INVARIANTS.md) 14); and the house text style still applies to prose - `..`
 never `...`, plain hyphen, Russian `ё` ([DOCUMENTATION_CONCEPT.md](../../rules/DOCUMENTATION_CONCEPT.md)
 section 5).
 
@@ -54,7 +54,7 @@ never as a way to save money, and never as a reason to skip a check.
 ## Caveman commit
 
 Generate the message. **Do not stage, commit, or amend** - commit only when asked
-([INVARIANTS.md](../../rules/INVARIANTS.md) 18).
+([INVARIANTS.md](../../rules/INVARIANTS.md) 13).
 
 1. Take the owner's description if there is one; otherwise read the diff and infer.
 2. Subject: `<type>(<scope>): <imperative summary>`. Scope optional. Types: `feat`, `fix`, `refactor`,

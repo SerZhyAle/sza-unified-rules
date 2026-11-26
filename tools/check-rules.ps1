@@ -9,7 +9,8 @@ Checks (core docs = rules/*.md; contrib/ and contrib/history/ get link-check onl
   3. Section references ("DOC.md §N", "DOC §N-M", bare "§N") point at existing headings.
   4. House text style: no em/en-dash, no "..." or ellipsis in prose (outside code spans/fences).
   5. Every skills/<name>/SKILL.md carries a frontmatter block its host can read: closed, YAML-safe, with a
-     non-empty name and description, the description 1024 characters at most.
+     non-empty name and description, the description 400 characters at most.
+  6. The canon-controlled SessionStart stdout fits its UTF-8 byte budget.
 
 Exit codes: 0 = clean; 1 = violations found; 2 = internal error.
 Usage: pwsh -File tools/check-rules.ps1
@@ -17,13 +18,13 @@ Usage: pwsh -File tools/check-rules.ps1
 $ErrorActionPreference = 'Stop'
 
 # One skill's frontmatter, judged as the host's YAML reader would judge it: a block that does not parse loads as
-# empty metadata and the skill is not listed, and a host drops a description over the limit. PowerShell ships no
+# empty metadata and the skill is not listed, and a host may drop oversized metadata. PowerShell ships no
 # YAML reader, so only a stated subset is read - 'key: value' on one line (plain, 'single' or "double" quoted) and
 # a block value ('>' or '|') - and every other form is reported, valid YAML included. A new form is taught here
 # before it ships. Emits one '<line>: <reason>' string per problem and nothing for a good file.
 function Test-SkillFrontmatter {
     param([Parameter(Mandatory)][AllowEmptyString()][string]$Text)
-    $maxDescription = 1024
+    $maxDescription = 400
 
     $lines = @($Text -split "\r?\n")
     if ($lines[0] -notmatch '^--- *$') { return "1: no frontmatter - the first line is not '---'" }
@@ -60,14 +61,32 @@ function Test-SkillFrontmatter {
             $indent = 0
             while ($i -lt $end) {
                 $next = $lines[$i]
-                if ($next -match '^ *$') { $block.Add(''); $i++; continue }
                 $lead = $next.Length - $next.TrimStart(' ').Length
+                if ($lead -eq $next.Length) {
+                    $block.Add($(if ($indent -and $lead -gt $indent) { $next.Substring($indent) } else { '' }))
+                    $i++
+                    continue
+                }
                 if ($lead -eq 0 -or $lead -lt $indent) { break }
                 if (-not $indent) { $indent = $lead }
                 $block.Add($next.Substring($indent))
                 $i++
             }
-            $value = ($block -join ' ').Trim()
+            $value = $block -join "`n"
+            if ($raw.StartsWith('>')) {
+                $value = [regex]::Replace($value, '(?m)^([^ \t\n][^\n]*)\n(\n*)(?=[^ \t\n])', {
+                    param($match)
+                    $gap = $match.Groups[2].Value
+                    $match.Groups[1].Value + $(if ($gap) { $gap } else { ' ' })
+                })
+            }
+            if ($raw.EndsWith('+')) {
+                if ($block.Count) { $value += "`n" }
+            }
+            else {
+                $value = $value.TrimEnd("`n")
+                if ($value -and -not $raw.EndsWith('-')) { $value += "`n" }
+            }
         }
         elseif ($raw.StartsWith("'")) {
             $quoted = [regex]::Match($raw, "^'((?:[^']|'')*)'(?: +#.*)?$")
@@ -105,12 +124,50 @@ function Test-SkillFrontmatter {
         elseif (-not $values[$key].Trim()) { "$($lineOf[$key]): '$key' is empty" }
     }
     if ($values.ContainsKey('description') -and $values['description'].Length -gt $maxDescription) {
-        "$($lineOf['description']): the description is $($values['description'].Length) characters, the limit is $maxDescription (a host drops a longer skill)"
+        "$($lineOf['description']): the description is $($values['description'].Length) characters, the limit is $maxDescription (canon skill listing budget)"
+    }
+}
+
+function Get-SessionStartBytes {
+    param([string]$RepoRoot)
+
+    $hook = Join-Path $RepoRoot 'hooks/session-start.ps1'
+    $templateDir = Join-Path $RepoRoot 'templates'
+    if (-not (Test-Path -LiteralPath (Join-Path $templateDir '.sza-canon.json') -PathType Leaf)) {
+        throw 'SessionStart budget requires the shipped adopter stamp template.'
+    }
+    $start = [System.Diagnostics.ProcessStartInfo]::new('pwsh')
+    foreach ($argument in '-NoProfile', '-File', $hook) { $start.ArgumentList.Add($argument) }
+    $start.UseShellExecute = $false
+    $start.RedirectStandardInput = $true
+    $start.RedirectStandardOutput = $true
+    $start.StandardInputEncoding = [System.Text.UTF8Encoding]::new($false)
+    $start.StandardOutputEncoding = [System.Text.UTF8Encoding]::new($false, $true)
+
+    # Use the shipped adopter template and isolate per-user memory from the plugin's budget.
+    $start.Environment['SZA_MEMORY_ROOT'] = $hook
+    $inputJson = @{ cwd = $templateDir } | ConvertTo-Json -Compress
+    $process = [System.Diagnostics.Process]::Start($start)
+    try {
+        $process.StandardInput.WriteLine($inputJson)
+        $process.StandardInput.Close()
+        $stdout = $process.StandardOutput.ReadToEnd()
+        $process.WaitForExit()
+        if ($process.ExitCode -ne 0) { throw "SessionStart hook exited $($process.ExitCode)" }
+        $payload = ($stdout | ConvertFrom-Json).hookSpecificOutput
+        if ($payload.hookEventName -ne 'SessionStart' -or -not $payload.additionalContext) {
+            throw 'SessionStart hook returned no context for the shipped adopter template.'
+        }
+        return $start.StandardOutputEncoding.GetByteCount($stdout)
+    }
+    finally {
+        $process.Dispose()
     }
 }
 
 try {
-    $root = Join-Path (Split-Path $PSScriptRoot -Parent) 'rules'
+    $repoRoot = Split-Path $PSScriptRoot -Parent
+    $root = Join-Path $repoRoot 'rules'
     $coreDocs = @(Get-ChildItem -Path $root -Filter *.md -File)
     $contribDir = Join-Path $root 'contrib'
     $contribDocs = @()
@@ -219,12 +276,19 @@ try {
         }
     }
 
+    # Check 6: the measured 6,759-byte wire payload plus 10%, rounded up.
+    $maxSessionStartBytes = 7435
+    $sessionStartBytes = Get-SessionStartBytes -RepoRoot $repoRoot
+    if ($sessionStartBytes -gt $maxSessionStartBytes) {
+        $violations.Add("hooks/session-start.ps1: payload $sessionStartBytes UTF-8 bytes exceeds budget $maxSessionStartBytes")
+    }
+
     if ($violations.Count -gt 0) {
         $violations | ForEach-Object { Write-Host "FAIL $_" }
         Write-Error "check-rules: $($violations.Count) violation(s)" -ErrorAction Continue
         exit 1
     }
-    Write-Host "check-rules: OK ($($coreDocs.Count) core docs, $($contribDocs.Count) contrib docs, $($historyDocs.Count) history docs, $($skillDocs.Count) skills)"
+    Write-Host "check-rules: OK ($($coreDocs.Count) core docs, $($contribDocs.Count) contrib docs, $($historyDocs.Count) history docs, $($skillDocs.Count) skills; SessionStart $sessionStartBytes/$maxSessionStartBytes UTF-8 bytes)"
     exit 0
 }
 catch {

@@ -84,7 +84,7 @@ repository steps and says so under "Not measured".
    the download `href`. A release-notes entry that links its own version is not stale.
 3. **Rendered or typed** (page `repo`, area `source`). Each fact that checks 2, 4 and 5 find correct today: when no
    code writes it from the manifest, LOW - it goes stale at the next release (DOCUMENTATION_CONCEPT §1 and §4,
-   [INVARIANTS.md](../../../rules/INVARIANTS.md) 16). A live page whose release facts differ from its served-root
+   [feature-to-site](../../feature-to-site/SKILL.md#before-you-ship)). A live page whose release facts differ from its served-root
    file is a finding (conventions section 3), LOW, naming the cause - an unpushed change, a branch Pages does not
    build ([SITE_CONFIGURATION.md](../../../rules/SITE_CONFIGURATION.md) §4), or a stale deploy; a stale version on
    the live side is check 2's. A difference the release flow's own render explains is INFO, naming the render step.
@@ -119,7 +119,7 @@ repository steps and says so under "Not measured".
    and (b) present-tense claims about the release record - "no published", "no release", "build from source",
    "нет опубликованных", "немає опублікованих" and the like, in either word order - each compared with the release
    record. A claim the release record contradicts ("no published package" beside a live release): HIGH, a false
-   release status. Any other hit of (a): MED ([INVARIANTS.md](../../../rules/INVARIANTS.md) 17). Not findings: the
+   release status. Any other hit of (a): MED ([feature-to-site](../../feature-to-site/SKILL.md#before-you-ship)). Not findings: the
    name of a store track the owner runs, a dated deprecation notice, an app state string, a limitation stated in
    the present tense.
 7. **"What's new"** (`docs`). Its newest entry against the newest release of its edition: older is MED. Not linked
@@ -179,7 +179,7 @@ Changes from the prompt-pack source `site-release-facts.md`, each with the secti
 - **Provoking the failure is dropped** - no reload until 403. A crawler makes no call, so the defect is a fact with no
   rendered source, shown by the no-JS page and the script (DOCUMENTATION_CONCEPT §4); the failure branch is read.
 - **A matching version can still be a finding**: typed by hand is a defect (DOCUMENTATION_CONCEPT §1 and §4,
-  INVARIANTS 16), and the comparison reads the public release page, not a local tag (RELEASE_AND_DISTRIBUTION §6),
+  [feature-to-site](../../feature-to-site/SKILL.md#before-you-ship)), and the comparison reads the public release page, not a local tag (RELEASE_AND_DISTRIBUTION §6),
   per edition and per flavor rather than one `releases/latest` (RELEASE_AND_DISTRIBUTION §5).
 - **`softwareVersion` follows PROMOTION §3**: present only when rendered from the manifest of the visible page, so
   its absence is no defect, and "equals the tag" became "equals the visible version, both rendered, and the visible
@@ -188,7 +188,7 @@ Changes from the prompt-pack source `site-release-facts.md`, each with the secti
   (DOCUMENTATION_CONCEPT §4, SITE_CONFIGURATION §2) and the JSON-LD `downloadUrl` (PROMOTION §3); a badge for a
   channel the product is not on is added as a defect (DOCUMENTATION_CONCEPT §5).
 - **Release-status prose is a defect by its wording** (MED), and HIGH when the release record contradicts it
-  (DOCUMENTATION_CONCEPT §5, INVARIANTS 17).
+  (DOCUMENTATION_CONCEPT §5, [feature-to-site](../../feature-to-site/SKILL.md#before-you-ship)).
 - **The render belongs to the release flow**, from the release manifest on every release, not a Pages job querying
   `releases/latest`; it leaves the sitemap `lastmod` alone (PROMOTION §3) and keeps RELEASE_AND_DISTRIBUTION §4 timing.
 - **The site-root `release.json` "for the hub"** became a catalog step: a format another repository reads is a

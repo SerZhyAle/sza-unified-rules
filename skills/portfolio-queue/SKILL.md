@@ -1,6 +1,6 @@
 ---
 name: portfolio-queue
-description: Work with the portfolio queue runner (pq) - the robots that take tickets from every registered project in the owner's order - see what they are doing, why one is idle, stop, pause or steer them, and read what they did. Use on "pq", "portfolio queue", "start the robots over all projects", "what are the robots doing", "why does the robot not take the ticket", "stop the robots", "pause the queue", "report on the robots", "robot queue status", or on the Russian phrasings - "запусти роботов по всем проектам", "очередь по всем репозиториям", "что делают роботы", "почему робот не берёт тикет", "останови роботов", "поставь очередь на паузу", "отчёт по роботам", "что сделали роботы за неделю", "задачи по всем проектам". It reads and steers; it never starts a worker on its own, and it never tags, publishes or releases.
+description: 'Inspect or steer pq, the portfolio queue. Use to start, stop or pause robots, review robot queue status, or find why a ticket waits. «запусти роботов по всем проектам», «очередь по всем репозиториям», «что делают роботы», «почему робот не берёт тикет», «останови роботов», «поставь очередь на паузу», «отчёт по роботам», «что сделали роботы за неделю», «задачи по всем проектам».'
 ---
 
 # Portfolio queue - the robots over all projects
@@ -75,7 +75,7 @@ in the one-ticket skills: `/spec-all <key>:<id>` and `/sa <key>:<id>` work one n
 - **It does not edit the two queue files by hand.** The owner's order is theirs; use the verbs above, which keep it.
 - **It does not change a ticket's status.** Status moves through the ticket tool (TASK-FLOW rule 4); a stop never decides a
   status either.
-- **It never releases, tags or pushes.** The robots do not either (`INVARIANTS` 4, 18).
+- **It never releases, tags or pushes.** The robots do not either (`INVARIANTS` 4, 13).
 
 ## Reading the answer
 

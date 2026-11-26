@@ -206,7 +206,7 @@ Lessons without a single number, with their canon homes (from the FMS record, 20
 - A lock is a (kind, domain) pair; abandoning a queued intent obliges withdrawing your ticket - DEVELOPMENT section 10.
 - The status-gated debug probe - DEVELOPMENT section 8.
 - A check only a human can run has not happened yet - TESTING_AND_QA section 1.
-- Surfaces move together; authored locales in one edit, the rest at the release - INVARIANTS 17, DOCUMENTATION_CONCEPT
+- Surfaces move together; authored locales in one edit, the rest at the release - [feature-to-site](skills/feature-to-site/SKILL.md#before-you-ship), DOCUMENTATION_CONCEPT
   section 5. FMS ruled this on 2026-08-14 and was knowingly non-compliant with the old wording until 2026-08-28.
 - The release package plan, designed and proven in FMS first - RELEASE_AND_DISTRIBUTION section 8.
 - Android multi-store rows (sideload, Meta Horizon) - CHANNEL_MATRIX, PLATFORM_OVERLAYS Overlay B.
@@ -224,7 +224,7 @@ device), the command bodies in `.claude/commands/`, `migrate_from_log.ps1`, and 
   through [bump-canon-version.ps1](tools/bump-canon-version.ps1), since 2026-09-07 (S2463).
 - **Stamp.** `.sza-canon.json` at each repo root (version, core digest, adoption date, consumption model, contrib
   record, role, overlay), written by the [adopt-canon](skills/adopt-canon/SKILL.md) skill.
-- **In session.** The SessionStart hook injects the 20 invariants where a stamp exists; 7 skills load on a task
+- **In session.** The SessionStart hook injects the hard invariants where a stamp exists; 7 skills load on a task
   match; the three guards and the advisories run wherever the plugin is enabled, adopted or not.
 - **Gates.** [check-rules.ps1](tools/check-rules.ps1) validates the canon's own docs;
   [check-compliance.ps1](tools/check-compliance.ps1) `-RepoRoot <path>` validates an adopting repo (rule ids such as
@@ -234,7 +234,7 @@ device), the command bodies in `.claude/commands/`, `migrate_from_log.ps1`, and 
 
 What ships:
 
-- 19 rule docs and 11 contrib files, 7,637 lines (derived). [INVARIANTS.md](rules/INVARIANTS.md) is the 20-line
+- 19 rule docs and 11 contrib files, 7,637 lines (derived). [INVARIANTS.md](rules/INVARIANTS.md) is the always-loaded
   page that is always in context.
 - 7 skills: [adopt-canon](skills/adopt-canon/SKILL.md), [agent-cost](skills/agent-cost/SKILL.md),
   [caveman](skills/caveman/SKILL.md), [feature-to-site](skills/feature-to-site/SKILL.md),

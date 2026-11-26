@@ -1,6 +1,6 @@
 ---
 name: agent-cost
-description: Measure what an agent session actually costs in this repo and act on the result - mine the Claude Code transcripts for token spend, context growth, tool-failure rates and compaction points, then decide what to gate. Use when asked to measure or reduce agent cost, to find where the tokens go, why a session got expensive or slow, whether a rule is actually being followed, or before writing any rule justified by cost. Also on the Russian phrasings - "сколько стоит", "почему так дорого", "измерь расход токенов", "куда уходит контекст", "замерь процесс".
+description: 'Measure agent cost from Claude Code transcripts - token spend, context growth, tool failures and compaction. Use to find where tokens go, why a session is expensive or slow, or whether a rule is followed. Triggers include «сколько стоит», «почему так дорого», «измерь расход токенов», «куда уходит контекст», «замерь процесс».'
 ---
 
 # Agent cost - measure before you rule

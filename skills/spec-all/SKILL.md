@@ -1,6 +1,6 @@
 ---
 name: spec-all
-description: Take one ticket of any SZA project from where it stands to its audit - claim the ticket's lease, check drift, then run the spec-to-audit lifecycle for it (spec, plan, implement, evidence, self-audit) and release the lease. A new idea text is captured as a Draft first. The ticket may be named across projects as <key>:<id> (fms-web:S0123), and a bare project key takes that project's next eligible ticket. Use on /spec-all, /sa, "take S0123 to done", "do this ticket", "work this ticket end to end", "/sa fms-web:S0123", "/sa fms-web", or on the Russian phrasings - "доведи тикет до конца", "прогони тикет", "сделай тикет", "возьми S0123 в работу", "возьми тикет проекта fms-web". Owner-invoked; one ticket, then stop; it never tags, publishes or releases.
+description: 'Take one ticket through the SZA lifecycle to audit, with lease and drift checks, or capture a new Draft. Accepts an id, <key>:<id>, or a project key for its next ticket. Use /spec-all, /sa, do this ticket, take S0123 to done, «доведи тикет до конца», «прогони тикет», «сделай тикет», «возьми S0123 в работу», «возьми тикет проекта».'
 ---
 
 # Spec all - one ticket, end to end

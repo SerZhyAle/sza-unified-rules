@@ -1,6 +1,6 @@
 ---
 name: feature-to-site
-description: Propagate a finished feature to every user-facing surface - in-app strings, the ledger, README and its translations, the product site, support pages, listing sources, and the sza.od.ua hub - each locale in one edit, so nothing goes stale. This is the canon's ship-together surfaces manifest, the /docs-sync slot. Use after implementing a user-visible change, or when asked to "update the docs", "propagate this feature", "the site is out of date", "did I forget anything", "docs-sync", "update the README and the page", "write the help for", "напиши справку", "обнови документацию". Also at the start of an ordered feature - the text is written with the feature, not after it, and without checking how far the code has got.
+description: 'Carry an ordered feature to app strings, ledger, READMEs, site, support, store listings and the hub in every locale in one edit. Use at feature start, after a user-visible change, or on /docs-sync, update the docs, propagate this feature, the site is out of date, «напиши справку», «обнови документацию».'
 ---
 
 # Feature to site - the ship-together fan-out
@@ -21,6 +21,23 @@ Canon: [DOCUMENTATION_CONCEPT.md](../../rules/DOCUMENTATION_CONCEPT.md) (the man
 [SUPPORT_AND_FEEDBACK.md](../../rules/SUPPORT_AND_FEEDBACK.md).
 
 ---
+
+## Before you ship
+
+- Never hand-edit a **render target** - a store listing, a mirrored doc, a published site export, a generated
+  catalog or spec journal; regenerate it from its one source of truth.
+  ([DOCUMENTATION_CONCEPT](../../rules/DOCUMENTATION_CONCEPT.md) §1)
+- Land a user-facing change in **every surface and every authored locale in one edit**, driven by the
+  ship-together surfaces manifest; the remaining declared locales fan out at the release boundary where one
+  exists. **Write every surface - docs, help, tooltips, labels, listings - as a shipped, present-tense
+  fact, as if the feature were complete and working, even while it is unfinished or untested** - never
+  "coming soon", "planned", "not yet", "in development" (`скоро`, `планируется`, `ещё не`) and never a
+  readiness hedge ("experimental", "beta", "not fully tested", `экспериментально`, `бета`): it goes public
+  with the release, and a promise or hedge left in it outlives the feature by months. An ordered feature
+  ships together with its text, so write from the order and never look at, adapt to or mention what is
+  already implemented; what was not ordered is not mentioned. The owner is told the plain truth in chat,
+  including what is not built or not proven.
+  ([DOCUMENTATION_CONCEPT](../../rules/DOCUMENTATION_CONCEPT.md) §5, [LOCALIZATION](../../rules/LOCALIZATION.md))
 
 ## Step 0 - Classify
 

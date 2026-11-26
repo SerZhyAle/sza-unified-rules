@@ -1,7 +1,7 @@
 #requires -Version 7.0
 <#
 .SYNOPSIS
-    Cases for check 5 of tools/check-rules.ps1: the frontmatter of every skills/<name>/SKILL.md (CANONR-0192).
+    Cases for the skill frontmatter and SessionStart budget checks in tools/check-rules.ps1.
 
 .DESCRIPTION
     A copy of the gate runs over two scratch trees, one holding only skills that must be refused and one holding only
@@ -9,9 +9,9 @@
 
       1. The refused tree exits 1.
       2. One case per refused skill: the gate names the file, the line and the reason.
-      3. A refused tree reports nothing outside its skills (the scratch rule doc is clean).
-      4. The accepted tree exits 0 and counts every skill: plain, quoted and block values, exactly 1024 characters,
-         CRLF endings, a byte order mark, extra keys, comments.
+      3. The refused tree also detects a SessionStart UTF-8 payload over budget.
+      4. The accepted tree exits 0 and counts every skill: plain, quoted and block values, exactly 400 characters,
+         CRLF endings, a byte order mark, extra keys, comments, and a SessionStart payload within budget.
 
     -KeepScratch leaves the two trees on disk and prints their folder.
 #>
@@ -34,11 +34,17 @@ function Run-Case([string] $Name, [scriptblock] $Body) {
 
 $scratch = Join-Path ([IO.Path]::GetTempPath()) ('skill-frontmatter-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
 
-function Invoke-Tree([string] $Tree, [Collections.IDictionary] $Skills) {
+function Invoke-Tree([string] $Tree, [Collections.IDictionary] $Skills, [switch] $OversizedPayload) {
     $root = Join-Path $scratch $Tree
-    New-Item -ItemType Directory -Path (Join-Path $root 'tools'), (Join-Path $root 'rules') -Force | Out-Null
+    foreach ($dir in 'tools', 'rules', 'hooks', 'templates') {
+        New-Item -ItemType Directory -Path (Join-Path $root $dir) -Force | Out-Null
+    }
+    $repoRoot = Split-Path (Split-Path $gate)
     Copy-Item -LiteralPath $gate -Destination (Join-Path $root 'tools')
-    [IO.File]::WriteAllText((Join-Path $root 'rules' 'A.md'), "# A`n")
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'hooks/session-start.ps1') -Destination (Join-Path $root 'hooks')
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'templates/.sza-canon.json') -Destination (Join-Path $root 'templates')
+    $invariants = if ($OversizedPayload) { [string]::new([char]0x0416, 3900) } else { "# Invariants`n" }
+    [IO.File]::WriteAllText((Join-Path $root 'rules' 'INVARIANTS.md'), $invariants)
     foreach ($name in $Skills.Keys) {
         $dir = Join-Path $root 'skills' $name
         New-Item -ItemType Directory -Path $dir -Force | Out-Null
@@ -79,15 +85,16 @@ $refused = [ordered]@{
     'empty-plain'       = @((New-Skill 'name: case', 'description:'), 3, "'description' is empty")
     'empty-quoted'      = @((New-Skill "name: ''", 'description: text'), 2, "'name' is empty")
     'empty-block'       = @((New-Skill 'name: case', 'description: >'), 3, "'description' is empty")
-    'long-plain'        = @((New-Described ('a' * 1025)), 3, '1025 characters')
-    'long-quoted'       = @((New-Described ('"' + ('a' * 1025) + '"')), 3, '1025 characters')
-    'long-block'        = @((New-Skill 'name: case', 'description: >-', ('  ' + ('a' * 512)), ('  ' + ('b' * 512))), 3, '1025 characters')
+    'long-plain'        = @((New-Described ('a' * 401)), 3, '401 characters')
+    'long-quoted'       = @((New-Described ('"' + ('a' * 401) + '"')), 3, '401 characters')
+    'long-block'        = @((New-Skill 'name: case', 'description: |', ('  ' + ('a' * 400))), 3, '401 characters')
+    'long-block-space'  = @((New-Skill 'name: case', 'description: |-', '  a', (' ' * 401)), 3, '401 characters')
 }
 
 $accepted = [ordered]@{
     'plain'          = (New-Described "Use on /sa, `"take S0123`", the owner's C# app, host:80 and a - dash")
-    'exact-limit'    = (New-Described ('a' * 1024))
-    'quoted-limit'   = (New-Described ("'" + ('a' * 1024) + "'"))
+    'exact-limit'    = (New-Described ('a' * 400))
+    'quoted-limit'   = (New-Described ("'" + ('a' * 400) + "'"))
     'single'         = (New-Described "'Gates: spec, plan # and the owner''s call'")
     'double'         = (New-Described '"Gates: spec \"plan\" \\ \u0041 # done" # a comment')
     'folded'         = (New-Skill 'name: case', 'description: >-', '  Gates: spec', '', '    # indented text', '  and plan')
@@ -101,7 +108,7 @@ $accepted = [ordered]@{
 try {
     $bad = [ordered]@{}
     foreach ($name in $refused.Keys) { $bad[$name] = $refused[$name][0] }
-    $r = Invoke-Tree 'refused' $bad
+    $r = Invoke-Tree 'refused' $bad -OversizedPayload
 
     Run-Case '1 the refused tree exits 1' {
         Assert-That ($r.code -eq 1) "exit $($r.code): $($r.text)"
@@ -115,14 +122,15 @@ try {
             Assert-That ($hits.Count -ge 1) "expected '$prefix..$reason' | actual: $((@($r.out | Where-Object { $_.Contains("skills/$skill/") })) -join ' / ')"
         }
     }
-    Run-Case '3 nothing outside the skills is reported' {
+    Run-Case '3 the UTF-8 payload exceeds the byte budget' {
         $other = @($r.out | Where-Object { $_.StartsWith('FAIL ') -and -not $_.StartsWith('FAIL skills/') })
-        Assert-That ($other.Count -eq 0) ($other -join ' / ')
+        Assert-That ($other.Count -eq 1 -and $other[0] -match '^FAIL hooks/session-start\.ps1: payload \d+ UTF-8 bytes exceeds budget 7435$') $r.text
     }
     Run-Case '4 the accepted tree exits 0 and counts every skill' {
         $ok = Invoke-Tree 'accepted' $accepted
         Assert-That ($ok.code -eq 0) "exit $($ok.code): $($ok.text)"
         Assert-That ($ok.text.Contains("$($accepted.Count) skills")) $ok.text
+        Assert-That ($ok.text -match 'SessionStart \d+/7435 UTF-8 bytes') $ok.text
     }
 }
 finally {

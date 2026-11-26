@@ -1,6 +1,6 @@
 ---
 name: contract-sync
-description: Align this repository with the shared contracts catalog at P:\Contracts - inventory what the repo holds, move the real contracts into the catalog under the function they belong to, replace every local copy with a pointer, fill the registry rows, audit the consumer code against the compatibility law, and record each deviation as a dated exception. Use when asked to sync, align, migrate or tidy contracts, to share a format or algorithm with another product, when adding or changing a shared format, schema, protocol or wire shape, before a release that touches a contract boundary, or on the Russian phrasings - "контракты", "приведи контракты в порядок", "синхронизируй контракты", "перенеси контракты в каталог", "общий формат с другим проектом", "версия контракта".
+description: 'Sync shared contracts with the catalog. Inventory or migrate copies, write pointers and registry rows, and audit compatibility. Use for a shared format, algorithm, schema, protocol or contract version, or before a boundary release. «контракты», «приведи контракты в порядок», «синхронизируй контракты», «перенеси контракты в каталог», «общий формат с другим проектом», «версия контракта».'
 ---
 
 # Contract sync - align this repo with the shared catalog

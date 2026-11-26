@@ -221,7 +221,7 @@ browser tab and optionally installed from there as a PWA. It is neither a produc
 **Source root & release-mechanics.** One source root of static files (`web/` or `src/`), dependencies vendored,
 and a build step only if the stack needs one, writing into an ignored output folder. No `publishing/` umbrella:
 each serving shape below is a folder or a script beside the source. The page loads no code from a CDN at run
-time - a CDN request logs every visitor, which breaks "no telemetry" (invariant 14), and a CDN can swap the
+time - a CDN request logs every visitor, which breaks "no telemetry" ([release privacy checks](../skills/release/SKILL.md#before-you-ship)), and a CDN can swap the
 script.
 
 **Version shape.** Derived mechanically and frozen for the product's life (invariant 8); the desktop date tag
@@ -245,7 +245,7 @@ forgets every stored key and setting and orphans every install - the web counter
 to `start_url`, so set it explicitly at first publish), the Service Worker scope and the `start_url` path. The
 visible name rides on top and may change.
 
-**Permissions and privacy.** Invariants 13 and 14 for a page: request a browser permission - camera,
+**Permissions and privacy.** [Release checks](../skills/release/SKILL.md#before-you-ship) for a page: request a browser permission - camera,
 microphone, clipboard read, notifications, persistent storage, a folder handle - at the moment the function that
 needs it is used, with a one-sentence reason on screen, never at load. The privacy page lists every permission the
 page can request; "no telemetry" holds only if the page talks to no address but the ones the person chose.

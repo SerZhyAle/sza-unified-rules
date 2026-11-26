@@ -1,6 +1,6 @@
 ---
 name: adopt-canon
-description: Adopt the SZA Unified Rules canon in this repository - write the .sza-canon.json stamp, point the repo's agent-rules file at the canon instead of restating it, reconcile every divergence found, and record the result in the repo's contrib file. Also the re-sync path when the canon has changed since adoption. Use when asked to adopt, apply, spread, or sync the canon or the unified rules in a repo, to set up a new project against the conventions, or when check-compliance reports a missing or stale canon stamp.
+description: 'Adopt or re-sync the SZA Unified Rules in a repo. Write or refresh .sza-canon.json, add the canon pointer, reconcile drift, and update the contrib record. Use for a new project, a missing or stale stamp, or «прими канон», «примени единые правила», «синхронизируй канон», «раскидай правила».'
 ---
 
 # Adopt the canon in this repository

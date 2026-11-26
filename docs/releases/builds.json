@@ -5,9 +5,9 @@
       "package": "sza",
       "flavor": "default",
       "kind": "release",
-      "version": "2026.1126.4",
-      "builtAt": "2026-11-26T02:35:58+01:00",
-      "note": "rules: CONTRACTS, DEVELOPMENT, INVARIANTS, RELEASE_AND_DISTRIBUTION, TESTING_AND_QA; tools 12, skills 5, docs 2, .claude 1, root 1, templates 1"
+      "version": "2026.1126.5",
+      "builtAt": "2026-11-26T02:44:59+01:00",
+      "note": "rules: INVARIANTS, PLATFORM_OVERLAYS, README; skills 20, tools 3, hooks 2, root 2, .claude 1"
     }
   ]
 }

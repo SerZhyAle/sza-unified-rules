@@ -3,7 +3,7 @@
   "lineSeconds": 5,
   "note": "The one home of the test tiers (rules/TESTING_AND_QA.md section 2). fast = 5 s or less, release = above. A suite on disk with no row here is release tier, unmeasured. Written by tools/tests/run-tier.ps1 -Suite <name> -Measure; only the covers text is edited by hand.",
   "suites": [
-    {"path":"tools/check-rules.ps1","tier":"fast","seconds":0.8,"measured":"2026-10-29","covers":"gate: the canon text under rules/ and the frontmatter of every skill (CANONR-0192), the one gate that blocks a deploy"},
+    {"path":"tools/check-rules.ps1","tier":"fast","seconds":0.8,"measured":"2026-10-29","covers":"gate: canon text, skill frontmatter and SessionStart payload budget, the one gate that blocks a deploy"},
     {"path":"tools/check-contracts.ps1","tier":"fast","seconds":2.4,"measured":"2026-10-29","covers":"gate: the contracts catalog"},
     {"path":"tools/docs/check-documents.py","tier":"fast","seconds":0.6,"measured":"2026-10-29","covers":"gate: both documentation corpora"},
     {"path":"tools/harness/assert-portable.ps1","tier":"fast","seconds":1.1,"measured":"2026-10-29","covers":"gate: no project value inside a shipped harness script"},
@@ -50,7 +50,7 @@
     {"path":"tools/tests/memory-index.tests.ps1","tier":"fast","seconds":4.39,"measured":"2026-11-25","covers":"AI_USAGE sections 4-5: memory.ps1 nested state/INDEX.md links, measure-regulation-cost.ps1 .claude/rules accounting, install-agent-rules.ps1 idempotency, Get-PqAgentPrompt contractFile and area-rules routing, 4 cases"},
     {"path":"hooks/tests/smoke-prefilters.ps1","tier":"fast","seconds":1.22,"measured":"2026-11-25","covers":"hooks.json PreToolUse bash pre-filters under Git Bash (guard-bash, guard-fire-and-forget, guard-uncapped-read, guard-rules-budget), 32 cases"},
     {"path":"hooks/tests/smoke-hooks.ps1","tier":"release","seconds":18.84,"measured":"2026-11-25","covers":"shipped hooks both-sided refusal/allow/rewrite/warn/inject smoke suite (guard-bash, guard-fire-and-forget, guard-uncapped-read, guard-rules-budget, on-user-prompt, session-start), 63 cases"},
-    {"path":"tools/tests/skill-frontmatter.tests.ps1","tier":"fast","seconds":1.77,"measured":"2026-11-25","covers":"CANONR-0192: check 5 of check-rules.ps1 over scratch trees - refused frontmatter shapes named by file, line and reason, accepted shapes and the 1024-character limit, 31 cases"},
+    {"path":"tools/tests/skill-frontmatter.tests.ps1","tier":"fast","seconds":1.77,"measured":"2026-11-25","covers":"CANONR-0192: check 5 of check-rules.ps1 over scratch trees - refused frontmatter shapes named by file, line and reason, accepted shapes and the 400-character limit, and SessionStart UTF-8 payload budget, 32 cases"},
     {"path":"tools/tests/robot-bookkeeping.tests.ps1","tier":"fast","seconds":2.29,"measured":"2026-11-26","covers":"CANONR-0205: managed robot prompt, prepared context, status-aware logging and hooks, malformed result, and owner-checked lease release"},
     {"path":"tools/tests/verified-evidence.tests.ps1","tier":"fast","seconds":4.29,"measured":"2026-11-26","covers":"CANONR-0202, TASK-FLOW 0.48: the entry into Verified needs an executed-check line and no open RELEASE item; BlockNeedUserTest and a reaffirmation stay as before; list-thin-verified writes nothing, 7 cases"},
     {"path":"tools/tests/pass-ceiling.tests.ps1","tier":"fast","seconds":0.49,"measured":"2026-11-26","covers":"per-launch thresholds, profile defaults and validation, and handoff outcome precedence"},

@@ -144,7 +144,7 @@ Under "Proposed patches", never applied: the lens writes `<run folder>/docs.md` 
 
 - **A diff** against the named repository file when the fix is under about 200 lines: a docs page head, against the
   generator, template or workflow step that writes it, else the served-root file
-  ([INVARIANTS.md](../../../rules/INVARIANTS.md) 16); the link that sends a reader off the site; a forwarder at a
+  ([feature-to-site](../../feature-to-site/SKILL.md#before-you-ship)); the link that sends a reader off the site; a forwarder at a
   retired address (a link, a canonical and a refresh to the target - `SITE-STRUCTURE` rule 8, PROMOTION §3);
   `noindex` on help pages and their removal from the sitemap generator; the `.gitignore` line with the
   `git rm --cached` step the ticket runs, or the move, that takes internal material out of the served root

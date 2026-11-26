@@ -1,6 +1,6 @@
 ---
 name: spec-quiz
-description: Clear the tickets that wait for the owner's answers (status BlockQuestions) in any SZA project - find them, research what the code and the records already settle, ask the owner only the real decisions as multiple choice, write the answers into each ticket, and restore each ticket one level so the queue can work it again. Use on /spec-quiz, /sq, "quiz S0021", "unblock the tickets", "answer the open questions", "what is waiting for my answers", or on the Russian phrasings - "разблокируй тикеты", "задай мне вопросы по тикету", "вопросы по спеке", "что ждёт моих ответов", "квиз", "сними блок вопросов". Owner-invoked; it writes decisions and moves status, never code.
+description: 'Research unresolved BlockQuestions decisions, ask the owner, record answers and restore status. /spec-quiz, /sq, quiz S0021, unblock the tickets, answer the open questions, what is waiting for my answers, «разблокируй тикеты», «задай мне вопросы по тикету», «вопросы по спеке», «что ждёт моих ответов», «квиз», «сними блок вопросов».'
 ---
 
 # Spec quiz - drain the owner's questions in any project

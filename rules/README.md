@@ -21,7 +21,7 @@ apply verbatim to an Android app or a Go tool. The fix is a two-layer split:
 (`release`, `store-publish`, `feature-to-site`, `spec-to-audit`, `adopt-canon`) and it will send you to the
 doc that owns a detail. These pages are the reference the skills render from.
 
-**Always in context:** [INVARIANTS.md](INVARIANTS.md) - the twenty lines whose violation is expensive or
+**Always in context:** [INVARIANTS.md](INVARIANTS.md) - the rules whose violation is expensive or
 irreversible. In a repo that has adopted the canon they are injected at session start.
 
 **Standing up a project:** [NEW_PROJECT_CHECKLIST.md](NEW_PROJECT_CHECKLIST.md) - the ordered front door

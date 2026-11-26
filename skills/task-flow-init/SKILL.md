@@ -1,6 +1,6 @@
 ---
 name: task-flow-init
-description: Set up how a project works its tasks - the numbered ticket ledger, the queue and ready/done plan files, a ticket template, and an R0 runner that works the backlog one ticket per fresh agent process - from nothing, in one pass, and rehearse it before trusting it. Use when asked to start a new project's task flow, set up a task queue or backlog, build an R0 runner for a project, number and track tasks, "run all the tasks automatically", or on the Russian phrasings - "настрой задачи для проекта", "очередь задач", "нумерация задач", "раннер R0", "прогнать все задачи автоматически", "новый проект с нуля, много задач". Day 0 only; working a ticket is spec-to-audit.
+description: 'Set up a numbered ticket ledger, queue, template and R0 backlog runner. Use to set up a task queue, number or track tasks, or run all tasks automatically. «настрой задачи для проекта», «очередь задач», «нумерация задач», «раннер R0», «прогнать все задачи автоматически», «новый проект с нуля, много задач».'
 ---
 
 # Task flow init - day 0 of a project's tickets and its R0 runner

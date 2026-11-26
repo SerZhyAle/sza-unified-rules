@@ -1,6 +1,6 @@
 ---
 name: spec-draft
-description: Capture a task description or a problem as a Draft ticket in any SZA project - the owner's words kept verbatim in the spec, the row added to the project's own ticket queue (PLAN/RELEASE_QUEUE.md), and a plain report of whether the portfolio queue (pq) will pick it up and when. Use on /spec-draft, "draft a spec", "park this task", "add a bug to pq", "put this in the queue of <project>", or on the Russian phrasings - "создай спеку", "спека для проекта", "закинь задачу в очередь", "добавь баг в pq", "задача для <проект>", "зафиксируй проблему в проекте", "создай тикеты во всех проектах", "один тикет в несколько проектов". It also captures agent-noticed findings; it does not work the ticket or research it.
+description: 'Capture an idea or problem verbatim as a Draft in one or more project queues. /spec-draft, draft a spec, park this task, add a bug to pq, «создай спеку», «спека для проекта», «закинь задачу в очередь», «добавь баг в pq», «задача для», «зафиксируй проблему в проекте», «создай тикеты во всех проектах», «один тикет в несколько проектов».'
 ---
 
 # Spec draft - one task into a project's queue and the portfolio queue

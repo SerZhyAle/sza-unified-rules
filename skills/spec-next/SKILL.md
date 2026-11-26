@@ -1,6 +1,6 @@
 ---
 name: spec-next
-description: Work the next ticket of the project's queue without naming it - the harness picks the first eligible ticket in the queue order and claims its lease, then /spec-all takes it from there. Takes no argument, or a registered project key (/spec-next fms-web) to work that project's next ticket from any folder. One ticket, one pass, then stop. Use on /spec-next, /sn, "what should I work on next", "take the next ticket", "pick the next ticket", "/sn fms-web", or on the Russian phrasings - "возьми следующий тикет", "что дальше по очереди", "следующая задача из очереди", "следующий тикет проекта fms-web". Owner-invoked; it never tags, publishes or releases.
+description: 'Work the next eligible ticket in the current or named project queue. /spec-next, /sn, what should I work on next, take or pick the next ticket, «возьми следующий тикет», «что дальше по очереди», «следующая задача из очереди», «следующий тикет проекта».'
 ---
 
 # Spec next - /spec-all on the head of the queue

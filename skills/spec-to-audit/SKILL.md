@@ -1,6 +1,6 @@
 ---
 name: spec-to-audit
-description: 'Run a task through the full SZA lifecycle - triage, spec, plan, implement, evidence, self-audit, documentation, commit - with a named gate at every boundary that refuses to advance when its preconditions are missing. Use when asked to implement a specification, "do this properly", "сделай по спецификации", to check whether something is actually implemented, to audit your own work before committing, to proceed to the next phase, to sweep the tickets waiting on a manual check, or to unstick the tickets waiting on the owner''s answers - "this spec is stuck", "decide the open questions", "задай мне вопросы по тикетам", "разблокируй задачи". Free and reversible: it never tags, publishes, or releases.'
+description: 'Run the SZA lifecycle through spec, plan, implementation, verification, audit and docs. Use to implement a spec, do this properly, check what is implemented, audit before commit, go to the next phase or sweep manual checks. «сделай по спецификации», «разблокируй задачи», «задай мне вопросы по тикетам»; routes owner questions to spec-quiz.'
 ---
 
 # Spec to audit - the lifecycle and its gates

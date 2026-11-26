@@ -3,7 +3,7 @@ session-start.ps1 - inject the canon's hard invariants into the session context.
 
 Fires only when the working directory belongs to a repo that has adopted the canon (an .sza-canon.json
 stamp at the repo root). That keeps the injection self-limiting: an unrelated project never pays for it,
-and an SZA project always carries the twenty lines it must not break.
+and an SZA project always carries the hard invariants.
 
 It also appends the type memory of the session's user (tools/memory/memory.ps1): the index of every
 <memory root>/types/<tag>/ whose type.json matches this stamp's overlay, channels, site kind or role. The memory
@@ -86,11 +86,7 @@ try {
 
     $header = @"
 This repository has adopted the SZA Unified Rules canon.$overlay$model
-The full rule set and the working skills ship with the ``sza`` plugin - load a skill rather than the whole
-canon: ``release``, ``store-publish``, ``feature-to-site``, ``spec-to-audit``, ``adopt-canon``,
-``contract-sync``, ``promote``, ``site-audit``, ``task-flow-init``, ``spec-draft``, ``spec-quiz``, ``spec-next``, ``spec-all``, ``portfolio-queue``, ``app-commands``, ``device-lease``, ``agent-cost``, ``caveman``. The plugin also enforces five behaviours as hooks rather than as prose, so a
-disk-wide ``find``, a ``.ps1`` run as a Bash command, and an uncapped read of a large file are blocked at
-the tool call (``hooks/README.md``).
+The full rule set and working skills ship with the ``sza`` plugin.
 The lines below are the hard invariants; everything else lives in the reference docs and the skills.
 
 "@

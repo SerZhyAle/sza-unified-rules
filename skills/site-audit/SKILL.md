@@ -1,6 +1,6 @@
 ---
 name: site-audit
-description: Audit a published product site, or every site of the portfolio, the way a crawler without JavaScript and a first-time visitor meet it - read-only lenses for indexing (robots, sitemap, canonical, hreflang), the visitor's path on a laptop and a phone, release facts on the page, structured data and social cards, languages, and the help pages - every serious finding re-measured before it is reported, and the run compared with the previous one. Also the gate before pushing site changes (prepublish). Use on /site-audit, when asked to audit, check or review a site or its SEO, to see what a robot or a visitor sees, why a site is not found, or before publishing a site; or on the Russian phrasings - "аудит сайта", "проверь сайт", "проверь все сайты", "SEO аудит", "как робот видит сайт", "глазами посетителя", "почему сайт не находится", "проверка сайта перед публикацией".
+description: 'Audit a published site, all portfolio sites, or site changes before publishing. Inspect indexing, SEO, locales, release facts, metadata, help and the visitor path. /site-audit, audit or review a site, «аудит сайта», «проверь сайт», «проверь все сайты», «SEO аудит», «как робот видит сайт», «глазами посетителя», «почему сайт не находится», «проверка сайта перед публикацией».'
 ---
 
 # Site audit - what a robot and a visitor meet on a published site

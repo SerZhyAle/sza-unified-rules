@@ -35,7 +35,7 @@ The fix is not more documentation. It is to stop treating the canon as documenta
 
 | Layer | What it is | When it loads |
 | --- | --- | --- |
-| [`rules/INVARIANTS.md`](rules/INVARIANTS.md) | 20 lines whose violation is expensive or irreversible | every session, in an adopting repo, via the [session-start hook](hooks/README.md) |
+| [`rules/INVARIANTS.md`](rules/INVARIANTS.md) | Rules whose violation is expensive or irreversible | every session, in an adopting repo, via the [session-start hook](hooks/README.md) |
 | [`hooks/`](hooks/README.md) | the behaviours the canon refuses to leave as prose | at the tool call, before the shell spawns |
 | [`skills/`](#the-skills) | the process, as procedures with gates | when the task matches - the model picks |
 | [`rules/`](rules/README.md) | the full reference | when a skill sends you there |

@@ -64,7 +64,8 @@ family notices come last because a notice names URLs that must already answer.
   own create-app form (the package name binds there), its own declarations, IARC questionnaire and Data safety form. Ask
   for the second app explicitly, as FastMediaSorter does; do not infer it from the tree.
 - **A product whose code is not ported yet.** Its source manifest is the first input of the privacy page, the Data safety
-  answers and the listing, but the order describes the finished product (invariant 17), while invariant 14 needs the page
+  answers and the listing, but the order describes the finished product ([surface checks](../../feature-to-site/SKILL.md#before-you-ship)), while the
+  [release privacy checks](../../release/SKILL.md#before-you-ship) need the page
   and the form to match what ships. On the filler_mob run the one empty activity had no permission and no INTERNET, while
   the upstream code the port carries uses a system folder picker with a persistable grant, an app-specific external files
   directory and StatFs, and has no service and no network. So audit the upstream source the port carries as well, and write

@@ -1,6 +1,6 @@
 ---
 name: store-publish
-description: Publish an SZA product to its channels - GitHub Release, winget (microsoft/winget-pkgs), Microsoft Store (MSIX, Partner Center), Google Play (AABs) - and stand up an Android product's first presence on GitHub, GitHub Pages and the Play Console. Each channel is its own one-way operation with pre-submit gates and recovery paths. Use when publishing or updating a winget manifest, building or uploading an MSIX, running msstore preflight, reserving a Store identity, fixing a rejected winget PR or Partner Center listing import, onboarding a product to a store, releasing through Google Play, creating a Play Console app or its GitHub repository and Pages site, filling App content, Data safety, the content rating or the listing, or when asked to проверить Microsoft Store, настроить msstore, опубликовать в Store, опубликовать Android в Google Play, создать приложение в Google Play, настроить Play Console, заполнить App content и листинг, создать репозиторий и сайт для Android-проекта.
+description: 'Publish or update GitHub Release, winget, Microsoft Store (MSIX, Partner Center) or Google Play (AAB). Use for msstore preflight, a winget PR, Android onboarding to GitHub, Pages and Play Console, App content, Data safety or listing. «проверь Microsoft Store», «настроить msstore», «опубликовать Android в Google Play», «создать приложение в Google Play», «настроить Play Console».'
 ---
 
 # Store publishing - four channels, four one-way operations
@@ -22,7 +22,8 @@ console app and its site come before any bundle (Leg 4).
 
 This skill supplies the channel mechanics. The release *order* and the gates before any of it belong to the
 [release](../release/SKILL.md) skill - if the repo has its own release skill, **defer to it** and supply only
-the mechanics below.
+the mechanics below. For a standalone channel submission, apply the [release checks](../release/SKILL.md#before-you-ship)
+and [surface checks](../feature-to-site/SKILL.md#before-you-ship) before publishing.
 
 Canon: [CHANNEL_MATRIX.md](../../rules/CHANNEL_MATRIX.md),
 [WINDOWS_PACKAGING.md](../../rules/WINDOWS_PACKAGING.md),

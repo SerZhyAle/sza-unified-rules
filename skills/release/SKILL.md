@@ -1,6 +1,6 @@
 ---
 name: release
-description: Run a public RELEASE of an SZA product - the one-way, billable operation that stamps a version and publishes it to GitHub, winget, the Microsoft Store, Play, or a marketplace. Detects the repo's shape, channels and frozen anchors, writes "What's new" into every listing surface before tagging, then executes the single irreversible step and proves it landed. Use when the user asks to release, publish a version, cut a tag, or ship - including the Russian words "релиз", "зарелизь", "опубликуй версию", "выпусти версию". Do NOT use for a local build ("сборка", "собери", /build) - a build never tags and ships nothing.
+description: 'Run an approved public release through preflight, version/tag, release notes, publication and proof. Use to release, publish a version, cut a tag or ship to GitHub, winget, Microsoft Store, Google Play or a marketplace. «релиз», «зарелизь», «опубликуй версию», «выпусти версию», «публикуем Android приложения». Local builds use /build.'
 ---
 
 # Release - the one-way operation
@@ -88,6 +88,19 @@ approval covers the whole release. Run the console commands and handle terminal 
 per-step confirmation. Ask for approval again only when the version, channel or product changes. Hand off
 UAC elevation, a new sign-in or consent screen, and hardware interaction to the owner.
 See [RELEASE_AND_DISTRIBUTION.md](../../rules/RELEASE_AND_DISTRIBUTION.md) §1.
+
+## Before you ship
+
+- Ship **`THIRD-PARTY-NOTICES.txt` inside every distributed package** when the artifact bundles third-party
+  binaries. ([SECURITY_AND_PRIVACY](../../rules/SECURITY_AND_PRIVACY.md) §6)
+- Declare only the **permissions** the runtime actually uses, each with a one-sentence user-visible
+  justification. ([SECURITY_AND_PRIVACY](../../rules/SECURITY_AND_PRIVACY.md) §3)
+- Keep the **privacy page, the permission list, and the store data-safety form** saying the same thing;
+  claim "no telemetry" only if it is true. ([SECURITY_AND_PRIVACY](../../rules/SECURITY_AND_PRIVACY.md) §4-5)
+- File a fresh **IARC questionnaire** whenever the app's content-exposure profile differs; never copy a
+  portfolio rating id. ([SECURITY_AND_PRIVACY](../../rules/SECURITY_AND_PRIVACY.md) §5)
+
+Check the [surface rules](../feature-to-site/SKILL.md#before-you-ship) before drafting or updating release copy.
 
 ## Phase 1 - Preconditions and the build/release wall
 

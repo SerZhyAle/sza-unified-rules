@@ -1,6 +1,6 @@
 # Hard invariants - the page that is always in context
 
-Twenty lines. Each one is here because breaking it is **expensive, irreversible, or outward-facing**:
+Fifteen rules. Each one is here because breaking it is **expensive, irreversible, or outward-facing**:
 it publishes something public, spends money, orphans installed users, leaks a secret, or claims a result
 that was never proven. Ordinary good practice is deliberately *not* here - it lives in the reference docs
 and in the skills, so this page stays short enough to actually be read.
@@ -37,34 +37,14 @@ Ordered by cost of violation. The pointer after each line is the doc that expand
     ([CONTRACTS](CONTRACTS.md), [PLATFORM_OVERLAYS](PLATFORM_OVERLAYS.md) "Cross-project contracts")
 11. Ship any **listening-port or elevation** feature OFF, enabled only by an explicit, gated, auditable opt-in.
     ([SECURITY_AND_PRIVACY](SECURITY_AND_PRIVACY.md) §3)
-12. Ship **`THIRD-PARTY-NOTICES.txt` inside every distributed package** when the artifact bundles third-party
-    binaries. ([SECURITY_AND_PRIVACY](SECURITY_AND_PRIVACY.md) §6)
-13. Declare only the **permissions** the runtime actually uses, each with a one-sentence user-visible
-    justification. ([SECURITY_AND_PRIVACY](SECURITY_AND_PRIVACY.md) §3)
-14. Keep the **privacy page, the permission list, and the store data-safety form** saying the same thing;
-    claim "no telemetry" only if it is true. ([SECURITY_AND_PRIVACY](SECURITY_AND_PRIVACY.md) §4-5)
-15. File a fresh **IARC questionnaire** whenever the app's content-exposure profile differs; never copy a
-    portfolio rating id. ([SECURITY_AND_PRIVACY](SECURITY_AND_PRIVACY.md) §5)
-16. Never hand-edit a **render target** - a store listing, a mirrored doc, a published site export, a generated
-    catalog or spec journal; regenerate it from its one source of truth.
-    ([DOCUMENTATION_CONCEPT](DOCUMENTATION_CONCEPT.md) §1)
-17. Land a user-facing change in **every surface and every authored locale in one edit**, driven by the
-    ship-together surfaces manifest; the remaining declared locales fan out at the release boundary where one
-    exists. **Write every surface - docs, help, tooltips, labels, listings - as a shipped, present-tense
-    fact, as if the feature were complete and working, even while it is unfinished or untested** - never
-    "coming soon", "planned", "not yet", "in development" (`скоро`, `планируется`, `ещё не`) and never a
-    readiness hedge ("experimental", "beta", "not fully tested", `экспериментально`, `бета`): it goes public
-    with the release, and a promise or hedge left in it outlives the feature by months. An ordered feature
-    ships together with its text, so write from the order and never look at, adapt to or mention what is
-    already implemented; what was not ordered is not mentioned. The owner is told the plain truth in chat,
-    including what is not built or not proven.
-    ([DOCUMENTATION_CONCEPT](DOCUMENTATION_CONCEPT.md) §5, [LOCALIZATION](LOCALIZATION.md))
-18. **Commit or push only when asked**, and on the checked-out branch - never create one for a commit unless
+12. **Before shipping**, follow the [release](../skills/release/SKILL.md#before-you-ship) and
+    [feature-to-site](../skills/feature-to-site/SKILL.md#before-you-ship) checks.
+13. **Commit or push only when asked**, and on the checked-out branch - never create one for a commit unless
     the owner asks; never `--no-verify` / `--force` / bypassed signing; agent commits carry the co-author
     trailer. ([GITHUB_INTERACTION](GITHUB_INTERACTION.md) §2-3)
-19. **Chat in Russian; write every artifact in English** - files, code, comments, script and console output,
+14. **Chat in Russian; write every artifact in English** - files, code, comments, script and console output,
     commit messages, PR titles and bodies. ([AUTHOR](AUTHOR.md) "Language", [DEVELOPMENT](DEVELOPMENT.md) §4)
-20. Apply the **house text style** to prose and UI only - `..` never `...`, plain hyphen, Russian `ё` - never in
+15. Apply the **house text style** to prose and UI only - `..` never `...`, plain hyphen, Russian `ё` - never in
     code, specs, commands, logs, or chat. ([DOCUMENTATION_CONCEPT](DOCUMENTATION_CONCEPT.md) §5)
 
 ## Working stance - not an invariant, but carried every session

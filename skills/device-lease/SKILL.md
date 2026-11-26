@@ -1,6 +1,6 @@
 ---
 name: device-lease
-description: Take a lease on an Android phone, watch or emulator before touching it, so that two sessions - above all two sessions in different projects - never drive the same target at once; see who holds what, pick a free target, hand it back. Use before any adb install, launch, input, settings change, reboot or emulator start, before a device or emulator test pass, when the emulator or the phone is busy, when adb shows a device someone else may be using, or when a UI drive suddenly shows another app. Also on the Russian phrasings - "эмулятор занят", "устройство занято", "подключённый телефон", "не мешай другой сессии", "параллельные сеансы на одном устройстве", "возьми устройство", "поделить эмулятор между проектами", "кто сидит на эмуляторе".
+description: 'Lease an Android phone, watch or emulator before adb install, launch, input, settings, reboot or device tests. See who holds a target or hand it back. Use when an emulator or device is busy, or on «эмулятор занят», «устройство занято», «подключённый телефон», «не мешай другой сессии», «параллельные сеансы», «возьми устройство», «кто сидит на эмуляторе».'
 ---
 
 # Device lease - one target, one session, the whole machine

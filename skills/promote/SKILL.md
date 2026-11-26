@@ -1,6 +1,6 @@
 ---
 name: promote
-description: Plan and run free promotion for an SZA product - write or correct its promotion ticket, the positioning worksheet, correct search-engine indexing (host-root robots.txt, sitemap, Search Console, Bing, IndexNow), repository metadata and social card, free package channels and directories, launch moments, and metrics without telemetry. Use when asked to promote, advertise, market or spread a product, to get it found or indexed, to fix SEO, positioning or discoverability, to list it in directories or catalogues, or on the Russian phrasings - "реклама", "рекламная кампания", "продвижение", "раскрутка", "бесплатное продвижение", "индексация", "позиционирование", "SEO", "чтобы нас находили".
+description: 'Plan free product promotion, positioning, SEO and indexing (robots.txt, sitemap, Search Console, Bing, IndexNow), metadata, directories and launch. Use to advertise, spread or get a product found. «реклама», «рекламная кампания», «продвижение», «раскрутка», «бесплатное продвижение», «индексация», «позиционирование», «SEO», «чтобы нас находили».'
 ---
 
 # Promote - make a finished product findable without spending money
