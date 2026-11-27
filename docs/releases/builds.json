@@ -5,9 +5,9 @@
       "package": "sza",
       "flavor": "default",
       "kind": "release",
-      "version": "2026.1127.3",
-      "builtAt": "2026-11-27T11:36:57+01:00",
-      "note": "CANONR-0244: Public repository contents contract in REPO-LAYOUT"
+      "version": "2026.1127.4",
+      "builtAt": "2026-11-27T18:07:42+01:00",
+      "note": "hooks 5, tools 3"
     }
   ]
 }

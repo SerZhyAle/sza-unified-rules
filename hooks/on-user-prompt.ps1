@@ -1,4 +1,4 @@
-<#
+﻿<#
 on-user-prompt.ps1 - Claude Code UserPromptSubmit hook, shipped by the sza plugin.
 
 Two advisories the canon asks for by name, in ONE process. Both fire on the same event and each is a
@@ -117,10 +117,10 @@ function Get-ContextAdvisory([string]$transcript) {
     $total = 0
     for ($i = $lines.Length - 1; $i -ge 0; $i--) {
         $line = $lines[$i]
-        if ($line.IndexOf('"cache_read_input_tokens"') -lt 0) { continue }
+        if ($line.IndexOf('"cache_read_input_tokens"') -lt 0 -and $line.IndexOf('"input_tokens"') -lt 0) { continue }
         $sum = 0
-        foreach ($field in @('cache_read_input_tokens', 'cache_creation_input_tokens', 'input_tokens')) {
-            $m = [regex]::Match($line, ('"{0}":(\d+)' -f $field))
+        foreach ($field in @('cache_read_input_tokens', 'cache_creation_input_tokens', 'cache_read_tokens', 'input_tokens')) {
+            $m = [regex]::Match($line, ('"{0}"\s*:\s*(\d+)' -f $field))
             if ($m.Success) { $sum += [int]$m.Groups[1].Value }
         }
         if ($sum -gt 0) { $total = $sum; break }
@@ -186,18 +186,35 @@ try {
     if ([string]::IsNullOrWhiteSpace($raw)) { exit 0 }
 
     $payload = $raw | ConvertFrom-Json -ErrorAction Stop
+    $isAgy = $null -ne $payload.PSObject.Properties['hookEventName']
+    if ($isAgy -and $null -ne $payload.PSObject.Properties['invocationNum'] -and [int]$payload.invocationNum -gt 1) { exit 0 }
+
+    $txPath = if ($isAgy -and $null -ne $payload.PSObject.Properties['transcriptPath']) { [string]$payload.transcriptPath } else { [string]$payload.transcript_path }
+    $promptText = if ($isAgy -and $null -ne $payload.PSObject.Properties['lastUserInput']) { [string]$payload.lastUserInput } else { [string]$payload.prompt }
 
     $notes = @(
-        (Get-ContextAdvisory ([string]$payload.transcript_path)),
-        (Get-RungAdvisory ([string]$payload.prompt))
+        (Get-ContextAdvisory $txPath),
+        (Get-RungAdvisory $promptText)
     ) | Where-Object { $_ }
 
     if ($notes.Count -eq 0) { exit 0 }
 
-    $out = [ordered]@{
-        hookSpecificOutput = [ordered]@{
-            hookEventName     = 'UserPromptSubmit'
-            additionalContext = ($notes -join "`n`n")
+    $out = if ($isAgy) {
+        [ordered]@{
+            injectSteps = @(
+                [ordered]@{
+                    systemMessage = [ordered]@{
+                        systemMessage = ($notes -join "`n`n")
+                    }
+                }
+            )
+        }
+    } else {
+        [ordered]@{
+            hookSpecificOutput = [ordered]@{
+                hookEventName     = 'UserPromptSubmit'
+                additionalContext = ($notes -join "`n`n")
+            }
         }
     }
     Write-Output ($out | ConvertTo-Json -Compress -Depth 5)

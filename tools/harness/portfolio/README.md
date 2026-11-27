@@ -487,7 +487,7 @@ You choose who spends tokens, and in what order. Five providers are known:
 | --- | --- | --- |
 | `openai` | `codex` | the Codex CLI (`npm install -g @openai/codex`) |
 | `anthropic` | `claude` | Claude Code on PATH |
-| `gemini` (also `antigravity`, `agy`) | `gemini`, `gemini-argon`, `gemini-neon`, `gemini-claude` | Antigravity CLI `agy` (`irm https://antigravity.google/cli/install.ps1 \| iex`), signed in with Google; it reuses the Antigravity sign-in. The Gemini CLI no longer serves personal Google sign-ins (closed 2026-06-18) |
+| `gemini` (also `antigravity`, `agy`) | `gemini`, `gemini-argon`, `gemini-neon`, `gemini-carbon`, `gemini-claude` | Antigravity CLI `agy` (`irm https://antigravity.google/cli/install.ps1 \| iex`), signed in with Google; it reuses the Antigravity sign-in. The Gemini CLI no longer serves personal Google sign-ins (closed 2026-06-18) |
 | `zai` | `zai` | Claude Code and the user environment variable `ZAI_API_KEY` (a key from z.ai/manage-apikey); the pass is Claude Code pointed at z.ai's Anthropic-compatible endpoint |
 | `mistral` | `mistral` | the **Mistral Vibe** extension in VS Code, signed in (the subscription at admin.mistral.ai/subscription); the pass is `vibe-acp-pass.ps1` driving the extension's `vibe-acp.exe` |
 
@@ -567,42 +567,42 @@ the pass child only; a runner started by hand prints the name of its command ins
 z.ai is reached through Claude Code with `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN` (`%ZAI_API_KEY%`) and
 `API_TIMEOUT_MS` set **for that pass only**, as z.ai's own Claude Code guide describes. Do not put those in
 `~/.claude/settings.json` or your user environment: `anthropic` would then spend z.ai's plan too. The record names
-the GLM model itself (`glm-5.4`) and pins Claude Code's `opus`, `sonnet` and `haiku` aliases with
+the GLM model itself (`glm-5.3`) and pins Claude Code's `opus`, `sonnet` and `haiku` aliases with
 `ANTHROPIC_DEFAULT_*_MODEL`, because z.ai echoes whatever name it was asked for: left to its own mapping of `opus`,
 the console, the events log and the transcript all say `opus` and nothing shows which GLM model ran. `GET
 https://api.z.ai/api/anthropic/v1/models` lists the names the account accepts; `model` in the record switches it.
 Gemini runs as `agy --model <slug> --dangerously-skip-permissions --print`, and a non-Claude
-agent has one fixed model (rule 42), so the provider is four records that follow each other in the order, each a model with
+agent has one fixed model (rule 42), so the provider is five records that follow each other in the order, each a model with
 its own quota (Antigravity's *Models & Usage* page lists the pools): `gemini` runs `gemini-4-hydrogen-high` - Google's
-model for everyday coding and agent work, fast and cheap, the "Gemini Models" pool - and takes every ticket;
-`gemini-argon` runs `gemini-4-argon-high`, the deeper and costlier one, which has a pool of its own, and takes a ticket
-only while Hydrogen's quota is spent; `gemini-neon` runs `gemini-4-neon-high`, Google's mid-tier model of 2026-11-18, and
-takes a ticket only while Argon's quota is spent too; `gemini-claude` runs `claude-sonnet-5-5-high` from the "Claude and
-GPT models" pool and takes a ticket only while the three Google records are spent (Sonnet rather than
-`claude-opus-5-5-high`, so that shared weekly pool lasts; `gpt-oss-120b-medium`, the pool's open-weights model, is not
-shipped as a record). Each record has its own limit hold. The slug carries the effort, `agy models` lists the others,
-and `model` in a record switches it. For `pq agents` and the Providers dialog the four are one provider: `-Order` keeps
+model for everyday coding and agent work, fast and cheap, the "Gemini Models" pool - with routes for grades 0-3;
+`gemini-argon` runs `gemini-4-argon-high`, which has a pool of its own, with routes for grades 0-6 (taking grades 4-6 at
+once and picking up 0-3 while Hydrogen's quota is spent); `gemini-neon` runs `gemini-4-neon-high`, Google's mid-tier model
+of 2026-11-18, with routes for grades 0-8 (taking grades 7-8 at once and picking up lower grades while Argon's quota is
+spent); `gemini-carbon` runs `gemini-4-carbon-high`, the Ultra tier above Neon, with routes for grades 0-9 (taking grade 9
+at once and picking up lower grades while Neon's quota is spent); `gemini-claude` runs `claude-sonnet-5-5-high` (with
+routes mapping grades 0-5 to `claude-sonnet-5-5-*` and grades 6-9 to `claude-opus-5-5-*`) from the "Claude and GPT models"
+pool and takes a ticket while the matching Google records are spent (`gpt-oss-120b-medium`, the pool's open-weights model,
+is not shipped as a record). Each record has its own limit hold. The slug carries the effort, `agy models` lists the others,
+and `model` in a record switches it. For `pq agents` and the Providers dialog the five are one provider: `-Order` keeps
 them together, `-Release gemini` clears all holds, and the row shows the provider held only when all of them are. A
 registry written before a later record existed keeps working as it is; `pq agents -Order <the current providers>` adds
 the missing records (and leaves every record that exists, its grade routes included, untouched). ZCode's own CLI is
 not used: it needs the desktop app's runtime files.
 
-**Models the runners use (the owner's rule of 2026-11-19, lists read on that day).** Each provider contributes its three
-newest models at the level of Claude Haiku 5.5, Sonnet 5.5 and Opus 5.5; a model above that level, more powerful and
-costlier, is not given to a runner. Both subscriptions are the $20 plans (ChatGPT Plus, Google AI Pro). The levels are the
-vendors' own positioning (Google sets Neon against Opus 5.5 and GPT-6.2 Sol), not a benchmark of this repository.
+**Models the runners use (the owner's rules of 2026-11-19 and 2026-11-27).** Each provider contributes its models across
+the light, medium and hard bands so every pool of the subscription is spent at its grade tier and cascades on quota holds.
 
-| Provider (plan) | Light (Haiku 5.5 level) | Medium (Sonnet 5.5 level) | Hard (Opus 5.5 level) | Not used (above that level) |
+| Provider (plan) | Light (grades 0-3) | Medium (grades 4-6) | Hard (grades 7-9) | Not used |
 |---|---|---|---|---|
 | Codex (ChatGPT Plus) | `gpt-6-luna` - fast and affordable, for easier tasks | `gpt-6.1-terra` - efficient, the record's model | `gpt-6.2-sol`; `gpt-6.1-sol` until the CLI is newer than 0.165 | `gpt-6.2-astra`, `gpt-6-astra` |
-| Gemini (Google AI Pro) | `gemini-4-hydrogen-high` - the `gemini` record | `gemini-4-argon-high` - the `gemini-argon` record | `gemini-4-neon-high` - the `gemini-neon` record | `gemini-4-carbon-*` (Ultra, not in this account's `agy models`) |
-| z.ai (GLM Coding plan) | `glm-5.3-flash` - weaker, nearly free to the owner | `glm-5.4` - the record's model, picked by the owner on 2026-11-23 (z.ai states no level for it); `glm-5.3` is the one before it | - | - |
+| Gemini (Google AI Ultra) | `gemini-4-hydrogen-*` (`gemini`, 0-3) | `gemini-4-argon-*` (`gemini-argon`, 0-6) and `claude-sonnet-5-5-*` (`gemini-claude`, 0-5) | `gemini-4-neon-*` (`gemini-neon`, 0-8), `gemini-4-carbon-*` (`gemini-carbon`, 0-9) and `claude-opus-5-5-*` (`gemini-claude`, 6-9) | `gpt-oss-120b-medium` |
+| z.ai (GLM Coding plan) | `glm-5.3-flash` - weaker, nearly free to the owner | `glm-5.3` - the record's model | - | `glm-5.4` - withdrawn by the owner on 2026-11-27: one or two requests spent the plan's 5-hour window |
 
-z.ai takes the light grades only (ceiling 4): `glm-5.3-flash` at 0-1, `glm-5.4` at 2-4, all three rows at `max` effort (the
-owner's order of 2026-11-23; lower the rows of grades 2 and 3 to spend z.ai's 5-hour window slower).
+z.ai takes the light grades only (ceiling 4): `glm-5.3-flash` at 0-1 (`low`, `high`), `glm-5.3` at 2-4 (`medium`, `high`,
+`max`).
 The `zai` record passes `--effort`, which z.ai's Anthropic endpoint takes as GLM's reasoning depth - `glm-5.3` and
-`glm-5.3-flash` accepted `low` and `max` on 2026-11-20 and `glm-5.4` ran with `max` through Claude Code on 2026-11-23 - so
-its own `effort` is a real value (`max`), never `default`, which the template would pass as is. z.ai documents `max` as its
+`glm-5.3-flash` accepted `low` and `max` on 2026-11-20 - so its own `effort` is a real value (`high`), never
+`default`, which the template would pass as is. z.ai documents `max` as its
 default level and maps `xhigh`, `max` and `ultra` to it (docs.z.ai/devpack/latest-model). Its `[1m]` model-name suffix and
 `CLAUDE_CODE_AUTO_COMPACT_WINDOW` are not set: the plain names are what the record was proven with.
 

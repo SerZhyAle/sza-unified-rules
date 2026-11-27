@@ -60,8 +60,12 @@ The checks below stay authoritative: the pre-filter can only skip a call this sc
 #>
 
 $WindowLines = 500
+$script:isAgy = $false
 
-function Allow { exit 0 }
+function Allow {
+    if ($script:isAgy) { [Console]::Out.WriteLine('{"decision":"allow"}') }
+    exit 0
+}
 
 if ($env:SZA_HOOKS_OFF -in @('1', 'true', 'TRUE')) { Allow }
 
@@ -69,7 +73,8 @@ try {
     $raw = [Console]::In.ReadToEnd()
     if ([string]::IsNullOrWhiteSpace($raw)) { Allow }
     $payload = $raw | ConvertFrom-Json
-    $toolInput = $payload.tool_input
+    $script:isAgy = ($null -ne $payload) -and ($null -ne $payload.PSObject.Properties['toolCall'])
+    $toolInput = if ($script:isAgy) { $payload.toolCall.args } else { $payload.tool_input }
 }
 catch {
     Allow
@@ -81,11 +86,18 @@ $props = @($toolInput.PSObject.Properties.Name)
 
 # An explicit window - either end of it - is the escape hatch. Present means the caller has already
 # decided how much of the file it wants.
-if ($props -contains 'offset' -and $null -ne $toolInput.offset) { Allow }
-if ($props -contains 'limit' -and $null -ne $toolInput.limit) { Allow }
-
-if ($props -notcontains 'file_path') { Allow }
-$filePath = [string]$toolInput.file_path
+if ($script:isAgy) {
+    foreach ($k in @('StartLine', 'EndLine', 'ByteOffset')) {
+        if ($props -contains $k -and $null -ne $toolInput.$k) { Allow }
+    }
+    if ($props -notcontains 'Path') { Allow }
+    $filePath = [string]$toolInput.Path
+} else {
+    if ($props -contains 'offset' -and $null -ne $toolInput.offset) { Allow }
+    if ($props -contains 'limit' -and $null -ne $toolInput.limit) { Allow }
+    if ($props -notcontains 'file_path') { Allow }
+    $filePath = [string]$toolInput.file_path
+}
 if ([string]::IsNullOrWhiteSpace($filePath)) { Allow }
 
 # A PDF or a notebook is read by page/cell, not by line window, and an image has no lines at all - a
@@ -131,14 +143,22 @@ $notice = "sza guard-uncapped-read: $name is over $WindowLines lines and this Re
           "range is ALWAYS allowed, however large. Policy: canon AI_USAGE.md section 3, context hygiene."
 
 # Compress: -Depth guards against a nested tool input being flattened to a type name.
-$out = @{
-    hookSpecificOutput = @{
-        hookEventName    = 'PreToolUse'
-        permissionDecision = 'allow'
-        updatedInput     = $updated
-        additionalContext = $notice
-    }
-} | ConvertTo-Json -Depth 10 -Compress
+$out = if ($script:isAgy) {
+    @{
+        decision  = 'allow'
+        overwrite = @{ EndLine = $WindowLines }
+        reason    = $notice
+    } | ConvertTo-Json -Depth 10 -Compress
+} else {
+    @{
+        hookSpecificOutput = @{
+            hookEventName      = 'PreToolUse'
+            permissionDecision = 'allow'
+            updatedInput       = $updated
+            additionalContext  = $notice
+        }
+    } | ConvertTo-Json -Depth 10 -Compress
+}
 
 [Console]::Out.WriteLine($out)
 exit 0

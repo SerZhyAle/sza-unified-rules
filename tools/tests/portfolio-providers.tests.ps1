@@ -2,19 +2,19 @@
 <#
 .SYNOPSIS
     Fast direct-call proof of the model providers' shipped records (S0154): the Google provider is one Antigravity
-    sign-in with four records (Hydrogen, Argon, Neon, Claude Sonnet via the Claude and GPT pool).
+    sign-in with five records (Hydrogen, Argon, Neon, Carbon, Claude via the Claude and GPT pool).
 
 .DESCRIPTION
     No agent process, no real registry, no network: the CLI probe is a stub and the registry is a scratch file under
     SZA_PORTFOLIO_ROOT. Cases:
 
-      1. The Google provider lists gemini, gemini-argon, gemini-neon, gemini-claude in that order, and `antigravity` /
-         `agy` name it like `gemini` does.
-      2. New-PqProviderRecord builds each record with its own model slug (Hydrogen, Argon, Neon, Claude Sonnet 5.5) over
-         the same agy argument shape, and the four differ in nothing else that matters (command, detector, parallel).
+      1. The Google provider lists gemini, gemini-argon, gemini-neon, gemini-carbon, gemini-claude in that order, and
+         `antigravity` / `agy` name it like `gemini` does.
+      2. New-PqProviderRecord builds each record with its own model slug (Hydrogen, Argon, Neon, Carbon, Claude Sonnet 5.5)
+         over the same agy argument shape, and the five differ in nothing else that matters (command, detector, parallel).
       3. Set-PqAgentOrder on a registry that already holds gemini and gemini-argon adds only the missing
-         gemini-neon and gemini-claude records, keeps the existing records untouched (their routes included), keeps
-         the provider's records together in the order, and leaves a registry that validates.
+         gemini-neon, gemini-carbon and gemini-claude records, keeps the existing records untouched (their routes included),
+         keeps the provider's records together in the order, and leaves a registry that validates.
       4. A registry that never had the later records still validates and the provider status row reads the two it has.
 #>
 $ErrorActionPreference = 'Stop'
@@ -41,11 +41,11 @@ function Check([bool]$Cond, [string]$What) { if (-not $Cond) { throw "case $($sc
 function Case([string]$Name) { $script:case++; Write-Host "Case $($script:case): $Name..." -NoNewline }
 
 try {
-    Case 'the Google provider names four records in order, and its aliases resolve'
+    Case 'the Google provider names five records in order, and its aliases resolve'
     $google = Resolve-PqProvider 'gemini'
     Check ($null -ne $google) 'gemini does not resolve'
     $names = (Get-PqProviderAgents $google) -join ','
-    Check ($names -ceq 'gemini,gemini-argon,gemini-neon,gemini-claude') "expected gemini,gemini-argon,gemini-neon,gemini-claude, got '$names'"
+    Check ($names -ceq 'gemini,gemini-argon,gemini-neon,gemini-carbon,gemini-claude') "expected gemini,gemini-argon,gemini-neon,gemini-carbon,gemini-claude, got '$names'"
     foreach ($alias in 'google', 'antigravity', 'agy', 'Antigravity') {
         $r = Resolve-PqProvider $alias
         Check ($null -ne $r -and $r.id -ceq 'gemini') "alias '$alias' does not resolve to the gemini provider"
@@ -54,15 +54,16 @@ try {
 
     Case 'each record carries its own model over the same agy arguments'
     $built = @{}
-    foreach ($agent in '', 'gemini-argon', 'gemini-neon', 'gemini-claude') {
+    foreach ($agent in '', 'gemini-argon', 'gemini-neon', 'gemini-carbon', 'gemini-claude') {
         $b = New-PqProviderRecord 'gemini' $agent
         Check $b.ok "no record for '$agent': $($b.why)"
         $built[[string]$b.record.name] = $b.record
     }
-    Check ((@($built.Keys | Sort-Object) -join ',') -ceq 'gemini,gemini-argon,gemini-claude,gemini-neon') "record names: $(@($built.Keys) -join ',')"
+    Check ((@($built.Keys | Sort-Object) -join ',') -ceq 'gemini,gemini-argon,gemini-carbon,gemini-claude,gemini-neon') "record names: $(@($built.Keys) -join ',')"
     Check ($built['gemini'].model -ceq 'gemini-4-hydrogen-high') "gemini model is '$($built['gemini'].model)'"
     Check ($built['gemini-argon'].model -ceq 'gemini-4-argon-high') "gemini-argon model is '$($built['gemini-argon'].model)'"
     Check ($built['gemini-neon'].model -ceq 'gemini-4-neon-high') "gemini-neon model is '$($built['gemini-neon'].model)'"
+    Check ($built['gemini-carbon'].model -ceq 'gemini-4-carbon-high') "gemini-carbon model is '$($built['gemini-carbon'].model)'"
     Check ($built['gemini-claude'].model -ceq 'claude-sonnet-5-5-high') "gemini-claude model is '$($built['gemini-claude'].model)'"
     $shape = (@($built['gemini'].argsTemplate) -join ' ')
     Check ($shape -ceq '--model {model} --dangerously-skip-permissions --print {prompt}') "argsTemplate is '$shape'"
@@ -88,8 +89,8 @@ try {
     Check $res.ok "Set-PqAgentOrder failed: $($res.error) $($res.message)"
     Check $res.changed 'the order was reported unchanged though a record was added'
     $after = ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($regPath))
-    Check ((@($after.agentOrder) -join ',') -ceq 'claude,gemini,gemini-argon,gemini-neon,gemini-claude') "agentOrder is '$(@($after.agentOrder) -join ',')'"
-    Check ((@($after.agents | ForEach-Object { $_.name }) -join ',') -ceq 'claude,gemini,gemini-argon,gemini-neon,gemini-claude') "records are '$(@($after.agents | ForEach-Object { $_.name }) -join ',')'"
+    Check ((@($after.agentOrder) -join ',') -ceq 'claude,gemini,gemini-argon,gemini-neon,gemini-carbon,gemini-claude') "agentOrder is '$(@($after.agentOrder) -join ',')'"
+    Check ((@($after.agents | ForEach-Object { $_.name }) -join ',') -ceq 'claude,gemini,gemini-argon,gemini-neon,gemini-carbon,gemini-claude') "records are '$(@($after.agents | ForEach-Object { $_.name }) -join ',')'"
     $kept = @($after.agents | Where-Object { $_.name -ceq 'gemini' })[0]
     Check ($kept.model -ceq 'gemini-4-hydrogen-high' -and @($kept.routes).Count -eq 1 -and $kept.routes[0].max -eq 6) 'the existing gemini record was rewritten (its route is gone)'
     $added = @($after.agents | Where-Object { $_.name -ceq 'gemini-claude' })[0]
@@ -98,6 +99,9 @@ try {
     $neon = @($after.agents | Where-Object { $_.name -ceq 'gemini-neon' })[0]
     Check ($neon.model -ceq 'gemini-4-neon-high') "the added Neon record runs '$($neon.model)'"
     Check ($null -eq $neon.PSObject.Properties['routes']) 'the added Neon record carries a grade route'
+    $carbon = @($after.agents | Where-Object { $_.name -ceq 'gemini-carbon' })[0]
+    Check ($carbon.model -ceq 'gemini-4-carbon-high') "the added Carbon record runs '$($carbon.model)'"
+    Check ($null -eq $carbon.PSObject.Properties['routes']) 'the added Carbon record carries a grade route'
     $second = Set-PqAgentOrder -Names @('anthropic', 'gemini') -RegistryPath $regPath
     Check ($second.ok -and -not $second.changed) 'a second apply changed the registry again'
     Write-Host ' PASS' -ForegroundColor Green

@@ -37,8 +37,19 @@ Exit codes (DEVELOPMENT.md section 15, reachable-exit-code contract):
   2  block - a short verdict-bearing command dispatched with run_in_background.
 #>
 
-function Allow { exit 0 }
-function Deny([string]$msg) { [Console]::Error.WriteLine($msg); exit 2 }
+$script:isAgy = $false
+function Allow {
+    if ($script:isAgy) { [Console]::Out.WriteLine('{"decision":"allow"}') }
+    exit 0
+}
+function Deny([string]$msg) {
+    if ($script:isAgy) {
+        [Console]::Out.WriteLine((@{ decision = 'deny'; reason = $msg } | ConvertTo-Json -Compress))
+        exit 0
+    }
+    [Console]::Error.WriteLine($msg)
+    exit 2
+}
 
 if ($env:SZA_HOOKS_OFF -in @('1', 'true', 'TRUE')) { Allow }
 
@@ -46,8 +57,15 @@ try {
     $raw = [Console]::In.ReadToEnd()
     if ([string]::IsNullOrWhiteSpace($raw)) { Allow }
     $payload = $raw | ConvertFrom-Json
-    $bg = $payload.tool_input.run_in_background
-    $cmd = [string]($payload.tool_input.command)
+    $script:isAgy = ($null -ne $payload) -and ($null -ne $payload.PSObject.Properties['toolCall'])
+    if ($script:isAgy) {
+        $in = $payload.toolCall.args
+        $bg = ($null -ne $in -and $null -ne $in.PSObject.Properties['IsDaemon'] -and $in.IsDaemon -eq $true)
+        $cmd = if ($null -ne $in -and $null -ne $in.PSObject.Properties['CommandLine']) { [string]$in.CommandLine } else { '' }
+    } else {
+        $bg = $payload.tool_input.run_in_background
+        $cmd = [string]($payload.tool_input.command)
+    }
 } catch {
     # Never break Bash on a malformed hook payload.
     Allow

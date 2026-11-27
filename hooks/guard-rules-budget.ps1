@@ -31,16 +31,28 @@ Exit codes (DEVELOPMENT.md section 15, reachable-exit-code contract): 0 and 2 as
 $CoreWarn = 20000
 $CoreLimit = 40000
 $IndexWarn = 8000
+$script:isAgy = $false
 
-function Allow { exit 0 }
+function Allow {
+    if ($script:isAgy) { [Console]::Out.WriteLine('{"decision":"allow"}') }
+    exit 0
+}
 
 if ($env:SZA_HOOKS_OFF -in @('1', 'true', 'TRUE')) { Allow }
 
 try {
     $payload = [Console]::In.ReadToEnd() | ConvertFrom-Json
-    $tool = [string]$payload.tool_name
-    $in = $payload.tool_input
-    $path = [string]$in.file_path
+    $script:isAgy = ($null -ne $payload) -and ($null -ne $payload.PSObject.Properties['toolCall'])
+    if ($script:isAgy) {
+        $rawTool = [string]$payload.toolCall.name
+        $tool = if ($rawTool -ceq 'write_file') { 'Write' } elseif ($rawTool -ceq 'edit_file') { 'Edit' } else { $rawTool }
+        $in = $payload.toolCall.args
+        $path = if ($null -ne $in -and $null -ne $in.PSObject.Properties['Path']) { [string]$in.Path } else { '' }
+    } else {
+        $tool = [string]$payload.tool_name
+        $in = $payload.tool_input
+        $path = [string]$in.file_path
+    }
     if ($tool -notin @('Edit', 'Write') -or -not $path) { Allow }
 
     $leaf = [IO.Path]::GetFileName($path)
@@ -58,19 +70,31 @@ try {
     $current = if (Test-Path -LiteralPath $path) { [IO.File]::ReadAllText($path) } else { '' }
     $before = $current.Length
     if ($tool -eq 'Write') {
-        $after = ([string]$in.content).Length
+        if ($script:isAgy) {
+            $cLen = ([string]$in.Content).Length
+            $after = if ($null -ne $in.PSObject.Properties['Append'] -and $in.Append) { $before + $cLen } else { $cLen }
+        } else {
+            $after = ([string]$in.content).Length
+        }
     }
     else {
-        $old = [string]$in.old_string
-        $delta = ([string]$in.new_string).Length - $old.Length
+        $old = if ($script:isAgy) { [string]$in.Target } else { [string]$in.old_string }
+        $new = if ($script:isAgy) { [string]$in.Replacement } else { [string]$in.new_string }
+        $replaceAll = if ($script:isAgy) { $true } else { [bool]$in.replace_all }
+        $delta = $new.Length - $old.Length
         $count = 1
-        if ($in.replace_all -and $old) { $count = [regex]::Matches($current, [regex]::Escape($old)).Count }
+        if ($replaceAll -and $old) { $count = [regex]::Matches($current, [regex]::Escape($old)).Count }
         $after = $before + $delta * $count
     }
     if ($after -le $before) { Allow }
 
     if ($isCore -and $after -gt $CoreLimit) {
-        [Console]::Error.WriteLine("REFUSED (sza rules budget): $leaf would grow to $after characters; the hard limit of an always-loaded rules file is $CoreLimit, because every request of every session pays for it. Put the detail into .claude/rules/<area>.md with a paths: list (or into a tracked document) and keep at most one line or one table row here. An edit that does not lengthen the file is allowed. AI_USAGE.md section 5.")
+        $msg = "REFUSED (sza rules budget): $leaf would grow to $after characters; the hard limit of an always-loaded rules file is $CoreLimit, because every request of every session pays for it. Put the detail into .claude/rules/<area>.md with a paths: list (or into a tracked document) and keep at most one line or one table row here. An edit that does not lengthen the file is allowed. AI_USAGE.md section 5."
+        if ($script:isAgy) {
+            [Console]::Out.WriteLine((@{ decision = 'deny'; reason = $msg } | ConvertTo-Json -Compress))
+            exit 0
+        }
+        [Console]::Error.WriteLine($msg)
         exit 2
     }
 
@@ -82,8 +106,14 @@ try {
         $note = "sza memory budget: this MEMORY.md is now $after characters, over $IndexWarn, and loads in every session. Keep one short line per durable note; move ticket and campaign state into state/ with its line in state/INDEX.md. AI_USAGE.md section 4."
     }
     if ($note) {
-        @{ hookSpecificOutput = @{ hookEventName = 'PreToolUse'; additionalContext = $note } } | ConvertTo-Json -Compress -Depth 4
+        if ($script:isAgy) {
+            @{ decision = 'allow'; reason = $note } | ConvertTo-Json -Compress -Depth 4
+        } else {
+            @{ hookSpecificOutput = @{ hookEventName = 'PreToolUse'; additionalContext = $note } } | ConvertTo-Json -Compress -Depth 4
+        }
+        exit 0
     }
+    Allow
 }
 catch {
     Allow

@@ -20,8 +20,18 @@ $ErrorActionPreference = 'Stop'
 try {
     $raw = [Console]::In.ReadToEnd()
     $cwd = $null
+    $isAgy = $false
     if ($raw) {
-        try { $cwd = ($raw | ConvertFrom-Json).cwd } catch { $cwd = $null }
+        try {
+            $inObj = $raw | ConvertFrom-Json
+            if ($null -ne $inObj) {
+                $isAgy = ($null -ne $inObj.PSObject.Properties['hookEventName']) -or ($null -ne $inObj.PSObject.Properties['workspacePaths'])
+                if ($null -ne $inObj.PSObject.Properties['cwd']) { $cwd = [string]$inObj.cwd }
+                if (-not $cwd -and $null -ne $inObj.PSObject.Properties['workspacePaths'] -and @($inObj.workspacePaths).Count -gt 0) {
+                    $cwd = [string]$inObj.workspacePaths[0]
+                }
+            }
+        } catch { $cwd = $null }
     }
     if (-not $cwd) { $cwd = (Get-Location).Path }
 
@@ -41,6 +51,13 @@ try {
 
     $pluginRoot = Split-Path $PSScriptRoot -Parent
     $invariants = Join-Path $pluginRoot 'rules/INVARIANTS.md'
+    if (-not (Test-Path -LiteralPath $invariants)) {
+        $hookDirItem = Get-Item -LiteralPath $PSScriptRoot -Force -ErrorAction SilentlyContinue
+        if ($hookDirItem -and $hookDirItem.Target) {
+            $realRoot = Split-Path (@($hookDirItem.Target)[0]) -Parent
+            $invariants = Join-Path $realRoot 'rules/INVARIANTS.md'
+        }
+    }
     if (-not (Test-Path -LiteralPath $invariants)) { exit 0 }
 
     $text = Get-Content -LiteralPath $invariants -Raw
@@ -109,10 +126,22 @@ The lines below are the hard invariants; everything else lives in the reference 
     }
     catch { }
 
-    $payload = [pscustomobject]@{
-        hookSpecificOutput = [pscustomobject]@{
-            hookEventName    = 'SessionStart'
-            additionalContext = $header + $text + $typeMemory
+    $payload = if ($isAgy) {
+        [pscustomobject]@{
+            injectSteps = @(
+                [pscustomobject]@{
+                    systemMessage = [pscustomobject]@{
+                        systemMessage = $header + $text + $typeMemory
+                    }
+                }
+            )
+        }
+    } else {
+        [pscustomobject]@{
+            hookSpecificOutput = [pscustomobject]@{
+                hookEventName     = 'SessionStart'
+                additionalContext = $header + $text + $typeMemory
+            }
         }
     }
     $json = $payload | ConvertTo-Json -Depth 5 -Compress

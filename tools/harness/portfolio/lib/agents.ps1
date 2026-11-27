@@ -842,8 +842,8 @@ $script:PqProviders = @(
     @{ id = 'anthropic-api'; agent = 'claude-api'; label = 'Anthropic API credits (Claude)'; aliases = @('anthropicapi', 'claudeapi', 'apicredits', 'credits') }
     # `also` names the provider's further records, each a model with its own quota (rule 42 gives a non-Claude agent one
     # fixed model, so a second model is a second record): they follow the first in the order, and the next one takes the
-    # ticket only while the earlier is at its limit.
-    @{ id = 'gemini'; agent = 'gemini'; also = @('gemini-argon', 'gemini-neon', 'gemini-claude'); label = 'Google (Gemini)'; aliases = @('gemini', 'google', 'antigravity', 'agy') }
+    # ticket only while the earlier is at its limit or below the ticket's grade ceiling.
+    @{ id = 'gemini'; agent = 'gemini'; also = @('gemini-argon', 'gemini-neon', 'gemini-carbon', 'gemini-claude'); label = 'Google (Gemini)'; aliases = @('gemini', 'google', 'antigravity', 'agy') }
     @{ id = 'zai'; agent = 'zai'; label = 'z.ai (GLM)'; aliases = @('zai', 'glm', 'zcode', 'zhipu') }
     # Mistral's own subscription (admin.mistral.ai/subscription), used through the Mistral Vibe VS Code extension: the same
     # GLM-5.3 as z.ai, hosted by Mistral, with its own "Vibe budget".
@@ -1019,17 +1019,15 @@ function New-PqProviderRecord([string]$Id, [string]$Agent = '') {
             }
         }
         'gemini' {
-            # One agy sign-in, several quota pools (Antigravity "Models & Usage"): the Gemini models, Gemini 4 Argon on its own,
-            # and the Claude and GPT models; Neon's pool is not documented, its first limit message will show it. Hydrogen is Google's model for everyday coding and agent work (fast, cheap, the
-            # successor of 3.8 Flash) and takes every ticket; Argon, the deeper and costlier model, is the second record and
-            # works only while Hydrogen's quota is spent; Neon (Google's mid-tier model of 2026-11-18, set by Google against
-            # Claude Opus 5.5 and GPT-6.2 Sol, the one that replaces Argon in the Gemini app) is the third; Claude Sonnet 5.5
-            # from the Claude and GPT pool is the last record and works only while the Google records are spent. Sonnet,
-            # not Opus, so the shared Claude and GPT weekly pool lasts. Carbon, the Ultra model above Neon, has no record.
+            # One agy sign-in, five quota records (Antigravity "Models & Usage"): Hydrogen (everyday coding and light work),
+            # Argon, Neon, Carbon (Ultra, the deepest Google tier), and the Claude and GPT pool (Claude Sonnet 5.5 and
+            # Opus 5.5). Each record carries its own limit hold and grade routes so every pool takes its natural grade
+            # tier immediately and picks up lower grades when an earlier pool's quota is spent.
             $model = 'gemini-4-hydrogen-high'
             $recName = 'gemini'
             if ($Agent -ceq 'gemini-argon') { $recName = 'gemini-argon'; $model = 'gemini-4-argon-high' }
             elseif ($Agent -ceq 'gemini-neon') { $recName = 'gemini-neon'; $model = 'gemini-4-neon-high' }
+            elseif ($Agent -ceq 'gemini-carbon') { $recName = 'gemini-carbon'; $model = 'gemini-4-carbon-high' }
             elseif ($Agent -ceq 'gemini-claude') { $recName = 'gemini-claude'; $model = 'claude-sonnet-5-5-high' }
             $rec = [ordered]@{
                 name = $recName; command = $cli.command
@@ -1045,23 +1043,22 @@ function New-PqProviderRecord([string]$Id, [string]$Agent = '') {
             $rec = [ordered]@{
                 name = 'zai'; command = 'claude'
                 # --effort reaches GLM as its reasoning depth: glm-5.3 and glm-5.3-flash both accepted low and max through
-                # z.ai's Anthropic endpoint on 2026-11-20 (max visibly thought longer), and glm-5.4 ran through Claude Code
-                # with --effort max on 2026-11-23 (exit 0). z.ai documents max as its default level and maps xhigh/max/ultra
-                # to it. The record's effort is a real CLI value, never 'default', because the template passes it as is when
+                # z.ai's Anthropic endpoint on 2026-11-20 (max visibly thought longer). z.ai documents max as its default
+                # level and maps xhigh/max/ultra to it. The record's effort is a real CLI value, never 'default', because the template passes it as is when
                 # a route names none.
                 argsTemplate = @('-p', '{prompt}', '--permission-mode', '{permissionMode}', '--model', '{model}', '--effort', '{effort}')
                 headlessMatch = '(?i)\bclaude(\.exe)?\s.*(-p|--print)\b'; promptForm = 'slash'
                 # The model is named, never left to z.ai's server-side mapping of Claude Code's `opus`: that mapping is not
                 # disclosed, z.ai echoes the requested name back, so the console, the events log and the session transcript
                 # all said `opus` while a GLM model ran. The three aliases are pinned too, so a subagent that asks for
-                # `sonnet` or `haiku` is a named GLM model as well. Verified on 2026-11-16 against /v1/models and a live call;
-                # glm-5.4 (listed by /v1/models from 2026-11-23, live for every Coding Plan tier per docs.z.ai/devpack/latest-model)
-                # took over the opus and sonnet slots and the record's model that day, and the haiku slot stays the Flash model.
+                # `sonnet` or `haiku` is a named GLM model as well. Verified on 2026-11-16 against /v1/models and a live call.
+                # glm-5.4 held the opus and sonnet slots from 2026-11-23 to 2026-11-27 and was withdrawn by the owner: one or
+                # two requests spent the plan's whole 5-hour window.
                 env = [ordered]@{
                     ANTHROPIC_BASE_URL = 'https://api.z.ai/api/anthropic'; ANTHROPIC_AUTH_TOKEN = '%ZAI_API_KEY%'; API_TIMEOUT_MS = '3000000'
-                    ANTHROPIC_DEFAULT_OPUS_MODEL = 'glm-5.4'; ANTHROPIC_DEFAULT_SONNET_MODEL = 'glm-5.4'; ANTHROPIC_DEFAULT_HAIKU_MODEL = 'glm-5.3-flash'
+                    ANTHROPIC_DEFAULT_OPUS_MODEL = 'glm-5.3'; ANTHROPIC_DEFAULT_SONNET_MODEL = 'glm-5.3'; ANTHROPIC_DEFAULT_HAIKU_MODEL = 'glm-5.3-flash'
                 }
-                model = 'glm-5.4'; effort = 'max'; maxParallel = 2; contractFile = 'CLAUDE.md'
+                model = 'glm-5.3'; effort = 'high'; maxParallel = 2; contractFile = 'CLAUDE.md'
                 # Seen on 2026-11-10 (a real pass, exit 0, 197 s): "API Error: Request rejected (429) · [1308][Usage limit reached
                 # for 5 hour. Your limit will reset at 2026-11-11 00:34:51]". The clock is China time, UTC+8.
                 limitDetector = [ordered]@{ kind = 'transcript'; pattern = '(?i)usage limit reached|limit (will )?reset|limit exhausted|rate limit reached|insufficient balance|no resource package|package has expired'; status = 'proven'; resetOffset = '+08:00' }
