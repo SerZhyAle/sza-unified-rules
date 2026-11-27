@@ -1,4 +1,5 @@
 #requires -Version 7.0
+
 <#
 .SYNOPSIS
     Read-only list of the commands every registered product offers to a program that is not the user's hands -

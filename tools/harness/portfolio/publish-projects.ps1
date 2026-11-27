@@ -1,4 +1,5 @@
 #requires -Version 7.0
+
 <#
 .SYNOPSIS
     Publish the registered project keys into the phone's ticket inbox as projects.json (S0045).

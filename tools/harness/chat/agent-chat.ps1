@@ -1,4 +1,5 @@
 #requires -Version 7.0
+
 <#
 .SYNOPSIS
     Agent chat - post to or read the descriptive coordination layer from any runtime (S2372).

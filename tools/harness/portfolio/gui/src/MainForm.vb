@@ -187,6 +187,7 @@ Partial Class MainForm
         AddHandler btnGuide.Click, AddressOf BtnGuide_Click
         AddHandler btnRegister.Click, AddressOf BtnRegister_Click
         AddHandler btnProviders.Click, AddressOf BtnProviders_Click
+        AddHandler btnAbout.Click, AddressOf BtnAbout_Click
         AddHandler btnTheme.Click, AddressOf BtnTheme_Click
 
         AddHandler btnOpenQueue.Click, AddressOf BtnOpenQueue_Click
@@ -656,6 +657,12 @@ Partial Class MainForm
 
     Private Sub BtnDoctor_Click(sender As Object, e As EventArgs)
         Using dlg As New FormDoctor()
+            dlg.ShowDialog(Me)
+        End Using
+    End Sub
+
+    Private Sub BtnAbout_Click(sender As Object, e As EventArgs)
+        Using dlg As New FormAbout()
             dlg.ShowDialog(Me)
         End Using
     End Sub

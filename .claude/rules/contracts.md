@@ -19,8 +19,9 @@ Moved verbatim from [CLAUDE.md](../../CLAUDE.md) on 2026-11-25. The always-on ru
   interface between the canon and a repository - the stamp, the harness profile, the names tools address,
   the version pair that decides whether a rule change arrives. `RELEASE-LEDGER` (domain `release-ledger/`, from
   2026-11-17) binds the release ledger every application keeps and `tools/harness/releases/` writes. The rules' own
-  text is **not** a contract and never becomes one. Pointers are in [docs/contracts/](../../docs/contracts/), beside the pointers for six
-  contracts outside that domain - `TASK-FLOW` (owner `shared`, implemented by the harness), `CHECK-VERDICT`,
+  text is **not** a contract and never becomes one. Pointers are in [docs/contracts/](../../docs/contracts/), beside the pointers for seven
+  contracts outside that domain - `TASK-FLOW` (owner `shared`, implemented by the harness), `ABOUT-PAGE` (owner
+  `shared`, met by PQShell and `pq`), `CHECK-VERDICT`,
   `DOC-INTERNAL-QUALITY`, `DOC-EXTERNAL-QUALITY`, and the two the harness reads - `APP-COMMANDS` (the command
   manifests it lists) and `DEVICE-EXCHANGE` (the phone-ticket packet it files) - whose roles are in that folder's README. Changing `.sza-canon.json`,
   `.sza-profile.json`, the three agent-rules filenames or the digest's coverage is a contract change, so

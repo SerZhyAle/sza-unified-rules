@@ -1,9 +1,14 @@
 #requires -Version 7.0
+
 <#
 .SYNOPSIS
     pq - work the portfolio queue, inspect its logs and manage its repositories.
 
 .DESCRIPTION
+    One queue over every registered repository. Page: https://github.com/SerZhyAle/sza-unified-rules
+    Guide: README.md beside this script. 'pq -Help' prints the running version first.
+    Author: Serhii Zhyhunenko - https://sza.od.ua
+
     pq register -Path <dir> [-Key <k>] [-Enable] [-PermissionMode <mode>]
                                                    add a repository to the registry (repos.json in the portfolio
                                                    root); it joins disabled unless -Enable, with maxWorkers 1 and
@@ -1478,6 +1483,9 @@ $verbs = [ordered]@{
 }
 
 if ($Help -or -not $Verb) {
+    # ABOUT-PAGE rule 2: the running version from the tree's own version file; a tree without one prints none.
+    $versionFile = Join-Path $PSScriptRoot '..' '..' '..' 'CANON_VERSION'
+    if (Test-Path -LiteralPath $versionFile -PathType Leaf) { "pq $([IO.File]::ReadAllText($versionFile).Trim())" }
     Get-Help $PSCommandPath -Detailed | Out-String
     if (-not $Help) { exit 2 }
     exit 0

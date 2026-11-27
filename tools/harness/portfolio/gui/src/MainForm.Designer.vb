@@ -22,6 +22,7 @@ Partial Class MainForm
     Friend btnGuide As Button
     Friend btnRegister As Button
     Friend btnProviders As Button
+    Friend btnAbout As Button
 
     Friend pnlBanner As Panel
     Friend lblStatus As Label
@@ -99,6 +100,7 @@ Partial Class MainForm
         Me.btnGuide = New Button()
         Me.btnRegister = New Button()
         Me.btnProviders = New Button()
+        Me.btnAbout = New Button()
 
         Me.pnlBanner = New Panel()
         Me.lblStatus = New Label()
@@ -285,7 +287,14 @@ Partial Class MainForm
         Me.btnProviders.AccessibleRole = AccessibleRole.PushButton
         Me.tipMain.SetToolTip(Me.btnProviders, "Chooses which model providers (OpenAI, Anthropic, Gemini, z.ai) spend tokens and in what order ('pq agents')")
 
-        Me.pnlTopActions.Controls.AddRange({Me.btnStartLoop, Me.btnStartOne, Me.btnStartDrain, Me.btnStop, Me.btnKill, Me.btnPause, Me.btnResume, Me.btnReport, Me.btnProblems, Me.btnAnswer, Me.btnNewSpec, Me.btnDoctor, Me.btnGuide, Me.btnRegister, Me.btnProviders})
+        Me.btnAbout.Name = "btnAbout"
+        Me.btnAbout.Text = "ℹ A&bout"
+        Me.btnAbout.Size = New Size(90, 36)
+        Me.btnAbout.AccessibleName = "About PQ Control Panel"
+        Me.btnAbout.AccessibleRole = AccessibleRole.PushButton
+        Me.tipMain.SetToolTip(Me.btnAbout, "What this panel is, its version, its author and its documentation")
+
+        Me.pnlTopActions.Controls.AddRange({Me.btnStartLoop, Me.btnStartOne, Me.btnStartDrain, Me.btnStop, Me.btnKill, Me.btnPause, Me.btnResume, Me.btnReport, Me.btnProblems, Me.btnAnswer, Me.btnNewSpec, Me.btnDoctor, Me.btnGuide, Me.btnRegister, Me.btnProviders, Me.btnAbout})
 
         ' --- pnlBanner ---
         Me.pnlBanner.Name = "pnlBanner"
@@ -626,6 +635,7 @@ Partial Class MainForm
         Me.btnGuide.TabIndex = 7
         Me.btnRegister.TabIndex = 8
         Me.btnProviders.TabIndex = 9
+        Me.btnAbout.TabIndex = 9
         Me.btnTheme.TabIndex = 9
         Me.btnOpenQueue.TabIndex = 10
         Me.btnDryRun.TabIndex = 11

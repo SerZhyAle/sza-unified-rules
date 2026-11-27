@@ -1,4 +1,5 @@
 #requires -Version 7.0
+
 <#
 .SYNOPSIS
     Register the spec commands (/spec-quiz /sq /spec-draft /sd /spec-next /sn /spec-all /sa) in a project's

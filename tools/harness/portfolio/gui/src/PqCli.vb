@@ -256,6 +256,16 @@ Public Class PqCli
         End Try
     End Function
 
+    ' A web address in the user's default browser. Returns an error message, or Nothing when it was handed over.
+    Public Shared Function OpenUrl(url As String) As String
+        Try
+            Process.Start(New ProcessStartInfo With {.FileName = url, .UseShellExecute = True})?.Dispose()
+            Return Nothing
+        Catch ex As Exception
+            Return $"cannot open {url}: {ex.Message}"
+        End Try
+    End Function
+
     Public Shared Function OpenFolder(path As String) As String
         If Not Directory.Exists(path) Then Return $"not found: {path}"
         Try

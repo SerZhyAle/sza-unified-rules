@@ -201,6 +201,7 @@ runs every change through `pq.ps1`, so it never writes a file of its own.
 | double-click on a worker, a pass or a Queue row | also opens that ticket's spec, the file its project's ledger names for exactly that id; a row without a ticket opens nothing |
 | Queue top | the first scheduled row of an enabled project nothing holds - the file's own answer; **Dry-Run** prints pq's exact plan |
 | New Spec, Register, Doctor | `spec-draft.ps1`, `pq register`, `pq doctor -All` |
+| About | what the panel is, the version of the installed build (from `CANON_VERSION` at publish time), the author, the program page, this guide and the online documentation (`ABOUT-PAGE`); `pq -Help` prints the same version and the author line |
 | Providers | which model providers spend tokens and in what order (`pq agents`, see Model providers below); the window title shows the order, with a provider marked while its usage limit is spent; **Grade routes..** inside it edits the routes, raters and escalate by (`pq agents -Settings` / `-Apply`) |
 
 ```powershell

@@ -5,9 +5,9 @@
       "package": "sza",
       "flavor": "default",
       "kind": "release",
-      "version": "2026.1127.5",
-      "builtAt": "2026-11-27T18:17:25+01:00",
-      "note": "CANONR-0248: Author credit on every About page"
+      "version": "2026.1127.6",
+      "builtAt": "2026-11-27T21:11:52+01:00",
+      "note": "CANONR-0249, CANONR-0251, CANONR-0253: Watch apps and faces named on About"
     }
   ]
 }

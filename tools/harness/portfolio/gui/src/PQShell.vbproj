@@ -10,6 +10,9 @@
     <AssemblyName>PQShell</AssemblyName>
     <OptionExplicit>On</OptionExplicit>
     <OptionStrict>On</OptionStrict>
+    <!-- ABOUT-PAGE rule 2: About shows the version of this build, taken from the canon version file at the repository root. -->
+    <Version>$([System.IO.File]::ReadAllText('$(MSBuildProjectDirectory)\..\..\..\..\..\CANON_VERSION').Trim())</Version>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
 
   <ItemGroup>
