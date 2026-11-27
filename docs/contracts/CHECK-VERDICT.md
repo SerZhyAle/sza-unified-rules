@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Contract | `CHECK-VERDICT` |
-| Version | 0.15, draft |
+| Version | 0.16, draft |
 | Home | Shared catalog, `automated-checks/`; resolution is in CLAUDE.md |
 | Role | Scoped producer: `tools/tests/contract-sync.tests.ps1` and `tools/tests/contract-reader.tests.ps1` only |
 
@@ -15,3 +15,7 @@ every executed case counts once and `skipped` counts the selected cases that did
 has groups or subtests, so the `FAIL (n)` form and the `only <groups>` suffix are not produced. Other scripts
 retain their documented exit vocabularies; this scoped adoption does not certify them. Catalog vectors are not
 available for the verdict grammar itself; see the S0008 audit for local evidence.
+
+0.16 (2026-11-27, items F and G) pairs `PASS WITH ADVISORIES` with exit `3`, a closing run excepted, and lets a further
+count token follow a space or a comma. Neither suite prints that word and the canon ships no script that does, so no
+code moved.

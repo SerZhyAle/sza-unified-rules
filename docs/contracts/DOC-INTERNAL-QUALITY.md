@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Contract | `DOC-INTERNAL-QUALITY` |
-| Version | 0.13, draft; declared technical corpora |
+| Version | 0.14, draft; declared technical corpora |
 | Home | Shared catalog, `documentation-quality/`; resolution is in CLAUDE.md |
 | Role | Technical corpus: rules, skills, tooling documentation and contract pointers |
 
@@ -26,3 +26,7 @@ For the repositories that run it, the shipped harness's `document_registry/valid
 their profile declares in `paths.localDocumentRegistry` (`HARNESS-PROFILE` rule 18, item K) and judges the
 `generator` and `check` fields of a generated record (item W, CANONR-0235). A generated record with neither field
 is an advisory there, because an adopter owes item W at its next alignment run, and an error under `-Strict`.
+
+0.14 (2026-11-27, item AA) does not require a registry file to be tracked: a public repository keeps it local, and a
+check that finds a local registry absent exits `2`. This repository is the canon home and tracks its published
+registry. The shipped `validate.ps1` already reads the registry from disk and exits `2` when it is absent.

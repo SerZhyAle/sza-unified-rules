@@ -13,8 +13,8 @@
          > 40k path-scoped file triggers SZA-RULES08 warn (not RULES07), missing AGENTS.md mention triggers
          SZA-RULES09 warn, committed memory/MEMORY.md > 8k chars (< 200 lines) triggers SZA-MEM01 warn.
       3. Non-git repo: GEMINI.md > 40k triggers SZA-RULES07 error; .claude/rules scanned on disk.
-      4. Gitignored .claude/ with AGENTS.md-as-core: gitignored area files skipped by RULES07/08/09,
-         clean AGENTS.md-as-core passes.
+      4. Gitignored .claude/, AGENTS.md and memory/MEMORY.md in a git repo (REPO-LAYOUT 0.12 local-file mode):
+         gitignored area rules and memory indexes are read from disk and judged by RULES08/09 and MEM01.
       5. Delegated read and @import: CLAUDE.md @import summed into RULES07; AGENTS.md delegating to CLAUDE.md
          summed cleanly.
 
@@ -123,17 +123,23 @@ try {
         Assert ($byId.ContainsKey('SZA-RULES09')) "expected SZA-RULES09 from disk .claude/rules in non-git repo"
     }
 
-    Test-Case '4. gitignored .claude/ is skipped and AGENTS.md-as-core passes cleanly' {
+    Test-Case '4. gitignored .claude/rules, AGENTS.md and memory/MEMORY.md are judged from disk' {
         $d = Join-Path $scratch 'r4'
         Write-Utf8 (Join-Path $d '.sza-canon.json') $stampJson
-        Write-Utf8 (Join-Path $d '.gitignore') ".claude/`n"
+        Write-Utf8 (Join-Path $d '.gitignore') ".claude/`nAGENTS.md`nmemory/`n.sza-canon.json`n"
+        Write-Utf8 (Join-Path $d 'README.md') "# Fixture`n"
+        Init-GitRepo $d @('.gitignore', 'README.md')
         Write-Utf8 (Join-Path $d 'AGENTS.md') ($coreHeader + ('a' * 10000))
-        Init-GitRepo $d @('.sza-canon.json', '.gitignore', 'AGENTS.md')
-        # Gitignored giant unscoped rule must be skipped completely
         Write-Utf8 (Join-Path $d '.claude/rules/ignored.md') ('z' * 50000)
+        Write-Utf8 (Join-Path $d 'memory/MEMORY.md') ((1..50 | ForEach-Object { "- entry $_ " + ('m' * 170) }) -join "`n")
 
         $res = Run-Gate $d
-        Assert ($res.findings.Count -eq 0) "expected 0 findings for AGENTS.md-as-core with gitignored .claude/, got: $($res.findings | ConvertTo-Json -Compress)"
+        $byId = @{}
+        foreach ($f in $res.findings) { $byId[$f.id] = $f }
+        Assert (-not $byId.ContainsKey('SZA-RULES07')) "AGENTS.md-as-core must not trigger RULES07; got $($res.findings | ConvertTo-Json -Compress)"
+        Assert ($byId.ContainsKey('SZA-RULES08') -and $byId['SZA-RULES08'].path -eq '.claude/rules/ignored.md') "expected SZA-RULES08 on gitignored .claude/rules/ignored.md; got $($res.findings | ConvertTo-Json -Compress)"
+        Assert ($byId.ContainsKey('SZA-RULES09')) "expected SZA-RULES09 on gitignored AGENTS.md missing .claude/rules mention"
+        Assert ($byId.ContainsKey('SZA-MEM01') -and $byId['SZA-MEM01'].path -eq 'memory/MEMORY.md') "expected SZA-MEM01 on gitignored memory/MEMORY.md"
     }
 
     Test-Case '5. @import and delegated root file are summed in SZA-RULES07' {

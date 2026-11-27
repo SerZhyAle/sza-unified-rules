@@ -25,12 +25,14 @@ understand the project without them.
 | Role | Default | In git | What goes there |
 | --- | --- | --- | --- |
 | Product intro, licence | `README.md` (+ `README_<lang>.md`), `LICENSE` | yes | root, user-facing |
-| Agent rules | `CLAUDE.md`, `AGENTS.md`, `GEMINI.md` | yes | root; the canon is a pointer, never a restatement ([AI_USAGE.md](AI_USAGE.md)) |
+| Agent rules | `CLAUDE.md`, `AGENTS.md`, `GEMINI.md` | **no** | root on disk, gitignored in public repos (`REPO-LAYOUT` 0.12 rule 8); `check-compliance.ps1` reads them from disk ([AI_USAGE.md](AI_USAGE.md)). `canon-home` exempt; a product's own deliverable tree (`kit/`) stays tracked |
+| Agent config & memory | `.claude/`, `.agents/`, `.codex/`, `.gemini/`, `memory/` | **no** | local agent skills, rules, settings and memory (`REPO-LAYOUT` 0.12 rule 8); `canon-home` and `internal` exempt |
+| Portfolio & harness glue | `.sza-canon.json`, `.sza-profile.json`, `docs/contracts/`, `docs/DOCUMENT_REGISTRY.jsonl`, `docs/releases/`, `r0..rw.*`, `tools/harness.ps1` | **no** | local portfolio metadata, contract pointers, doc/release registries and queue launchers (`REPO-LAYOUT` 0.12 rule 8, `RELEASE-LEDGER` 0.3); read from disk by canon tools; `canon-home` and `internal` exempt |
 | Launcher | `a.ps1` | yes | the one command a contributor runs - build, check, test, release; the toolchain's own wrapper (`gradlew`) sits beside it |
 | Source and tests | the platform's source root(s) | yes | named by the [overlay](PLATFORM_OVERLAYS.md): `app_v2/` and `wear/` on Android, `src/` and `tests/` on desktop |
 | Automation | `scripts/` | yes | everything that *drives* a build, check or release and is not tied to one channel; sub-folders by purpose, a script's own tests beside it (`guard.tests/`) |
 | Engineering docs | `dev/` | **no** | developer-support documentation, local like `PLAN/`: process, the routing index, the ledger (`dev/CHANGELOG.md` for ledger shape `2`), dated research notes `<YY-MM-DD_HHm>_<slug>.md`, refuted approaches; `dev/archive/` is read-only |
-| Maintained docs | `docs/` | yes | what a *user* or a *forker* reads - about the project as a whole: guides, the sources of public pages, legal, release docs. `docs/README.md` indexes the tree; where a repo keeps a document registry it is `docs/DOCUMENT_REGISTRY.jsonl`, naming each document's audience, owner, update trigger and whether it is published; `docs/contracts/` holds the contract pointers |
+| Maintained docs | `docs/` | yes | what a *user* or a *forker* reads - guides, public architecture/build docs, `docs/README.md`, `docs/CLI.md`, `docs/PARITY.md`, `docs/DOCS_MAP.md`, `docs/cli-commands*.json`, legal (`docs/privacy.html`); portfolio glue under `docs/` (`contracts/`, `DOCUMENT_REGISTRY.jsonl`, `releases/`) stays local |
 | Site | the repo root, plus `documentation/` for a portal | yes | the published pages, as the stamp's `site.root` says ([SITE_CONFIGURATION.md](SITE_CONFIGURATION.md)) |
 | Shared assets | `assets/` | yes | icons and images the product and its site ship |
 | Channel sources | one folder per distribution channel, named after it, plus `store_assets/` | yes | the listing text, manifests and operator runbooks a channel is submitted *from*: `play/`, `meta/`, `fastlane/`, `fdroid/` on Android; `winget/`, `msix/`, `installer/` on desktop. `store_assets/` holds what several channels share - runbooks, screenshots, release waivers |
@@ -41,11 +43,12 @@ understand the project without them.
 | Secrets | `.secrets/` | **no** | keystores, `keystore.properties`, store API keys - see "Secrets" below |
 | Bulky test data | `test_media/` | **no** | media and fixtures too large for the repo |
 
-`.claude/` and `.agents/` hold an agent's working configuration. Whether they are tracked is the
-repository's choice and not a layout role.
-
-Nothing checks the **In git** column yet; `git check-ignore -v <path>` is the proof, and it is the first
-thing to run on a repository whose layout is in doubt.
+**Public-vs-local boundary enforcement (`REPO-LAYOUT` 0.12 rule 8).** In public repositories (`role` other than
+`canon-home` and `internal`), `check-compliance.ps1` `SZA-LAY07` flags any Git-tracked file matching the **no**
+rows above, while reading local agent rules, `.claude/rules/`, memory indexes and `docs/contracts/` directly from
+disk. Existing public repos untrack violating files with `git rm --cached` plus `.gitignore` without rewriting
+history; private/internal repos are exempt until published. Verify ignore coverage with `git check-ignore -v <path>`
+and `git ls-files`.
 
 **The specification workspace is local in every project.** Ignore the whole configured `paths.specsDir`,
 its archive (`paths.specArchiveDir`, even when it is elsewhere), and any separate ticket journals, including
@@ -60,9 +63,11 @@ its folder into the configured archive (`DONE/` or `archive/`) and back on reope
 as a directory distinct from the active one. The mechanics and the reconcile command are in
 [SCHEMA.md](../tools/harness/spec_catalog/SCHEMA.md), "Where the spec file lives" (`TASK-FLOW` rules 17 and 70).
 
-**Root stays minimal.** Only what a *user* or a *first-time contributor* expects at eye level lives at
-root: the README(s), LICENSE, the agent rules, the launcher and the toolchain's own build files, the
-site's pages when the repo hosts one, and the dot-files. Everything explanatory goes under `docs/`,
+**Root stays minimal.** Only what a *user* or a *first-time contributor* expects at eye level is tracked at
+root: the README(s), LICENSE, the launcher and the toolchain's own build files, the site's pages when the
+repo hosts one, and public dot-files (`.gitignore`, `.gitattributes`). Local agent rules (`CLAUDE.md`,
+`AGENTS.md`, `GEMINI.md`), `.sza-*` metadata and `r*.ps1` launchers live at root on disk and stay gitignored
+in public repositories (`REPO-LAYOUT` 0.12 rule 8). Everything explanatory goes under `docs/`,
 where a user or a forker reads it, or `dev/`, the developer's local workspace; everything automated
 under `scripts/`, and **nothing generated lands at root** - an exe, a zip or a log at the root is a
 build output or a capture in the wrong place.
@@ -175,12 +180,14 @@ Binaries are **build output, not source** - the repo never stores a compiled rel
 
 ## Applying this to a new project - checklist
 
-1. Create the universal skeleton: the root files, `scripts/`, `docs/` (with `docs/contracts/`),
-   the source root and tests, and a `.gitignore` that names every **no** row of the role map.
+1. Create the universal skeleton: the tracked root files (`README.md`, `LICENSE`), `scripts/`, `docs/`,
+   the source root and tests, and a `.gitignore` that names every **no** row of the role map (agent rules,
+   agent config/memory, portfolio/harness glue, `PLAN/`, `dev/`, `temp/`, `.secrets/`).
 2. Add the channel folders and source root from your [platform overlay](PLATFORM_OVERLAYS.md).
 3. Adopt the version + ledger flow (see DOCUMENTATION_CONCEPT §2).
 4. Reserve the platform's **frozen anchors** (overlay) - unique per product.
-5. Create `PLAN/`, `dev/`, `temp/`, `.secrets/` locally and prove with `git check-ignore -v` that each
-   is ignored.
+5. Create the local support files/folders (`CLAUDE.md`, `.sza-canon.json`, `docs/contracts/`, `PLAN/`, `dev/`,
+   `temp/`, `.secrets/`) locally and prove with `git check-ignore -v` and `check-compliance.ps1 -Only SZA-LAY07`
+   that none is tracked in Git.
 6. If site-hosted, set Pages to serve the right root and add the mandatory pages
    (DOCUMENTATION_CONCEPT §4).

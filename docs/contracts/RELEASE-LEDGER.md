@@ -3,11 +3,15 @@
 | Field | Value |
 | --- | --- |
 | Contract | `RELEASE-LEDGER` |
-| Version | 0.2, draft |
+| Version | 0.3, draft |
 | Home | the shared contracts catalog, domain `release-ledger/` (the path is in [CLAUDE.md](../../CLAUDE.md)) |
 | Role | **owner, writer and reader**: the canon ships the one writer, the probes, `pq releases` and the PQShell Releases tab; every application repository keeps a ledger |
 
 ## What this repo must do to stay conformant
+
+- Under 0.3 (aligning rule 1 with `REPO-LAYOUT` 0.12 rule 8), public repositories keep `paths.releasesDir`
+  local and gitignored; `canon-home` (this repository) and `internal` repositories may keep their ledgers
+  tracked. Readers read directly from disk and still treat an absent folder as "no ledger", never an error.
 
 - `tools/harness/releases/release-ledger.ps1` is the only writer of the three data files (rules 2, 4, 5) and renders
   `RELEASES.md` after every write (rule 10); `build` keeps one row per package, flavor and kind, `history.jsonl` is only

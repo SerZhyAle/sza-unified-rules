@@ -211,11 +211,10 @@ shares. Reconciled against the portfolio; per-project records in `contrib/`.
 
 ## 4. Persistent memory
 
-- Agents keep a **file-based memory** (reference layout: `.claude/agent-memory/<agent>/` with a `MEMORY.md`
-  index pointing at per-topic files). **Committed vs per-user is a per-project choice:** some repos commit
-  `.claude/agent-memory/` so it is project-scoped and team-shared through git; others keep the agent's
-  memory in a per-user store outside the repo (local-only). The discipline below is identical either way -
-  only the home differs.
+- Agents keep a **file-based memory** (reference layout: `.claude/agent-memory/<agent>/` or `memory/` with a
+  `MEMORY.md` index pointing at per-topic files). In public product repositories, agent memory stays local and
+  gitignored (`REPO-LAYOUT` 0.12 rule 8; `canon-home` and `internal` exempt); `check-compliance.ps1` `SZA-MEM01`
+  judges the index from disk either way. The discipline below is identical across all scopes.
 - **Save** durable things: the owner's profile and preferences, corrections *and* confirmed-good
   approaches (with the *why*), ongoing project context not derivable from code, and pointers to
   external systems.
@@ -287,8 +286,9 @@ shares. Reconciled against the portfolio; per-project records in `contrib/`.
     `paths:` match, and the core's table names every file (`SZA-RULES09`). For non-Claude agents' user-level
     instruction files (`~/.codex/AGENTS.md`, `~/.gemini/GEMINI.md`, `~/.zcode/AGENTS.md`, `~/.vibe/AGENTS.md`),
     `tools/install-agent-rules.ps1` installs the shared `## Project rules (every repository)` section from
-    [templates/agent-rules.md](../templates/agent-rules.md) idempotently. Where `.claude/` is ignored by git,
-    the moved text lives in a tracked document instead.
+    [templates/agent-rules.md](../templates/agent-rules.md) idempotently. In public repositories, root agent
+    rules and `.claude/` stay local and gitignored (`REPO-LAYOUT` 0.12 rule 8); `check-compliance.ps1` reads
+    both from disk.
 - Repetitive workflows are **named skills / slash-commands** (build, release, spec lifecycle, doc sync,
   log analysis..) so a routine has one canonical procedure instead of ad-hoc reinvention. Author a new
   rule/gate/skill only after observing the failure it prevents; keep it minimal and trigger-focused.

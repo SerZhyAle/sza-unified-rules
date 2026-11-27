@@ -74,7 +74,9 @@ beside it are the detail and the history.
 - **`docs/contracts/<ID>.md` is a pointer**, named after the contract id (`STREAM-BANK.md`; a family
   implemented as one unit may share a file that names every id, like `FDSEC.md`) and listed in
   `docs/contracts/README.md`. It holds the contract id, its version, its home, this product's role (producer / consumer / both), and what this repo must do to stay conformant. A pointer
-  that grows a second page has become a copy, and a copy drifts.
+  that grows a second page has become a copy, and a copy drifts. In public repositories (`role` other than
+  `canon-home` and `internal`), `docs/contracts/` and the root agent-rules file are local and gitignored
+  (`REPO-LAYOUT` 0.12 rule 8), and `check-compliance.ps1` validates them from disk.
 - **Cite by id, never link.** A source comment says `FDSEC-FORMAT.md section 8` or `OCR-OVERLAY rule 4`.
   No `P:\` path in a tracked file: whoever clones the repo does not have that drive.
 - **A restatement is a fork.** A repo that describes a shared format in its own words has forked it, and

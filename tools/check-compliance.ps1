@@ -9,11 +9,11 @@ shortcoming, so keep the checks mechanical and the false-positive rate at zero.
 Groups:
   CANON  adoption stamp, staleness, a stamp ahead of the canon, mirror banners
   RULES  the agent-rules file: canon pointer, no restatement, no self-declared fork
-  MEM    a committed agent-memory index stays within the 200 lines that are loaded (MEM01, advisory)
+  MEM    an agent-memory index on disk stays within the 200 lines / 8,000 chars that are loaded (MEM01, advisory)
   CI     workflows holding a write token or a secret pin third-party actions by commit (CI01, advisory)
   REL    release scripts with console-input markers (REL01, advisory)
   HOOK   the enforcement layer: every registered hook is in the inventory table
-  LAY    layout and ledger
+  LAY    layout, ledger, and public-vs-local repository contents boundary (LAY07, REPO-LAYOUT 0.12 rule 8)
   FLOW   the task flow stands: profile, ledger, launcher (FLOW01-FLOW03, advisory, off unless -CheckTaskFlow;
          Phase 09 of S0015 turns it on)
   CTR    shared contracts: pointers not copies, the catalog path, and agent discovery of product commands
@@ -38,9 +38,10 @@ Usage:
 
 The git-scoped checks judge tracked files. A repo with no commit yet (adoption runs before the first one)
 is judged on its tracked and untracked, non-ignored files instead - what the first commit would hold - and
-the run says so; -IncludeUntracked asks for that set on any repo. One exception: the area-rule checks
-(SZA-RULES07/08/09) take .claude/rules/*.md, tracked and untracked, non-ignored, on every run, so a new
-rule file is judged before its first commit; `fileSet` does not describe that set.
+the run says so; -IncludeUntracked asks for that set on any repo. Local-file mode (REPO-LAYOUT 0.12 rule 8):
+root agent-rules files (CLAUDE.md, AGENTS.md, GEMINI.md), .claude/rules/*.md, agent memory indexes
+(memory/MEMORY.md, .claude/agent-memory/*/MEMORY.md) and docs/contracts/*.md are read from disk whether
+tracked or gitignored, while SZA-LAY07 flags any tracked local-only file in public repositories.
 
 -Json prints repo, canonVersion, canonDigest, fileSet, only, skip, errors, warnings and findings. `only` and
 `skip` are the -Only and -Skip lists as split and trimmed (empty arrays on a full run), so a consumer can tell
@@ -384,10 +385,9 @@ try {
 
     # ------------------------------------------------------- group RULES
 
-    # Only tracked files count. A git-ignored local rules file is one person's scratch copy, not a
-    # contract the repository makes - judging it reports a violation nobody can see in a clone.
-    $agentFiles = @('CLAUDE.md', 'AGENTS.md', 'GEMINI.md') |
-        Where-Object { (Test-RepoPath $_) -and (-not $isGit -or $tracked -contains $_) }
+    # REPO-LAYOUT 0.12 rule 8: root agent-rules files stay local and gitignored in public repositories,
+    # so the gate reads them from disk whether tracked or gitignored (SZA-LAY07 flags tracked ones).
+    $agentFiles = @('CLAUDE.md', 'AGENTS.md', 'GEMINI.md') | Where-Object { Test-RepoPath $_ }
 
     if ($agentFiles.Count -eq 0) {
         Add-Finding -Id 'SZA-RULES01' -Severity 'error' -Path '.' `
@@ -492,7 +492,10 @@ try {
     # exemplary line "Reference it, do not restate it here" scores as a fork.
     $forkNegationRe = "(?i)(\bnot\b\s*(re-?)?(state|stat\w*|duplicat\w*|cop(y|ying|ied)|mirror\w*|author\w*)|(do not|don't|does not|never|rather than|instead of|without|no need to)\s+(re-?)?(state|stat\w*|duplicat\w*|cop(y|ying)|mirror\w*|author)|(nothing|none of it|no rule\w*)\s+(is|are|was|were)\s+(re-?)?(stated|duplicated|copied|mirrored))"
 
-    foreach ($af in $agentFiles) {
+    $rulesContentEnabled = (Test-Enabled 'SZA-RULES02') -or (Test-Enabled 'SZA-RULES03') -or
+                           (Test-Enabled 'SZA-RULES04') -or (Test-Enabled 'SZA-RULES05') -or
+                           (Test-Enabled 'SZA-RULES06')
+    foreach ($af in $(if ($rulesContentEnabled) { $agentFiles } else { @() })) {
         $full = Join-RepoPath $af
         $text = Get-Content -LiteralPath $full -Raw
         $lineCount = (Get-Content -LiteralPath $full).Count
@@ -582,22 +585,20 @@ try {
     # SZA-RULES07 - the always-loaded set has a budget, because every request pays for it (AI_USAGE.md
     # section 5). A set is a head file, what it imports with an @ line, a second root file it tells every
     # session to read, and, for Claude, each rule file that has no `paths:` list. Characters, not bytes.
-    # Include both tracked and untracked non-ignored .claude/rules/**/*.md files so newly created area rules
-    # are judged immediately while gitignored .claude/ trees stay skipped.
+    # REPO-LAYOUT 0.12 rule 8: read .claude/rules/**/*.md from disk whether tracked or gitignored so
+    # local area rules in public repositories remain subject to budget and routing checks.
+    $rulesBudgetEnabled = (Test-Enabled 'SZA-RULES07') -or (Test-Enabled 'SZA-RULES08') -or (Test-Enabled 'SZA-RULES09')
     $ruleFiles = @()
-    if ($isGit) {
-        $rawRuleFiles = @(& git -C $RepoRoot -c core.quotepath=false ls-files --cached --others --exclude-standard -- .claude/rules 2>$null | Sort-Object -Unique)
-        $ruleFiles = @($rawRuleFiles | Where-Object { $_ -match '^\.claude/rules/.+\.md$' -and (Test-RepoPath $_) })
-    }
-    elseif (Test-RepoPath '.claude/rules') {
+    if ($rulesBudgetEnabled -and (Test-RepoPath '.claude/rules')) {
         $rulesRoot = Join-RepoPath '.claude/rules'
-        $ruleFiles = @(Get-ChildItem -LiteralPath $rulesRoot -Recurse -File -Filter '*.md' | ForEach-Object {
+        $ruleFiles = @(Get-ChildItem -LiteralPath $rulesRoot -Recurse -File -Filter '*.md' -ErrorAction SilentlyContinue | ForEach-Object {
             [IO.Path]::GetRelativePath($RepoRoot, $_.FullName).Replace('\', '/')
         } | Sort-Object -Unique)
     }
     $ruleTexts = @{}
     foreach ($rf in $ruleFiles) { $ruleTexts[$rf] = [IO.File]::ReadAllText((Join-RepoPath $rf)) }
     $largest = $null
+    if ($rulesBudgetEnabled) {
     foreach ($head in @('CLAUDE.md', 'AGENTS.md', 'GEMINI.md')) {
         if ($agentFiles -notcontains $head) { continue }
         $parts = [ordered]@{ $head = [IO.File]::ReadAllText((Join-RepoPath $head)) }
@@ -648,21 +649,28 @@ try {
             -Message "$($ruleFiles.Count) area rule file(s), but AGENTS.md does not send other agents to .claude/rules" `
             -Fix 'Add the area-rules paragraph from templates/agent-rules.md to AGENTS.md.'
     }
+    }
 
     # --------------------------------------------------------- group MEM
 
-    # SZA-MEM01 - a committed agent-memory index that outgrew what the agent reads. Claude Code loads the
+    # SZA-MEM01 - an agent-memory index that outgrew what the agent reads. Claude Code loads the
     # first 200 lines of a MEMORY.md and silently drops the rest, so an index past that is a log, not an
     # index: the newest entries are the ones that never arrive. Advisory (AI_USAGE.md section 4).
     #
-    # TRACKED files only, and only the two reference layouts. A git-ignored memory directory is one
-    # person's scratch store - judging it reports a violation nobody can see in a clone - and an arbitrary
-    # MEMORY.md elsewhere in the tree is somebody's document, not the agent's index.
-    if ($isGit -and (Test-Enabled 'SZA-MEM01')) {
-        $memIndexRe = '(^|/)memory/MEMORY\.md$|(^|/)\.claude/agent-memory/.+/MEMORY\.md$'
-        foreach ($f in ($tracked | Where-Object { $_ -match $memIndexRe })) {
+    # REPO-LAYOUT 0.12 rule 8: agent memory stays local and gitignored in public repositories, so the
+    # two reference layouts are checked directly on disk whether tracked or gitignored.
+    if (Test-Enabled 'SZA-MEM01') {
+        $memCandidates = New-Object System.Collections.Generic.List[string]
+        if (Test-RepoPath 'memory/MEMORY.md') { $memCandidates.Add('memory/MEMORY.md') }
+        $agentMemDir = Join-RepoPath '.claude/agent-memory'
+        if (Test-Path -LiteralPath $agentMemDir -PathType Container) {
+            foreach ($m in @(Get-ChildItem -LiteralPath $agentMemDir -Recurse -File -Filter 'MEMORY.md' -ErrorAction SilentlyContinue)) {
+                $memCandidates.Add([IO.Path]::GetRelativePath($RepoRoot, $m.FullName).Replace('\', '/'))
+            }
+        }
+        foreach ($f in ($memCandidates | Sort-Object -Unique)) {
             $p = Join-RepoPath $f
-            if (-not (Test-Path -LiteralPath $p)) { continue }
+            if (-not (Test-Path -LiteralPath $p -PathType Leaf)) { continue }
             $memLines = @(Get-Content -LiteralPath $p).Count
             $memChars = [IO.File]::ReadAllText($p).Length
             if ($memLines -gt 200 -or $memChars -gt 8000) {
@@ -670,7 +678,7 @@ try {
                 if ($memLines -gt 200) { $reasons += "$memLines lines (limit 200 - the rest is silently dropped)" }
                 if ($memChars -gt 8000) { $reasons += "$memChars characters (budget 8000)" }
                 Add-Finding -Id 'SZA-MEM01' -Severity 'warn' -Path $f `
-                    -Message ("committed memory index exceeds budget: " + ($reasons -join '; ')) `
+                    -Message ("agent memory index exceeds budget: " + ($reasons -join '; ')) `
                     -Fix 'Keep the index to one line per topic file under about 150 lines and 8,000 characters: move bodies into per-topic files or state/ and prune stale entries (AI_USAGE.md section 4).'
             }
         }
@@ -954,6 +962,99 @@ try {
             -Message 'docs/ holds 3+ markdown files but has no index' -Fix 'Add docs/README.md - the index of this tree.'
     }
 
+    # SZA-LAY07 - public repository contents boundary (REPO-LAYOUT 0.12 rule 8).
+    # In public repositories (roles other than canon-home and internal), agent rules/configs/memory,
+    # development workflow trees and portfolio/harness glue stay local and gitignored rather than tracked
+    # in Git. Grouped by root file or top-level bucket (like SZA-SEC03) so a large local directory emits
+    # one actionable finding instead of hundreds.
+    $lay07Role = if ($stamp -and $stamp.role) { [string]$stamp.role } else { 'product' }
+    if ($isGit -and (Test-Enabled 'SZA-LAY07') -and $lay07Role -notin @('canon-home', 'internal')) {
+        $customDirs = New-Object System.Collections.Generic.List[string]
+        $customFiles = New-Object System.Collections.Generic.List[string]
+        if (Test-RepoPath '.sza-profile.json') {
+            try {
+                $layProfile = Get-Content -LiteralPath (Join-RepoPath '.sza-profile.json') -Raw | ConvertFrom-Json
+                if ($layProfile.paths) {
+                    foreach ($dirKey in @('specsDir', 'specArchiveDir', 'releasesDir', 'tempDir')) {
+                        $prop = $layProfile.paths.PSObject.Properties[$dirKey]
+                        if ($null -eq $prop -or [string]::IsNullOrWhiteSpace([string]$prop.Value)) { continue }
+                        $norm = (([string]$prop.Value).Trim() -replace '\\', '/').Trim('/')
+                        if ($norm -and $norm -ne '.') { $customDirs.Add($norm) }
+                    }
+                    foreach ($fileKey in @('documentRegistry', 'localDocumentRegistry')) {
+                        $prop = $layProfile.paths.PSObject.Properties[$fileKey]
+                        if ($null -eq $prop -or [string]::IsNullOrWhiteSpace([string]$prop.Value)) { continue }
+                        $norm = (([string]$prop.Value).Trim() -replace '\\', '/').TrimStart('/')
+                        if ($norm) { $customFiles.Add($norm) }
+                    }
+                }
+            }
+            catch { }
+        }
+        if ($stamp -and $stamp.PSObject.Properties['docRegistryFile'] -and -not [string]::IsNullOrWhiteSpace([string]$stamp.docRegistryFile)) {
+            $norm = (([string]$stamp.docRegistryFile).Trim() -replace '\\', '/').TrimStart('/')
+            if ($norm) { $customFiles.Add($norm) }
+        }
+
+        $lay07Buckets = [ordered]@{}
+        foreach ($f in $tracked) {
+            $bucket = $null; $category = $null
+            if ($f -cmatch '^(CLAUDE|AGENTS|GEMINI)\.md$') {
+                $bucket = $f; $category = 'agent instructions'
+            }
+            elseif ($f -cmatch '^(\.(?:claude|agents|codex|gemini)|memory)/') {
+                $bucket = "$($Matches[1])/"; $category = 'agent config/memory'
+            }
+            elseif ($f -cmatch '^(PLAN|tasks|docs/specifications|DEV/plan|dev/plan)/') {
+                $bucket = "$($Matches[1])/"; $category = 'development workflow'
+            }
+            elseif ($f -cmatch '^(?:.+/)?(?:spec-catalog(?:-archive|-burned-ids)?\.jsonl|RELEASE_(?:QUEUE(?:_DONE)?|READY)\.md)$') {
+                $bucket = $f; $category = 'development workflow'
+            }
+            elseif ($f -cmatch '^(dev|DEV|temp|logs|DOWNLOADS|\.secrets|test_media)/') {
+                $bucket = "$($Matches[1])/"; $category = 'local engineering/scratch'
+            }
+            elseif ($f -cmatch '^(\.sza-canon\.json|\.sza-profile\.json|tools/harness\.ps1|r(?:[0-3]|s|m|w)\.(?:ps1|cmd)|(?:docs/)?DOCUMENT_REGISTRY\.jsonl)$') {
+                $bucket = $f; $category = 'portfolio/harness glue'
+            }
+            elseif ($f -cmatch '^(docs/contracts|docs/releases)/') {
+                $bucket = "$($Matches[1])/"; $category = 'portfolio/harness glue'
+            }
+            else {
+                foreach ($cf in $customFiles) {
+                    if ($f -ieq $cf) { $bucket = $f; $category = 'portfolio/harness glue'; break }
+                }
+                if (-not $bucket) {
+                    foreach ($cd in $customDirs) {
+                        if ($f -like "$cd/*") { $bucket = "$cd/"; $category = 'configured local directory'; break }
+                    }
+                }
+            }
+            if ($bucket) {
+                if (-not $lay07Buckets.Contains($bucket)) {
+                    $lay07Buckets[$bucket] = [pscustomobject]@{ category = $category; files = (New-Object System.Collections.Generic.List[string]) }
+                }
+                $lay07Buckets[$bucket].files.Add($f)
+            }
+        }
+
+        foreach ($bucket in $lay07Buckets.Keys) {
+            $entry = $lay07Buckets[$bucket]
+            $count = $entry.files.Count
+            if ($bucket.EndsWith('/')) {
+                $sample = ($entry.files | Select-Object -First 3 | ForEach-Object { Split-Path $_ -Leaf }) -join ', '
+                $more = if ($count -gt 3) { " (+$($count - 3) more)" } else { '' }
+                $msg = "$count tracked $($entry.category) file(s) under '$bucket': $sample$more (REPO-LAYOUT 0.12 rule 8)"
+            }
+            else {
+                $msg = "tracked $($entry.category) file '$bucket' must stay local/gitignored in public repositories (REPO-LAYOUT 0.12 rule 8)"
+            }
+            Add-Finding -Id 'SZA-LAY07' -Severity 'error' -Path $bucket `
+                -Message $msg `
+                -Fix 'Untrack with `git rm --cached` and add to .gitignore without rewriting history (REPO-LAYOUT 0.12 rule 8), or record a dated SZA-LAY07 exemption in .sza-canon.json and _meta/REGISTRY.md.'
+        }
+    }
+
     # -------------------------------------------------------- group FLOW
     # Day 0 of TASK-FLOW is a step of adoption (TASK-FLOW rule 50), so a stamped repository of any role
     # carries a harness profile, a ledger and a launcher. Advisory, and off unless -CheckTaskFlow until
@@ -995,29 +1096,32 @@ try {
     # --------------------------------------------------------- group CTR
     # Shared contracts live in one catalog outside every repo (CONTRACTS.md). A repo holds pointers and
     # implementations, never copies, and names the catalog in exactly one file. Both are mechanical.
+    # REPO-LAYOUT 0.12 rule 8: docs/contracts/ stays local and gitignored in public repositories, so
+    # pointer checks read directly from disk whether tracked or gitignored.
 
     $contractsDir = Join-RepoPath 'docs/contracts'
     $contractDocs = @()
-    if (Test-Path -LiteralPath $contractsDir) {
-        $contractDocs = @(Get-ChildItem -Path $contractsDir -Filter *.md -File -ErrorAction SilentlyContinue |
-            Where-Object { -not $isGit -or $tracked -contains "docs/contracts/$($_.Name)" })
+    if (((Test-Enabled 'SZA-CTR01') -or (Test-Enabled 'SZA-CTR03')) -and (Test-Path -LiteralPath $contractsDir)) {
+        $contractDocs = @(Get-ChildItem -Path $contractsDir -Filter *.md -File -ErrorAction SilentlyContinue)
     }
 
-    foreach ($doc in $contractDocs) {
-        if ($doc.Name -eq 'README.md') { continue }
-        $lines = @(Get-Content -LiteralPath $doc.FullName)
-        # A pointer names the contract it points at. Length alone is not the test - a short note with no
-        # id is still a note - but a long file with no id is a copy of something that belongs elsewhere.
-        # The id line comes as `id: X`, `- **Id:** `X``, or a table row `| **Id** | `X` |` - all pointers.
-        $hasId = ($lines -join "`n") -match '(?im)^\s*(?:[-*]\s+)?(?:\|\s*)?(?:\*\*)?(contract|ids?)(?:\*\*)?\s*[:|]\s*(?:\*\*)?\s*`?[A-Z][A-Z0-9-]{2,}'
-        if (-not $hasId -and $lines.Count -gt 40) {
-            Add-Finding -Id 'SZA-CTR01' -Severity 'warn' -Path "docs/contracts/$($doc.Name)" `
-                -Message "$($lines.Count) lines and no contract id - reads like a copy, not a pointer into the shared catalog" `
-                -Fix 'If this file restates a contract, move that text into the catalog under its function. If it already points at the catalog, trim it to the contract id, version, home, role and what this repo owes (its obligations), and drop the rest. Run the contract-sync skill.'
+    if (Test-Enabled 'SZA-CTR01') {
+        foreach ($doc in $contractDocs) {
+            if ($doc.Name -eq 'README.md') { continue }
+            $lines = @(Get-Content -LiteralPath $doc.FullName)
+            # A pointer names the contract it points at. Length alone is not the test - a short note with no
+            # id is still a note - but a long file with no id is a copy of something that belongs elsewhere.
+            # The id line comes as `id: X`, `- **Id:** `X``, or a table row `| **Id** | `X` |` - all pointers.
+            $hasId = ($lines -join "`n") -match '(?im)^\s*(?:[-*]\s+)?(?:\|\s*)?(?:\*\*)?(contract|ids?)(?:\*\*)?\s*[:|]\s*(?:\*\*)?\s*`?[A-Z][A-Z0-9-]{2,}'
+            if (-not $hasId -and $lines.Count -gt 40) {
+                Add-Finding -Id 'SZA-CTR01' -Severity 'warn' -Path "docs/contracts/$($doc.Name)" `
+                    -Message "$($lines.Count) lines and no contract id - reads like a copy, not a pointer into the shared catalog" `
+                    -Fix 'If this file restates a contract, move that text into the catalog under its function. If it already points at the catalog, trim it to the contract id, version, home, role and what this repo owes (its obligations), and drop the rest. Run the contract-sync skill.'
+            }
         }
     }
 
-    if ($isGit -and $contractDocs.Count -gt 0) {
+    if ((Test-Enabled 'SZA-CTR03') -and $contractDocs.Count -gt 0 -and $agentFiles.Count -gt 0) {
         $namesCatalog = @($agentFiles | Where-Object {
             (Get-Content -LiteralPath (Join-RepoPath $_) -Raw) -match '(?i)P:[\\/]Contracts|contracts catalog'
         })
@@ -1068,7 +1172,7 @@ try {
 
     # The canon home is the one repo that must name the catalog: its rule docs, its skill and its own
     # gate are where that path is documented. Everywhere else the path is drift waiting to happen.
-    if ($isGit -and $stamp.role -ne 'canon-home') {
+    if ($isGit -and $stamp.role -ne 'canon-home' -and (Test-Enabled 'SZA-CTR02')) {
         $allowed = @('CLAUDE.md', 'AGENTS.md', 'GEMINI.md', '.sza-canon.json')
         $hits = @(& git -C $RepoRoot grep -l -I -F -e 'P:\Contracts' -e 'P:/Contracts' -- . 2>$null)
         if ($LASTEXITCODE -gt 1) { $hits = @() }
@@ -1082,7 +1186,8 @@ try {
 
     # --------------------------------------------------------- group SEC
 
-    if ($isGit) {
+    if ($isGit -and ((Test-Enabled 'SZA-SEC01') -or (Test-Enabled 'SZA-SEC02') -or (Test-Enabled 'SZA-SEC03') -or (Test-Enabled 'SZA-SEC04') -or (Test-Enabled 'SZA-SEC05'))) {
+        if (Test-Enabled 'SZA-SEC01') {
         $secretRes = @(
             '\.(pfx|snk|jks|keystore|p12|pem|cer)$'
             '(^|/)\.env$'
@@ -1100,8 +1205,10 @@ try {
                 }
             }
         }
+        }
 
         $gi = Join-RepoPath '.gitignore'
+        if (Test-Enabled 'SZA-SEC02') {
         if (Test-Path -LiteralPath $gi) {
             $giText = (Get-Content -LiteralPath $gi -Raw)
             $missing = @('*.pfx', '*.snk', '*.jks', '*.keystore', '.env', 'token', 'secret') |
@@ -1115,6 +1222,7 @@ try {
         else {
             Add-Finding -Id 'SZA-SEC02' -Severity 'warn' -Path '.gitignore' -Message 'no .gitignore' -Fix 'Add one with the leak globs.'
         }
+        }
 
         # SZA-SEC05 (S0060) - a source file that a name glob hides. The canon's leak globs (*token*, *secret*)
         # also swallow product source whose name holds the word (RoomSecretStore.kt, UiSizeTokens.kt): neither
@@ -1123,6 +1231,7 @@ try {
         # words. Fully ignored directories (build/, bin/) are collapsed by --directory and never listed, so a
         # build-output rule cannot fire it; a hit is cleared by a narrow negation, or - for a real secret store
         # kept ignored on purpose - by a dated SZA-SEC05 exemption naming the path.
+        if (Test-Enabled 'SZA-SEC05') {
         $codeRe = '\.(kt|kts|java|cs|vb|go|ts|tsx|js|jsx|py|ps1|psm1|swift|rs|c|cc|cpp|h|hpp)$'
         $ignoredOnDisk = @(& git -c core.quotepath=false -C $RepoRoot ls-files --others --ignored --exclude-standard --directory 2>$null)
         if ($LASTEXITCODE -ne 0) { $ignoredOnDisk = @() }
@@ -1144,11 +1253,13 @@ try {
                     -Fix 'Product source: add a narrow negation ("!path/File.kt") with a why-comment under the glob; keep the glob. A real secret store kept ignored on purpose: a dated SZA-SEC05 exemption naming the path.'
             }
         }
+        }
 
         # SZA-SEC03 - a committed binary needs a narrow negation AND a why-comment.
         # Restored dependency trees are vendored tooling, not a decision to commit a build artifact.
         # Without this default a single NuGet packages/ tree buries every other finding under hundreds
         # of lines, and a gate nobody can read is a gate nobody runs.
+        if (Test-Enabled 'SZA-SEC03') {
         $vendorDefault = @('packages/*', 'node_modules/*', 'vendor/*', 'third_party/*', '.nuget/*', 'Pods/*')
         $vendorAllow = $vendorDefault + $(if ($stamp -and $stamp.vendorAllow) { @($stamp.vendorAllow) } else { @() })
         $binRe = '\.(exe|dll|msi|msix|appx|aab|apk|zip|7z)$'
@@ -1189,8 +1300,10 @@ try {
                 -Message "$($grp.Count) committed binary file(s) without a narrow negation carrying a why-comment: $sample$more" `
                 -Fix 'Add "!path/to/file" to .gitignore with a # comment saying who produces it and why a clone needs it - or, if this is a restored dependency tree, add its glob to vendorAllow in the stamp.'
         }
+        }
 
         # SZA-SEC04 - live credential literals. Fixed prefixes only, so the FP rate stays zero.
+        if (Test-Enabled 'SZA-SEC04') {
         $credRes = @(
             'ghp_[A-Za-z0-9]{36}'
             'github_pat_[A-Za-z0-9_]{40,}'
@@ -1216,11 +1329,12 @@ try {
                 }
             }
         }
+        }
     }
 
     # --------------------------------------------------------- group VER
 
-    if ($isGit -and $stamp) {
+    if ($isGit -and $stamp -and ((Test-Enabled 'SZA-VER01') -or (Test-Enabled 'SZA-VER03'))) {
         $tags = @(& git -C $RepoRoot tag --sort=-creatordate 2>$null)
         if ($LASTEXITCODE -ne 0) { $tags = @() }
         $tagRegex = $stamp.versionShape.tagRegex
