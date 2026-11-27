@@ -1179,6 +1179,11 @@ function Invoke-PqInbox {
     $st = $inbox['stalled']
     '{0,-8} {1,4}  oldest {2,-6}  clear: {3}' -f 'stalled', $st['count'], $st['oldestAge'], $st['clear']
     foreach ($t in @($st['tickets'])) { '  {0}:{1}  idle {2}, {3}  age {4}' -f $t.repo, $t.id, $t.idle, $t.outcome, $t.age }
+    if ($inbox.Contains('unaccepted') -and $null -ne $inbox['unaccepted']) {
+        $ua = $inbox['unaccepted']
+        '{0,-8} {1,4}  oldest {2,-6}  clear: {3}' -f 'unaccepted', $ua['count'], $ua['oldestAge'], $ua['clear']
+        foreach ($t in @($ua['tickets'])) { '  {0}:{1}  ({2})  age {3}  {4}' -f $t.repo, $t.id, $t.status, $t.age, $t.acceptLine }
+    }
     foreach ($s in @($inbox.skipped)) { [Console]::Error.WriteLine("pq inbox: skipped $s") }
     "pq inbox: {0} waiting across {1} project(s)" -f $inbox.total, $inbox.projects
     return 0

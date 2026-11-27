@@ -67,11 +67,16 @@ function Get-BlockerLinks {
         [string] $StatusNote,
         # Excluded from the result: a spec naming its own id in section 10 is describing
         # itself, and a ticket blocked by itself would deadlock the picker.
-        [string] $SelfId
+        [string] $SelfId,
+        # Optional regex fragment matching this repository's ticket ids (without ^ / $ anchors).
+        # Multi-repository callers (portfolio/lib/inbox.ps1) pass each project's own fragment so they
+        # share this exact resolution without touching the single-project profile cache.
+        [string] $TicketIdFragment
     )
 
     $text = if ($null -ne $SpecText) { [string]$SpecText } else { '' }
     $note = if ($null -ne $StatusNote) { [string]$StatusNote } else { '' }
+    $fragment = if ($TicketIdFragment) { $TicketIdFragment } else { Get-SzaTicketIdFragment }
 
     # The two sources are a UNION (TASK-FLOW rule 9: "a line `**Depends on:**` or a token `Blocker: <id>`"). Until
     # S0083 the line replaced the tokens, so a spec whose line named no id silenced the tokens of its note and could
@@ -79,12 +84,14 @@ function Get-BlockerLinks {
     $ids = @()
     $depValue = Get-DependsOnValue -Text $text
     if ($null -ne $depValue) {
-        $ids += @([regex]::Matches($depValue, ('\b' + (Get-SzaTicketIdFragment) + '\b')) | ForEach-Object { $_.Value })
+        $ids += @([regex]::Matches($depValue, ('\b' + $fragment + '\b')) | ForEach-Object { $_.Value })
     }
     $tokenText = $note
     $sec10Match = [regex]::Match($text, '(?ms)^##\s+10\.[^\n]*\n(.+?)(?:\r?\n##\s|\z)')
     if ($sec10Match.Success) { $tokenText = $sec10Match.Groups[1].Value + "`n" + $tokenText }
-    $ids += @([regex]::Matches($tokenText, ('(?i)(?:Blocker|Блокер)\s*:\s*\**\s*(' + (Get-SzaTicketIdFragment) + ')')) |
+    # Same lookbehind as Get-QualifiedBlockerLinks: a token right after a backtick or an angle bracket is an example
+    # in prose, never a claim; the trailing guard refuses partial ids such as `S0002suffix` (CANONR-0243).
+    $ids += @([regex]::Matches($tokenText, ('(?i)(?<![`<])(?:Blocker|Блокер)\s*:\s*\**\s*(' + $fragment + ')(?![A-Za-z0-9_-])')) |
         ForEach-Object { $_.Groups[1].Value })
 
     $ids = @($ids | Sort-Object -Unique)

@@ -8,24 +8,25 @@ What each package was built as last, what each channel carries, and every public
 
 | Package | Channel | Kind | Live | Since | In flight | Ref |
 | --- | --- | --- | --- | --- | --- | --- |
-| sza | marketplace (Claude plugin marketplace (main)) | url | 2026.1126.9 | 2026-11-26 | - | [1ff7187](https://github.com/SerZhyAle/sza-unified-rules/blob/main/.claude-plugin/plugin.json) |
+| sza | marketplace (Claude plugin marketplace (main)) | url | 2026.1127.1 | 2026-11-27 | - | [682f03c](https://github.com/SerZhyAle/sza-unified-rules/blob/main/.claude-plugin/plugin.json) |
 
 ## Last builds
 
 | Package | Flavor | Kind | Version | Built | Artifact |
 | --- | --- | --- | --- | --- | --- |
-| sza | default | release | 2026.1127.1 | 2026-11-27 00:28:23+01:00 | - |
+| sza | default | release | 2026.1127.2 | 2026-11-27 02:11:06+01:00 | - |
 
 ## Built, not published
 
 | Package | Flavor | Version | Built | Days |
 | --- | --- | --- | --- | --- |
-| sza | default | 2026.1127.1 | 2026-11-27 | 0 |
+| sza | default | 2026.1127.2 | 2026-11-27 | 0 |
 
 ## History
 
 | When | Package | Channel | Version | State | Source | Ref | Note |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2026-11-27 00:28:40+01:00 | sza | marketplace | 2026.1127.1 | live | release | [682f03c](https://github.com/SerZhyAle/sza-unified-rules/blob/main/.claude-plugin/plugin.json) | CANONR-0238, CANONR-0239, CANONR-0240, CANONR-0241, CANONR-0242 |
 | 2026-11-26 12:07:37+01:00 | sza | marketplace | 2026.1126.9 | live | release | [1ff7187](https://github.com/SerZhyAle/sza-unified-rules/blob/main/.claude-plugin/plugin.json) | CANONR-0226, CANONR-0237 |
 | 2026-11-26 10:46:26+01:00 | sza | marketplace | 2026.1126.8 | live | release | [e920d9d](https://github.com/SerZhyAle/sza-unified-rules/blob/main/.claude-plugin/plugin.json) | CANONR-0210, CANONR-0233 |
 | 2026-11-26 10:37:28+01:00 | sza | marketplace | 2026.1126.7 | live | release | [07494f4](https://github.com/SerZhyAle/sza-unified-rules/blob/main/.claude-plugin/plugin.json) | CANONR-0206, CANONR-0208, CANONR-0209, CANONR-0211, CANONR-0213, CANONR-0217, CANONR-0218, CANONR-0219, CANONR-0220, CANONR-0221, CANONR-0222, CANONR-0223, CANONR-0224, CANONR-0225, CANONR-0227, CANONR-0228, CANONR-0229, CANONR-0230, CANONR-0231, CANONR-0232, CANONR-0234, CANONR-0235, CANONR-0236 |

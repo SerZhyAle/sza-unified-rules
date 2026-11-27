@@ -228,16 +228,20 @@ A pass that parks a ticket also writes its questions into the spec file as a `##
 questions (`BlockQuestions`), tests (`BlockNeedUserTest`), outside (`BlockExternal`), chain (`BlockByOtherTask`),
 unbuilt (`Implemented`) - with the count, the oldest age and the command that clears the kind, then the tickets with
 id, age and note. A chain ticket prints as its chain root (`fms-web:S0021 (held, owner decision) frees 8`), walking
-the `Blocker:` tokens with the same release test the picker uses. A local token counts only when its id matches the
-project's `grammar.ticketIdPattern` (default `^S\d{4}$`); other words are prose. `-Json` gives the same records to the GUI.
-`quiz-list.ps1 -Status <name[,name]>` lists any other statuses through the same reader (default `BlockQuestions`).
-`pq status` ends with the same five counts and points at `pq inbox`.
-Under the five kinds `pq inbox` prints one more line, `stalled`: the active rows of `PORTFOLIO_QUEUE.md` that carry the
-picker's `[idle N, <last outcome>]` marker - tickets in a working status that automatic ranking passes over, because N
-passes in a row did not move them. `pq start -Ticket <key>:<id>` does not pass that hold (the picker's gates apply to a
-named start too), so the line names the way out: a session that works the ticket by name, `/sa <key>:<id>`. The line is
-as fresh as the last sync of the queue file; it is not one of the five counts and not part of the total; `-Json`
-carries it as `stalled`.
+the `Blocker:` tokens with the same local channels (`**Depends on:**`, `## 10.`, `statusNote`, ignoring quoted
+examples) and release test the picker uses. A local token counts only when its id matches the project's
+`grammar.ticketIdPattern` (default `^S\d{4}$`) or `grammar.legacyTicketIdPatterns`; other words are prose. `-Json`
+gives the same records to the GUI. `quiz-list.ps1 -Status <name[,name]>` lists any other statuses through the same
+reader (default `BlockQuestions`). `pq status` ends with the same five counts and points at `pq inbox`.
+Under the five kinds `pq inbox` prints two more lines, neither of them one of the five counts or part of the total:
+`stalled` lists the active rows of `PORTFOLIO_QUEUE.md` that carry the picker's `[idle N, <last outcome>]` marker -
+tickets in a working status that automatic ranking passes over, because N passes in a row did not move them
+(`pq start -Ticket <key>:<id>` does not pass that hold, so the line names `/sa <key>:<id>`; `-Json` carries it as
+`stalled`); `unaccepted` lists the open or `BlockByOtherTask` tickets held **only** by unaccepted `Implemented`
+blockers whose tactical plans are finished (TASK-FLOW 0.46 item B), each with the exact `**Accepts Implemented:**` line
+that would accept them (whether to accept stays a per-ticket judgement, followed by `block-links.ps1 -Check -Id <id>`
+when `BlockByOtherTask`; `-Json` carries it as `unaccepted`). `block-links.ps1 -Sweep` prints the same summary for
+`BlockByOtherTask` tickets of the repository it sweeps.
 
 The phone inbox listener files incoming packets as Draft tickets. `install-inbox-watcher.ps1` registers the
 listener and a separate drain every 10 minutes; `drain-inbox.ps1` also runs manually. Each drain ingests

@@ -76,7 +76,7 @@ $gamma = New-Project 'gamma' @(
 ) @{
     'S0050_x.md' = "Blocker: beta:S0021`n"
     'S0051_x.md' = "Blocker: FastMediaSorter`nBlocker: beta:S0099`n"
-    'S0052_x.md' = "Blocker: FastMediaSorter`nBlocker: S0053`n"
+    'S0052_x.md' = "## 10. Links`n`nBlocker: FastMediaSorter`nBlocker: S0053`n"
 }
 
 $repos = foreach ($p in @(@('alpha', $alpha), @('beta', $beta), @('gamma', $gamma))) {

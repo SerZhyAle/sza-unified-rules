@@ -22,7 +22,7 @@
 $script:PqStatusSets = New-Module -ArgumentList (Join-Path $PSScriptRoot '..\..\spec_catalog\_status-sets.ps1') -ScriptBlock {
     param($StatusSets)
     . $StatusSets
-    Export-ModuleMember -Function Test-BlockerReleased, Test-AcceptsImplemented
+    Export-ModuleMember -Function Test-BlockerReleased, Test-AcceptsImplemented, Test-BlockerPlanComplete
 }
 
 # The lookbehind is the closing gate's (spec_catalog/_blocker-links.ps1): a token right after a backtick or an angle

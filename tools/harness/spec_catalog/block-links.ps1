@@ -188,7 +188,13 @@ function Read-BlText([string] $File) {
     try { return [IO.File]::ReadAllText($File) } catch { return '' }
 }
 
-# The blockers a waiting ticket names, resolved: @{ ref; key; id; root; record; released; why }.
+function Test-BlUnacceptedImplemented($Record, [string] $Id, [string] $SpecText, [string] $BlockerRef) {
+    if (-not $Record -or $Record.status -cne 'Implemented') { return $false }
+    if (Test-AcceptsImplemented -SpecText $SpecText -Ref $BlockerRef) { return $false }
+    return (Test-BlockerPlanComplete -Id $Id -File $Record.file)
+}
+
+# The blockers a waiting ticket names, resolved: @{ ref; key; id; root; record; released; unacceptedImplemented; why }.
 function Get-BlBlockersOf($Record, [switch] $IgnoreLocalPark) {
     $spec = Read-BlText $Record.file
     $localDependent = if (-not $IgnoreLocalPark) { $Record.id }
@@ -198,8 +204,10 @@ function Get-BlBlockersOf($Record, [switch] $IgnoreLocalPark) {
         $rel = if ($rec) {
             Test-BlockerReleased -Status $rec.status -Id $b -File $rec.file -DependentSpec $spec -LocalDependentId $localDependent
         } else { $false }
+        $unacc = (-not $rel) -and (Test-BlUnacceptedImplemented $rec $b $spec $b)
+        $why = if ($rec) { "$b is $($rec.status)$(if ($unacc) { ' (not accepted)' })" } else { "$b is in neither the ledger nor the archive" }
         $out += [pscustomobject]@{ ref = $b; key = $script:SelfKey; id = $b; root = $script:SelfRoot; record = $rec; released = [bool]$rel
-            why = $(if ($rec) { "$b is $($rec.status)" } else { "$b is in neither the ledger nor the archive" }) }
+            unacceptedImplemented = [bool]$unacc; why = $why }
     }
     foreach ($pair in @(Get-QualifiedBlockerLinks -SpecText $spec -StatusNote $Record.statusNote)) {
         $k, $i = $pair -split ':', 2
@@ -207,20 +215,24 @@ function Get-BlBlockersOf($Record, [switch] $IgnoreLocalPark) {
             if ($i -ceq $Record.id) { continue }
             $rec = Read-BlLocalRecord $i
             $rel = if ($rec) { Test-BlockerReleased -Status $rec.status -Id $i -File $rec.file -DependentSpec $spec -BlockerRef $pair } else { $false }
+            $unacc = (-not $rel) -and (Test-BlUnacceptedImplemented $rec $i $spec $pair)
+            $why = if ($rec) { "$i is $($rec.status)$(if ($unacc) { ' (not accepted)' })" } else { "$i is in neither the ledger nor the archive" }
             $out += [pscustomobject]@{ ref = $pair; key = $k; id = $i; root = $script:SelfRoot; record = $rec; released = [bool]$rel
-                why = $(if ($rec) { "$i is $($rec.status)" } else { "$i is in neither the ledger nor the archive" }) }
+                unacceptedImplemented = [bool]$unacc; why = $why }
             continue
         }
         $root = Get-BlRepoPath $k
         if (-not $root) {
-            $out += [pscustomobject]@{ ref = $pair; key = $k; id = $i; root = $null; record = $null; released = $false; why = "no registered repository '$k'" }
+            $out += [pscustomobject]@{ ref = $pair; key = $k; id = $i; root = $null; record = $null; released = $false; unacceptedImplemented = $false; why = "no registered repository '$k'" }
             continue
         }
         $rec = Read-BlForeignRecord $root $i
         # Test-BlockerReleased resolves a relative plan path against THIS project; the foreign file is absolute.
         $rel = if ($rec) { Test-BlockerReleased -Status $rec.status -Id $i -File $rec.file -DependentSpec $spec -BlockerRef $pair } else { $false }
+        $unacc = (-not $rel) -and (Test-BlUnacceptedImplemented $rec $i $spec $pair)
+        $why = if ($rec) { "$pair is $($rec.status)$(if ($unacc) { ' (not accepted)' })" } else { "$pair is in neither its ledger nor its archive" }
         $out += [pscustomobject]@{ ref = $pair; key = $k; id = $i; root = $root; record = $rec; released = [bool]$rel
-            why = $(if ($rec) { "$pair is $($rec.status)" } else { "$pair is in neither its ledger nor its archive" }) }
+            unacceptedImplemented = [bool]$unacc; why = $why }
     }
     return $out
 }
@@ -456,7 +468,11 @@ function Invoke-BlCheck([string] $TicketId, [string] $WasStatus, [switch] $Ignor
     $blockers = @(Get-BlBlockersOf $rec -IgnoreLocalPark:$IgnoreLocalPark)
     $holding = @($blockers | Where-Object { -not $_.released })
     if ($holding.Count -gt 0) {
-        return [pscustomobject]@{ state = 'held'; status = $rec.status; heldBy = @($holding | ForEach-Object { $_.ref }); message = (($holding | ForEach-Object { $_.why }) -join '; ') }
+        $onlyUnaccepted = @($holding | Where-Object { -not $_.unacceptedImplemented }).Count -eq 0
+        $acceptLine = if ($onlyUnaccepted) { '**Accepts Implemented:** ' + ((@($holding | ForEach-Object { $_.ref }) | Select-Object -Unique) -join ', ') } else { '' }
+        return [pscustomobject]@{ state = 'held'; status = $rec.status; heldBy = @($holding | ForEach-Object { $_.ref })
+            onlyUnacceptedImplemented = $onlyUnaccepted; acceptLine = $acceptLine
+            message = (($holding | ForEach-Object { $_.why }) -join '; ') }
     }
     $target = if ($WasStatus -and $script:ActiveStatuses -contains $WasStatus) { $WasStatus } else { Get-BlFallbackStatus $rec }
     $freedBy = if ($blockers.Count -gt 0) { (($blockers | ForEach-Object { $_.why }) -join ', ') } else { 'no blocker is named any more' }
@@ -534,6 +550,7 @@ function Invoke-BlSweep {
     # foreach, not a pipeline: Read-Catalog hands back its array as one object.
     $blocked = @(foreach ($r in (Read-Catalog)) { if ([string]$r.status -ceq 'BlockByOtherTask') { $r } })
     if ($blocked.Count -eq 0) { Write-BlLine "no BlockByOtherTask ticket in $($script:SelfRoot)."; return 0 }
+    $unaccepted = [Collections.Generic.List[object]]::new()
     foreach ($r in $blocked) {
         $id = [string]$r.id
         $lr = Invoke-BlLink $id ''
@@ -550,9 +567,20 @@ function Invoke-BlSweep {
                     try { [void](Invoke-BlFileEdit $b.record.file { Close-BlBackLink $b.record.file $ref $res.status }) } catch { }
                 }
             }
-            'held' { Write-BlLine "$id stays blocked: $($res.message)" }
+            'held' {
+                Write-BlLine "$id stays blocked: $($res.message)"
+                if ($res.onlyUnacceptedImplemented -and $res.acceptLine) {
+                    $unaccepted.Add([pscustomobject]@{ id = $id; acceptLine = $res.acceptLine })
+                }
+            }
             'refused' { Write-BlLine "$id NOT released: $($res.message)" 'Yellow'; $rc = 1 }
             default { Write-BlLine "${id}: $($res.message)" 'Yellow' }
+        }
+    }
+    if ($unaccepted.Count -gt 0) {
+        Write-BlLine "held only by unaccepted Implemented blocker(s) ($($unaccepted.Count); judge per ticket, then run block-links.ps1 -Check -Id <id>):" 'Yellow'
+        foreach ($u in $unaccepted) {
+            Write-BlLine "  $($u.id): $($u.acceptLine)" 'Yellow'
         }
     }
     return $rc
@@ -584,6 +612,9 @@ if ($Check) {
     $res = Invoke-BlCheck $Id $Was -IgnoreLocalPark:(-not $RespectLocalPark)
     $color = switch ($res.state) { 'released' { 'Green' } 'held' { 'Gray' } 'not-blocked' { 'Gray' } default { 'Yellow' } }
     Write-BlLine "$($res.state): $($res.message)" $color
+    if ($res.state -ceq 'held' -and $res.onlyUnacceptedImplemented -and $res.acceptLine) {
+        Write-BlLine "  accept with: $($res.acceptLine)" 'Yellow'
+    }
     Write-Output ('BLOCKLINKS-RESULT ' + ($res | ConvertTo-Json -Compress -Depth 4))
     if ($res.state -in @('refused')) { exit 1 }
     if ($res.state -eq 'missing') { exit 2 }

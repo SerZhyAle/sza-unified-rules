@@ -1,4 +1,4 @@
-# The owner's inbox of the portfolio (S0025): the tickets that wait for the owner alone, read from the ledgers of
+﻿# The owner's inbox of the portfolio (S0025): the tickets that wait for the owner alone, read from the ledgers of
 # every registered repository. The row reader is the quiz-list reader - one place reads a ledger for a read-only
 # owner-facing list, so quiz-list.ps1 and pq inbox cannot drift apart.
 #
@@ -15,19 +15,24 @@
 #   Get-PqInboxCounts -Rows
 #       the five kinds of the inbox as an ordered map label -> count.
 #   Get-PqInbox -Registry [-Held <set of "key:id">]
-#       the full inbox: @{ total; projects; skipped; kinds } where kinds is an ordered map label ->
+#       the full inbox: @{ total; projects; skipped; counts; kinds; unaccepted } where kinds is an ordered map label ->
 #       @{ status; label; clear; count; oldestAge; oldestSeconds; tickets; roots (chain only) }. A ticket is
 #       @{ repo; id; status; priority; updated; ageSeconds; age; name; file; note }. A chain root is
 #       @{ repo; id; pair; status; note; held; state; why; frees (the "key:id" it holds back); freesCount; age }.
-#       BlockByOtherTask tickets are grouped by their chain root: the walk follows the spec's Blocker: tokens
-#       (qualified and local) while the blocker holds, judged by the same release test the picker uses
-#       (Test-BlockerReleased through xrepo.ps1), at most ten hops.
+#       BlockByOtherTask tickets are grouped by their chain root: the walk follows the picker's directional blocker
+#       channels (**Depends on:**, ## 10., statusNote, and qualified Blocker: tokens, ignoring quoted examples) while
+#       the blocker holds, judged by Test-BlockerReleased through xrepo.ps1, at most ten hops. `unaccepted` (outside the
+#       five kinds and total) lists tickets held ONLY by unaccepted Implemented blockers whose tactical plans are done.
 #   Get-PqLiftTarget -Registry -Refusal <Get-PqXrepoBlock result> [-Memo] [-Snapshots]
 #       the same walk for the dispatcher's lift (TASK-FLOW 0.38 section 16): @{ repo; id; status; why } of the root behind a
 #       refused ticket, or $null; passed to Get-PqRank as -HeadLift.
 
 . (Join-Path $PSScriptRoot 'registry.ps1')
 . (Join-Path $PSScriptRoot 'ledger-watch.ps1')
+. (Join-Path $PSScriptRoot '..\..\spec_catalog\_blocker-links.ps1')
+
+# Statuses in which a directional blocker holds a ticket back from being worked (TASK-FLOW rules 18, 52 and 0.46 B).
+$script:PqBlockerWaitStatuses = @('Draft', 'Approved', 'Tactical', 'In Progress', 'Partial', 'Broken', 'BlockByOtherTask')
 
 # The five kinds of what waits for the owner, in the order they print. `clear` is the command that clears the kind.
 $script:PqInboxKinds = [ordered]@{
@@ -133,25 +138,16 @@ function Get-PqInboxCounts($Rows) {
     return $counts
 }
 
-# The first local (same-repository) `Blocker: <id>` token of the ticket's spec or statusNote whose blocker is not released - the
-# picker's release test, the one xrepo.ps1 runs for qualified blockers - as "key:id", else $null. A blocker that
-# cannot be read holds, like xrepo.ps1's 'unreadable'. Only the repository's ticket-id grammar distinguishes a
-# local token from prose; the profile is read per repository, not through the single-project profile cache.
-function Get-PqInboxLocalHold($ByKey, $Snaps, [string] $RepoKey, [string] $Id) {
-    if ($null -eq (Get-Variable -Name PqStatusSets -Scope Script -ErrorAction Ignore)) { return $null }
-    if (-not $ByKey.ContainsKey($RepoKey)) { return $null }
-    $t = Get-PqXrepoTicket $ByKey[$RepoKey] $Id $Snaps
-    if ($null -eq $t) { return $null }
-    # The spec and the statusNote both carry tokens (TASK-FLOW 0.38 section 16 A; CANONR-0196 C-G9): the note is the usual
-    # place of a BlockByOtherTask blocker, so a spec without one is no reason to stop.
-    $spec = [string](Read-PqSpecText $t.file)
-    $note = [string]$t.statusNote
-    $text = if ($note) { "$spec`n$note" } else { $spec }
-    if (-not $text.Trim()) { return $null }
+# The repository's ticket-id regex fragment (current pattern plus legacyTicketIdPatterns, without ^ / $ anchors),
+# cached per walk so .sza-profile.json is read once per repository.
+function Get-PqRepoTicketIdFragment($Repo, [hashtable]$Cache = $null) {
+    $key = [string]$Repo.key
+    $ck = "frag|$key"
+    if ($null -ne $Cache -and $Cache.ContainsKey($ck)) { return $Cache[$ck] }
     $pattern = [string]$script:PqRepoDefaults.grammar.ticketIdPattern
-    # A legacy id shape still validates (0.37 D; C-G10): the current pattern and every grammar.legacyTicketIdPatterns entry.
     $patterns = [Collections.Generic.List[string]]::new()
-    $profileFile = Join-Path ([string]$ByKey[$RepoKey].path) '.sza-profile.json'
+    $profileFile = Join-Path ([string]$Repo.path) '.sza-profile.json'
+    $valid = $true
     if ([IO.File]::Exists($profileFile)) {
         try {
             $profile = ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($profileFile)) -DateKind String -NoEnumerate
@@ -162,27 +158,110 @@ function Get-PqInboxLocalHold($ByKey, $Snaps, [string] $RepoKey, [string] $Id) {
             foreach ($lp in @(Get-PqLwField $grammar 'legacyTicketIdPatterns' | ForEach-Object { $_ })) {
                 if ($lp -is [string] -and $lp) { $patterns.Add($lp) }
             }
-        } catch { return $null }
+        } catch { $valid = $false }
     }
-    $patterns.Insert(0, $pattern)
-    try { $idRegex = [regex]::new('\A(?:' + (@($patterns | ForEach-Object { "(?:$_)" }) -join '|') + ')\z', [Text.RegularExpressions.RegexOptions]::IgnoreCase) }
-    catch { return $null }
-    $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
-    foreach ($m in [regex]::Matches($text, '(?i)(?:Blocker|Блокер)\s*:\s*\**\s*([A-Za-z][A-Za-z0-9_-]*(?:\s*:\s*[A-Za-z][A-Za-z0-9_-]*)?)')) {
-        $val = $m.Groups[1].Value -replace '\s*:\s*', ':'
-        if ($val.Contains(':')) { continue }   # a qualified token: xrepo.ps1's own walk owns it
-        if (-not $idRegex.IsMatch($val)) { continue }
-        if ($val -ceq $Id) { continue }
-        if (-not $seen.Add($val)) { continue }
+    $frag = $null
+    if ($valid) {
+        $patterns.Insert(0, $pattern)
+        $cores = @($patterns | ForEach-Object { (([string]$_ -replace '^\^', '') -replace '\$$', '') } | Where-Object { $_ } | Select-Object -Unique)
+        if ($cores.Count -gt 0) {
+            $candidate = if ($cores.Count -eq 1) { $cores[0] } else { '(?:' + (@($cores | ForEach-Object { "(?:$_)" }) -join '|') + ')' }
+            try {
+                $null = [regex]::new($candidate, [Text.RegularExpressions.RegexOptions]::IgnoreCase)
+                $frag = $candidate
+            } catch { $frag = $null }
+        }
+    }
+    if ($null -ne $Cache) { $Cache[$ck] = $frag }
+    return $frag
+}
+
+# The first local (same-repository) blocker of the ticket whose blocker is not released - read through the picker's own
+# Get-BlockerLinks (**Depends on:**, ## 10. and statusNote, ignoring quoted examples; CANONR-0243) and judged by the
+# picker's release test - as "key:id", else $null. A blocker that cannot be read holds, like xrepo.ps1's 'unreadable'.
+function Get-PqInboxLocalHold($ByKey, $Snaps, [string] $RepoKey, [string] $Id) {
+    if ($null -eq (Get-Variable -Name PqStatusSets -Scope Script -ErrorAction Ignore)) { return $null }
+    if (-not $ByKey.ContainsKey($RepoKey)) { return $null }
+    $t = Get-PqXrepoTicket $ByKey[$RepoKey] $Id $Snaps
+    if ($null -eq $t) { return $null }
+    $spec = [string](Read-PqSpecText $t.file)
+    $note = [string]$t.statusNote
+    if (-not $spec.Trim() -and -not $note.Trim()) { return $null }
+    $fragment = Get-PqRepoTicketIdFragment $ByKey[$RepoKey] $Snaps
+    if (-not $fragment) { return $null }
+    $localDependent = if ([string]$t.status -ceq 'BlockByOtherTask') { $Id } else { '' }
+    foreach ($val in @(Get-BlockerLinks -SpecText $spec -StatusNote $note -SelfId $Id -TicketIdFragment $fragment)) {
+        if (-not $val -or $val -ceq $Id) { continue }
         $b = Get-PqXrepoTicket $ByKey[$RepoKey] $val $Snaps
         if ($null -eq $b) { return "$RepoKey`:$val" }
         $released = & $script:PqStatusSets {
             param($s, $i, $f, $text, $dependent)
             Test-BlockerReleased -Status $s -Id $i -File $f -DependentSpec $text -LocalDependentId $dependent
-        } $b.status $val $b.file $spec $Id
+        } $b.status $val $b.file $spec $localDependent
         if (-not $released) { return "$RepoKey`:$val" }
     }
     return $null
+}
+
+# Blocker refs (local `<id>` and qualified `<repoKey>:<id>`) that hold a ticket ONLY because they stand at Implemented
+# with a finished tactical plan and the dependent has not accepted them via `**Accepts Implemented:**` (TASK-FLOW 0.46
+# item B; CANONR-0243). Returns $null when nothing holds the ticket or when any other blocker holds it too.
+function Get-PqUnacceptedImplementedHold($ByKey, $Snaps, [string] $RepoKey, [string] $Id) {
+    if ($null -eq (Get-Variable -Name PqStatusSets -Scope Script -ErrorAction Ignore)) { return $null }
+    if (-not $ByKey.ContainsKey($RepoKey)) { return $null }
+    $t = Get-PqXrepoTicket $ByKey[$RepoKey] $Id $Snaps
+    if ($null -eq $t) { return $null }
+    $spec = [string](Read-PqSpecText $t.file)
+    $note = [string]$t.statusNote
+    if (-not $spec.Trim() -and -not $note.Trim()) { return $null }
+    if ($spec -notmatch '(?i)(?:\*\*Depends on:\*\*|(?:Blocker|Блокер)\s*:)' -and
+        $note -notmatch '(?i)(?:Blocker|Блокер)\s*:') { return $null }
+
+    $unaccepted = [Collections.Generic.List[string]]::new()
+    $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    $localDependent = if ([string]$t.status -ceq 'BlockByOtherTask') { $Id } else { '' }
+
+    $fragment = Get-PqRepoTicketIdFragment $ByKey[$RepoKey] $Snaps
+    if ($fragment) {
+        foreach ($val in @(Get-BlockerLinks -SpecText $spec -StatusNote $note -SelfId $Id -TicketIdFragment $fragment)) {
+            if (-not $val -or $val -ceq $Id) { continue }
+            $b = Get-PqXrepoTicket $ByKey[$RepoKey] $val $Snaps
+            if ($null -eq $b) { return $null }
+            $released = & $script:PqStatusSets {
+                param($s, $i, $f, $text, $dependent)
+                Test-BlockerReleased -Status $s -Id $i -File $f -DependentSpec $text -LocalDependentId $dependent
+            } $b.status $val $b.file $spec $localDependent
+            if ($released) { continue }
+            if ([string]$b.status -cne 'Implemented') { return $null }
+            $accepted = & $script:PqStatusSets { param($text, $ref) Test-AcceptsImplemented -SpecText $text -Ref $ref } $spec $val
+            if ($accepted) { return $null }
+            $planDone = & $script:PqStatusSets { param($i, $f) Test-BlockerPlanComplete -Id $i -File $f } $val $b.file
+            if (-not $planDone) { return $null }
+            if ($seen.Add($val)) { $unaccepted.Add($val) }
+        }
+    }
+
+    foreach ($pair in @(Get-QualifiedBlockerLinks -SpecText $spec -StatusNote $note)) {
+        $bKey, $bId = $pair -split ':', 2
+        if ($bKey -ceq $RepoKey -and $bId -ceq $Id) { continue }
+        if (-not $ByKey.ContainsKey($bKey)) { return $null }
+        $b = Get-PqXrepoTicket $ByKey[$bKey] $bId $Snaps
+        if ($null -eq $b) { return $null }
+        $released = & $script:PqStatusSets {
+            param($s, $i, $f, $text, $ref)
+            Test-BlockerReleased -Status $s -Id $i -File $f -DependentSpec $text -BlockerRef $ref
+        } $b.status $bId $b.file $spec $pair
+        if ($released) { continue }
+        if ([string]$b.status -cne 'Implemented') { return $null }
+        $accepted = & $script:PqStatusSets { param($text, $ref) Test-AcceptsImplemented -SpecText $text -Ref $ref } $spec $pair
+        if ($accepted) { return $null }
+        $planDone = & $script:PqStatusSets { param($i, $f) Test-BlockerPlanComplete -Id $i -File $f } $bId $b.file
+        if (-not $planDone) { return $null }
+        if ($seen.Add($pair)) { $unaccepted.Add($pair) }
+    }
+
+    if ($unaccepted.Count -eq 0) { return $null }
+    return [string[]]@($unaccepted)
 }
 
 # The chain root of one BlockByOtherTask ticket: follow the spec's Blocker: tokens while the blocker holds (the
@@ -275,9 +354,9 @@ function Get-PqInbox {
         }
     }
 
+    $snaps = @{}
     # Chain roots: every BlockByOtherTask ticket walks to its root; the root line says how many it frees.
     if ($chainRows.Count -gt 0) {
-        $snaps = @{}
         $groups = [ordered]@{}
         $selfRoot = @{}
         foreach ($row in $chainRows) {
@@ -316,6 +395,33 @@ function Get-PqInbox {
         $kinds['chain']['tickets'] = @($loose | ForEach-Object { ConvertTo-PqInboxTicket $_ } | Sort-Object -Property @{ Expression = { -($_.ageSeconds ?? [long]::MaxValue) } }, 'repo', 'id')
     }
 
+    # TASK-FLOW 0.46 item B (CANONR-0243): tickets held ONLY by unaccepted Implemented blockers, outside the five kinds
+    # and total (like stalled), each carrying the exact `**Accepts Implemented:**` line for per-ticket judgement.
+    $unacceptedList = [Collections.Generic.List[object]]::new()
+    foreach ($row in $rows) {
+        if ($script:PqBlockerWaitStatuses -cnotcontains $row.status) { continue }
+        $rawRefs = Get-PqUnacceptedImplementedHold $byKey $snaps $row.repo $row.id
+        if ($null -eq $rawRefs) { continue }
+        $refs = @($rawRefs | Where-Object { $_ })
+        if ($refs.Count -eq 0) { continue }
+        $age = Get-PqInboxAge $row.updated
+        $unacceptedList.Add([pscustomobject][ordered]@{
+            repo = $row.repo; id = $row.id; status = $row.status; priority = $row.priority; updated = $row.updated
+            ageSeconds = $age.seconds; age = $age.text; name = $row.name; file = $row.file
+            blockers = [string[]]$refs
+            acceptLine = '**Accepts Implemented:** ' + ($refs -join ', ')
+        })
+    }
+    $unacceptedTickets = @($unacceptedList | Sort-Object -Property @{ Expression = { -($_.ageSeconds ?? [long]::MaxValue) } }, 'repo', 'id')
+    $unacceptedOldest = $null
+    foreach ($t in $unacceptedTickets) { if ($null -ne $t.ageSeconds -and ($null -eq $unacceptedOldest -or $t.ageSeconds -gt $unacceptedOldest)) { $unacceptedOldest = $t.ageSeconds } }
+    $unaccepted = [ordered]@{
+        label = 'unaccepted'; count = $unacceptedTickets.Count; oldestSeconds = $unacceptedOldest
+        oldestAge = $(if ($null -eq $unacceptedOldest) { 'none' } else { ConvertTo-PqInboxAgeText $unacceptedOldest })
+        clear = 'add the Accepts Implemented line to the spec (judge per ticket), then block-links.ps1 -Check -Id <id> if BlockByOtherTask'
+        tickets = $unacceptedTickets
+    }
+
     $counts = Get-PqInboxCounts $rows
     $projects = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
     foreach ($row in $rows) { $null = $projects.Add($row.repo) }
@@ -325,5 +431,6 @@ function Get-PqInbox {
         skipped = $gathered.skipped
         counts = $counts
         kinds = $kinds
+        unaccepted = $unaccepted
     }
 }

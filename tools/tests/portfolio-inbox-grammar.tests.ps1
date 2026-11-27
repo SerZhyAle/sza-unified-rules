@@ -1,4 +1,4 @@
-#requires -Version 7.0
+﻿#requires -Version 7.0
 # Focused S0051 regression: real profiles, ledgers and specs, without starting a pq process.
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -34,28 +34,32 @@ try {
     $byKey = @{ default = $a; custom = $b }
     $registry = @{ repos = @($a, $b) }
 
-    Set-Spec $a 'S0001' "Blocker: FastMediaSorter`nBlocker: S0002"
+    Set-Spec $a 'S0001' "## 10. Links`n`nBlocker: FastMediaSorter`nBlocker: S0002"
     Assert-Equal (Get-PqInboxLocalHold $byKey @{} 'default' 'S0001') 'default:S0002' 'prose is skipped before a valid blocker'
-    Set-Spec $a 'S0001' 'Blocker: FastMediaSorter'
+    Set-Spec $a 'S0001' "## 10. Links`n`nBlocker: FastMediaSorter"
     Assert-Equal (Get-PqInboxLocalHold $byKey @{} 'default' 'S0001') $null 'prose alone does not hold'
     Assert-Equal (Get-PqInboxChainRoot $registry $byKey @{} 'default' 'S0001').pair 'default:S0001' 'prose does not create a chain root'
-    Set-Spec $a 'S0001' 'Blocker: S0002suffix'
+    Set-Spec $a 'S0001' "## 10. Links`n`nBlocker: S0002suffix"
     Assert-Equal (Get-PqInboxLocalHold $byKey @{} 'default' 'S0001') $null 'partial id does not match'
-    Set-Spec $a 'S0001' 'Blocker: S0003'
+    Set-Spec $a 'S0001' "## 10. Links`n`nBlocker: S0003"
     Assert-Equal (Get-PqInboxLocalHold $byKey @{} 'default' 'S0001') 'default:S0003' 'missing but valid id still holds'
-    Set-Spec $a 'S0001' 'Blocker: S0099'
+    Set-Spec $a 'S0001' "## 10. Links`n`nBlocker: S0099"
     Assert-Equal (Get-PqInboxLocalHold $byKey @{} 'default' 'S0001') $null 'released local blocker does not hold'
-    Set-Spec $a 'S0001' 'Blocker: custom:SP-0002'
+    Set-Spec $a 'S0001' "## 10. Links`n`nBlocker: custom:SP-0002"
     Assert-Equal (Get-PqInboxLocalHold $byKey @{} 'default' 'S0001') $null 'qualified blocker remains with cross-repo walk'
     Assert-Equal (Get-PqInboxChainRoot $registry $byKey @{} 'default' 'S0001').pair 'custom:SP-0002' 'qualified blocker still forms a chain'
-    Set-Spec $b 'SP-0001' "Blocker: S0002`nBlocker: SP-0002"
+    Set-Spec $b 'SP-0001' "## 10. Links`n`nBlocker: S0002`nBlocker: SP-0002"
     Assert-Equal (Get-PqInboxLocalHold $byKey @{} 'custom' 'SP-0001') 'custom:SP-0002' 'custom grammar overrides default'
-    Set-Spec $b 'SP-0001' 'Blocker: S0002'
+    Set-Spec $b 'SP-0001' "## 10. Links`n`nBlocker: S0002"
     Assert-Equal (Get-PqInboxLocalHold $byKey @{} 'custom' 'SP-0001') $null 'default id is prose in custom project'
-    Set-Spec $a 'S0001' 'Blocker: SP-0002'
+    Set-Spec $a 'S0001' "## 10. Links`n`nBlocker: SP-0002"
     Assert-Equal (Get-PqInboxLocalHold $byKey @{} 'default' 'S0001') $null 'custom id is prose in default project'
-    Set-Spec $b 'SP-0001' 'Блокер: **SP-0002**'
+    Set-Spec $b 'SP-0001' "## 10. Links`n`nБлокер: **SP-0002**"
     Assert-Equal (Get-PqInboxLocalHold $byKey @{} 'custom' 'SP-0001') 'custom:SP-0002' 'localized and formatted blocker'
+    Set-Spec $a 'S0001' "## 3. Approach`n`nAlternative: ``Blocker: S0002`` and <Blocker: S0002>`n"
+    Assert-Equal (Get-PqInboxLocalHold $byKey @{} 'default' 'S0001') $null 'quoted and non-section-10 local tokens are ignored'
+    Set-Spec $a 'S0001' "**Depends on:** S0002`n"
+    Assert-Equal (Get-PqInboxLocalHold $byKey @{} 'default' 'S0001') 'default:S0002' 'Depends on line holds like the picker'
     Write-Host "portfolio-inbox-grammar: $count passed"
 }
 finally {

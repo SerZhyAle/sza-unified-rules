@@ -5,9 +5,9 @@
       "package": "sza",
       "flavor": "default",
       "kind": "release",
-      "version": "2026.1127.1",
-      "builtAt": "2026-11-27T00:28:23+01:00",
-      "note": "CANONR-0238, CANONR-0239, CANONR-0240, CANONR-0241, CANONR-0242: FileDO registry rows after FILEDO-0248"
+      "version": "2026.1127.2",
+      "builtAt": "2026-11-27T02:11:06+01:00",
+      "note": "CANONR-0243: Fix pq false chain roots and unaccepted waits"
     }
   ]
 }
