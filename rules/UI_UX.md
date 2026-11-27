@@ -156,6 +156,8 @@ kit has none.
   level, consistent glyph policy, main-to-advanced order, final About page and stable fast content
   presentation are mandatory even for small settings surfaces. Every product owes the full About,
   official-resource and diagnostic-export set. Existing commit and safety semantics remain in force.
+- **Every program carries About per `ABOUT-PAGE`**, phone, watch app, web and command line included: running
+  version, author credit, its own page and help links.
 - **Destructive confirms:** the acting button is the red one; Escape is the one no-action way out; the safe
   answer holds the default focus. Button geometry and answer treatment follow `BUTTONS` sections 3 and 4.
 - **Owner rulings on layout.** A value stays beside its caption, never right-aligned to the row's edge. A

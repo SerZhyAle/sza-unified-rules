@@ -19,9 +19,9 @@
     {"file":"SECURITY_AND_PRIVACY.md","bytes":16670,"date":"2026-11-26","reason":"baseline (CANONR-0221)"},
     {"file":"SITE_CONFIGURATION.md","bytes":8259,"date":"2026-11-26","reason":"baseline (CANONR-0221)"},
     {"file":"SPREAD_BACK_PROMPT.md","bytes":1430,"date":"2026-11-26","reason":"baseline (CANONR-0221)"},
-    {"file":"SUPPORT_AND_FEEDBACK.md","bytes":7145,"date":"2026-11-26","reason":"baseline (CANONR-0221)"},
+    {"file":"SUPPORT_AND_FEEDBACK.md","bytes":7322,"date":"2026-11-27","reason":"CANONR-0248: cite the ABOUT-PAGE contract"},
     {"file":"TESTING_AND_QA.md","bytes":30724,"date":"2026-11-26","reason":"baseline (CANONR-0221)"},
-    {"file":"UI_UX.md","bytes":20000,"date":"2026-11-26","reason":"baseline (CANONR-0221)"},
+    {"file":"UI_UX.md","bytes":20164,"date":"2026-11-27","reason":"CANONR-0248: cite the ABOUT-PAGE contract"},
     {"file":"WINDOWS_PACKAGING.md","bytes":5001,"date":"2026-11-26","reason":"baseline (CANONR-0221)"}
   ]
 }

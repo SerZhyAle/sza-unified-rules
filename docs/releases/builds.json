@@ -5,9 +5,9 @@
       "package": "sza",
       "flavor": "default",
       "kind": "release",
-      "version": "2026.1127.4",
-      "builtAt": "2026-11-27T18:07:42+01:00",
-      "note": "hooks 5, tools 3"
+      "version": "2026.1127.5",
+      "builtAt": "2026-11-27T18:17:25+01:00",
+      "note": "CANONR-0248: Author credit on every About page"
     }
   ]
 }

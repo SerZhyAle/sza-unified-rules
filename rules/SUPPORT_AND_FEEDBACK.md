@@ -8,6 +8,8 @@ in `contrib/`. Platform specifics marked *(overlay)*.
 
 - **Issue tracker for bugs, an email for private contact** - both linked from the site footer, the
   store/Play listing, and the app's About screen. A user should never have to hunt for how to reach you.
+- **Every program says who made it.** What About holds - the running version, the author credit, the program's
+  own page and help links - is the catalog contract `ABOUT-PAGE`.
 - State a **response expectation** ("best-effort, usually within a few days") so silence isn't read as
   abandonment.
 - One voice: the support copy matches the product's friendly, task-first tone (see
