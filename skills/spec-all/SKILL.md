@@ -28,6 +28,7 @@ in Step 3 and record any changed files in the result file before the final statu
 /spec-all <slug>           a ticket by its slug
 /spec-all S0123_<slug>     the same ticket as the queue file prints it (also its file name or path)
 /spec-all -123             the current project's ticket with that number
+/spec-all 0123             the current project's ticket with that number (refused when absent, never an idea)
 /spec-all fms-web:S0123    one ticket of a registered project, from any folder
 /spec-all fms-web          the next eligible ticket of that project, from any folder; then stop
 /spec-all <idea text>      capture the idea as a Draft ticket (spec-draft), then work that ticket
@@ -83,13 +84,13 @@ operates on a same-numbered ticket in the current project.
 | --- | --- | --- |
 | `ticket` | `<key>:<id>`, `<key>` a registered project; or another project's full id | use `id` in the project at `root` |
 | `project-next` | a bare registered project key | pick that project's next eligible ticket, as [spec-next](../spec-next/SKILL.md) Step 1 does (`spec-next-preflight.ps1 -Claim` with `-WorkingDirectory` set to `root`); work the ticket it selects, then stop. `selected` null -> print `selected_none_reason` and stop |
-| `local-id` | `S0123` (the project's own id shape), `S0123_<slug>`, `-123` | use `id` in the current project |
+| `local-id` | `S0123` (the project's own id shape), `S0123_<slug>`, `-123`, `0123` | use `id` in the current project |
 | `local-slug` | a slug of the current project | `id` is the hit (the resolver ran `select`'s whole-slug match on the ledger) |
 | `idea` | free text | capture it with the [spec-draft](../spec-draft/SKILL.md) skill's script for this project (its Step 3, the owner's words verbatim); the id is on its `drafted <key>:<id>` line. Capturing is all that step does - research starts in Step 3 |
 
 **Precedence, first match wins:** (1) `<key>:<id>` with a registered key; (2) a bare token equal to a registered project
 key (exact, case-sensitive), no other words; (3) `<id>_<slug>` (also the spec's file name or path) or another
-project's full id; the current project's own id shape; `-<number>`; (4) a slug of the current project; (5) free text is
+project's full id; the current project's own id shape; `-<number>` or bare `<number>`; (4) a slug of the current project; (5) free text is
 an idea. A word that names a ticket is never an idea: an id and slug that disagree with the ledger, a number it does not
 hold, and a ticket-shaped word no project claims are refused. A token that is both a registered key and a local id or slug is **ambiguous** and refused with
 one line naming both readings (`use <key>:<id> or the slug with its id`) - the skill never guesses. A near-miss of

@@ -29,7 +29,9 @@
                             default shape ^S\d{4}$ and a legacy shape name no owner). "<key>:<id>_<slug>" is read
                             in step 1.
       3. the current project's own id shape (grammar.ticketIdPattern, default ^S\d{4}$)  -> kind local-id
-         "-<number>"     -> kind local-id: the current project's ticket whose id ends in that number, else refused
+         "-<number>" or bare "<number>" (1-9 digits)
+                         -> kind local-id: the current project's ticket whose id ends in that number, else refused
+                            (never captured as an idea; CANONR-0255)
       4. a slug of the current project's ledger (the whole name)                          -> kind local-slug
       5. anything else                                                                    -> kind idea
          (a lower-case token with a hyphen or underscore that names no slug is refused as an unknown slug, and a
@@ -310,8 +312,17 @@ if ($isToken) {
 # 3-5. local readings need the current project
 if (-not $hereRoot) { Out-Reading 'refused' $null $null $null $null $noHere }
 
-# 3a. "-<number>": the current project's ticket with that number
-if ($text -match '^-(\d{1,9})$') {
+# 3a. the current project's own id shape (before bare-number lookup so a numeric-id project keeps its own id shape)
+if ($isToken -and (Test-IdShape $hereRoot $text)) {
+    $rows = Read-Rows $hereRoot
+    $row = if ($null -ne $rows) { Find-IdRow $rows $text } else { $null }
+    $id = if ($row) { $row.Id } else { $text }
+    $why = if ($row) { "ticket $id of the current project $hereKey" } else { "id shape of $hereKey; the ledger does not hold it yet (spec-preamble reports exit 2)" }
+    Out-Reading 'local-id' $hereKey $hereRoot $id $(if ($row) { $row.Name } else { $null }) $why
+}
+
+# 3b. "-<number>" or bare "<number>": the current project's ticket with that number, else refused (never an idea, CANONR-0255)
+if ($text -match '^-?(\d{1,9})$') {
     $digits = $Matches[1]
     $rows = Read-Rows $hereRoot
     if ($null -eq $rows) { Out-Reading 'refused' $hereKey $hereRoot $null $null "the ledger of $hereKey cannot be read ($hereRoot)" }
@@ -319,14 +330,6 @@ if ($text -match '^-(\d{1,9})$') {
     if ($hits.Count -eq 0) { Out-Reading 'refused' $hereKey $hereRoot $null $null "no such ticket in ${hereKey}: no id in its ledger has the number '$digits'" }
     if ($hits.Count -gt 1) { Out-Reading 'ambiguous' $hereKey $hereRoot $null $null "'$text' matches several tickets in ${hereKey} ($(@($hits | ForEach-Object { $_.Id }) -join ', ')); use the full id" }
     Out-Reading 'local-id' $hereKey $hereRoot $hits[0].Id $hits[0].Name "ticket $($hits[0].Id) of the current project $hereKey"
-}
-
-if ($isToken -and (Test-IdShape $hereRoot $text)) {
-    $rows = Read-Rows $hereRoot
-    $row = if ($null -ne $rows) { Find-IdRow $rows $text } else { $null }
-    $id = if ($row) { $row.Id } else { $text }
-    $why = if ($row) { "ticket $id of the current project $hereKey" } else { "id shape of $hereKey; the ledger does not hold it yet (spec-preamble reports exit 2)" }
-    Out-Reading 'local-id' $hereKey $hereRoot $id $(if ($row) { $row.Name } else { $null }) $why
 }
 
 if ($isToken) {

@@ -79,6 +79,7 @@
 {"path": "skills/feature-to-site/SKILL.md", "topic": "Feature to site - the ship-together fan-out", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "skills/portfolio-queue/SKILL.md", "topic": "Portfolio queue - the robots over all projects", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "skills/promote/SKILL.md", "topic": "Promote - make a finished product findable without spending money", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
+{"path": "skills/promote/references/4pda-threads.md", "topic": "4PDA product threads - creation and update procedure", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "skills/promote/references/sourceforge-listing.md", "topic": "SourceForge listing - the procedure behind the `SOURCEFORGE-CHANNEL` contract", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "skills/release/SKILL.md", "topic": "Release - the one-way operation", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}
 {"path": "skills/site-audit/SKILL.md", "topic": "Site audit - what a robot and a visitor meet on a published site", "area": "skills", "update_triggers": ["Changes to the documented interface or workflow"], "role": "source"}

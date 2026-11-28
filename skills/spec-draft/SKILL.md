@@ -99,7 +99,11 @@ and ends with `campaign <slug>: <n> drafted, <m> failed`.
 Exit 1 means at least one target was not filed; the line above the last names it, and a rerun takes `-Projects` with
 only those keys. `-AllEnabled` leaves out a project whose key contains `sandbox`; name it in `-Projects` to file
 there. Add `-Parent <key>:<id>` when an existing ticket must wait for all of them: one `Blocker: <key>:<id>` line per
-child is written into that ticket's spec and its status is left alone. `pq` already holds a ticket whose spec names
+child is written into that ticket's spec, the same children are named on its `**Accepts Implemented:**` line, and its
+status is left alone. With that line an `Implemented` child whose plan is finished releases the ticket; without it only
+`Verified`, `BlockNeedUserTest` or `Archived` do (TASK-FLOW 0.46). Pass `-NoAcceptImplemented` when the waiting ticket
+needs more than `Implemented` from the children, and add the line by hand when blockers are written by hand.
+`pq` already holds a ticket whose spec names
 an unreleased ticket of another project (TASK-FLOW rule 52); move it to `BlockByOtherTask` with that project's
 `update.ps1` when the wait should also show in its status. A campaign never pins (`-Pin` is refused and a `hotfix-`
 slug is not pinned), lifts no hold and enables nothing. It is a desk command: run it from a session the owner is in, not
@@ -115,6 +119,8 @@ from an unattended robot pass.
 For example, `spec-draft.ps1 -AllEnabled -Tracking -NeedsWork fms-a -Slug align-format -TextFile request.txt`
 captures one checklist in the registered canon and a child in `fms-a`. The `tracking <key>:<id> file=<path>`
 line identifies the checklist. Each selected repo has a row, including the child reference when one was filed.
+The filed children are also named on the checklist ticket's `**Accepts Implemented:**` line
+(`-NoAcceptImplemented` leaves it out); its `Blocker:` lines are written by the pass that parks it.
 Run `spec-draft.ps1 -TrackingTicket <key>:<id> -Check <script.ps1>` to update the rows in place. The command
 prints PASS or FAIL per repo and exits 1 if any row fails. It allocates no tickets.
 If capture reports a missing child, file it separately and add its reference to the existing checklist.
@@ -164,4 +170,4 @@ only when the ticket records an actual question that needs the owner's answer.
 | Step 3 | an invalid slug (a bare `hotfix-` included), a missing or empty text file, an unknown project, a profile with no ledger, a missing, unreadable, folder or repeated `-Attach` path |
 | Step 3 | a dedup hit on a closed ticket without `-AllowClosedDuplicate` |
 | Step 3 | `-Pin` for a project `pq` will not dispatch |
-| Step 3 | a campaign with `-Pin`, with `-Project`, with both `-Projects` and `-AllEnabled`, with an unknown key in `-Projects` or `-Skip`, or with a `-Parent` that names no ticket or an archived one; `-Skip` or `-Parent` without a campaign |
+| Step 3 | a campaign with `-Pin`, with `-Project`, with both `-Projects` and `-AllEnabled`, with an unknown key in `-Projects` or `-Skip`, or with a `-Parent` that names no ticket or an archived one; `-Skip` or `-Parent` without a campaign; `-NoAcceptImplemented` without `-Parent` or `-Tracking` |

@@ -5,9 +5,9 @@
       "package": "sza",
       "flavor": "default",
       "kind": "release",
-      "version": "2026.1127.6",
-      "builtAt": "2026-11-27T21:11:52+01:00",
-      "note": "CANONR-0249, CANONR-0251, CANONR-0253: Watch apps and faces named on About"
+      "version": "2026.1128.1",
+      "builtAt": "2026-11-28T02:25:28+01:00",
+      "note": "CANONR-0254, CANONR-0255, CANONR-0257: Correct the StreamsPlayer watch face registry row"
     }
   ]
 }

@@ -50,9 +50,9 @@ that acts on one re-reads the source first and records the new date.
 | Tag | Who | Covers |
 | --- | --- | --- |
 | **A** | agent alone | tree edits, local builds and gates, read-only API calls and browsing |
-| **A·GO** | agent after the owner's go naming the step | any outward one-way act: a `gh` write, a push that publishes a site, a form submit, a pull request to a third-party repository, a console field |
+| **A·GO** | agent after the owner's go naming the step | any outward one-way act: a `gh` write, a push that publishes a site, a form submit, a pull request to a third-party repository, a console field, or creating/updating an official product thread on a venue that allows it when the owner explicitly orders it |
 | **A→O** | agent drives, owner acts at one point | sign-in, 2FA, CAPTCHA, OAuth consent, terms acceptance, identity data for an account - the agent stops there and resumes after |
-| **O** | owner only | the human voice: the final submit of a community post and every reply to it, and any text on a platform that refuses generated text |
+| **O** | owner only | the human voice: community launch posts and every reply to users/moderators, and any text on a platform that refuses generated text |
 
 A go is quoted in a go ledger beside the ticket. Browser work happens in the owner's own signed-in browser,
 records each submission (a GIF or the confirmation text), stops after two or three failed attempts, and never
@@ -254,6 +254,7 @@ Read 2026-10-09; re-read before acting. **W** Windows desktop, **C** command-lin
 | Google Play listing | A | metadata policy: no ranking, price or promo wording, no keyword repetition | title 30, short 80 |
 | awesome-* lists | by list | age, stars, format; several refuse AI-generated work | read the list's own contributing note at attempt time; one entry per PR |
 | Chrome / Edge / VS Code listings | K, extensions | per store | search terms and keywords from the worksheet |
+| 4PDA product threads | A, W | section template, natural Russian prose, compact real screenshots, non-commercial rule 1.8, single account | Android in `Android - Программы` via Мастер тем, Windows in `Компьютеры и периферия -> Софт`; owner signs in (`A→O`), agent creates/updates under go (`A·GO`); procedure in `promote` skill `references/4pda-threads.md` (read 2026-11-28) |
 
 Refused everywhere: a portable-software directory that defines "portable" as settings beside the program, unless
 the product really does that; any topical list whose association a resolved owner decision removed; a channel

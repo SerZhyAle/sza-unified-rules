@@ -31,8 +31,9 @@
      16. A ticket template with no {{TEXT}} token refuses the capture before anything is created, with and
          without -Attach (S0099); a template given its token back captures as before.
      17. The campaign form (S0107): -Projects files one text into each named project with one `pq sync` for all of
-         them, no `pq dry-run` and no pin; -Parent gets one Blocker line per child and keeps its status;
-         -AllEnabled leaves a sandbox out; an unknown key, -Pin, -Projects with -AllEnabled and a lone -Skip exit 2.
+         them, no `pq dry-run` and no pin; -Parent gets one Blocker line per child, an Accepts Implemented line
+         naming them (not with -NoAcceptImplemented) and keeps its status; -AllEnabled leaves a sandbox out; an
+         unknown key, -Pin, -Projects with -AllEnabled, a lone -Skip and a lone -NoAcceptImplemented exit 2.
 
     -Only <regex> runs the cases whose name matches it (cases 2-4 build on case 1, so use it for 8 and 9 only).
 #>
@@ -543,6 +544,11 @@ exit 0
         $parentSpec = [IO.File]::ReadAllText((Join-Path $scratch 'camp-parent\PLAN\S0001_campaign-parent.md'))
         foreach ($k in 'camp-one', 'camp-two') { Assert-That ($parentSpec -match ('(?m)^Blocker:[ ]' + $k + ':S0001\r?$')) "the parent spec has no Blocker line for $k" }
         Assert-That ($parentSpec -match '(?m)^\*\*Status:\*\* Draft') 'the parent status changed'
+        Assert-That ($parentSpec -match '(?m)^\*\*Accepts Implemented:\*\* camp-one:S0001, camp-two:S0001\r?$') 'the parent accepts no Implemented child'
+        $r = Invoke-Draft @('-Projects', 'camp-one', '-Slug', 'campaign-strict', '-TextFile', $f, '-Parent', 'camp-parent:S0001', '-NoAcceptImplemented')
+        $parentSpec = [IO.File]::ReadAllText((Join-Path $scratch 'camp-parent\PLAN\S0001_campaign-parent.md'))
+        Assert-That ($r.code -eq 0 -and $parentSpec -match '(?m)^Blocker:[ ]camp-one:S0002\r?$') "-NoAcceptImplemented: exit $($r.code): $($r.output)"
+        Assert-That ($parentSpec -match '(?m)^\*\*Accepts Implemented:\*\* camp-one:S0001, camp-two:S0001\r?$') '-NoAcceptImplemented changed the accept line'
         $r = Invoke-Draft @('-AllEnabled', '-Slug', 'campaign-all', '-TextFile', $f, '-WhatIf')
         Assert-That ($r.stdout -match 'left out camp-sandbox' -and $r.stdout -match 'target\(s\) checked \([^)]*camp-one' -and $r.stdout -notmatch '\[camp-sandbox\]') "-AllEnabled -WhatIf: $($r.output)"
         Assert-That (-not (Test-Path (Join-Path $scratch 'camp-sandbox\PLAN\S0001_campaign-all.md'))) 'the sandbox received a ticket'
@@ -550,11 +556,12 @@ exit 0
                 @{ a = @('-Projects', 'camp-one,no-such'); m = 'unknown project key(s): no-such' },
                 @{ a = @('-Projects', 'camp-one', '-Pin'); m = 'never pins' },
                 @{ a = @('-Projects', 'camp-one', '-AllEnabled'); m = 'contradict' },
-                @{ a = @('-Skip', 'camp-one'); m = '-Skip only narrows' })) {
+                @{ a = @('-Skip', 'camp-one'); m = '-Skip only narrows' },
+                @{ a = @('-Projects', 'camp-one', '-NoAcceptImplemented'); m = '-NoAcceptImplemented needs -Parent or -Tracking' })) {
             $r = Invoke-Draft (@('-Slug', 'campaign-refused', '-TextFile', $f) + $c.a)
             Assert-That ($r.code -eq 2 -and $r.output -match [regex]::Escape($c.m)) "refusal '$($c.m)': exit $($r.code): $($r.output)"
         }
-        Assert-That (-not (Test-Path (Join-Path $scratch 'camp-one\PLAN\S0002_campaign-refused.md'))) 'a refused campaign wrote a ticket'
+        Assert-That (@(Get-ChildItem (Join-Path $scratch 'camp-one\PLAN') -Filter '*campaign-refused*').Count -eq 0) 'a refused campaign wrote a ticket'
     }
 }
 finally {

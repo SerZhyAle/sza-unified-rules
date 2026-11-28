@@ -98,11 +98,19 @@
 
 .PARAMETER Parent
     <key>:<id> of an existing ticket that waits for the campaign: one `Blocker: <key>:<id>` line per child is written
-    into its spec file, before a closing Blocked-tickets or Last-Audit block. Its status is not changed.
+    into its spec file, before a closing Blocked-tickets or Last-Audit block. The same children are named on its
+    `**Accepts Implemented:**` header line, so an Implemented child with a finished plan releases it (TASK-FLOW 0.46;
+    -NoAcceptImplemented leaves that line out). Its status is not changed.
 
 .PARAMETER Tracking
     Create one campaign checklist in the registered canon and file children only for repositories with work.
-    Use with -Projects or -AllEnabled and exactly one of -NeedsWork or -Check.
+    Use with -Projects or -AllEnabled and exactly one of -NeedsWork or -Check. The children are named on the
+    checklist ticket's `**Accepts Implemented:**` line (-NoAcceptImplemented leaves it out); its `Blocker:` lines are
+    written by the pass that parks it.
+
+.PARAMETER NoAcceptImplemented
+    With -Parent or -Tracking: write no `**Accepts Implemented:**` line. For a ticket that needs more than Implemented
+    from its children - it then waits until each one is Verified, BlockNeedUserTest or Archived.
 
 .PARAMETER NeedsWork
     Comma-separated keys from the campaign targets. Pass an empty string for a campaign with no child tickets.
@@ -153,6 +161,7 @@ param(
     [string] $NeedsWork,
     [string] $Check = '',
     [string] $TrackingTicket = '',
+    [switch] $NoAcceptImplemented,
     [switch] $NoQueueReport,
     [switch] $Help
 )
@@ -327,6 +336,41 @@ function Add-DraftParentBlockers([string] $File, [string[]] $Pairs, [string] $Na
     return $new.Count
 }
 
+function Add-DraftAcceptedBlockers([string] $File, [string[]] $Pairs) {
+    # TASK-FLOW 0.46 item B: an Implemented blocker releases only a dependent that names it on an
+    # `**Accepts Implemented:**` line. The pairs no such line names yet extend the first one, else a new line closes
+    # the header block (the bold fields above the first `## ` heading). The BOM, the line ending and every other byte
+    # are kept. Returns the number of pairs written.
+    $bytes = [IO.File]::ReadAllBytes($File)
+    $bom = $bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF
+    $skipBytes = if ($bom) { 3 } else { 0 }
+    $text = [Text.UTF8Encoding]::new($false).GetString($bytes, $skipBytes, $bytes.Length - $skipBytes)
+    $lines = [regex]::Matches($text, '(?m)^\*\*Accepts Implemented:\*\*([^\r\n]*)')
+    $named = @(foreach ($line in $lines) { $line.Groups[1].Value.Split(',').Trim() })
+    $new = @($Pairs | Where-Object { $named -notcontains $_ })
+    if ($new.Count -eq 0) { return 0 }
+    $eol = if ($text.Contains("`r`n")) { "`r`n" } else { "`n" }
+    if ($lines.Count) {
+        $first = $lines[0]
+        $refs = @($first.Groups[1].Value.Split(',').Trim() | Where-Object { $_ }) + $new
+        $updated = $text.Remove($first.Index, $first.Length).Insert($first.Index, "**Accepts Implemented:** $($refs -join ', ')")
+    }
+    else {
+        $line = "**Accepts Implemented:** $($new -join ', ')"
+        $heading = [regex]::Match($text, '(?m)^##[ \t]')
+        $head = if ($heading.Success) { $text.Substring(0, $heading.Index) } else { $text }
+        $fields = [regex]::Matches($head, '(?m)^\*\*[^*\r\n]+:\*\*[^\r\n]*')
+        if ($fields.Count) {
+            $last = $fields[$fields.Count - 1]
+            $updated = $text.Insert($last.Index + $last.Length, $eol + $line)
+        }
+        elseif ($heading.Success) { $updated = $text.Insert($heading.Index, $line + $eol + $eol) }
+        else { $updated = $text + $(if ($text.EndsWith("`n")) { $eol } else { $eol + $eol }) + $line + $eol }
+    }
+    [IO.File]::WriteAllText($File, $updated, [Text.UTF8Encoding]::new($bom))
+    return $new.Count
+}
+
 # ---- 1. the invocation, checked before anything is created ----
 $hasNeedsWork = $PSBoundParameters.ContainsKey('NeedsWork')
 if ($TrackingTicket) {
@@ -339,6 +383,7 @@ elseif ($Tracking) {
     }
 }
 elseif ($hasNeedsWork -or $Check) { Stop-Draft 2 '-NeedsWork and -Check require tracking mode' }
+if ($NoAcceptImplemented -and -not ($Parent -or $Tracking)) { Stop-Draft 2 '-NoAcceptImplemented needs -Parent or -Tracking' }
 if ($Check) {
     if ([IO.Path]::GetExtension($Check) -ine '.ps1' -or -not (Test-Path -LiteralPath $Check -PathType Leaf)) {
         Stop-Draft 2 "-Check '$Check' must name an existing PowerShell script"
@@ -530,12 +575,19 @@ else {
             $r.pq = Get-DraftVerdict $targetRec $heldKeys
         }
     }
+    # A plain file has no ledger, so no ticket can wait for it or accept it.
+    $pairs = [string[]]@($rows | Where-Object { $_.pq -cne 'no-task-flow' } | ForEach-Object { "$($_.key):$($_.id)" })
     if ($parentRef) {
-        $pairs = [string[]]@($rows | Where-Object { $_.pq -cne 'no-task-flow' } | ForEach-Object { "$($_.key):$($_.id)" })
         foreach ($r in @($rows | Where-Object { $_.pq -ceq 'no-task-flow' })) { Write-Host "spec-draft: $($r.key):$($r.id) is a plain file with no ledger - not named as a blocker of $($parentRef.pair)" }
         if ($pairs.Count) {
             try { Write-Host "spec-draft: $(Add-DraftParentBlockers $parentRef.file $pairs $Slug) Blocker line(s) written into $($parentRef.pair) ($($parentRef.file)); its status is not changed" }
             catch { $failed.Add("parent $($parentRef.pair) ($($_.Exception.Message))") }
+        }
+    }
+    if (-not $NoAcceptImplemented -and $pairs.Count) {
+        foreach ($waiting in @($parentRef, $trackingRef | Where-Object { $_ })) {
+            try { Write-Host "spec-draft: $(Add-DraftAcceptedBlockers $waiting.file $pairs) child(ren) added to the Accepts Implemented line of $($waiting.pair)" }
+            catch { $failed.Add("accept line of $($waiting.pair) ($($_.Exception.Message))") }
         }
     }
     foreach ($r in $rows) { Write-Host ("drafted {0}:{1} file={2} priority={3} pq={4} position=0/0" -f $r.key, $r.id, $r.file, $r.pri, $r.pq) }

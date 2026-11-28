@@ -12,7 +12,7 @@
     {"file":"LOCALIZATION.md","bytes":5667,"date":"2026-11-26","reason":"baseline (CANONR-0221)"},
     {"file":"NEW_PROJECT_CHECKLIST.md","bytes":9161,"date":"2026-11-26","reason":"baseline (CANONR-0221)"},
     {"file":"PLATFORM_OVERLAYS.md","bytes":28471,"date":"2026-11-26","reason":"baseline (CANONR-0221)"},
-    {"file":"PROMOTION.md","bytes":26991,"date":"2026-11-26","reason":"baseline (CANONR-0221)"},
+    {"file":"PROMOTION.md","bytes":27525,"date":"2026-11-28","reason":"CANONR-0256: 4PDA product threads channel row and owner-authorized thread maintenance"},
     {"file":"README.md","bytes":14889,"date":"2026-11-26","reason":"baseline (CANONR-0221)"},
     {"file":"RELEASE_AND_DISTRIBUTION.md","bytes":35415,"date":"2026-11-26","reason":"baseline (CANONR-0221)"},
     {"file":"REPOSITORY_LAYOUT.md","bytes":17298,"date":"2026-11-27","reason":"CANONR-0244: public vs local repository contents boundary (REPO-LAYOUT 0.12 rule 8)"},

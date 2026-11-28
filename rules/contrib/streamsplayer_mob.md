@@ -1,7 +1,7 @@
 ---
 # Contribution: streamsplayer_mob (overlay B, flavor shape, three packages, LIVE-BROADCAST producer) -> Unified_Rules
-Source repo: P:\ANDROID\StreamsPlayer_mob | Date: 2026-10-02, refreshed 2026-11-13 (S0059), re-synced 2026-11-26 (STRMOB-0215)
-Read: AI_USAGE, CONTRACTS, DEVELOPMENT, DOCUMENTATION_CONCEPT, GITHUB_INTERACTION, INVARIANTS, LOCALIZATION, PLATFORM_OVERLAYS, RELEASE_AND_DISTRIBUTION, TESTING_AND_QA (delta re-sync against canon 2026.11.26.9; prior full 20-doc re-sync 2026-11-20 against 2026.11.20.4); harness README and spec_catalog SCHEMA; the store-publish skill's Google Play reference; the repository's own stamp, profile, `.git/config`, `.github/workflows/pages.yml`, `docs/play/`, `docs/releases/` and `docs/contracts/`; deduped against: contrib/fastmediasorter_mob_v2.md, contrib/streams_player.md
+Source repo: P:\ANDROID\StreamsPlayer_mob | Date: 2026-10-02, refreshed 2026-11-13 (S0059), re-synced 2026-11-27 (STRMOB-0230)
+Read: AI_USAGE, CONTRACTS, GITHUB_INTERACTION, REPOSITORY_LAYOUT, SUPPORT_AND_FEEDBACK, UI_UX (delta re-sync against canon 2026.11.27.6; prior delta 2026-11-26 against 2026.11.26.9 and full 20-doc re-sync 2026-11-20 against 2026.11.20.4); harness README and spec_catalog SCHEMA; the store-publish skill's Google Play reference; the repository's own stamp, profile, `.git/config`, `.github/workflows/pages.yml`, `docs/play/`, `docs/releases/` and `docs/contracts/`; deduped against: contrib/fastmediasorter_mob_v2.md, contrib/streams_player.md
 ---
 
 > **Owner decision, 2026-11-16:** `PLAN/` and its archive are local and ignored (`CLAUDE.md` section 4 item 6, `.gitignore` `/PLAN/`, `git ls-files PLAN` is 0). Earlier statements below that the workspace was tracked or public describe the former 2026-11-13 snapshot.
@@ -15,7 +15,7 @@ product whose no-drift guarantee against its extraction source is a port ledger 
 than shared code, and the first adopter of the shipped harness that never had a local copy of it.
 
 Public presence since 2026-11-13 (section "Public presence 2026-11-13"): a public GitHub repository, a GitHub Pages
-privacy site and two Google Play Console apps, all created on the owner's order; nothing is published on Google Play yet.
+privacy site and two Google Play Console apps, all created on the owner's order; `com.sza.streamsplayer.watchface` (`2.61.1210.302`) published 2026-11-27, while `com.sza.streamsplayer` awaits pre-flight blockers (`STRMOB-0230`) and publication (`STRMOB-0047`, `STRMOB-0222`).
 
 > **Keep this note in the record.** Current facts, edited in place. Never append a dated section to this file,
 > and append nothing under `history/` either: those files are frozen ([the rules of that folder](history/README.md))
@@ -63,7 +63,7 @@ Format: Channel | Trigger | Cost | Auth | Signer | Listing source | Frozen ancho
   ru-RU, uk) + `docs/play/PLAY_DATA_SAFETY.md` + `docs/play/PLAY_RELEASE_RECORD.md`; graphics `docs/play/icon-512.png` and `docs/play/feature-graphic-1024x500.png`
   | `com.sza.streamsplayer` (bound 2026-11-13, app `4972961129584993008`) | track read-back, review and public serving (`probe` prints readings only; `live` confirmed by hand); update over a prior install on a
   phone and on a watch - **not run**, nothing is live. (evidence: `docs/play/PLAY_RELEASE_RECORD.md`, `docs/play/PLAY_DATA_SAFETY.md`)
-- **Google Play (Android), app "StreamsPlayer Watch Face"** | signed AAB to a track through the Play Developer API; nothing published yet (`STRMOB-0072`, gated on captured watch-face icons `STRMOB-0099`) | [PUBLIC] | same console account `8446656778368889827` | same app signing key `61:CF:..:F4:97` and upload key `A8:68:..:FB:D0` | `docs/play/PLAY_LISTING_WATCHFACE*.md` (en-US, ru-RU, uk) + `docs/play/PLAY_RELEASE_RECORD.md` | `com.sza.streamsplayer.watchface` (bound 2026-11-13, app `4976077107533670611`) | track read-back, review and public serving (`probe` prints readings only; `live` confirmed by hand) - **not run**.
+- **Google Play (Android), app "StreamsPlayer Watch Face"** | signed AAB to a track through the Play Developer API; `2.61.1210.302` (versionCode `261121030`) published 2026-11-27 (`Submission ID 1`) | [PUBLIC] | same console account `8446656778368889827` | same app signing key `61:CF:..:F4:97` and upload key `A8:68:..:FB:D0` | `docs/play/PLAY_LISTING_WATCHFACE*.md` (en-US, ru-RU, uk) + `docs/play/PLAY_RELEASE_RECORD.md` | `com.sza.streamsplayer.watchface` (bound 2026-11-13, app `4976077107533670611`) | `release-ledger probe` = `PUBLISHED`, public store page HTTP 200 in en/ru/uk (recorded in `docs/releases/` and `docs/play/PLAY_RELEASE_RECORD.md`).
 
 The generic Google Play row of CHANNEL_MATRIX is unchanged: a project's own rows live in its record (`TEMPLATE.md`), and the
 generic row already says a secondary form-factor artifact has its own store guidelines.
@@ -122,7 +122,7 @@ Recorded as the owner's session reported it; what the canon session measured its
   collected, IARC all No (Everyone, PEGI 3), target audience 13 and over. Category Personalization, contact `sza@ukr.net`, Wear
   OS form factor. App signing key `61:CF:..:F4:97` imported 2026-11-17; upload key `A8:68:..:FB:D0` reset valid 2026-11-19 16:21.
   Listing sources authored in `docs/play/PLAY_LISTING_WATCHFACE*.md`; console upload awaits captured watch-face icons (`STRMOB-0099`).
-- **Not published.** Nothing is published on Google Play (`docs/releases/RELEASES.md`, `release-ledger probe` 0 events).
+- **Published watch face; main app awaiting pre-flight & publication.** `com.sza.streamsplayer.watchface` (`2.61.1210.302`) is live on Google Play (`2026-11-27`); `com.sza.streamsplayer` awaits remaining pre-flight blockers (`STRMOB-0230`) and publication (`STRMOB-0047`, `STRMOB-0222`).
 - **Referring to the product.** The owner wants the other projects, `sza.od.ua` included, to refer to it once it is published.
   That waits for the publication and for the landing (`STRMOB-0045`); the canon files nothing in another repository for it.
 
@@ -132,25 +132,29 @@ Recorded as the owner's session reported it; what the canon session measured its
 - CONFIRM: section 5 always-loaded rules budget (20,000 budget, 40,000 hard limit) and area-rule split hold (`CLAUDE.md` delegates area detail to 7 `.claude/rules/*.md` files with `paths:` frontmatter; `AGENTS.md` carries the area-rules paragraph).
 
 ### CONTRACTS.md
-- CONFIRM: the repo names the catalog in one file (`CLAUDE.md` line 3); 27 pointers in `docs/contracts/` covering 40
+- CONFIRM: the repo names the catalog in one file (`CLAUDE.md` line 3); 28 pointers in `docs/contracts/` covering 41
   pointer versions (`RULE-ADOPTION`, `PORT-LEDGER`, `REMOTE-CONTROL`, `FUNCTION-PARITY`, `CAPTURE-OUTPUT`, `STREAM-BANK`,
   `USER-PLAYLIST`, `MEDIA-CLASSIFICATION`, `PACKAGE-VERSIONING`, `ICONOGRAPHY`, `INPUT-PARITY`, `LIVE-BROADCAST`,
   `DEVICE-EXCHANGE`, `INSTALL-TRUST`, `DIAGNOSTIC-REPORT`, `PRODUCT-WEB-PAGES`, `TEST-LAB`, `PORTAL-DOCS`, `UNIFIED-UI`,
   `CONTEXT-HELP`, `AUTOMATED-CHECKS`, `EXCHANGE-MARK`, `WAVE-PARTICLES`, `GOOGLE-PLAY`, `RELEASE-LEDGER`,
-  `PRODUCT-IDENTITY`, `SOURCEFORGE-CHANNEL`) and 34 `streams-mob` adoption rows in `_meta/REGISTRY.md` (`check-sync.ps1`
-  PASS on 40 pointer versions; `contract-lag.ps1 -Product streams-mob -FailOnLag` exit 0 with 0 behind, 11 current,
-  22 partial with dated reasons, 1 n/a). `docs/BOOTSTRAP_HANDOFF.md` names the catalog path too: an origin
+  `PRODUCT-IDENTITY`, `SOURCEFORGE-CHANNEL`, `ABOUT-PAGE`) and 35 `streams-mob` adoption rows in `_meta/REGISTRY.md` (`check-sync.ps1`
+  PASS on 41 pointer versions; `contract-lag.ps1 -Product streams-mob -FailOnLag` exit 0 with 0 behind, 9 current,
+  25 partial with dated reasons, 1 n/a). `docs/BOOTSTRAP_HANDOFF.md` names the catalog path too: an origin
   record written and amended on 2026-10-02 by the FastMediaSorter session of its ticket S4053, not edited from this
   repository; it carries a dated SZA-CTR02 exemption in `.sza-canon.json`.
 
-### RELEASE_AND_DISTRIBUTION.md sections 8 and 10
+### REPOSITORY_LAYOUT.md & RELEASE_AND_DISTRIBUTION.md sections 8 and 10
+- CONFIRM (`REPO-LAYOUT` 0.12 rule 8, `RELEASE-LEDGER` 0.3): public-vs-local boundary adopted (`STRMOB-0218`, `STRMOB-0230`).
+  Root agent rules (`CLAUDE.md`, `AGENTS.md`, `GEMINI.md`), `.claude/`, `.sza-canon.json`, `.sza-profile.json`,
+  `docs/contracts/`, `docs/DOCUMENT_REGISTRY.jsonl`, `docs/releases/`, `dev/`, `PLAN/`, `r0..rw.ps1` and `tools/harness.ps1`
+  stay intact on disk and are gitignored and untracked (`check-compliance.ps1` exits 0 with 0 errors).
 - CONFIRM: the harness release package plan stands with all six decisions recorded in `CLAUDE.md` section 4 (the shared
   harness writes only `PLAN/RELEASE_QUEUE.md` through `Write-Catalog` -> `Sync-ReleaseQueue`, renders ready and shipped
   history views from the ledger via `release-queue -List -Ready` / `-Show Ready|Done`, and reads legacy
   `PLAN/RELEASE_READY.md` and `PLAN/RELEASE_QUEUE_DONE.md` only to import prior rows; package number from
   `current-next-release:` marker because this repo works on `main`; `PLAN/` local and gitignored since 2026-11-16). The
-  release ledger (`docs/releases/`, `RELEASE-LEDGER` 0.2) is initialized with 6 Play channel rows, hooked into `a.ps1`
-  (S0154), and records the 2026-11-21 `2.61.1210.302` pending production submissions and 2026-11-25 debug builds. Under
+  release ledger (`docs/releases/`, `RELEASE-LEDGER` 0.3, local/gitignored) is initialized with 6 Play channel rows, hooked into `a.ps1`
+  (S0154), and records the 2026-11-27 `watchface` publication (`2.61.1210.302`) and builds. Under
   `GOOGLE-PLAY` 0.6 section 10 (rule 31), `docs/play/PLAY_RELEASE_RECORD.md` records Shape 1 (One salvo).
 
 ### TESTING_AND_QA.md section 2
@@ -165,7 +169,7 @@ Recorded as the owner's session reported it; what the canon session measured its
 ## No delta
 
 AUTHOR, CHANNEL_MATRIX, DEVELOPMENT, DOCUMENTATION_CONCEPT, GITHUB_INTERACTION, INVARIANTS, LOCALIZATION,
-NEW_PROJECT_CHECKLIST, PLATFORM_OVERLAYS, PROMOTION, REPOSITORY_LAYOUT, SITE_CONFIGURATION,
+NEW_PROJECT_CHECKLIST, PLATFORM_OVERLAYS, PROMOTION, SITE_CONFIGURATION,
 SUPPORT_AND_FEEDBACK, TESTING_AND_QA, UI_UX; WINDOWS_PACKAGING is not applicable to overlay B.
 
 ## Open questions for the owner

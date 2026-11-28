@@ -1,14 +1,15 @@
 ---
 name: promote
-description: 'Plan free product promotion, positioning, SEO and indexing (robots.txt, sitemap, Search Console, Bing, IndexNow), metadata, directories and launch. Use to advertise, spread or get a product found. «реклама», «рекламная кампания», «продвижение», «раскрутка», «бесплатное продвижение», «индексация», «позиционирование», «SEO», «чтобы нас находили».'
+description: 'Plan free product promotion, positioning, SEO, indexing (robots.txt, sitemap, Search Console, Bing, IndexNow), directories, 4PDA threads and launch. Use to advertise or get a product found. «реклама», «рекламная кампания», «продвижение», «раскрутка», «4pda», «индексация», «позиционирование», «SEO», «чтобы нас находили».'
 ---
 
 # Promote - make a finished product findable without spending money
 
 The canon is [PROMOTION.md](../../rules/PROMOTION.md); this skill is its procedure. It writes **tickets and
 tree files**, and runs **read-only** measurements. Every outward act - a push that publishes a site, a `gh`
-write, a form submit, a pull request to someone else's repository, a post - is an **A·GO** step that waits for
-the owner's go naming it (PROMOTION §1 rule 9). A community post is never the agent's.
+write, a form submit, a pull request to someone else's repository, a product thread create/update - is an
+**A·GO** step that waits for the owner's go naming it (PROMOTION §1 rule 9). Unprompted community posts and
+human-voice replies stay the owner's (**O**).
 
 Boundary: [feature-to-site](../feature-to-site/SKILL.md) keeps surfaces current per feature;
 [release](../release/SKILL.md) and [store-publish](../store-publish/SKILL.md) publish versions. This skill
@@ -75,6 +76,9 @@ Use the store's header format and PROMOTION §8's sections. In particular:
 - A **SourceForge** row (an open-source product, PROMOTION §5): read the catalog contract `SOURCEFORGE-CHANNEL` and plan
   the row from [references/sourceforge-listing.md](references/sourceforge-listing.md), which carries the executor tags,
   the order, the stops and the integrity script; cite the contract by id and rule number, never by path.
+- A **4PDA** row (Android or Windows product, PROMOTION §5): follow [references/4pda-threads.md](references/4pda-threads.md)
+  for section mapping (`Android - Программы` via Мастер тем vs `Компьютеры и периферия -> Софт`), icon and compact
+  Russian screenshot rules, BBCode templates, duplicate checks, `A→O` sign-in (`SZA`) and `A·GO` thread creation/updates.
 - Acceptance criteria: PROMOTION §8's list as static predicates for this repo (the gate command, the API
   field, the file); criteria the shape voids are listed void with the reason.
 - The portfolio dependency: the hub ticket owns the host-root `robots.txt` and console property; cite it by repo

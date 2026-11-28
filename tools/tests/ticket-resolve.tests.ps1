@@ -28,6 +28,9 @@
      13. Wrapping and near forms of a bare id (CANONR-0224): quotes, a quote glued to a path, a trailing comma are dropped;
          a bare id with a lost digit or a letter for a digit, under a known id prefix, is refused naming the ticket; v2,
          bug1 and mp3 stay ideas.
+     14. Bare numbers (CANONR-0255): a bare 1-9 digit number resolves to the current project's ticket like -<number>
+         (wrapped forms included), is refused when absent or outside a project, and is refused in next mode; multi-word
+         text starting with a number stays an idea.
 #>
 [CmdletBinding()]
 param([switch] $KeepScratch)
@@ -255,6 +258,28 @@ try {
         foreach ($arg in 'v2', 'bug1', 'mp3', 'S3', 'fix the "rotate" crash,') {
             $r = Resolve-It $arg
             Assert-That ($r.code -eq 0 -and $r.kind -eq 'idea') "$arg, got $($r | ConvertTo-Json -Compress)"
+        }
+    }
+    Run-Case '14. bare numbers resolve like -<number> or are refused, never captured as an idea' {
+        foreach ($arg in '0030', '30', '"0030"', '0030,') {
+            $r = Resolve-It $arg
+            Assert-That ($r.code -eq 0 -and $r.kind -eq 'local-id' -and $r.project -eq 'alpha' -and $r.id -eq 'S0030' -and $r.slug -eq 'beta-notes') "$arg, got $($r | ConvertTo-Json -Compress)"
+        }
+        foreach ($arg in '0009', '9') {
+            $r = Resolve-It $arg $delta
+            Assert-That ($r.code -eq 0 -and $r.kind -eq 'local-id' -and $r.project -eq 'delta' -and $r.id -eq 'DELTA-0009') "$arg in delta, got $($r | ConvertTo-Json -Compress)"
+        }
+        foreach ($arg in '0226', '0099', '0') {
+            $r = Resolve-It $arg
+            Assert-That ($r.code -eq 2 -and $r.kind -eq 'refused' -and $null -eq $r.id -and $r.reason -like 'no such ticket in alpha*') "$arg, got $($r | ConvertTo-Json -Compress)"
+        }
+        $r = Resolve-It '0030' $outside
+        Assert-That ($r.code -eq 2 -and $r.kind -eq 'refused' -and $r.reason -like 'no project here*') "outside, got $($r | ConvertTo-Json -Compress)"
+        $r = Resolve-It '0030' $alpha 'next'
+        Assert-That ($r.code -eq 2 -and $r.kind -eq 'refused' -and $r.reason -like '*takes no argument or a project key*') "next, got $($r | ConvertTo-Json -Compress)"
+        foreach ($arg in '404 page broken', '0226 in a sentence') {
+            $r = Resolve-It $arg
+            Assert-That ($r.code -eq 0 -and $r.kind -eq 'idea' -and $r.project -eq 'alpha') "$arg, got $($r | ConvertTo-Json -Compress)"
         }
     }
     $sw.Stop()
